@@ -4,6 +4,7 @@ import {
   expectNoSecretsInBrowserStorage,
   installOperatorApi,
   installSignedOutApi,
+  OPERATOR_FOLDER_NAME,
   OPERATOR_WORKFLOW_ID,
 } from "./operator-api";
 
@@ -12,6 +13,17 @@ const ADV021_ALERT =
 
 async function expectOneMain(page: Page): Promise<void> {
   await expect(page.locator("main")).toHaveCount(1);
+}
+
+async function selectLightTheme(page: Page): Promise<void> {
+  await page.context().addCookies([
+    {
+      name: "ff-theme",
+      value: "light",
+      url: "http://127.0.0.1:3100",
+      sameSite: "Lax",
+    },
+  ]);
 }
 
 async function expectSkipLink(page: Page): Promise<void> {
@@ -116,6 +128,33 @@ test.describe("primary surfaces", () => {
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
     await expect(commands).toBeFocused();
+  });
+
+  test("light theme keeps Field and ConfirmDestructive on the axe gate", async ({
+    page,
+  }) => {
+    await selectLightTheme(page);
+    await installSignedOutApi(page);
+    await page.goto("/login");
+    await expect(page.locator("html")).toHaveAttribute("data-ff-theme", "light");
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Sign in" }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Email or username")).toBeVisible();
+    await expectNoBlockingAxeViolations(page);
+
+    await installOperatorApi(page);
+    await page.goto("/workflows");
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Workflows" }),
+    ).toBeVisible();
+    await expect(page.locator("html")).toHaveAttribute("data-ff-theme", "light");
+    await page.getByRole("button", { name: OPERATOR_FOLDER_NAME }).click();
+    await page.getByRole("button", { name: "Delete folder" }).click();
+    const dialog = page.getByRole("dialog", { name: "Delete folder" });
+    await expect(dialog).toBeVisible();
+    await expectNoBlockingAxeViolations(page);
+    await expectNoSecretsInBrowserStorage(page);
   });
 });
 

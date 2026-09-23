@@ -239,13 +239,13 @@ export function EditorActivationChrome({
       ) : null}
 
       {!canView ? (
-        <p role="status" className="mt-3 text-sm font-medium text-rose-950">
+        <p role="status" className="mt-3 text-sm font-medium text-danger">
           Viewing activation requires workflow.view.
         </p>
       ) : null}
 
       {!canManage && canView ? (
-        <p role="status" className="mt-3 text-sm text-amber-950">
+        <p role="status" className="mt-3 text-sm text-fg">
           Enabling or disabling pins requires workflow.edit.
         </p>
       ) : null}

@@ -119,7 +119,7 @@ export function LastRunIoPanel({
             ? "rounded-2xl border-2 border-emerald-700 bg-emerald-50 p-5"
             : endingKind === "failed"
               ? `rounded-2xl ${LOUD_ERROR_SURFACE} p-5`
-              : "rounded-2xl border border-zinc-200 bg-white p-5"
+              : "rounded-2xl border border-border bg-bg p-5"
       }
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -127,12 +127,12 @@ export function LastRunIoPanel({
           <h3 id="last-run-io-heading" className="text-base font-semibold">
             Last run
           </h3>
-          <p className="mt-1 text-xs text-zinc-600">{NDV_RUN_IO_OPERATE_HELP}</p>
-          <p className="mt-1 text-xs text-zinc-500">{view.help}</p>
+          <p className="mt-1 text-xs text-fg">{NDV_RUN_IO_OPERATE_HELP}</p>
+          <p className="mt-1 text-xs text-fg">{view.help}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {view.source ? (
-            <span className="rounded-md border border-zinc-300 px-2 py-0.5 text-xs text-zinc-700">
+            <span className="rounded-md border border-border px-2 py-0.5 text-xs text-fg">
               {view.sourceLabel}
             </span>
           ) : null}
@@ -146,7 +146,7 @@ export function LastRunIoPanel({
             <button
               type="button"
               onClick={onClear}
-              className="rounded-md border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-50"
+              className="rounded-md border border-border px-2 py-0.5 text-xs hover:bg-fg/10"
             >
               {EDITOR_RUN_CLEAR_LABEL}
             </button>
@@ -155,22 +155,22 @@ export function LastRunIoPanel({
       </div>
       {detail ? (
         <>
-          <p className="mt-2 font-mono text-xs break-all text-zinc-600">
+          <p className="mt-2 font-mono text-xs break-all text-fg">
             {detail.id}
             {view.workflowVersionLabel ? ` · ${view.workflowVersionLabel}` : ""}
           </p>
-          <p className="mt-1 text-xs text-zinc-600">
+          <p className="mt-1 text-xs text-fg">
             {view.startedLabel} · {view.durationLabel}
           </p>
           {view.opsHref ? (
             <p className="mt-1">
               <Link
                 href={view.opsHref}
-                className="text-xs font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                className="text-xs font-medium text-fg underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
               >
                 Open execution
               </Link>
-              <span className="text-xs text-zinc-500">
+              <span className="text-xs text-fg">
                 {" "}
                 — /executions/{"{id}"}
               </span>
@@ -185,7 +185,7 @@ export function LastRunIoPanel({
           data-doherty-chrome="last-run"
           data-doherty-phase="pending"
           aria-busy
-          className="mt-3 text-sm text-zinc-600"
+          className="mt-3 text-sm text-fg"
         >
           {EDITOR_RUN_IO_PENDING_HELP}
         </p>
@@ -196,7 +196,7 @@ export function LastRunIoPanel({
         </div>
       ) : null}
       {strippedKeys.length ? (
-        <p role="status" className="mt-3 text-sm text-amber-900">
+        <p role="status" className="mt-3 text-sm text-fg">
           Unexpected secret fields were stripped from the API response:{" "}
           {strippedKeys.join(", ")}. Treat this as a backend contract bug.
         </p>
@@ -204,7 +204,7 @@ export function LastRunIoPanel({
 
       {view.jumpLinks.length ? (
         <nav aria-label="Failed and indeterminate steps" className="mt-3">
-          <p className="text-xs font-medium text-zinc-600">{NDV_RUN_IO_JUMP_HELP}</p>
+          <p className="text-xs font-medium text-fg">{NDV_RUN_IO_JUMP_HELP}</p>
           <ul className="mt-1 space-y-1">
             {view.jumpLinks.map((link) => {
               const target = ndvRunIoJumpTarget(link);
@@ -215,12 +215,12 @@ export function LastRunIoPanel({
                       type="button"
                       data-ndv-run-io-jump={target}
                       onClick={() => onJumpNode(target)}
-                      className="text-xs font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                      className="text-xs font-medium text-fg underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
                     >
                       {link.label} — {NDV_RUN_IO_JUMP_LABEL}
                     </button>
                   ) : (
-                    <span className="text-xs text-zinc-700">{link.label}</span>
+                    <span className="text-xs text-fg">{link.label}</span>
                   )}
                 </li>
               );
@@ -230,21 +230,21 @@ export function LastRunIoPanel({
       ) : null}
 
       {!scopedNode ? (
-        <p className="mt-3 text-sm text-zinc-600">
+        <p className="mt-3 text-sm text-fg">
           Select a node to see redacted last-run outputs and logs.
         </p>
       ) : null}
 
       {view.empty && scopedNode && !pending && !problem ? (
-        <p className="mt-3 text-sm text-zinc-600">{view.help}</p>
+        <p className="mt-3 text-sm text-fg">{view.help}</p>
       ) : null}
 
       {io?.missingStep ? (
-        <p className="mt-3 text-sm text-zinc-600">{EDITOR_RUN_NO_STEP_HELP}</p>
+        <p className="mt-3 text-sm text-fg">{EDITOR_RUN_NO_STEP_HELP}</p>
       ) : null}
 
       {view.payloadGap ? (
-        <p role="status" className="mt-3 text-sm text-amber-950">
+        <p role="status" className="mt-3 text-sm text-fg">
           {NDV_RUN_IO_PAYLOAD_GAP_HELP}
         </p>
       ) : null}
@@ -252,44 +252,44 @@ export function LastRunIoPanel({
       {io && !io.missingStep ? (
         <div className="mt-3 space-y-3">
           {view.stepMeta ? (
-            <p className="font-mono text-xs text-zinc-600">{view.stepMeta}</p>
+            <p className="font-mono text-xs text-fg">{view.stepMeta}</p>
           ) : null}
           {io.indeterminate ? (
-            <p className="text-sm text-amber-950">{indeterminateCopy}</p>
+            <p className="text-sm text-fg">{indeterminateCopy}</p>
           ) : null}
           {io.view?.waiting ? (
-            <p role="status" className="text-sm text-zinc-800">
+            <p role="status" className="text-sm text-fg">
               Waiting on approval. Decide the bound approval — resume is decide,
               not a new route.
             </p>
           ) : null}
           <div>
-            <p className="text-xs font-medium text-zinc-600">Redacted input</p>
-            <pre className="mt-1 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
+            <p className="text-xs font-medium text-fg">Redacted input</p>
+            <pre className="mt-1 overflow-auto rounded-lg bg-bg p-3 font-mono text-xs text-fg">
               {io.inputText}
             </pre>
           </div>
           <div>
-            <p className="text-xs font-medium text-zinc-600">Redacted output</p>
-            <pre className="mt-1 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
+            <p className="text-xs font-medium text-fg">Redacted output</p>
+            <pre className="mt-1 overflow-auto rounded-lg bg-bg p-3 font-mono text-xs text-fg">
               {io.outputText}
             </pre>
           </div>
           {io.errorText && io.errorText !== "—" ? (
             <div>
-              <p className="text-xs font-medium text-zinc-600">Redacted error</p>
-              <pre className="mt-1 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
+              <p className="text-xs font-medium text-fg">Redacted error</p>
+              <pre className="mt-1 overflow-auto rounded-lg bg-bg p-3 font-mono text-xs text-fg">
                 {io.errorText}
               </pre>
             </div>
           ) : null}
           <div>
-            <p className="text-xs font-medium text-zinc-600">Redacted logs</p>
-            <pre className="mt-1 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-xs text-zinc-700">
+            <p className="text-xs font-medium text-fg">Redacted logs</p>
+            <pre className="mt-1 overflow-auto rounded-lg bg-bg p-3 font-mono text-xs text-fg">
               {io.logsText}
             </pre>
           </div>
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-fg">
             {io.redactedHelp} Secrets stay{" "}
             <code className="font-mono text-[11px]">[redacted]</code>.
           </p>

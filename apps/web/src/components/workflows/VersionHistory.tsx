@@ -44,12 +44,12 @@ export function VersionHistory({
     <section
       id="version-history"
       aria-labelledby="version-history-heading"
-      className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+      className="rounded-2xl border border-border bg-bg p-5 shadow-sm"
     >
       <h2 id="version-history-heading" className="text-base font-semibold">
         Versions
       </h2>
-      <p className="mt-1 text-sm text-zinc-600">
+      <p className="mt-1 text-sm text-fg">
         Immutable published snapshots. Export, compare (draft vs version or
         version vs version), or restore-as-new-draft. Restore never mutates the
         version. Save the draft before restore — unsaved editor edits are not
@@ -57,12 +57,12 @@ export function VersionHistory({
       </p>
 
       {versions.length === 0 ? (
-        <p className="mt-4 text-sm text-zinc-600">
+        <p className="mt-4 text-sm text-fg">
           No published versions yet. Publish the saved draft to create the first
           immutable snapshot.
         </p>
       ) : (
-        <ul className="mt-4 divide-y divide-zinc-100">
+        <ul className="mt-4 divide-y divide-border">
           {versions.map((version) => (
             <li
               key={version.id}
@@ -73,10 +73,10 @@ export function VersionHistory({
                   v{version.versionNumber}
                   {version.publishNote ? ` — ${version.publishNote}` : null}
                 </p>
-                <p className="font-mono text-xs break-all text-zinc-500">
+                <p className="font-mono text-xs break-all text-fg">
                   {version.digest}
                 </p>
-                <p className="text-xs text-zinc-500">{version.publishedAt}</p>
+                <p className="text-xs text-fg">{version.publishedAt}</p>
                 <div className="mt-2">
                   <ConfigPinList
                     pins={versionPins?.[version.id]}
@@ -89,7 +89,7 @@ export function VersionHistory({
                   type="button"
                   onClick={() => onExport(version)}
                   disabled={busy}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
+                  className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10 disabled:opacity-60"
                 >
                   Export
                 </button>
@@ -97,7 +97,7 @@ export function VersionHistory({
                   type="button"
                   onClick={() => onRestore(version)}
                   disabled={busy || dirty}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
+                  className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10 disabled:opacity-60"
                 >
                   Restore as new draft
                 </button>
@@ -109,11 +109,11 @@ export function VersionHistory({
 
       <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
         <label className="block text-sm">
-          <span className="text-zinc-600">Compare left</span>
+          <span className="text-fg">Compare left</span>
           <select
             value={compareLeft}
             onChange={(event) => onCompareLeft(event.target.value)}
-            className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+            className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-1.5 text-sm"
           >
             <option value="draft">Current draft</option>
             {versions.map((version) => (
@@ -124,11 +124,11 @@ export function VersionHistory({
           </select>
         </label>
         <label className="block text-sm">
-          <span className="text-zinc-600">Compare right</span>
+          <span className="text-fg">Compare right</span>
           <select
             value={compareRight}
             onChange={(event) => onCompareRight(event.target.value)}
-            className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+            className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-1.5 text-sm"
           >
             <option value="">Select a side</option>
             <option value="draft">Current draft</option>
@@ -144,7 +144,7 @@ export function VersionHistory({
             type="button"
             onClick={onCompare}
             disabled={busy || !compareRight}
-            className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+            className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm font-medium text-fg hover:bg-bg disabled:opacity-60"
           >
             {pending === "compare" ? "Comparing…" : "Compare"}
           </button>
@@ -157,14 +157,14 @@ export function VersionHistory({
             {compare.equal ? "Equal" : "Different"}
             {compare.digestMatch ? " · digests match" : " · digests differ"}
           </p>
-          <p className="font-mono text-xs break-all text-zinc-500">
+          <p className="font-mono text-xs break-all text-fg">
             left {shortDigest(compare.leftDigest)} · right{" "}
             {shortDigest(compare.rightDigest)}
           </p>
           {compare.changes.length === 0 ? (
-            <p className="text-zinc-600">No structured changes.</p>
+            <p className="text-fg">No structured changes.</p>
           ) : (
-            <ul className="space-y-1 font-mono text-xs text-zinc-700">
+            <ul className="space-y-1 font-mono text-xs text-fg">
               {compare.changes.map((change, index) => (
                 <li key={`${change.path}-${change.op}-${index}`}>
                   {change.op} {change.path}

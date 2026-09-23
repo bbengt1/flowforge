@@ -152,7 +152,7 @@ export function AlertList() {
       ) : null}
 
       {denied ? (
-        <p className="text-sm text-zinc-600">
+        <p className="text-sm text-fg">
           This role cannot view alerts (
           <code className="font-mono text-xs">alert.view</code> missing).
         </p>
@@ -160,25 +160,25 @@ export function AlertList() {
 
       <div className="flex flex-wrap items-end gap-3">
         <label className="block text-sm">
-          <span className="text-zinc-600">Filter</span>
+          <span className="text-fg">Filter</span>
           <input
             type="search"
             value={query.q}
             onChange={(event) =>
               setQuery((current) => ({ ...current, q: event.target.value }))
             }
-            className="mt-1 w-64 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+            className="mt-1 w-64 rounded-lg border border-border bg-bg px-3 py-1.5 text-sm"
             placeholder="Kind, action, correlation, resource id"
           />
         </label>
         <label className="block text-sm">
-          <span className="text-zinc-600">Kind</span>
+          <span className="text-fg">Kind</span>
           <select
             value={query.kind}
             onChange={(event) =>
               setQuery((current) => ({ ...current, kind: event.target.value }))
             }
-            className="mt-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+            className="mt-1 rounded-lg border border-border bg-bg px-3 py-1.5 text-sm"
           >
             <option value="">All</option>
             {ALERT_KINDS.map((kind) => (
@@ -189,13 +189,13 @@ export function AlertList() {
           </select>
         </label>
         <label className="block text-sm">
-          <span className="text-zinc-600">Status</span>
+          <span className="text-fg">Status</span>
           <select
             value={query.status}
             onChange={(event) =>
               setQuery((current) => ({ ...current, status: event.target.value }))
             }
-            className="mt-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+            className="mt-1 rounded-lg border border-border bg-bg px-3 py-1.5 text-sm"
           >
             <option value="">All</option>
             {ALERT_STATUSES.map((status) => (
@@ -206,7 +206,7 @@ export function AlertList() {
           </select>
         </label>
         <label className="block text-sm">
-          <span className="text-zinc-600">Resource type</span>
+          <span className="text-fg">Resource type</span>
           <input
             type="text"
             value={query.resourceType}
@@ -216,12 +216,12 @@ export function AlertList() {
                 resourceType: event.target.value,
               }))
             }
-            className="mt-1 w-40 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+            className="mt-1 w-40 rounded-lg border border-border bg-bg px-3 py-1.5 text-sm"
             placeholder="execution"
           />
         </label>
         <label className="block text-sm">
-          <span className="text-zinc-600">Resource id</span>
+          <span className="text-fg">Resource id</span>
           <input
             type="text"
             value={query.resourceId}
@@ -231,7 +231,7 @@ export function AlertList() {
                 resourceId: event.target.value,
               }))
             }
-            className="mt-1 w-64 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-xs"
+            className="mt-1 w-64 rounded-lg border border-border bg-bg px-3 py-1.5 font-mono text-xs"
             placeholder="UUID"
           />
         </label>
@@ -248,13 +248,13 @@ export function AlertList() {
       {problem ? <ProblemBanner problem={problem} /> : null}
 
       {strippedKeys.length ? (
-        <p role="status" className="text-sm text-amber-900">
+        <p role="status" className="text-sm text-fg">
           Unexpected secret fields were stripped from the API response:{" "}
           {strippedKeys.join(", ")}. Treat this as a backend contract bug.
         </p>
       ) : null}
 
-      <p className="text-sm text-zinc-600">
+      <p className="text-sm text-fg">
         {visible.length} alert{visible.length === 1 ? "" : "s"} · identifiers
         only, never secrets
         {lastRequestId ? (
@@ -263,7 +263,7 @@ export function AlertList() {
       </p>
 
       {denied || visible.length === 0 ? (
-        <p className="text-sm text-zinc-600">
+        <p className="text-sm text-fg">
           {denied
             ? "No alerts are shown for this role."
             : "No alerts match. Authorization, replay, policy, and redaction failures appear here when the API emits them."}
@@ -278,19 +278,19 @@ export function AlertList() {
             return (
               <li
                 key={item.id}
-                className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
+                className="rounded-xl border border-border bg-bg p-4 shadow-sm"
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h2 className="text-base font-semibold">
                       <Link
                         href={`/alerts/${item.id}`}
-                        className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
+                        className="underline decoration-border underline-offset-2 hover:decoration-muted-foreground"
                       >
                         {alertKindLabel(item.kind)}
                       </Link>
                     </h2>
-                    <p className="mt-1 text-sm text-zinc-700">
+                    <p className="mt-1 text-sm text-fg">
                       {[item.action, item.outcome, item.code]
                         .filter(Boolean)
                         .join(" · ") || "Identifiers only."}
@@ -306,26 +306,26 @@ export function AlertList() {
                     </p>
                   </div>
                 </div>
-                <dl className="mt-3 grid gap-1 font-mono text-xs text-zinc-500 sm:grid-cols-2">
+                <dl className="mt-3 grid gap-1 font-mono text-xs text-fg sm:grid-cols-2">
                   <div>
-                    <dt className="inline text-zinc-400">correlation </dt>
+                    <dt className="inline text-fg">correlation </dt>
                     <dd className="inline break-all">
                       {item.correlationId || "—"}
                     </dd>
                   </div>
                   <div>
-                    <dt className="inline text-zinc-400">request </dt>
+                    <dt className="inline text-fg">request </dt>
                     <dd className="inline break-all">
                       {item.requestId || "—"}
                     </dd>
                   </div>
                   <div>
-                    <dt className="inline text-zinc-400">resource </dt>
+                    <dt className="inline text-fg">resource </dt>
                     <dd className="inline break-all">
                       {executionHref ? (
                         <Link
                           href={executionHref}
-                          className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
+                          className="underline decoration-border underline-offset-2 hover:decoration-muted-foreground"
                         >
                           {item.resourceType} {item.resourceId}
                         </Link>
@@ -337,11 +337,11 @@ export function AlertList() {
                     </dd>
                   </div>
                   <div>
-                    <dt className="inline text-zinc-400">occurred </dt>
+                    <dt className="inline text-fg">occurred </dt>
                     <dd className="inline">{item.occurredAt || "—"}</dd>
                   </div>
                   <div>
-                    <dt className="inline text-zinc-400">id </dt>
+                    <dt className="inline text-fg">id </dt>
                     <dd className="inline break-all">{item.id}</dd>
                   </div>
                 </dl>

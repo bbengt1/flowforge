@@ -33,7 +33,7 @@ export function ScriptIsolationNotes({
         ))}
       </ul>
       {fallback ? (
-        <p className="mt-3 text-xs text-teal-900/80">
+        <p className="mt-3 text-xs text-fg/80">
           {ENGINE_CATALOG_UNAVAILABLE_HELP}
         </p>
       ) : null}

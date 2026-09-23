@@ -66,14 +66,14 @@ export function ScriptRetryFields({
     retryPolicy: { maxAttempts: attempts },
   });
   return (
-    <fieldset className="space-y-4 rounded-xl border border-zinc-200 px-4 py-3">
+    <fieldset className="space-y-4 rounded-xl border border-border px-4 py-3">
       <legend className="px-1 text-sm font-medium">Retry and verification</legend>
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-fg">
         {SCRIPT_IO_RETRY_ZERO_MESSAGE} {SCRIPT_IO_NO_BLIND_RETRY_HELP} Map
         source <code className="font-mono">{SCRIPT_IO_ROUTE_MAP_SOURCE}</code>
         {catalog?.source ? ` · ${catalog.source}` : ""}.
       </p>
-      <p className="text-xs text-zinc-600">
+      <p className="text-xs text-fg">
         {SCRIPT_IO_HANDLE_HELP} Handles TTL {io.io.handleTTLSeconds}s (max{" "}
         {io.io.handleMaxTTLSeconds}s). {SCRIPT_IO_ENV_HELP}
       </p>
@@ -97,7 +97,7 @@ export function ScriptRetryFields({
         />
         <span>
           <span className="font-medium">retrySafe</span>
-          <span className="mt-1 block text-xs text-zinc-500">
+          <span className="mt-1 block text-xs text-fg">
             Default false. Enabling requires an idempotency key and a
             declared-hook. This never implies a blind re-run.
           </span>
@@ -118,9 +118,9 @@ export function ScriptRetryFields({
               retryPolicy: { maxAttempts: attempts },
             })
           }
-          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm disabled:bg-zinc-50"
+          className="mt-1 w-full rounded-lg border border-border px-3 py-2 font-mono text-sm disabled:bg-bg"
         />
-        <span className="mt-1 block text-xs text-zinc-500">
+        <span className="mt-1 block text-xs text-fg">
           1–128, letter-prefixed. Required with retrySafe.
         </span>
       </label>
@@ -130,9 +130,9 @@ export function ScriptRetryFields({
           value={SCRIPT_IO_VERIFICATION_BEHAVIOR}
           readOnly
           disabled
-          className="mt-1 w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 font-mono text-sm"
+          className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-2 font-mono text-sm"
         />
-        <span className="mt-1 block text-xs text-zinc-500">
+        <span className="mt-1 block text-xs text-fg">
           {SCRIPT_IO_VERIFICATION_HELP} Only allowed value is{" "}
           <code className="font-mono">{io.probe.behavior}</code>.
         </span>
@@ -205,23 +205,23 @@ export function ScriptRetryFields({
               },
             })
           }
-          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm disabled:bg-zinc-50"
+          className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm disabled:bg-bg"
         />
-        <span className="mt-1 block text-xs text-zinc-500">
+        <span className="mt-1 block text-xs text-fg">
           Default {SCRIPT_IO_DEFAULT_RETRY_MAX_ATTEMPTS}. Range{" "}
           {SCRIPT_IO_DEFAULT_RETRY_MAX_ATTEMPTS}–{SCRIPT_IO_MAX_RETRY_ATTEMPTS}.
           Values above 0 require retrySafe + idempotencyKey + declared-hook.
         </span>
       </label>
-      <p className="text-xs text-zinc-600">{SCRIPT_IO_INDETERMINATE_HELP}</p>
+      <p className="text-xs text-fg">{SCRIPT_IO_INDETERMINATE_HELP}</p>
       {validation.errors.length > 0 ? (
-        <p role="status" className="text-sm text-amber-950">
+        <p role="status" className="text-sm text-fg">
           {validation.errors[0] || SCRIPT_IO_RETRY_DENIED_MESSAGE}
         </p>
       ) : validation.warnings.length > 0 ? (
-        <p className="text-sm text-zinc-700">{validation.warnings[0]}</p>
+        <p className="text-sm text-fg">{validation.warnings[0]}</p>
       ) : (
-        <p className="text-sm text-zinc-700">
+        <p className="text-sm text-fg">
           retrySafe={String(safe)}; idempotencyKey{" "}
           {validation.idempotencyKey ? "declared" : "omitted"};
           verification {validation.verificationDeclared ? "declared-hook" : "omitted"}.
@@ -246,12 +246,12 @@ function OutcomeField({
 }) {
   return (
     <label className="block text-xs">
-      <span className="font-medium text-zinc-700">{label}</span>
+      <span className="font-medium text-fg">{label}</span>
       <select
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm disabled:bg-zinc-50"
+        className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm disabled:bg-bg"
       >
         {options.map((option) => (
           <option key={option} value={option}>

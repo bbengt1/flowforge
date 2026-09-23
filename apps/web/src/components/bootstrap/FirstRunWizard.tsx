@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Field } from "@/components/a11y/Field";
 import { ProblemBanner } from "@/components/ProblemBanner";
+import { ThemePreferenceControl } from "@/components/theme/ThemePreference";
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
 import {
   confirmBootstrapPersistence,
@@ -244,6 +245,9 @@ export function FirstRunWizard({
       className={`${FF_WIZARD_ROOT_CLASS} mx-auto flex min-h-full w-full max-w-3xl flex-col gap-8 px-6 py-12 outline-none`}
     >
       <header className="space-y-3">
+        <div className="flex justify-end">
+          <ThemePreferenceControl theme="dark" />
+        </div>
         <p className={FF_WIZARD_EYEBROW_CLASS}>B.6 · First-run setup</p>
         <h1 className={`text-3xl tracking-tight ${FF_WIZARD_TITLE_CLASS}`}>
           Set up this FlowForge instance

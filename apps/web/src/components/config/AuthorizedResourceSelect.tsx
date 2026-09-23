@@ -49,7 +49,7 @@ export function AuthorizedResourceSelect({
             );
             onChange(next ?? null);
           }}
-          className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm disabled:bg-zinc-50"
+          className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm disabled:bg-bg"
         >
           <option value="">
             {selected.closed ? "No authorized resources" : "Select a published version"}
@@ -64,13 +64,13 @@ export function AuthorizedResourceSelect({
           ))}
         </select>
       </label>
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-fg">
         Published {kind.replaceAll("_", " ")} pins from list + POST select.
         Display name + version — never secrets.
       </p>
       {problem ? <ProblemBanner problem={problem} /> : null}
       {selected.closed && !problem ? (
-        <p role="status" className="text-sm text-zinc-600">
+        <p role="status" className="text-sm text-fg">
           {selected.reason}
         </p>
       ) : null}

@@ -101,7 +101,7 @@ export function ConfigHub({ group }: ConfigHubProps) {
             className={`rounded-full px-3 py-1.5 text-sm ${
               selected === item.id
                 ? "bg-teal-800 text-white"
-                : "border border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50"
+                : "border border-border bg-bg text-fg hover:bg-fg/10"
             }`}
           >
             {item.title}
@@ -118,9 +118,9 @@ export function ConfigHub({ group }: ConfigHubProps) {
         >
           <div>
             <h2 className="text-lg font-semibold">{item.title}</h2>
-            <p className="mt-1 max-w-3xl text-sm text-zinc-600">{item.blurb}</p>
+            <p className="mt-1 max-w-3xl text-sm text-fg">{item.blurb}</p>
             {item.id === "targets" && engineNote ? (
-              <p className="mt-2 max-w-3xl text-xs text-zinc-500">{engineNote}</p>
+              <p className="mt-2 max-w-3xl text-xs text-fg">{engineNote}</p>
             ) : null}
           </div>
           <ul className="grid gap-4 md:grid-cols-2">
@@ -134,11 +134,11 @@ export function ConfigHub({ group }: ConfigHubProps) {
                   <li key={kind.kind}>
                     <Link
                       href={`/config/${collection}`}
-                      className="block rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm hover:border-teal-700"
+                      className="block rounded-2xl border border-border bg-bg p-5 shadow-sm hover:border-teal-700"
                     >
                       <h3 className="font-semibold">{title}</h3>
-                      <p className="mt-1 text-sm text-zinc-600">{kind.summary}</p>
-                      <p className="mt-3 font-mono text-xs text-zinc-500">
+                      <p className="mt-1 text-sm text-fg">{kind.summary}</p>
+                      <p className="mt-3 font-mono text-xs text-fg">
                         YAML {yamlRef} · /{collection}
                         {remote?.usePermission ? ` · ${remote.usePermission}` : ""}
                       </p>

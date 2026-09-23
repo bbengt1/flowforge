@@ -3,8 +3,14 @@
  * Relates to #357 / Part of #353. Keep #357 open.
  *
  * Dark-first charcoal. One teal-family accent. Danger/denial is not
- * the accent. Light theme is not required. Do not add a second theme
- * tree or default shadcn zinc/orange skin.
+ * the accent. Do not add a second theme tree or default shadcn
+ * zinc/orange skin.
+ *
+ * G.3.9 / #496: light is a follow map of these same variables on
+ * :root[data-ff-theme="light"]. Dark stays the default. Themeable
+ * chrome uses bg, fg, border, accent, and danger. Not a second token
+ * file or component tree. Explorer nav stays the dark rail. Contrast
+ * stays on the axe gate.
  *
  * Consume via var(--ff-*) or the shadcn-friendly aliases below.
  * Do not proliferate one-off hex in feature chrome after this file.
@@ -24,13 +30,21 @@
   --ff-danger-surface: #3f151c;
   --ff-focus-ring: #0f766e;
   --ff-border: rgb(255 255 255 / 0.10);
+  /* Drafts-never-run / loud warning. Dark values match the previous
+     amber hexes so the default theme does not shift. */
+  --ff-warning: #d97706;
+  --ff-warning-foreground: #fde68a;
+  --ff-code-number: #7dd3fc;
+  --ff-code-boolean: #d8b4fe;
 
-  /* X.8 Explorer nav — V.1 names. Relates to #399. Not a second theme. */
+  /* X.8 Explorer nav — V.1 names. Relates to #399. Not a second theme.
+     Ink stays light on the dark rail in both themes. */
   --ff-explorer-nav: #1a1d24;
+  --ff-explorer-ink: #f4f4f5;
   --ff-explorer-folder: #e8c04a;
   --ff-explorer-folder-tab: #d4a017;
-  --ff-explorer-row-selected: color-mix(in srgb, var(--ff-text) 18%, var(--ff-explorer-nav));
-  --ff-explorer-row-selected-border: color-mix(in srgb, var(--ff-text) 42%, transparent);
+  --ff-explorer-row-selected: color-mix(in srgb, var(--ff-explorer-ink) 18%, var(--ff-explorer-nav));
+  --ff-explorer-row-selected-border: color-mix(in srgb, var(--ff-explorer-ink) 42%, transparent);
   --ff-explorer-indent: 16px;
   --ff-explorer-row: 24px;
 
@@ -69,6 +83,37 @@
   --ring: var(--ff-focus-ring);
   --radius: var(--ff-radius);
   --focus-ring: var(--ff-focus-ring);
+
+  /* Semantic chrome. Light overrides the --ff-* values these names use.
+     One theme attribute, not a second component tree. */
+  --bg: var(--ff-surface);
+  --fg: var(--ff-text);
+  --accent: var(--ff-accent);
+  --danger: var(--ff-danger);
+}
+
+/*
+ * Light follow map. Same variable names. Explorer rail is not overridden.
+ * Selector is data-ff-theme so this stays one tree, not a parallel theme file.
+ */
+:root[data-ff-theme="light"] {
+  color-scheme: light;
+
+  --ff-canvas: #e6e8ee;
+  --ff-surface: #f4f5f8;
+  --ff-text: #1a1d24;
+  --ff-muted: #4e5563;
+  --ff-accent: #0f766e;
+  --ff-accent-foreground: #ecfdf8;
+  --ff-danger: #9f1239;
+  --ff-danger-foreground: #fff1f2;
+  --ff-danger-surface: #9f1239;
+  --ff-focus-ring: #0f766e;
+  --ff-border: rgb(26 29 36 / 0.16);
+  --ff-warning: #b45309;
+  --ff-warning-foreground: #78350f;
+  --ff-code-number: #0369a1;
+  --ff-code-boolean: #6b21a8;
 }
 
 @theme inline {
@@ -86,7 +131,11 @@
   --color-muted-foreground: var(--ff-muted);
   --color-destructive: var(--ff-danger);
   --color-destructive-foreground: var(--ff-danger-foreground);
-  --color-border: var(--ff-border);
+  --color-bg: var(--bg);
+  --color-fg: var(--fg);
+  --color-accent: var(--accent);
+  --color-danger: var(--danger);
+  --color-border: var(--border);
   --color-input: var(--ff-border);
   --color-ring: var(--ff-focus-ring);
   --radius-sm: var(--ff-radius-sm);

@@ -47,12 +47,12 @@ export function ValidationPanel({
     <section
       aria-labelledby="validation-heading"
       aria-live="polite"
-      className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+      className="rounded-2xl border border-border bg-bg p-5 shadow-sm"
     >
       <h2 id="validation-heading" className="text-base font-semibold">
         Validation
       </h2>
-      <p className="mt-1 text-sm text-zinc-600">
+      <p className="mt-1 text-sm text-fg">
         Debounced <code className="font-mono text-xs">POST /workflows/validate</code>.
         Invalid YAML shows <code className="font-mono text-xs">errors[]</code>{" "}
         only — no guessed graph. Errors are grouped by workflow, node, and edge.
@@ -77,7 +77,7 @@ export function ValidationPanel({
             }
             return (
               <div key={group}>
-                <h3 className="text-sm font-medium text-zinc-800">{GROUP_LABEL[group]}</h3>
+                <h3 className="text-sm font-medium text-fg">{GROUP_LABEL[group]}</h3>
                 <ol className="mt-2 space-y-2">
                   {items.map((error, index) => (
                     <ValidationErrorItem
@@ -96,7 +96,7 @@ export function ValidationPanel({
       ) : null}
 
       {status === "invalid" && errors.length === 0 && problem ? (
-        <p className="mt-3 text-sm text-amber-950">
+        <p className="mt-3 text-sm text-fg">
           {safeProblemDetail(problem.detail)}
         </p>
       ) : null}
@@ -105,7 +105,7 @@ export function ValidationPanel({
         <div className="mt-4 space-y-3 text-sm">
           {digest ? (
             <p>
-              <span className="text-zinc-500">digest </span>
+              <span className="text-fg">digest </span>
               <code className="break-all font-mono text-xs">{digest}</code>
             </p>
           ) : null}
@@ -115,18 +115,18 @@ export function ValidationPanel({
             <Count label="Edges" value={summary.edges.length} />
             <Count label="Outputs" value={summary.outputs.length} />
           </dl>
-          <p className="text-zinc-700">
+          <p className="text-fg">
             <span className="font-medium">{summary.name}</span>
             {summary.description ? ` — ${summary.description}` : null}
           </p>
-          <ul className="space-y-1 font-mono text-xs text-zinc-600">
+          <ul className="space-y-1 font-mono text-xs text-fg">
             {summary.nodes.map((node) => (
               <li key={node.id}>
                 {onSelectNode ? (
                   <button
                     type="button"
                     onClick={() => onSelectNode(node.id)}
-                    className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
+                    className="underline decoration-border underline-offset-2 hover:decoration-muted-foreground"
                   >
                     {node.id} · {node.type}
                   </button>
@@ -146,10 +146,10 @@ export function ValidationPanel({
           {warnings.map((warning, index) => (
             <li
               key={`${warning.path}-${warning.code}-${index}`}
-              className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm"
+              className="rounded-lg border border-border bg-bg px-3 py-2 text-sm"
             >
               <p className="font-medium">{warning.path || "warning"}</p>
-              <p className="mt-1 text-zinc-700">{warning.message}</p>
+              <p className="mt-1 text-fg">{warning.message}</p>
             </li>
           ))}
         </ul>
@@ -184,7 +184,7 @@ function ValidationErrorItem({
         <span className="font-medium">{error.path || "document"}</span>
       )}
       <p className="mt-1">{error.message}</p>
-      <p className="mt-1 font-mono text-xs text-amber-900/80">{error.code}</p>
+      <p className="mt-1 font-mono text-xs text-fg/80">{error.code}</p>
       {error.nodeId && onSelectNode ? (
         <button
           type="button"
@@ -214,8 +214,8 @@ function ValidationErrorItem({
 
 function Count({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-lg bg-zinc-50 px-3 py-2">
-      <dt className="text-xs text-zinc-500">{label}</dt>
+    <div className="rounded-lg bg-bg px-3 py-2">
+      <dt className="text-xs text-fg">{label}</dt>
       <dd className="text-lg font-semibold">{value}</dd>
     </div>
   );

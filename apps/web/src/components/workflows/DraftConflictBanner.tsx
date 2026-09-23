@@ -30,7 +30,7 @@ export function DraftConflictBanner({
         the editor is not overwritten until you confirm.
       </p>
       {serverDraft ? (
-        <p className="font-mono text-xs text-amber-900/80">
+        <p className="font-mono text-xs text-amber-950/80">
           server revision {serverDraft.revision} · {serverDraft.digest}
         </p>
       ) : null}

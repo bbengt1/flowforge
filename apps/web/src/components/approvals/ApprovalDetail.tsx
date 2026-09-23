@@ -101,7 +101,7 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
       <p className="text-sm">
         <Link
           href="/approvals"
-          className="text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+          className="text-fg underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
         >
           Back to approvals
         </Link>
@@ -121,22 +121,22 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
       ) : null}
 
       {strippedKeys.length ? (
-        <p role="status" className="text-sm text-amber-900">
+        <p role="status" className="text-sm text-fg">
           Unexpected secret fields were stripped from the API response:{" "}
           {strippedKeys.join(", ")}. Treat this as a backend contract bug.
         </p>
       ) : null}
 
       {approval ? (
-        <section className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+        <section className="space-y-4 rounded-2xl border border-border bg-bg p-6 shadow-sm">
           <header className="space-y-1">
-            <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
+            <p className="text-sm font-medium tracking-wide text-fg uppercase">
               {approvalStatusLabel(approval.status)}
             </p>
             <h2 className="text-xl font-semibold">
               {approval.workflowName || approval.binding.operation}
             </h2>
-            <p className="font-mono text-xs break-all text-zinc-500">
+            <p className="font-mono text-xs break-all text-fg">
               {approval.id}
               {lastRequestId ? ` · ${lastRequestId}` : ""}
             </p>
@@ -154,19 +154,19 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
 
           <dl className="grid gap-2 text-sm sm:grid-cols-2">
             <div>
-              <dt className="text-zinc-500">Requested by</dt>
+              <dt className="text-fg">Requested by</dt>
               <dd>{approval.requestedBy || "—"}</dd>
             </div>
             <div>
-              <dt className="text-zinc-500">Requested at</dt>
+              <dt className="text-fg">Requested at</dt>
               <dd className="font-mono text-xs">{approval.requestedAt || "—"}</dd>
             </div>
             <div>
-              <dt className="text-zinc-500">Decided by</dt>
+              <dt className="text-fg">Decided by</dt>
               <dd>{approval.decidedBy || "—"}</dd>
             </div>
             <div>
-              <dt className="text-zinc-500">Decided at</dt>
+              <dt className="text-fg">Decided at</dt>
               <dd className="font-mono text-xs">{approval.decidedAt || "—"}</dd>
             </div>
           </dl>
@@ -182,17 +182,17 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
             type="button"
             onClick={() => void refresh()}
             disabled={pending !== null}
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
+            className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10 disabled:opacity-60"
           >
             Recheck on server
           </button>
-          <p className="text-sm text-zinc-600">
+          <p className="text-sm text-fg">
             {APPROVAL_BINDING_HELP} {APPROVAL_WAIT_DURABLE_HELP} The UI never
             stores an approval token or treats a previous local approve as
             sufficient.
           </p>
           {events.length ? (
-            <ol className="space-y-1 text-sm text-zinc-600">
+            <ol className="space-y-1 text-sm text-fg">
               {events.map((event) => (
                 <li key={event.id} className="font-mono text-xs">
                   {event.eventType}

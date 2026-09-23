@@ -41,24 +41,24 @@ export function ConfigVersionHistory({
   return (
     <section
       aria-labelledby="config-versions-heading"
-      className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+      className="rounded-2xl border border-border bg-bg p-5 shadow-sm"
     >
       <h2 id="config-versions-heading" className="text-base font-semibold">
         Version history
       </h2>
-      <p className="mt-1 text-sm text-zinc-600">
+      <p className="mt-1 text-sm text-fg">
         Publish creates an immutable revision. Published detail is read-only.
         Restore PUTs the snapshot spec into the current draft — there is no
         restore route. Compare is client-side spec JSON only.
       </p>
 
       {versions.length === 0 ? (
-        <p className="mt-4 text-sm text-zinc-600">
+        <p className="mt-4 text-sm text-fg">
           No published versions yet. Save the draft, then publish to pin the
           first immutable revision.
         </p>
       ) : (
-        <ul className="mt-4 divide-y divide-zinc-100">
+        <ul className="mt-4 divide-y divide-border">
           {versions.map((version) => (
             <li
               key={version.id}
@@ -72,14 +72,14 @@ export function ConfigVersionHistory({
                   readOnly
                 />
                 {version.publishNote ? (
-                  <p className="text-sm text-zinc-600">{version.publishNote}</p>
+                  <p className="text-sm text-fg">{version.publishNote}</p>
                 ) : null}
-                <p className="text-xs text-zinc-500">{version.publishedAt}</p>
+                <p className="text-xs text-fg">{version.publishedAt}</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Link
                   href={`/config/${OPS_CONFIG_COLLECTIONS[kind]}/${resourceId}/versions/${version.id}`}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50"
+                  className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10"
                 >
                   Open read-only
                 </Link>
@@ -87,7 +87,7 @@ export function ConfigVersionHistory({
                   type="button"
                   onClick={() => onRestore(version)}
                   disabled={pending}
-                  className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm hover:bg-zinc-100 disabled:opacity-60"
+                  className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-bg disabled:opacity-60"
                 >
                   Restore into draft
                 </button>
@@ -104,7 +104,7 @@ export function ConfigVersionHistory({
             <select
               value={compareLeft}
               onChange={(event) => onCompareLeft(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
             >
               <option value="draft">Current draft</option>
               {versions.map((version) => (
@@ -119,7 +119,7 @@ export function ConfigVersionHistory({
             <select
               value={compareRight}
               onChange={(event) => onCompareRight(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm"
             >
               {versions.map((version) => (
                 <option key={`right-${version.id}`} value={version.id}>
@@ -133,7 +133,7 @@ export function ConfigVersionHistory({
               type="button"
               onClick={onCompare}
               disabled={pending || !compareRight}
-              className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm hover:bg-zinc-100 disabled:opacity-60"
+              className="rounded-lg border border-border bg-bg px-3 py-2 text-sm hover:bg-bg disabled:opacity-60"
             >
               Compare specs
             </button>
@@ -142,7 +142,7 @@ export function ConfigVersionHistory({
       ) : null}
 
       {compare ? (
-        <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm">
+        <div className="mt-4 rounded-xl border border-border bg-bg px-4 py-3 text-sm">
           <p>
             {compare.equal ? "Equal" : "Different"}
             {compare.digestMatch ? " · specs match" : " · specs differ"}

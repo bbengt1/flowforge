@@ -37,17 +37,17 @@ export function ExecutionApprovalState({
   return (
     <section
       aria-labelledby="execution-approval-heading"
-      className="rounded-xl border border-zinc-200 bg-white px-4 py-3"
+      className="rounded-xl border border-border bg-bg px-4 py-3"
     >
       <h3 id="execution-approval-heading" className="text-sm font-semibold">
         Execution approval state
       </h3>
-      <p className="mt-1 text-sm text-zinc-600">
+      <p className="mt-1 text-sm text-fg">
         {waiting
           ? "This pin is waiting on a current approval. Dispatch does not proceed on a stale decision. The wait state survives worker or pod loss."
           : "Approvals bound to this execution."}
       </p>
-      <p className="mt-1 text-xs text-zinc-500">{APPROVAL_BINDING_HELP}</p>
+      <p className="mt-1 text-xs text-fg">{APPROVAL_BINDING_HELP}</p>
       <ul className="mt-3 space-y-3">
         {approvals.map((item) => (
           <li key={item.id} className="space-y-2">
@@ -55,7 +55,7 @@ export function ExecutionApprovalState({
               {approvalStatusLabel(item.status)} ·{" "}
               <Link
                 href={`/approvals/${item.id}`}
-                className="text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                className="text-fg underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
               >
                 {item.id}
               </Link>
@@ -74,7 +74,7 @@ export function ExecutionApprovalState({
               <p className="text-sm">
                 <Link
                   href={`/approvals/${item.id}`}
-                  className="text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                  className="text-fg underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
                 >
                   Open {item.id}
                 </Link>
@@ -84,7 +84,7 @@ export function ExecutionApprovalState({
         ))}
       </ul>
       {waitControls.waitEnabled ? (
-        <p role="status" className="mt-4 text-sm text-zinc-700">
+        <p role="status" className="mt-4 text-sm text-fg">
           {APPROVAL_WAIT_DURABLE_HELP}
         </p>
       ) : (
@@ -93,7 +93,7 @@ export function ExecutionApprovalState({
             type="button"
             disabled
             title={waitControls.waitHelp}
-            className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm text-zinc-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm text-fg disabled:cursor-not-allowed disabled:opacity-60"
           >
             Wait for approval
           </button>
@@ -101,13 +101,13 @@ export function ExecutionApprovalState({
             type="button"
             disabled
             title={waitControls.resumeHelp}
-            className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm text-zinc-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm text-fg disabled:cursor-not-allowed disabled:opacity-60"
           >
             Resume
           </button>
         </div>
       )}
-      <p className="mt-2 text-xs text-zinc-500">{waitControls.resumeHelp}</p>
+      <p className="mt-2 text-xs text-fg">{waitControls.resumeHelp}</p>
     </section>
   );
 }

@@ -26,7 +26,7 @@ export function CollectionLoadMore({
         data-collection-load-more="true"
         onClick={onLoadMore}
         disabled={pending}
-        className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-60"
+        className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm font-medium text-fg hover:bg-fg/10 disabled:opacity-60"
       >
         {pending ? "Loading…" : label}
       </button>

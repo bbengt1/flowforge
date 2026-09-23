@@ -28,6 +28,8 @@ import { useWorkspace, WorkspaceProvider } from "@/components/shell/WorkspacePro
 import { WorkspaceSwitcher } from "@/components/shell/WorkspaceSwitcher";
 import { SessionExpiryBanner } from "@/components/session/SessionExpiryBanner";
 import { SessionStatusChip } from "@/components/session/SessionStatusChip";
+import { ThemePreferenceControl } from "@/components/theme/ThemePreference";
+import type { ColorTheme } from "@/lib/theme-preference";
 import { editorNavMode, isWorkflowEditorPath } from "@/lib/editor-chrome";
 import {
   FF_SHELL_ASIDE_CLASS,
@@ -59,6 +61,7 @@ import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 
 type WorkspaceShellProps = {
   swaggerUrl: string;
+  colorTheme?: ColorTheme;
   children: ReactNode;
   embedMount?: boolean;
   rejectedAssertion?: boolean;
@@ -72,6 +75,7 @@ type WorkspaceShellProps = {
 
 export function WorkspaceShell({
   swaggerUrl,
+  colorTheme = "dark",
   children,
   embedMount = false,
   rejectedAssertion: rejectedAssertionProp = false,
@@ -272,6 +276,7 @@ export function WorkspaceShell({
               <GlobalSearch swaggerUrl={swaggerUrl} />
               <CommandPalette />
               <NotificationCenter />
+              <ThemePreferenceControl theme={colorTheme} />
               <SessionStatusChip />
             </div>
             <div className="px-4 pb-2">

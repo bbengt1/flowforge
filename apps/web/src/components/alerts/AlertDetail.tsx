@@ -124,7 +124,7 @@ export function AlertDetail({ alertId }: AlertDetailProps) {
       <p className="text-sm">
         <Link
           href="/alerts"
-          className="text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+          className="text-fg underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
         >
           Back to alerts
         </Link>
@@ -137,20 +137,20 @@ export function AlertDetail({ alertId }: AlertDetailProps) {
       {problem ? <ProblemBanner problem={problem} /> : null}
 
       {strippedKeys.length ? (
-        <p role="status" className="text-sm text-amber-900">
+        <p role="status" className="text-sm text-fg">
           Unexpected secret fields were stripped from the API response:{" "}
           {strippedKeys.join(", ")}. Treat this as a backend contract bug.
         </p>
       ) : null}
 
       {outcome ? (
-        <p role="status" className="text-sm text-teal-900">
+        <p role="status" className="text-sm text-fg">
           {outcome}
         </p>
       ) : null}
 
       {alert ? (
-        <section className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+        <section className="space-y-4 rounded-2xl border border-border bg-bg p-6 shadow-sm">
           <header className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
               <AlertSeverityBadge
@@ -164,12 +164,12 @@ export function AlertDetail({ alertId }: AlertDetailProps) {
             <h2 className="text-xl font-semibold">
               {alertKindLabel(alert.kind)}
             </h2>
-            <p className="text-sm text-zinc-700">
+            <p className="text-sm text-fg">
               {[alert.action, alert.outcome, alert.code]
                 .filter(Boolean)
                 .join(" · ") || "Identifiers only — no details payload."}
             </p>
-            <p className="font-mono text-xs break-all text-zinc-500">
+            <p className="font-mono text-xs break-all text-fg">
               {alert.id}
               {lastRequestId ? ` · ${lastRequestId}` : ""}
             </p>
@@ -177,38 +177,38 @@ export function AlertDetail({ alertId }: AlertDetailProps) {
 
           <dl className="grid gap-2 text-sm sm:grid-cols-2">
             <div>
-              <dt className="text-zinc-500">Correlation id</dt>
+              <dt className="text-fg">Correlation id</dt>
               <dd className="break-all font-mono text-xs">
                 {alert.correlationId || "—"}
               </dd>
             </div>
             <div>
-              <dt className="text-zinc-500">Request id</dt>
+              <dt className="text-fg">Request id</dt>
               <dd className="break-all font-mono text-xs">
                 {alert.requestId || "—"}
               </dd>
             </div>
             <div>
-              <dt className="text-zinc-500">Occurred</dt>
+              <dt className="text-fg">Occurred</dt>
               <dd className="font-mono text-xs">{alert.occurredAt || "—"}</dd>
             </div>
             <div>
-              <dt className="text-zinc-500">Actor</dt>
+              <dt className="text-fg">Actor</dt>
               <dd className="break-all font-mono text-xs">
                 {alert.actorId || "—"}
               </dd>
             </div>
             <div>
-              <dt className="text-zinc-500">Resource type</dt>
+              <dt className="text-fg">Resource type</dt>
               <dd>{alert.resourceType || "—"}</dd>
             </div>
             <div>
-              <dt className="text-zinc-500">Resource id</dt>
+              <dt className="text-fg">Resource id</dt>
               <dd className="break-all font-mono text-xs">
                 {executionHref ? (
                   <Link
                     href={executionHref}
-                    className="text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                    className="text-fg underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
                   >
                     {alert.resourceId}
                   </Link>
@@ -219,13 +219,13 @@ export function AlertDetail({ alertId }: AlertDetailProps) {
             </div>
             {alert.acknowledgedAt ? (
               <div>
-                <dt className="text-zinc-500">Acknowledged</dt>
+                <dt className="text-fg">Acknowledged</dt>
                 <dd className="font-mono text-xs">{alert.acknowledgedAt}</dd>
               </div>
             ) : null}
             {alert.acknowledgedBy ? (
               <div>
-                <dt className="text-zinc-500">Acknowledged by</dt>
+                <dt className="text-fg">Acknowledged by</dt>
                 <dd className="break-all font-mono text-xs">
                   {alert.acknowledgedBy}
                 </dd>
@@ -236,7 +236,7 @@ export function AlertDetail({ alertId }: AlertDetailProps) {
           <p className="text-sm">
             <Link
               href={auditHref}
-              className="text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+              className="text-fg underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
             >
               Correlate in audit
             </Link>
@@ -254,7 +254,7 @@ export function AlertDetail({ alertId }: AlertDetailProps) {
               </button>
             </div>
           ) : (
-            <p className="text-sm text-zinc-600">
+            <p className="text-sm text-fg">
               Acknowledge requires{" "}
               <code className="font-mono text-xs">alert.ack</code> and an open
               alert. The POST is CSRF + empty{" "}

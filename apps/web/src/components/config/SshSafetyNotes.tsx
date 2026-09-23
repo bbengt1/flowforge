@@ -29,7 +29,7 @@ export function SshSafetyNotes({ extraNotes, catalog }: SshSafetyNotesProps) {
         ))}
       </ul>
       {fallback ? (
-        <p className="mt-3 text-xs text-teal-900/80">{ENGINE_CATALOG_UNAVAILABLE_HELP}</p>
+        <p className="mt-3 text-xs text-fg/80">{ENGINE_CATALOG_UNAVAILABLE_HELP}</p>
       ) : null}
     </aside>
   );

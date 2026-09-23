@@ -85,7 +85,7 @@ export function ScriptPublishStatus({
           <span className="ml-1 text-xs">revokedAt={status.revokedAt}</span>
         ) : null}
       </p>
-      <p className={revoked ? "mt-1 text-xs text-rose-900" : "mt-1 text-xs text-teal-900"}>
+      <p className={revoked ? "mt-1 text-xs text-rose-950" : "mt-1 text-xs text-teal-950"}>
         {revoked ? SCRIPT_REVOKED_STATUS_HELP : status.help}
       </p>
       {pins && pins.length > 0 ? (
@@ -133,19 +133,19 @@ export function ScriptPublishStatus({
           })}
         </ul>
       ) : null}
-      <p className={revoked ? "mt-2 text-xs text-rose-900" : "mt-2 text-xs text-teal-900"}>
+      <p className={revoked ? "mt-2 text-xs text-rose-950" : "mt-2 text-xs text-teal-950"}>
         {SCRIPT_PUBLISH_BOUNDARY_HELP}
       </p>
-      <p className={revoked ? "mt-1 text-xs text-rose-900" : "mt-1 text-xs text-teal-900"}>
+      <p className={revoked ? "mt-1 text-xs text-rose-950" : "mt-1 text-xs text-teal-950"}>
         {SCRIPT_EXECUTE_FAIL_CLOSED_HELP}
       </p>
-      <p className={revoked ? "mt-1 text-xs text-rose-800" : "mt-1 text-xs text-teal-800"}>
+      <p className={revoked ? "mt-1 text-xs text-rose-950" : "mt-1 text-xs text-teal-950"}>
         {SCRIPT_REVOKE_HELP} {SCRIPT_EMERGENCY_STOP_HELP}
       </p>
-      <p className={revoked ? "mt-1 text-xs text-rose-800" : "mt-1 text-xs text-teal-800"}>
+      <p className={revoked ? "mt-1 text-xs text-rose-950" : "mt-1 text-xs text-teal-950"}>
         {SCRIPT_NO_BLIND_RETRY_AFTER_STOP_HELP} {SCRIPT_OPS_AUDIT_SECRET_FREE_HELP}
       </p>
-      <p className={revoked ? "mt-1 text-xs text-rose-800" : "mt-1 text-xs text-teal-800"}>
+      <p className={revoked ? "mt-1 text-xs text-rose-950" : "mt-1 text-xs text-teal-950"}>
         {SCRIPT_BLOB_FORBIDDEN_MESSAGE}
       </p>
     </section>
@@ -178,7 +178,7 @@ function ScriptRevokeAction({
 
   if (!artifact) {
     return (
-      <p className="mt-1 font-sans text-xs text-zinc-600">
+      <p className="mt-1 font-sans text-xs text-teal-900">
         Inspect GET /scripts/{"{id}"} to revoke this pin.
       </p>
     );
@@ -192,7 +192,7 @@ function ScriptRevokeAction({
   }
   if (permissions != null && !canRevoke) {
     return (
-      <p className="mt-1 font-sans text-xs text-zinc-600">
+      <p className="mt-1 font-sans text-xs text-teal-900">
         {SCRIPT_REVOKE_FORBIDDEN_MESSAGE}
       </p>
     );
@@ -253,7 +253,7 @@ function ScriptRevokeAction({
             maxLength={256}
             autoComplete="off"
             onChange={(event) => setReason(event.target.value)}
-            className="mt-1 w-full rounded-lg border border-zinc-300 px-2 py-1 font-sans text-sm"
+            className="mt-1 w-full rounded-lg border border-border px-2 py-1 font-sans text-sm"
           />
         </Field>
         {problem ? <ProblemBanner problem={problem} className="mt-2" /> : null}

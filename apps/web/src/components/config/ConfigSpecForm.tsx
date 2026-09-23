@@ -49,7 +49,7 @@ export function ConfigSpecForm({
   onChange,
 }: ConfigSpecFormProps) {
   const inputClass =
-    "mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:bg-zinc-50";
+    "mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:bg-bg";
   const [engine, setEngine] = useState<KubernetesEngineCatalog | null>(null);
   const [sshEngine, setSshEngine] = useState<SshEngineCatalog | null>(null);
   const [runtimeMap, setRuntimeMap] = useState<ScriptRuntimeProfileMap | null>(
@@ -222,7 +222,7 @@ export function ConfigSpecForm({
               })
             }
           />
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-fg">
             Optional operator metadata for E7.2. Default template is{" "}
             <code className="font-mono">{KUBERNETES_ROLE_TEMPLATE}</code>.
             ClusterRoles are not MVP. Paths come from GET /kubernetes/catalog.

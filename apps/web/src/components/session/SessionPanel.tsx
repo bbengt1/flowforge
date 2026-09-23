@@ -318,7 +318,7 @@ export function SessionPanel() {
             {audit.length === 0 ? (
               <p className={`mt-3 text-sm ${FF_SETTINGS_MUTED_CLASS}`}>No audit events loaded.</p>
             ) : (
-              <ul className="mt-3 divide-y divide-white/10 text-sm">
+              <ul className="mt-3 divide-y divide-border text-sm">
                 {audit.map((item) => (
                   <li key={item.id || `${item.event_type}-${item.created_at}`} className="py-2">
                     <p className="font-medium">

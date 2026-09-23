@@ -96,12 +96,12 @@ export function NodeInspector({
   return (
     <section
       aria-labelledby="inspector-heading"
-      className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+      className="rounded-2xl border border-border bg-bg p-5 shadow-sm"
     >
       <h2 id="inspector-heading" className="text-base font-semibold">
         Parameters
       </h2>
-      <p className="mt-1 text-sm text-zinc-600">
+      <p className="mt-1 text-sm text-fg">
         Inspector <span className="font-medium">edits</span> name and
         type-specific <code className="font-mono text-xs">with</code>{" "}
         parameters from catalog{" "}
@@ -111,14 +111,14 @@ export function NodeInspector({
         plaintext secrets. No expression language.
       </p>
       {constraint ? (
-        <p role="status" className="mt-2 text-sm text-amber-950">
+        <p role="status" className="mt-2 text-sm text-fg">
           {constraint}
         </p>
       ) : null}
 
       {showNodeList ? (
         placeable.length === 0 ? (
-          <p className="mt-4 text-sm text-zinc-600">
+          <p className="mt-4 text-sm text-fg">
             Insert a core node from the palette to configure it.
           </p>
         ) : (
@@ -131,11 +131,13 @@ export function NodeInspector({
                   className={`w-full rounded-lg px-3 py-2 text-left text-sm ${
                     node.id === selectedId
                       ? "bg-teal-50 font-medium text-teal-950"
-                      : "bg-zinc-50 text-zinc-800 hover:bg-zinc-100"
+                      : "bg-bg text-fg hover:bg-bg"
                   }`}
                 >
                   <span className="font-mono text-xs">{node.id}</span>
-                  <span className="mx-1 text-zinc-400">·</span>
+                  <span className={`mx-1 ${node.id === selectedId ? "text-teal-800" : "text-fg"}`}>
+                    ·
+                  </span>
                   {node.name || node.type}
                 </button>
               </li>
@@ -143,7 +145,7 @@ export function NodeInspector({
           </ul>
         )
       ) : selected ? (
-        <p className="mt-3 font-mono text-xs text-zinc-500">
+        <p className="mt-3 font-mono text-xs text-fg">
           {selected.id} · {selected.type}
         </p>
       ) : null}
@@ -198,12 +200,12 @@ function SelectedNodeIdentity({
   const [name, setName] = useState(node.name);
   return (
     <div className="mt-4 space-y-3">
-      <p className="font-mono text-xs text-zinc-500">{node.type}</p>
+      <p className="font-mono text-xs text-fg">{node.type}</p>
       {entry ? <CatalogHints entry={entry} /> : null}
       <Field
         id={`ndv-name-${node.id}`}
         label="Name"
-        labelClassName="text-zinc-600"
+        labelClassName="text-fg"
         data-ndv-field="name"
       >
         <input
@@ -215,7 +217,7 @@ function SelectedNodeIdentity({
               onRename?.(node.id, name.trim());
             }
           }}
-          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm disabled:bg-zinc-50"
+          className="mt-1 w-full rounded-lg border border-border px-3 py-1.5 text-sm disabled:bg-bg"
         />
       </Field>
     </div>
@@ -254,7 +256,7 @@ function SelectedCatalogedNode({
         onRename={onRename}
       />
       {ndvParametersOwnedByScriptPanel(node.type) ? (
-        <p className="text-xs text-zinc-500">
+        <p className="text-xs text-fg">
           Script source, I/O schema, and retry controls stay type-specific
           editors in this panel — not a JSON blob.
         </p>
@@ -293,7 +295,7 @@ function NodeConfigForm({
 
   if (!config) {
     return (
-      <p className="mt-4 text-sm text-zinc-600">
+      <p className="mt-4 text-sm text-fg">
         Could not read bounded <code className="font-mono text-xs">with</code>{" "}
         fields for this node.
       </p>
@@ -308,12 +310,12 @@ function NodeConfigForm({
         setErrors(onApply(node.id, name, config));
       }}
     >
-      <p className="font-mono text-xs text-zinc-500">{node.type}</p>
+      <p className="font-mono text-xs text-fg">{node.type}</p>
       {entry ? <CatalogHints entry={entry} /> : null}
       <Field
         id={`ndv-config-name-${node.id}`}
         label="Name"
-        labelClassName="text-zinc-600"
+        labelClassName="text-fg"
         data-ndv-field="name"
         invalid={errors.length > 0}
         errorId={errors.length > 0 ? "ndv-node-errors" : undefined}
@@ -322,14 +324,14 @@ function NodeConfigForm({
           value={name}
           disabled={!canEdit || pending}
           onChange={(event) => setName(event.target.value)}
-          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm disabled:bg-zinc-50"
+          className="mt-1 w-full rounded-lg border border-border px-3 py-1.5 text-sm disabled:bg-bg"
         />
       </Field>
       <fieldset disabled={!canEdit || pending} className="space-y-3">
         <ConfigFields config={config} onChange={setConfig} />
       </fieldset>
       {errors.length > 0 ? (
-        <FieldError id="ndv-node-errors" className="space-y-1 text-sm text-amber-900">
+        <FieldError id="ndv-node-errors" className="space-y-1 text-sm text-fg">
           {errors.map((error) => (
             <li key={error}>{error}</li>
           ))}
@@ -352,7 +354,7 @@ function CatalogHints({
   entry: CoreNeutralPaletteEntry | ActionLibraryEntry;
 }) {
   return (
-    <div className="rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+    <div className="rounded-lg bg-bg px-3 py-2 text-xs text-fg">
       <p className="font-mono">
         {[
           ...(entry.inputs ?? []).map((port) => formatPort(port, "in")),
@@ -413,7 +415,7 @@ function ConfigFields({
               onChange={(compare) => onChange({ ...config, compare })}
             />
           ) : (
-            <p className="text-xs text-zinc-500">exists must not include compare.</p>
+            <p className="text-xs text-fg">exists must not include compare.</p>
           )}
         </>
       );
@@ -461,7 +463,7 @@ function ConfigFields({
             id="ndv-additional-properties"
             label="additionalProperties"
             controlPlacement="before-label"
-            className="flex items-center gap-2 text-sm text-zinc-700"
+            className="flex items-center gap-2 text-sm text-fg"
             labelClassName=""
             data-ndv-field="additionalProperties"
           >
@@ -524,9 +526,9 @@ function SetFieldsEditor({
   const kinds: SetFieldKind[] = ["string", "number", "boolean", "null"];
   return (
     <fieldset className="space-y-2" data-ndv-field="fields">
-      <legend className="text-sm text-zinc-600">value fields</legend>
+      <legend className="text-sm text-fg">value fields</legend>
       {fields.map((field, index) => (
-        <div key={`${field.key}-${index}`} className="space-y-1 rounded-lg border border-zinc-100 p-2">
+        <div key={`${field.key}-${index}`} className="space-y-1 rounded-lg border border-border p-2">
           <input
             aria-label={`Field ${index + 1} key`}
             value={field.key}
@@ -534,7 +536,7 @@ function SetFieldsEditor({
             onChange={(event) =>
               onChange(replaceAt(fields, index, { ...field, key: event.target.value }))
             }
-            className="w-full rounded-lg border border-zinc-300 px-2 py-1.5 font-mono text-xs"
+            className="w-full rounded-lg border border-border px-2 py-1.5 font-mono text-xs"
           />
           <div className="flex gap-2">
             <select
@@ -548,7 +550,7 @@ function SetFieldsEditor({
                   }),
                 )
               }
-              className="w-28 rounded-lg border border-zinc-300 px-2 py-1.5 text-xs"
+              className="w-28 rounded-lg border border-border px-2 py-1.5 text-xs"
             >
               {kinds.map((kind) => (
                 <option key={kind} value={kind}>
@@ -563,13 +565,13 @@ function SetFieldsEditor({
               onChange={(event) =>
                 onChange(replaceAt(fields, index, { ...field, value: event.target.value }))
               }
-              className="min-w-0 flex-1 rounded-lg border border-zinc-300 px-2 py-1.5 font-mono text-xs disabled:bg-zinc-50"
+              className="min-w-0 flex-1 rounded-lg border border-border px-2 py-1.5 font-mono text-xs disabled:bg-bg"
             />
           </div>
           <button
             type="button"
             onClick={() => onChange(fields.filter((_, item) => item !== index))}
-            className="text-xs text-zinc-600 underline"
+            className="text-xs text-fg underline"
           >
             Remove
           </button>
@@ -578,7 +580,7 @@ function SetFieldsEditor({
       <button
         type="button"
         onClick={() => onChange([...fields, { key: "", kind: "string", value: "" }])}
-        className="text-sm text-teal-800 underline decoration-teal-200 underline-offset-2"
+        className="text-sm text-fg underline decoration-teal-200 underline-offset-2"
       >
         Add field
       </button>
@@ -604,12 +606,12 @@ function MapFieldsEditor({
   );
   return (
     <fieldset className="space-y-2" data-ndv-field-path-editor="core-map" data-ndv-field="mapping">
-      <legend className="text-sm text-zinc-600">mapping dest → from</legend>
-      <p className="text-xs text-zinc-500">
+      <legend className="text-sm text-fg">mapping dest → from</legend>
+      <p className="text-xs text-fg">
         Dotted identifier paths only. Incompatible or template paths are blocked.
       </p>
       {mapping.map((row, index) => (
-        <div key={`${row.dest}-${index}`} className="space-y-1 rounded-lg border border-zinc-100 p-2">
+        <div key={`${row.dest}-${index}`} className="space-y-1 rounded-lg border border-border p-2">
           <input
             aria-label={`Mapping ${index + 1} dest`}
             value={row.dest}
@@ -617,7 +619,7 @@ function MapFieldsEditor({
             onChange={(event) =>
               onChange(replaceAt(mapping, index, { ...row, dest: event.target.value }))
             }
-            className="w-full rounded-lg border border-zinc-300 px-2 py-1.5 font-mono text-xs"
+            className="w-full rounded-lg border border-border px-2 py-1.5 font-mono text-xs"
           />
           <input
             aria-label={`Mapping ${index + 1} from`}
@@ -626,7 +628,7 @@ function MapFieldsEditor({
             onChange={(event) =>
               onChange(replaceAt(mapping, index, { ...row, from: event.target.value }))
             }
-            className="w-full rounded-lg border border-zinc-300 px-2 py-1.5 font-mono text-xs"
+            className="w-full rounded-lg border border-border px-2 py-1.5 font-mono text-xs"
           />
           <select
             aria-label={`Mapping ${index + 1} convert`}
@@ -639,7 +641,7 @@ function MapFieldsEditor({
                 }),
               )
             }
-            className="w-full rounded-lg border border-zinc-300 px-2 py-1.5 text-xs"
+            className="w-full rounded-lg border border-border px-2 py-1.5 text-xs"
           >
             <option value="">no convert</option>
             {MAP_CONVERT_KINDS.map((kind) => (
@@ -651,7 +653,7 @@ function MapFieldsEditor({
           <button
             type="button"
             onClick={() => onChange(mapping.filter((_, item) => item !== index))}
-            className="text-xs text-zinc-600 underline"
+            className="text-xs text-fg underline"
           >
             Remove
           </button>
@@ -660,12 +662,12 @@ function MapFieldsEditor({
       <button
         type="button"
         onClick={() => onChange([...mapping, { dest: "", from: "" }])}
-        className="text-sm text-teal-800 underline decoration-teal-200 underline-offset-2"
+        className="text-sm text-fg underline decoration-teal-200 underline-offset-2"
       >
         Add mapping
       </button>
       {validation.errors.length > 0 ? (
-        <ul className="space-y-1 text-sm text-amber-900" data-ndv-mapping-errors>
+        <ul className="space-y-1 text-sm text-fg" data-ndv-mapping-errors>
           {validation.errors.map((error) => (
             <li key={error}>{error}</li>
           ))}
@@ -690,14 +692,14 @@ function TextField({
     <Field
       id={`ndv-text-${label}`}
       label={label}
-      labelClassName="text-zinc-600"
+      labelClassName="text-fg"
       hint={hint}
       data-ndv-field={label}
     >
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 font-mono text-sm"
+        className="mt-1 w-full rounded-lg border border-border px-3 py-1.5 font-mono text-sm"
       />
     </Field>
   );
@@ -718,13 +720,13 @@ function SelectField({
     <Field
       id={`ndv-select-${label}`}
       label={label}
-      labelClassName="text-zinc-600"
+      labelClassName="text-fg"
       data-ndv-field={label === "schema.type" ? "schemaType" : label}
     >
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
+        className="mt-1 w-full rounded-lg border border-border px-3 py-1.5 text-sm"
       >
         {options.map((option) => (
           <option key={option || "unset"} value={option}>

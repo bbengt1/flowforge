@@ -353,7 +353,7 @@ export function WebhookTriggerPanel({
     <section
       id="webhook-triggers"
       aria-labelledby="webhook-triggers-heading"
-      className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+      className="rounded-2xl border border-border bg-bg p-5 shadow-sm"
     >
       <DestructiveUndoBar
         ticket={webhookUndo.ticket}
@@ -366,13 +366,13 @@ export function WebhookTriggerPanel({
       />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
+          <p className="text-sm font-medium tracking-wide text-fg uppercase">
             E10.2 · Webhook triggers · #113
           </p>
           <h2 id="webhook-triggers-heading" className="text-base font-semibold">
             Replay-safe webhook config
           </h2>
-          <p className="mt-1 text-sm text-zinc-600">
+          <p className="mt-1 text-sm text-fg">
             {workflowName ? `${workflowName}. ` : null}
             Pin a published version and enable it. Activation above composes
             that enable + pin — this form is create, rotate, and limits.{" "}
@@ -384,7 +384,7 @@ export function WebhookTriggerPanel({
             type="button"
             disabled={pending !== null}
             onClick={() => void refresh()}
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
+            className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10 disabled:opacity-60"
           >
             {pending === "list" ? "Refreshing…" : "Refresh"}
           </button>
@@ -392,14 +392,14 @@ export function WebhookTriggerPanel({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50"
+              className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10"
             >
               Close
             </button>
           ) : (
             <Link
               href={editorWebhookTriggersHref(workflowId)}
-              className="text-sm text-teal-800 underline"
+              className="text-sm text-fg underline"
             >
               Editor anchor
             </Link>
@@ -407,13 +407,13 @@ export function WebhookTriggerPanel({
         </div>
       </div>
 
-      <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+      <div className="mt-4 rounded-xl border border-border bg-bg p-3">
         <h3 className="text-sm font-semibold">Public ingress (operators)</h3>
-        <p className="mt-1 text-sm text-zinc-600">{webhookIngressHelp(catalog)}</p>
-        <p className="mt-2 text-xs text-zinc-500">{WEBHOOK_INGRESS_HELP}</p>
+        <p className="mt-1 text-sm text-fg">{webhookIngressHelp(catalog)}</p>
+        <p className="mt-2 text-xs text-fg">{WEBHOOK_INGRESS_HELP}</p>
       </div>
 
-      <ul className="mt-4 grid gap-2 text-sm text-zinc-600">
+      <ul className="mt-4 grid gap-2 text-sm text-fg">
         <li>{WEBHOOK_SIGNATURE_HELP}</li>
         <li>{WEBHOOK_REPLAY_HELP}</li>
         <li>{WEBHOOK_RATE_HELP}</li>
@@ -423,13 +423,13 @@ export function WebhookTriggerPanel({
       </ul>
 
       {catalogFallback ? (
-        <p role="status" className="mt-4 text-sm text-amber-950">
+        <p role="status" className="mt-4 text-sm text-fg">
           {WEBHOOK_CATALOG_FALLBACK_MESSAGE}
         </p>
       ) : null}
 
       {secretLeak ? (
-        <p role="status" className="mt-4 text-sm text-amber-950">
+        <p role="status" className="mt-4 text-sm text-fg">
           {WEBHOOK_SECRET_LEAK_MESSAGE}
         </p>
       ) : null}
@@ -441,15 +441,15 @@ export function WebhookTriggerPanel({
       ) : null}
 
       {authMessage ? (
-        <p role="status" className="mt-4 text-sm font-medium text-rose-950">
+        <p role="status" className="mt-4 text-sm font-medium text-danger">
           {authMessage}
         </p>
       ) : null}
 
       {yamlDeclared.length > 0 ? (
-        <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+        <div className="mt-4 rounded-xl border border-border bg-bg p-3">
           <h3 className="text-sm font-semibold">Declared in YAML</h3>
-          <ul className="mt-2 space-y-1 text-sm text-zinc-600">
+          <ul className="mt-2 space-y-1 text-sm text-fg">
             {yamlDeclared.map((item) => (
               <li key={item.id}>
                 <span className="font-mono text-xs">{item.id}</span>
@@ -465,7 +465,7 @@ export function WebhookTriggerPanel({
       <div className="mt-5">
         <h3 className="text-sm font-semibold">Configured triggers</h3>
         {items.length === 0 ? (
-          <p className="mt-2 text-sm text-zinc-600">
+          <p className="mt-2 text-sm text-fg">
             No webhook trigger metadata from the API. Create one below when you
             have workflow.edit. publicId is server-generated (`wh_`…).
           </p>
@@ -474,15 +474,15 @@ export function WebhookTriggerPanel({
             {items.map((item) => (
               <li
                 key={item.id}
-                className="rounded-xl border border-zinc-200 px-4 py-3"
+                className="rounded-xl border border-border px-4 py-3"
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-mono text-sm break-all">{item.publicId}</p>
-                    <p className="mt-1 font-mono text-xs break-all text-zinc-600">
+                    <p className="mt-1 font-mono text-xs break-all text-fg">
                       {item.ingressPath}
                     </p>
-                    <p className="mt-1 text-xs text-zinc-500">
+                    <p className="mt-1 text-xs text-fg">
                       status {item.status}
                       {item.secretCredentialId
                         ? ` · secretCredentialId ${item.secretCredentialId}`
@@ -491,7 +491,7 @@ export function WebhookTriggerPanel({
                         ? ` · version ${item.workflowVersionId}`
                         : ""}
                     </p>
-                    <p className="mt-1 text-xs text-zinc-500">
+                    <p className="mt-1 text-xs text-fg">
                       {item.contentType} · {item.maxBodyBytes} B ·{" "}
                       {item.rateLimitPerMinute}/min · concurrency{" "}
                       {item.maxConcurrency} · skew {item.clockSkewSeconds}s ·
@@ -508,7 +508,7 @@ export function WebhookTriggerPanel({
                         type="button"
                         disabled={pending !== null}
                         onClick={() => startEdit(item)}
-                        className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
+                        className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10 disabled:opacity-60"
                       >
                         Edit
                       </button>
@@ -516,7 +516,7 @@ export function WebhookTriggerPanel({
                         type="button"
                         disabled={pending !== null}
                         onClick={() => void onToggle(item)}
-                        className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
+                        className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10 disabled:opacity-60"
                       >
                         {item.status === "disabled" ? "Enable" : "Disable"}
                       </button>
@@ -536,7 +536,7 @@ export function WebhookTriggerPanel({
                     <Field
                       id={`webhook-rotate-${item.id}`}
                       label="Rotate secret"
-                      labelClassName="text-zinc-600"
+                      labelClassName="text-fg"
                     >
                       <input
                         type="password"
@@ -548,18 +548,18 @@ export function WebhookTriggerPanel({
                             [item.id]: event.target.value,
                           }))
                         }
-                        className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-sm"
+                        className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-1.5 font-mono text-sm"
                       />
                     </Field>
                     <button
                       type="button"
                       disabled={pending !== null}
                       onClick={() => void onRotate(item.id)}
-                      className="self-end rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
+                      className="self-end rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10 disabled:opacity-60"
                     >
                       {pending === `rotate:${item.id}` ? "Rotating…" : "Rotate"}
                     </button>
-                    <p className="sm:col-span-2 text-xs text-zinc-500">
+                    <p className="sm:col-span-2 text-xs text-fg">
                       {WEBHOOK_ROTATE_SECRET_HELP}
                     </p>
                   </div>
@@ -577,7 +577,7 @@ export function WebhookTriggerPanel({
       </div>
 
       {message ? (
-        <p role="status" className="mt-4 text-sm text-zinc-700">
+        <p role="status" className="mt-4 text-sm text-fg">
           {message}
         </p>
       ) : null}
@@ -597,7 +597,7 @@ export function WebhookTriggerPanel({
           <h3 className="text-sm font-semibold">
             {editingId ? "Update webhook trigger" : "Create webhook trigger"}
           </h3>
-          <p className="text-xs text-zinc-500">{WEBHOOK_FIELD_MAPPING_HELP}</p>
+          <p className="text-xs text-fg">{WEBHOOK_FIELD_MAPPING_HELP}</p>
           {yaml ? (
             <button
               type="button"
@@ -607,7 +607,7 @@ export function WebhookTriggerPanel({
                   ...seedDraftFromYaml(yaml),
                 }))
               }
-              className="justify-self-start text-sm text-teal-800 underline"
+              className="justify-self-start text-sm text-fg underline"
             >
               Load contentType from YAML
             </button>
@@ -615,7 +615,7 @@ export function WebhookTriggerPanel({
           <Field
             id="webhook-version"
             label="Published workflow version"
-            labelClassName="text-zinc-600"
+            labelClassName="text-fg"
             invalid={localErrors.length > 0}
             errorId={localErrors.length > 0 ? "webhook-form-error" : undefined}
           >
@@ -624,7 +624,7 @@ export function WebhookTriggerPanel({
               onChange={(event) =>
                 patchDraft({ workflowVersionId: event.target.value })
               }
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+              className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-1.5 text-sm"
             >
               <option value="">
                 {published.length === 0
@@ -641,7 +641,7 @@ export function WebhookTriggerPanel({
           {!editingId ? (
             <>
               <fieldset className="grid gap-2">
-                <legend className="text-sm text-zinc-600">Secret</legend>
+                <legend className="text-sm text-fg">Secret</legend>
                 <Field
                   id="webhook-secret-vault"
                   label="Existing vault webhook_secret"
@@ -689,7 +689,7 @@ export function WebhookTriggerPanel({
                 <Field
                   id="webhook-inline-secret"
                   label="Inline webhook secret"
-                  labelClassName="text-zinc-600"
+                  labelClassName="text-fg"
                   invalid={localErrors.length > 0}
                   errorId={localErrors.length > 0 ? "webhook-form-error" : undefined}
                 >
@@ -700,25 +700,25 @@ export function WebhookTriggerPanel({
                     onChange={(event) =>
                       patchDraft({ inlineSecret: event.target.value })
                     }
-                    className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-sm"
+                    className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-1.5 font-mono text-sm"
                   />
                 </Field>
               )}
             </>
           ) : (
-            <p className="text-xs text-zinc-500">{WEBHOOK_ROTATE_SECRET_HELP}</p>
+            <p className="text-xs text-fg">{WEBHOOK_ROTATE_SECRET_HELP}</p>
           )}
           <Field
             id="webhook-content-type"
             label="Accepted content type"
-            labelClassName="text-zinc-600"
+            labelClassName="text-fg"
             invalid={localErrors.length > 0}
             errorId={localErrors.length > 0 ? "webhook-form-error" : undefined}
           >
             <input
               value={draft.contentType}
               onChange={(event) => patchDraft({ contentType: event.target.value })}
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-sm"
+              className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-1.5 font-mono text-sm"
             />
           </Field>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -775,7 +775,7 @@ export function WebhookTriggerPanel({
           <Field
             id="webhook-field-mapping"
             label="Field mapping (one dest: from per line)"
-            labelClassName="text-zinc-600"
+            labelClassName="text-fg"
             invalid={localErrors.length > 0}
             errorId={localErrors.length > 0 ? "webhook-form-error" : undefined}
           >
@@ -786,15 +786,15 @@ export function WebhookTriggerPanel({
               }
               rows={3}
               placeholder="alertId: payload.id"
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-xs"
+              className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-1.5 font-mono text-xs"
             />
           </Field>
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-fg">
             Signature-before-parse, timestamp, and replay protection are required.
             There is no off switch. {WEBHOOK_CSRF_HELP}
           </p>
           {localErrors.length > 0 ? (
-            <FieldError id="webhook-form-error" className="text-sm text-rose-900">
+            <FieldError id="webhook-form-error" className="text-sm text-danger">
               {localErrors.map((error) => (
                 <li key={error}>{error}</li>
               ))}
@@ -826,7 +826,7 @@ export function WebhookTriggerPanel({
                     }),
                   );
                 }}
-                className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50"
+                className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10"
               >
                 Cancel edit
               </button>
@@ -834,7 +834,7 @@ export function WebhookTriggerPanel({
           </div>
         </form>
       ) : (
-        <p className="mt-4 text-sm text-zinc-600">{WEBHOOK_FORBIDDEN_MESSAGE}</p>
+        <p className="mt-4 text-sm text-fg">{WEBHOOK_FORBIDDEN_MESSAGE}</p>
       )}
       {deleting ? (
         <ConfirmDestructive
@@ -882,7 +882,7 @@ function NumberField({
     <Field
       id={id}
       label={label}
-      labelClassName="text-zinc-600"
+      labelClassName="text-fg"
       invalid={invalid}
       errorId={invalid ? "webhook-form-error" : undefined}
     >
@@ -890,7 +890,7 @@ function NumberField({
         inputMode="numeric"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-sm"
+        className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-1.5 font-mono text-sm"
       />
     </Field>
   );
@@ -907,7 +907,7 @@ function CopyButton({ label, value }: { label: string; value: string }) {
           window.setTimeout(() => setCopied(false), 1500);
         });
       }}
-      className="rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs hover:bg-zinc-50"
+      className="rounded-lg border border-border bg-bg px-2 py-1 text-xs hover:bg-fg/10"
     >
       {copied ? "Copied" : label}
     </button>

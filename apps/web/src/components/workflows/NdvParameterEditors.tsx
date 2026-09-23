@@ -45,8 +45,8 @@ export function NdvParameterEditors({
         />
       ))}
       {advanced.length > 0 ? (
-        <details className="rounded-lg border border-zinc-200 px-3 py-2">
-          <summary className="cursor-pointer text-sm font-medium text-zinc-700">
+        <details className="rounded-lg border border-border px-3 py-2">
+          <summary className="cursor-pointer text-sm font-medium text-fg">
             Advanced
           </summary>
           <div className="mt-3 space-y-3">
@@ -83,7 +83,7 @@ function NdvParameterField({
       <Field
         id={`ndv-param-${editor.name}`}
         label={label}
-        className="flex items-center gap-2 text-sm text-zinc-700"
+        className="flex items-center gap-2 text-sm text-fg"
         labelClassName=""
         controlPlacement="before-label"
         data-ndv-field={editor.name}
@@ -103,7 +103,7 @@ function NdvParameterField({
       <Field
         id={`ndv-param-${editor.name}`}
         label={label}
-        labelClassName="text-zinc-600"
+        labelClassName="text-fg"
         data-ndv-parameter-control="retry-policy"
         data-ndv-field={editor.name}
         hint={
@@ -120,7 +120,7 @@ function NdvParameterField({
           onChange={(event) =>
             onChange({ maxAttempts: Number(event.target.value) || 0 })
           }
-          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm disabled:bg-zinc-50"
+          className="mt-1 w-full rounded-lg border border-border px-3 py-1.5 text-sm disabled:bg-bg"
         />
       </Field>
     );
@@ -132,15 +132,15 @@ function NdvParameterField({
     };
     return (
       <fieldset
-        className="space-y-2 rounded-lg border border-zinc-100 p-2"
+        className="space-y-2 rounded-lg border border-border p-2"
         data-ndv-parameter-control="resource-identity"
         data-ndv-field={editor.name}
       >
-        <legend className="text-sm text-zinc-600">{label}</legend>
+        <legend className="text-sm text-fg">{label}</legend>
         <Field
           id={`ndv-param-${editor.name}-kind`}
           label="kind"
-          labelClassName="text-zinc-600"
+          labelClassName="text-fg"
         >
           <input
             value={identity.kind}
@@ -148,13 +148,13 @@ function NdvParameterField({
             onChange={(event) =>
               onChange({ kind: event.target.value, name: identity.name })
             }
-            className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 font-mono text-sm disabled:bg-zinc-50"
+            className="mt-1 w-full rounded-lg border border-border px-3 py-1.5 font-mono text-sm disabled:bg-bg"
           />
         </Field>
         <Field
           id={`ndv-param-${editor.name}-name`}
           label="name"
-          labelClassName="text-zinc-600"
+          labelClassName="text-fg"
         >
           <input
             value={identity.name}
@@ -162,11 +162,11 @@ function NdvParameterField({
             onChange={(event) =>
               onChange({ kind: identity.kind, name: event.target.value })
             }
-            className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 font-mono text-sm disabled:bg-zinc-50"
+            className="mt-1 w-full rounded-lg border border-border px-3 py-1.5 font-mono text-sm disabled:bg-bg"
           />
         </Field>
         {editor.description ? (
-          <p className="text-xs text-zinc-500">{editor.description}</p>
+          <p className="text-xs text-fg">{editor.description}</p>
         ) : null}
       </fieldset>
     );
@@ -177,7 +177,7 @@ function NdvParameterField({
       <Field
         id={`ndv-param-${editor.name}`}
         label={label}
-        labelClassName="text-zinc-600"
+        labelClassName="text-fg"
         data-ndv-field={editor.name}
         hint={editor.description}
       >
@@ -185,7 +185,7 @@ function NdvParameterField({
           value={text}
           disabled={disabled || editor.readOnly}
           onChange={(event) => onChange(event.target.value)}
-          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm disabled:bg-zinc-50"
+          className="mt-1 w-full rounded-lg border border-border px-3 py-1.5 text-sm disabled:bg-bg"
         >
           {(editor.enumValues ?? []).map((item) => (
             <option key={item} value={item}>
@@ -201,7 +201,7 @@ function NdvParameterField({
       <Field
         id={`ndv-param-${editor.name}`}
         label={label}
-        labelClassName="text-zinc-600"
+        labelClassName="text-fg"
         data-ndv-parameter-control="object-lines"
         data-ndv-field={editor.name}
         hint={
@@ -216,7 +216,7 @@ function NdvParameterField({
             onChange(ndvParameterPatchValue(editor, event.target.value))
           }
           rows={4}
-          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 font-mono text-sm disabled:bg-zinc-50"
+          className="mt-1 w-full rounded-lg border border-border px-3 py-1.5 font-mono text-sm disabled:bg-bg"
         />
       </Field>
     );
@@ -226,7 +226,7 @@ function NdvParameterField({
       <Field
         id={`ndv-param-${editor.name}`}
         label={label}
-        labelClassName="text-zinc-600"
+        labelClassName="text-fg"
         data-ndv-field={editor.name}
         hint={editor.description}
       >
@@ -235,7 +235,7 @@ function NdvParameterField({
           disabled={disabled || editor.readOnly}
           onChange={(event) => onChange(event.target.value)}
           rows={editor.name === "manifests" || editor.name === "source" ? 8 : 4}
-          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 font-mono text-sm disabled:bg-zinc-50"
+          className="mt-1 w-full rounded-lg border border-border px-3 py-1.5 font-mono text-sm disabled:bg-bg"
         />
       </Field>
     );
@@ -245,7 +245,7 @@ function NdvParameterField({
       <Field
         id={`ndv-param-${editor.name}`}
         label={label}
-        labelClassName="text-zinc-600"
+        labelClassName="text-fg"
         data-ndv-field={editor.name}
         hint={editor.description}
       >
@@ -254,7 +254,7 @@ function NdvParameterField({
           value={ndvSafeDisplayScalar(value === undefined ? editor.defaultValue : value)}
           disabled={disabled || editor.readOnly}
           onChange={(event) => onChange(Number(event.target.value))}
-          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm disabled:bg-zinc-50"
+          className="mt-1 w-full rounded-lg border border-border px-3 py-1.5 text-sm disabled:bg-bg"
         />
       </Field>
     );
@@ -263,7 +263,7 @@ function NdvParameterField({
     <Field
       id={`ndv-param-${editor.name}`}
       label={label}
-      labelClassName="text-zinc-600"
+      labelClassName="text-fg"
       data-ndv-field={editor.name}
       hint={editor.description}
     >
@@ -272,7 +272,7 @@ function NdvParameterField({
         readOnly={editor.readOnly}
         disabled={disabled || editor.readOnly}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 font-mono text-sm disabled:bg-zinc-50"
+        className="mt-1 w-full rounded-lg border border-border px-3 py-1.5 font-mono text-sm disabled:bg-bg"
       />
     </Field>
   );

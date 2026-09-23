@@ -6,10 +6,6 @@ body {
   min-height: 100%;
 }
 
-html {
-  color-scheme: dark;
-}
-
 body {
   background: var(--ff-canvas);
   color: var(--ff-text);
@@ -354,11 +350,11 @@ body {
   border-start-end-radius: 0;
   border-end-end-radius: 0;
   background: var(--ff-explorer-nav);
-  color: var(--ff-text);
+  color: var(--ff-explorer-ink);
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--ff-text) 22%, transparent) transparent;
+  scrollbar-color: color-mix(in srgb, var(--ff-explorer-ink) 22%, transparent) transparent;
   padding: var(--ff-space);
 }
 
@@ -367,7 +363,7 @@ body {
 }
 
 .ff-explorer-tree.ff-overview-rail::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--ff-text) 22%, transparent);
+  background: color-mix(in srgb, var(--ff-explorer-ink) 22%, transparent);
   border-radius: 4px;
 }
 
@@ -398,12 +394,12 @@ body {
   border: 1px solid transparent;
   border-radius: 2px;
   background: transparent;
-  color: var(--ff-text);
+  color: var(--ff-explorer-ink);
   box-sizing: border-box;
 }
 
 .ff-explorer-nav-row:hover:not(.ff-explorer-nav-row-selected) {
-  background: color-mix(in srgb, var(--ff-text) 6%, var(--ff-explorer-nav));
+  background: color-mix(in srgb, var(--ff-explorer-ink) 6%, var(--ff-explorer-nav));
 }
 
 .ff-explorer-nav-row-selected {
@@ -422,7 +418,7 @@ body {
   padding: 0;
   border: none;
   background: transparent;
-  color: var(--ff-text);
+  color: var(--ff-explorer-ink);
 }
 
 .ff-explorer-nav-chevron svg {
@@ -439,7 +435,7 @@ body {
   padding: 0 var(--ff-space);
   border: none;
   background: transparent;
-  color: var(--ff-text);
+  color: var(--ff-explorer-ink);
   text-align: start;
   font-size: var(--ff-type-body);
   line-height: 1.2;
@@ -463,7 +459,7 @@ body {
   padding: 0 var(--ff-space);
   font-size: var(--ff-type-body);
   background: var(--ff-explorer-nav);
-  color: var(--ff-text);
+  color: var(--ff-explorer-ink);
   border: 1px solid var(--ff-explorer-row-selected-border);
   border-radius: 2px;
 }
@@ -807,9 +803,9 @@ html[dir="rtl"] .ff-explorer-row.ff-explorer-row-selected {
 }
 
 .ff-editor-invalid {
-  border: 2px solid #d97706;
-  background: color-mix(in srgb, #d97706 18%, var(--ff-canvas));
-  color: #fde68a;
+  border: 2px solid var(--ff-warning);
+  background: color-mix(in srgb, var(--ff-warning) 18%, var(--ff-canvas));
+  color: var(--ff-warning-foreground);
 }
 
 .ff-editor-banner {
@@ -882,9 +878,9 @@ html[dir="rtl"] .ff-explorer-row.ff-explorer-row-selected {
 }
 
 .ff-inbox-row-indeterminate {
-  border-inline-start: 4px solid #d97706;
-  background: color-mix(in srgb, #d97706 18%, var(--ff-canvas));
-  color: #fde68a;
+  border-inline-start: 4px solid var(--ff-warning);
+  background: color-mix(in srgb, var(--ff-warning) 18%, var(--ff-canvas));
+  color: var(--ff-warning-foreground);
   cursor: pointer;
 }
 
@@ -1084,15 +1080,15 @@ html[dir="rtl"] .ff-explorer-row.ff-explorer-row-selected {
 }
 
 .ff-loud-indeterminate {
-  border: 2px solid #d97706;
-  background: color-mix(in srgb, #d97706 18%, var(--ff-canvas));
-  color: #fde68a;
+  border: 2px solid var(--ff-warning);
+  background: color-mix(in srgb, var(--ff-warning) 18%, var(--ff-canvas));
+  color: var(--ff-warning-foreground);
 }
 
 .ff-loud-warning {
-  border: 1px solid #d97706;
-  background: color-mix(in srgb, #d97706 18%, var(--ff-canvas));
-  color: #fde68a;
+  border: 1px solid var(--ff-warning);
+  background: color-mix(in srgb, var(--ff-warning) 18%, var(--ff-canvas));
+  color: var(--ff-warning-foreground);
 }
 
 .ff-loud-danger {
@@ -1156,9 +1152,9 @@ html[dir="rtl"] .ff-explorer-row.ff-explorer-row-selected {
 
 .ff-settings-skip,
 .ff-wizard-skip {
-  border: 1px solid #d97706;
-  background: color-mix(in srgb, #d97706 18%, var(--ff-canvas));
-  color: #fde68a;
+  border: 1px solid var(--ff-warning);
+  background: color-mix(in srgb, var(--ff-warning) 18%, var(--ff-canvas));
+  color: var(--ff-warning-foreground);
   border-radius: var(--ff-radius);
 }
 
@@ -1204,6 +1200,20 @@ html[dir="rtl"] .ff-explorer-row.ff-explorer-row-selected {
   background: color-mix(in srgb, var(--ff-accent) 16%, var(--ff-canvas));
   color: var(--ff-text);
   font-weight: 600;
+}
+
+.ff-theme-option[aria-pressed="true"] {
+  background: var(--ff-accent);
+  color: var(--ff-accent-foreground);
+  border-color: var(--ff-accent);
+}
+
+.ff-yaml-number {
+  color: var(--ff-code-number);
+}
+
+.ff-yaml-boolean {
+  color: var(--ff-code-boolean);
 }
 
 @media (prefers-reduced-motion: reduce) {

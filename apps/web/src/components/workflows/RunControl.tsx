@@ -143,12 +143,12 @@ export function RunControl({
   return (
     <section
       aria-labelledby="run-control-heading"
-      className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+      className="rounded-2xl border border-border bg-bg p-5 shadow-sm"
     >
       <h2 id="run-control-heading" className="text-base font-semibold">
         Run published version
       </h2>
-      <p className="mt-1 text-sm text-zinc-600">
+      <p className="mt-1 text-sm text-fg">
         {PRE_RUN_PUBLISHED_ONLY_HELP} POST body is{" "}
         <code className="font-mono text-xs">
           {"{workflowVersionId, idempotencyKey, input}"}
@@ -164,17 +164,17 @@ export function RunControl({
       </p>
 
       {published.length === 0 ? (
-        <p className="mt-4 text-sm text-zinc-600">
+        <p className="mt-4 text-sm text-fg">
           Publish a version before running. There is no draft option here.
         </p>
       ) : (
         <div className="mt-4 grid gap-3">
           <label className="block text-sm">
-            <span className="text-zinc-600">Published version</span>
+            <span className="text-fg">Published version</span>
             <select
               value={selectedVersionId}
               onChange={(event) => onSelectVersion(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+              className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-1.5 text-sm"
             >
               <option value="">Select a published version</option>
               {published.map((version) => (
@@ -185,7 +185,7 @@ export function RunControl({
             </select>
           </label>
           <label className="block text-sm">
-            <span className="text-zinc-600">Idempotency key</span>
+            <span className="text-fg">Idempotency key</span>
             <div className="mt-1 flex flex-wrap gap-2">
               <input
                 type="text"
@@ -195,17 +195,17 @@ export function RunControl({
                 autoComplete="off"
                 spellCheck={false}
                 placeholder="Generated if left blank"
-                className="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-sm"
+                className="min-w-0 flex-1 rounded-lg border border-border bg-bg px-3 py-1.5 font-mono text-sm"
               />
               <button
                 type="button"
                 onClick={() => onIdempotencyKey(generateManualStartIdempotencyKey())}
-                className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm hover:bg-zinc-100"
+                className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-bg"
               >
                 Generate
               </button>
             </div>
-            <span className="mt-1 block text-xs text-zinc-500">
+            <span className="mt-1 block text-xs text-fg">
               {MANUAL_START_IDEMPOTENCY_HELP}
             </span>
           </label>
@@ -216,7 +216,7 @@ export function RunControl({
             onFieldValues={(value) => onFieldValues?.(value)}
             onJsonText={onTriggerInput}
           />
-          <p className="text-xs text-zinc-500">{MANUAL_START_CSRF_HELP}</p>
+          <p className="text-xs text-fg">{MANUAL_START_CSRF_HELP}</p>
           <div className="flex items-end">
             <button
               type="button"
@@ -238,51 +238,51 @@ export function RunControl({
             />
           </div>
           {authMessage ? (
-            <p role="status" className="text-sm font-medium text-rose-950">
+            <p role="status" className="text-sm font-medium text-danger">
               {authMessage}
             </p>
           ) : null}
           {runBlocked && runBlockReason ? (
-            <p role="status" className="text-sm font-medium text-rose-950">
+            <p role="status" className="text-sm font-medium text-danger">
               {runBlockReason}
             </p>
           ) : null}
           {prepared.confirmation ? (
             <section
               aria-labelledby="run-audit-confirm-heading"
-              className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3"
+              className="rounded-xl border border-border bg-bg px-4 py-3"
             >
               <h3 id="run-audit-confirm-heading" className="text-sm font-semibold">
                 Audit confirmation
               </h3>
-              <p className="mt-1 text-xs text-zinc-600">{MANUAL_START_CONFIRM_HELP}</p>
+              <p className="mt-1 text-xs text-fg">{MANUAL_START_CONFIRM_HELP}</p>
               <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
                 <div>
-                  <dt className="text-zinc-500">Version</dt>
+                  <dt className="text-fg">Version</dt>
                   <dd className="font-mono text-xs">
                     {prepared.confirmation.versionLabel} ·{" "}
                     {shortDigest(prepared.confirmation.digest)}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-zinc-500">Idempotency key</dt>
+                  <dt className="text-fg">Idempotency key</dt>
                   <dd className="font-mono text-xs break-all">
                     {prepared.confirmation.idempotencyKey}
                   </dd>
                 </div>
                 <div className="sm:col-span-2">
-                  <dt className="text-zinc-500">Redacted input</dt>
+                  <dt className="text-fg">Redacted input</dt>
                   <dd>
-                    <pre className="mt-1 overflow-auto rounded-lg bg-white p-2 font-mono text-xs text-zinc-700">
+                    <pre className="mt-1 overflow-auto rounded-lg bg-bg p-2 font-mono text-xs text-fg">
                       {prepared.confirmation.inputText}
                     </pre>
                   </dd>
                 </div>
               </dl>
-              <p className="mt-2 text-xs text-zinc-500">{MANUAL_START_AUDIT_HELP}</p>
+              <p className="mt-2 text-xs text-fg">{MANUAL_START_AUDIT_HELP}</p>
             </section>
           ) : prepared.errors.length > 0 && selectedVersionId ? (
-            <ul className="list-disc space-y-1 pl-5 text-sm text-rose-950">
+            <ul className="list-disc space-y-1 pl-5 text-sm text-danger">
               {prepared.errors.map((error) => (
                 <li key={error}>{error}</li>
               ))}
@@ -292,7 +292,7 @@ export function RunControl({
       )}
 
       {dirty ? (
-        <p className="mt-3 text-sm text-zinc-600">
+        <p className="mt-3 text-sm text-fg">
           Unsaved editor changes are not executed. Run uses the selected
           published snapshot only.
         </p>
@@ -302,39 +302,39 @@ export function RunControl({
         <div className="mt-4 space-y-3">
           <section
             aria-labelledby="pre-run-review-heading"
-            className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3"
+            className="rounded-xl border border-border bg-bg px-4 py-3"
           >
             <h3 id="pre-run-review-heading" className="text-sm font-semibold">
               Pre-run review
             </h3>
             <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
               <div>
-                <dt className="text-zinc-500">Version digest</dt>
+                <dt className="text-fg">Version digest</dt>
                 <dd className="font-mono text-xs break-all">
                   {review.digest || "—"}
                 </dd>
               </div>
               <div>
-                <dt className="text-zinc-500">Triggers</dt>
+                <dt className="text-fg">Triggers</dt>
                 <dd className="font-mono text-xs">
                   {review.triggers.map((item) => item.type).join(", ") || "—"}
                 </dd>
               </div>
               <div className="sm:col-span-2">
-                <dt className="text-zinc-500">Target / environment</dt>
+                <dt className="text-fg">Target / environment</dt>
                 <dd>{review.environment}</dd>
               </div>
               <div className="sm:col-span-2">
-                <dt className="text-zinc-500">Trigger input (redacted)</dt>
+                <dt className="text-fg">Trigger input (redacted)</dt>
                 <dd>
-                  <pre className="mt-1 overflow-auto rounded-lg bg-white p-2 font-mono text-xs text-zinc-700">
+                  <pre className="mt-1 overflow-auto rounded-lg bg-bg p-2 font-mono text-xs text-fg">
                     {review.triggerInputText}
                   </pre>
                 </dd>
               </div>
             </dl>
             {review.sideEffectWarnings.length > 0 ? (
-              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-amber-950">
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-fg">
                 <li>{PRE_RUN_SIDE_EFFECT_HELP}</li>
                 {review.sideEffectWarnings.map((warning) => (
                   <li key={warning}>{warning}</li>
@@ -342,7 +342,7 @@ export function RunControl({
               </ul>
             ) : null}
             {!review.published ? (
-              <p className="mt-3 text-sm text-amber-950">{review.blockReason}</p>
+              <p className="mt-3 text-sm text-fg">{review.blockReason}</p>
             ) : null}
           </section>
           <PreRunPolicyReview
@@ -354,30 +354,30 @@ export function RunControl({
       ) : null}
 
       {keyConflict ? (
-        <p role="status" className="mt-3 text-sm text-amber-950">
+        <p role="status" className="mt-3 text-sm text-fg">
           {IDEMPOTENCY_CONFLICT_MESSAGE}
         </p>
       ) : null}
 
       {created ? (
-        <p role="status" className="mt-3 text-sm text-zinc-800">
+        <p role="status" className="mt-3 text-sm text-fg">
           {IDEMPOTENCY_CREATED_MESSAGE}
         </p>
       ) : null}
 
       {execution ? (
-        <div className="mt-4 space-y-2 rounded-lg bg-zinc-50 px-3 py-3 text-sm">
+        <div className="mt-4 space-y-2 rounded-lg bg-bg px-3 py-3 text-sm">
           <p className="font-medium">
             Pin {execution.status} · {execution.id}
           </p>
-          <p className="font-mono text-xs break-all text-zinc-600">
+          <p className="font-mono text-xs break-all text-fg">
             workflowVersionId {execution.workflowVersionId}
           </p>
-          <p className="font-mono text-xs break-all text-zinc-600">
+          <p className="font-mono text-xs break-all text-fg">
             workflowDigest {execution.workflowDigest}
           </p>
           <div className="pt-1">
-            <p className="text-xs font-medium text-zinc-600">Config pins</p>
+            <p className="text-xs font-medium text-fg">Config pins</p>
             <ConfigPinList
               pins={execution.pins}
               empty="No ops-config pins on this execution."
@@ -388,21 +388,21 @@ export function RunControl({
               type="button"
               onClick={onRefreshPin}
               disabled={pending}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
+              className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10 disabled:opacity-60"
             >
               Re-read pin
             </button>
             <Link
               href={executionHistoryHref(execution.id, execution.workflowId)}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50"
+              className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10"
             >
               Open execution history
             </Link>
           </div>
           {replayed ? (
-            <p className="text-sm text-zinc-700">{IDEMPOTENCY_REPLAY_MESSAGE}</p>
+            <p className="text-sm text-fg">{IDEMPOTENCY_REPLAY_MESSAGE}</p>
           ) : created ? (
-            <p className="text-sm text-zinc-700">{IDEMPOTENCY_CREATED_MESSAGE}</p>
+            <p className="text-sm text-fg">{IDEMPOTENCY_CREATED_MESSAGE}</p>
           ) : null}
           <div className="pt-2">
             <ExecutionApprovalState

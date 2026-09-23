@@ -18,13 +18,13 @@ export default async function ConfigDraftPage({ params }: PageProps) {
   return (
     <main className="mx-auto flex min-h-full w-full max-w-5xl flex-col gap-8 px-6 py-12">
       <header className="space-y-3">
-        <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
+        <p className="text-sm font-medium tracking-wide text-fg uppercase">
           E4.2 · Draft
         </p>
         <h1 className="text-3xl font-semibold tracking-tight">
           Edit draft
         </h1>
-        <p className="max-w-3xl text-base leading-7 text-zinc-600">
+        <p className="max-w-3xl text-base leading-7 text-fg">
           Save the mutable draft with body revision, publish an immutable
           revision, then restore a snapshot by PUT-ing it into the draft.
           Published snapshots stay read-only. SSH command profiles cannot be

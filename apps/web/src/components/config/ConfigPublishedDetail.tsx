@@ -83,16 +83,16 @@ export function ConfigPublishedDetail({
       ) : null}
       {problem ? <ProblemBanner problem={problem} /> : null}
       {lastRequestId && !problem ? (
-        <p className="font-mono text-xs text-zinc-500">
+        <p className="font-mono text-xs text-fg">
           last request_id {lastRequestId}
         </p>
       ) : null}
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-        <p className="text-sm text-zinc-500">
+      <section className="rounded-2xl border border-border bg-bg p-6 shadow-sm">
+        <p className="text-sm text-fg">
           <Link
             href={`/config/${descriptor.collection}/${resourceId}`}
-            className="underline decoration-zinc-300 underline-offset-2"
+            className="underline decoration-border underline-offset-2"
           >
             Back to draft
           </Link>
@@ -108,12 +108,12 @@ export function ConfigPublishedDetail({
             />
           ) : null}
         </div>
-        <p className="mt-2 max-w-2xl text-sm text-zinc-600">
+        <p className="mt-2 max-w-2xl text-sm text-fg">
           Published revisions are immutable. Workflows and executions pin this
           exact version id and digest. Edit the draft instead of this snapshot.
         </p>
         {version?.publishNote ? (
-          <p className="mt-3 text-sm text-zinc-700">{version.publishNote}</p>
+          <p className="mt-3 text-sm text-fg">{version.publishNote}</p>
         ) : null}
 
         <div className="mt-5">

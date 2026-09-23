@@ -20,7 +20,7 @@ export function VersionPinBadge({
     <span
       className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 font-mono text-xs ${
         readOnly
-          ? "bg-zinc-100 text-zinc-700"
+          ? "bg-bg text-fg"
           : "bg-teal-50 text-teal-950"
       }`}
     >
