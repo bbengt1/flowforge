@@ -66,14 +66,14 @@ export function MembersPanel({
   return (
     <section
       aria-labelledby="members-heading"
-      className="rounded-2xl border border-border bg-card p-6 shadow-sm"
+      className="rounded-2xl border border-border bg-bg p-6 shadow-sm"
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h2 id="members-heading" className="text-lg font-semibold">
             Members
           </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-sm text-fg">
             <code className="font-mono text-xs">GET|PUT /api/v1/workspace/members</code>{" "}
             and{" "}
             <code className="font-mono text-xs">
@@ -90,14 +90,14 @@ export function MembersPanel({
           type="button"
           onClick={onRefresh}
           disabled={pending}
-          className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-card disabled:opacity-60"
+          className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm font-medium text-fg hover:bg-bg disabled:opacity-60"
         >
           {pending ? "Loading…" : "Refresh members"}
         </button>
       </div>
 
       {members.length === 0 ? (
-        <p className="mt-4 text-sm text-muted-foreground">
+        <p className="mt-4 text-sm text-fg">
           No members loaded. Current workspace must resolve and you need
           administer permission.
         </p>
@@ -112,13 +112,13 @@ export function MembersPanel({
                 <p className="font-medium">
                   {member.user.display_name || member.user.external_subject}
                 </p>
-                <p className="font-mono text-xs text-muted-foreground">
+                <p className="font-mono text-xs text-fg">
                   {member.user.issuer} · {member.user.external_subject}
                 </p>
-                <p className="mt-1 text-sm text-muted-foreground">
+                <p className="mt-1 text-sm text-fg">
                   roles {member.roles.join(", ") || "—"}
                 </p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-fg">
                   {member.permissions.join(", ") || "no permissions"}
                 </p>
               </div>
@@ -126,7 +126,7 @@ export function MembersPanel({
                 <button
                   type="button"
                   onClick={() => applyMember(member)}
-                  className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm hover:bg-background"
+                  className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10"
                 >
                   Edit roles
                 </button>

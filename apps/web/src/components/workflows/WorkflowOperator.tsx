@@ -2039,8 +2039,8 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     <EditorChrome
       identityGate={
         !canCall ? (
-          <details className="shrink-0 border-b border-border bg-card px-3 py-2">
-            <summary className="cursor-pointer text-sm font-medium text-foreground">
+          <details className="shrink-0 border-b border-border bg-bg px-3 py-2">
+            <summary className="cursor-pointer text-sm font-medium text-fg">
               Set workspace identity to load this workflow
             </summary>
             <div className="mt-3">
@@ -2098,12 +2098,12 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
             ) : null}
             {bannerProblem ? <ProblemBanner problem={problem} /> : null}
             {dirty && workflow ? (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-fg">
                 Publish uses the last saved draft. Save before publishing.
               </p>
             ) : null}
             {publishedVersion ? (
-              <p className="text-xs text-foreground">
+              <p className="text-xs text-fg">
                 Published v{publishedVersion.versionNumber}{" "}
                 <code className="break-all font-mono">
                   {publishedVersion.digest}
@@ -2113,7 +2113,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
             {wizardFeedback !== "idle" ? (
               <p
                 role="status"
-                className={`text-xs ${wizardFeedback === "error" ? "text-destructive" : "text-accent-text"}`}
+                className={`text-xs ${wizardFeedback === "error" ? "text-danger" : "text-fg"}`}
               >
                 {wizardFeedback === "pending"
                   ? "Adding action…"
@@ -2330,7 +2330,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
             />
           ) : null}
           {lastRequestId && !problem ? (
-            <p className="font-mono text-[11px] text-muted-foreground">
+            <p className="font-mono text-[11px] text-fg">
               last request_id {lastRequestId}
             </p>
           ) : null}

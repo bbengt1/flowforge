@@ -128,9 +128,9 @@ export function ScriptAuthoringPanel({
   }
 
   return (
-    <section className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+    <section className="rounded-2xl border border-border bg-bg p-5 shadow-sm">
       <h2 className="text-base font-semibold">Script source</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="mt-1 text-sm text-fg">
         {SCRIPT_PUBLISH_BOUNDARY_HELP} {SCRIPT_DRAFT_NOT_EXECUTABLE_HELP}{" "}
         {SCRIPT_EXECUTE_FAIL_CLOSED_HELP} {SCRIPT_RUNTIME_LANGUAGE_FILTER_HELP}
       </p>
@@ -200,9 +200,9 @@ export function ScriptAuthoringPanel({
                   }
                   patch(field.name, event.target.value);
                 }}
-                className="mt-1 w-full rounded-lg border border-border px-3 py-2 font-mono text-sm disabled:bg-background"
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2 font-mono text-sm disabled:bg-bg"
               />
-              <span className="mt-1 block text-xs text-muted-foreground">{field.description}</span>
+              <span className="mt-1 block text-xs text-fg">{field.description}</span>
             </label>
           );
         }
@@ -224,9 +224,9 @@ export function ScriptAuthoringPanel({
                     : event.target.value,
                 )
               }
-              className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm disabled:bg-background"
+              className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm disabled:bg-bg"
             />
-            <span className="mt-1 block text-xs text-muted-foreground">{field.description}</span>
+            <span className="mt-1 block text-xs text-fg">{field.description}</span>
           </label>
         );
       })}
@@ -260,7 +260,7 @@ export function ScriptAuthoringPanel({
         />
       </div>
       {errors.length > 0 ? (
-        <ul className="mt-3 space-y-1 text-sm text-destructive">
+        <ul className="mt-3 space-y-1 text-sm text-danger">
           {errors.map((error) => (
             <li key={error}>{error}</li>
           ))}

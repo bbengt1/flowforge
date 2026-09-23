@@ -5,7 +5,6 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   CANVAS_THEME_GAP,
-  DARK_ACCENT_TEXT,
   DARK_CODE_BOOLEAN,
   DARK_CODE_NUMBER,
   DARK_WARNING,
@@ -14,8 +13,8 @@ import {
   G39_EPIC,
   G39_ID,
   G39_STORY,
-  LIGHT_ACCENT_TEXT,
   LIGHT_CANVAS,
+  SEMANTIC_CHROME,
   LIGHT_CODE_BOOLEAN,
   LIGHT_CODE_NUMBER,
   LIGHT_DANGER,
@@ -29,7 +28,6 @@ import {
   THEME_COOKIE,
   colorTheme,
   darkDefaultUnchanged,
-  lightSurfacesHoldContrast,
   lightThemeBlock,
   themeCookieAssignment,
   themePreferenceHoldsHardLines,
@@ -67,7 +65,11 @@ describe("G.3.9 zinc chrome on design tokens", () => {
     assert.equal(G39_ID, "G.3.9-zinc-tokens-light-theme");
     assert.equal(themePreferenceHoldsHardLines(), true);
     assert.equal(darkDefaultUnchanged(), true);
-    assert.equal(lightSurfacesHoldContrast(), true);
+    assert.deepEqual(SEMANTIC_CHROME, ["bg", "fg", "border", "accent", "danger"]);
+    const preference = source("src/lib/theme-preference.ts");
+    assert.equal(preference.includes("contrastHolds"), false);
+    assert.equal(preference.includes("contrastRatio"), false);
+    assert.match(source("e2e/axe.ts"), /export async function expectNoBlockingAxeViolations/);
     assert.equal(colorTheme(undefined), "dark");
     assert.equal(colorTheme(null), "dark");
     assert.equal(colorTheme(""), "dark");
@@ -93,9 +95,21 @@ describe("G.3.9 zinc chrome on design tokens", () => {
     assert.match(tokens, new RegExp(`--ff-explorer-folder:\\s*${FF_EXPLORER_FOLDER}`));
     assert.match(tokens, new RegExp(`--ff-explorer-ink:\\s*${EXPLORER_INK}`));
     assert.match(tokens, /--ff-explorer-row-selected:\s*color-mix\(in srgb, var\(--ff-explorer-ink\)/);
+    assert.match(tokens, /--bg:\s*var\(--ff-surface\)/);
+    assert.match(tokens, /--fg:\s*var\(--ff-text\)/);
+    assert.match(tokens, /--border:\s*var\(--ff-border\)/);
+    assert.match(tokens, /--accent:\s*var\(--ff-accent\)/);
+    assert.match(tokens, /--danger:\s*var\(--ff-danger\)/);
+    assert.match(tokens, /--color-bg:\s*var\(--bg\)/);
+    assert.match(tokens, /--color-fg:\s*var\(--fg\)/);
+    assert.match(tokens, /--color-accent:\s*var\(--accent\)/);
+    assert.match(tokens, /--color-danger:\s*var\(--danger\)/);
+    assert.match(tokens, /--color-border:\s*var\(--border\)/);
+    assert.equal(tokens.includes("--ff-accent-text"), false);
+    assert.equal(tokens.includes("--color-accent-text"), false);
+    assert.equal(tokens.includes("--color-warning-foreground"), false);
     assert.match(tokens, new RegExp(`--ff-warning:\\s*${DARK_WARNING}`));
     assert.match(tokens, new RegExp(`--ff-warning-foreground:\\s*${DARK_WARNING_FOREGROUND}`));
-    assert.match(tokens, new RegExp(`--ff-accent-text:\\s*${DARK_ACCENT_TEXT}`));
     assert.match(tokens, new RegExp(`--ff-code-number:\\s*${DARK_CODE_NUMBER}`));
     assert.match(tokens, new RegExp(`--ff-code-boolean:\\s*${DARK_CODE_BOOLEAN}`));
     assert.match(light, new RegExp(`--ff-canvas:\\s*${LIGHT_CANVAS}`));
@@ -105,7 +119,9 @@ describe("G.3.9 zinc chrome on design tokens", () => {
     assert.match(light, new RegExp(`--ff-danger:\\s*${LIGHT_DANGER}`));
     assert.match(light, new RegExp(`--ff-danger-foreground:\\s*${LIGHT_DANGER_FOREGROUND}`));
     assert.match(light, new RegExp(`--ff-danger-surface:\\s*${LIGHT_DANGER_SURFACE}`));
-    assert.match(light, new RegExp(`--ff-accent-text:\\s*${LIGHT_ACCENT_TEXT}`));
+    assert.equal(light.includes("--bg:"), false);
+    assert.equal(light.includes("--fg:"), false);
+    assert.equal(light.includes("--ff-accent-text"), false);
     assert.match(light, new RegExp(`--ff-warning:\\s*${LIGHT_WARNING}`));
     assert.match(light, new RegExp(`--ff-warning-foreground:\\s*${LIGHT_WARNING_FOREGROUND}`));
     assert.match(light, new RegExp(`--ff-code-number:\\s*${LIGHT_CODE_NUMBER}`));
@@ -155,9 +171,9 @@ describe("G.3.9 zinc chrome on design tokens", () => {
     const field = source("src/components/a11y/Field.tsx");
     const dialog = source("src/components/a11y/Dialog.tsx");
     const confirm = source("src/components/a11y/ConfirmDestructive.tsx");
-    assert.match(field, /text-muted-foreground/);
-    assert.match(field, /text-destructive/);
-    assert.doesNotMatch(field, /text-zinc-|text-rose-900|bg-white/);
+    assert.match(field, /text-fg/);
+    assert.match(field, /text-danger/);
+    assert.doesNotMatch(field, /text-zinc-|text-rose-900|bg-white|text-muted-foreground|text-destructive/);
     assert.doesNotMatch(dialog, /zinc-|bg-white/);
     assert.match(confirm, /FF_LOUD_DANGER_CLASS/);
     assert.match(confirm, /FF_OVERVIEW_DIALOG_CLASS/);

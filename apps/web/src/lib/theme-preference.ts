@@ -4,9 +4,11 @@
  * Relates to #496 / Part of #412.
  *
  * Dark stays the default (`:root` in tokens.css). Light overrides the
- * same `--ff-*` variables on `:root[data-ff-theme="light"]`. There is
- * no second token file. Explorer nav stays the dark rail so folder
- * chrome does not shift. The preference is a `ff-theme` cookie, not a
+ * same `--ff-*` variables on `:root[data-ff-theme="light"]`. Themeable
+ * chrome uses the semantic names bg, fg, border, accent, and danger.
+ * There is no second token file and no second component tree. Explorer
+ * nav stays the dark rail so folder chrome does not shift. Contrast
+ * stays on the axe gate. The preference is a `ff-theme` cookie, not a
  * secret and not the session cookie.
  *
  * Hard lines: ADV-021 · drafts never run · no secrets in browser/room ·
@@ -16,7 +18,6 @@
 
 import {
   FF_ACCENT,
-  FF_ACCENT_FOREGROUND,
   FF_CANVAS,
   FF_DANGER,
   FF_DANGER_FOREGROUND,
@@ -26,8 +27,6 @@ import {
   FF_MUTED,
   FF_SURFACE,
   FF_TEXT,
-  contrastHolds,
-  huesAreDistinct,
   n8nOrangePresent,
 } from "./visual-tokens.ts";
 
@@ -45,11 +44,13 @@ export type ColorTheme = "dark" | "light";
 export const CANVAS_THEME_GAP =
   "WorkflowCanvas edge stroke stays rgb(255 255 255 / 0.28); it is faint on the light canvas. Node family shapes are unchanged.";
 
+/** Themeable chrome. Axe owns contrast; this list is not a checker. */
+export const SEMANTIC_CHROME = ["bg", "fg", "border", "accent", "danger"] as const;
+
 export const LIGHT_CANVAS = "#e6e8ee";
 export const LIGHT_SURFACE = "#f4f5f8";
 export const LIGHT_TEXT = "#1a1d24";
 export const LIGHT_MUTED = "#4e5563";
-export const LIGHT_ACCENT_TEXT = "#115e59";
 export const LIGHT_DANGER = "#9f1239";
 export const LIGHT_DANGER_FOREGROUND = "#fff1f2";
 export const LIGHT_DANGER_SURFACE = "#9f1239";
@@ -59,7 +60,6 @@ export const LIGHT_WARNING_FOREGROUND = "#78350f";
 export const LIGHT_CODE_NUMBER = "#0369a1";
 export const LIGHT_CODE_BOOLEAN = "#6b21a8";
 
-export const DARK_ACCENT_TEXT = "#5eead4";
 export const DARK_WARNING = "#d97706";
 export const DARK_WARNING_FOREGROUND = "#fde68a";
 export const DARK_CODE_NUMBER = "#7dd3fc";
@@ -71,6 +71,10 @@ export const THEME_PREFERENCE = {
   lightIsFollowMap: true,
   sameTokenFile: true,
   noSecondThemeFile: true,
+  noSecondComponentTree: true,
+  lightViaThemeAttributeOnly: true,
+  semanticChromeOnly: true,
+  axeOwnsContrast: true,
   explorerRailStaysDark: true,
   draftsNeverRun: true,
   noSecretsInBrowser: true,
@@ -103,28 +107,6 @@ export function lightThemeBlock(tokensCss: string): string {
   return tokensCss.slice(start, end);
 }
 
-export function lightSurfacesHoldContrast(): boolean {
-  return (
-    contrastHolds(LIGHT_TEXT, LIGHT_CANVAS) &&
-    contrastHolds(LIGHT_TEXT, LIGHT_SURFACE) &&
-    contrastHolds(LIGHT_MUTED, LIGHT_CANVAS) &&
-    contrastHolds(LIGHT_MUTED, LIGHT_SURFACE) &&
-    contrastHolds(LIGHT_DANGER, LIGHT_CANVAS) &&
-    contrastHolds(LIGHT_DANGER, LIGHT_SURFACE) &&
-    contrastHolds(LIGHT_DANGER_FOREGROUND, LIGHT_DANGER_SURFACE) &&
-    contrastHolds(LIGHT_ACCENT_TEXT, LIGHT_CANVAS) &&
-    contrastHolds(LIGHT_ACCENT_TEXT, LIGHT_SURFACE) &&
-    contrastHolds(FF_ACCENT_FOREGROUND, FF_ACCENT) &&
-    contrastHolds(LIGHT_WARNING_FOREGROUND, LIGHT_CANVAS) &&
-    contrastHolds(LIGHT_WARNING_FOREGROUND, LIGHT_SURFACE) &&
-    contrastHolds(LIGHT_CODE_NUMBER, LIGHT_CANVAS) &&
-    contrastHolds(LIGHT_CODE_NUMBER, LIGHT_SURFACE) &&
-    contrastHolds(LIGHT_CODE_BOOLEAN, LIGHT_CANVAS) &&
-    contrastHolds(LIGHT_CODE_BOOLEAN, LIGHT_SURFACE) &&
-    huesAreDistinct(FF_ACCENT, LIGHT_DANGER)
-  );
-}
-
 export function darkDefaultUnchanged(): boolean {
   return (
     FF_CANVAS === "#0f1218" &&
@@ -138,14 +120,6 @@ export function darkDefaultUnchanged(): boolean {
     FF_EXPLORER_NAV === "#1a1d24" &&
     FF_EXPLORER_FOLDER === "#e8c04a" &&
     EXPLORER_INK === "#f4f4f5" &&
-    contrastHolds(FF_TEXT, FF_EXPLORER_NAV) &&
-    contrastHolds(EXPLORER_INK, FF_EXPLORER_NAV) &&
-    contrastHolds(DARK_WARNING_FOREGROUND, FF_CANVAS) &&
-    contrastHolds(DARK_WARNING_FOREGROUND, FF_SURFACE) &&
-    contrastHolds(DARK_ACCENT_TEXT, FF_CANVAS) &&
-    contrastHolds(DARK_ACCENT_TEXT, FF_SURFACE) &&
-    contrastHolds(DARK_CODE_NUMBER, FF_CANVAS) &&
-    contrastHolds(DARK_CODE_BOOLEAN, FF_CANVAS) &&
     !n8nOrangePresent(LIGHT_CANVAS) &&
     !n8nOrangePresent(LIGHT_DANGER) &&
     !n8nOrangePresent(DARK_WARNING) &&
@@ -158,6 +132,10 @@ export function themePreferenceHoldsHardLines(): boolean {
     THEME_PREFERENCE.darkIsDefault &&
     THEME_PREFERENCE.sameTokenFile &&
     THEME_PREFERENCE.noSecondThemeFile &&
+    THEME_PREFERENCE.noSecondComponentTree &&
+    THEME_PREFERENCE.lightViaThemeAttributeOnly &&
+    THEME_PREFERENCE.semanticChromeOnly &&
+    THEME_PREFERENCE.axeOwnsContrast &&
     THEME_PREFERENCE.explorerRailStaysDark &&
     THEME_PREFERENCE.draftsNeverRun &&
     THEME_PREFERENCE.noSecretsInBrowser &&

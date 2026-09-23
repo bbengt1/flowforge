@@ -13,19 +13,19 @@ export function ApprovalBindingSnapshot({
   return (
     <section
       aria-labelledby="approval-binding-heading"
-      className="rounded-xl border border-border bg-background px-4 py-3"
+      className="rounded-xl border border-border bg-bg px-4 py-3"
     >
       <h3 id="approval-binding-heading" className="text-sm font-semibold">
         Bound fields
       </h3>
-      <p className="mt-1 text-sm text-muted-foreground">{caption}</p>
+      <p className="mt-1 text-sm text-fg">{caption}</p>
       <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
         <div>
-          <dt className="text-muted-foreground">Workflow version</dt>
+          <dt className="text-fg">Workflow version</dt>
           <dd className="break-all font-mono text-xs">{binding.workflowVersionId}</dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Version digest</dt>
+          <dt className="text-fg">Version digest</dt>
           <dd className="break-all font-mono text-xs">
             {binding.workflowVersionDigest || "—"}
             {binding.workflowVersionDigest
@@ -34,14 +34,14 @@ export function ApprovalBindingSnapshot({
           </dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Target</dt>
+          <dt className="text-fg">Target</dt>
           <dd className="break-all font-mono text-xs">
             {binding.targetName || binding.targetKind || "—"}
             {binding.targetId ? ` · ${binding.targetId}` : ""}
           </dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Policy revision</dt>
+          <dt className="text-fg">Policy revision</dt>
           <dd className="break-all font-mono text-xs">
             {binding.policyRevisionId || "—"}
             {typeof binding.policyRevisionNumber === "number"
@@ -50,16 +50,16 @@ export function ApprovalBindingSnapshot({
           </dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Operation</dt>
+          <dt className="text-fg">Operation</dt>
           <dd className="font-mono text-xs">{binding.operation || "—"}</dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Expiry</dt>
+          <dt className="text-fg">Expiry</dt>
           <dd className="font-mono text-xs">{binding.expiresAt || "—"}</dd>
         </div>
         {binding.nodeId ? (
           <div>
-            <dt className="text-muted-foreground">Node</dt>
+            <dt className="text-fg">Node</dt>
             <dd className="font-mono text-xs">
               {binding.nodeName || binding.nodeId}
             </dd>
@@ -67,7 +67,7 @@ export function ApprovalBindingSnapshot({
         ) : null}
         {binding.bindingFingerprint ? (
           <div>
-            <dt className="text-muted-foreground">Binding fingerprint</dt>
+            <dt className="text-fg">Binding fingerprint</dt>
             <dd className="break-all font-mono text-xs">
               {binding.bindingFingerprint}
             </dd>

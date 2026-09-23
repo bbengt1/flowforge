@@ -99,7 +99,7 @@ export function EditorWorkflowTabs({
         role="tablist"
         id={WORKFLOW_INSPECTOR_TABLIST_ID}
         aria-label={WORKFLOW_INSPECTOR_TABLIST_LABEL}
-        className="sticky top-0 z-10 flex flex-wrap gap-1 rounded-xl border border-border bg-card p-1"
+        className="sticky top-0 z-10 flex flex-wrap gap-1 rounded-xl border border-border bg-bg p-1"
         onKeyDown={(event) => {
           if (!isWorkflowInspectorTab(tab)) {
             return;
@@ -125,8 +125,8 @@ export function EditorWorkflowTabs({
               onClick={() => selectTab(item)}
               className={`rounded-lg px-2.5 py-1.5 text-xs font-medium ${
                 selected
-                  ? "bg-primary text-primary-foreground"
-                  : "text-foreground hover:bg-background"
+                  ? "bg-accent text-primary-foreground"
+                  : "text-fg hover:bg-fg/10"
               }`}
             >
               {TAB_LABELS[item]}
@@ -167,7 +167,7 @@ export function EditorWorkflowTabs({
                 />
               </>
             ) : (
-              <p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+              <p className="rounded-xl border border-border bg-bg p-4 text-sm text-fg">
                 Open a workflow to administer webhook and schedule triggers
                 without scrolling past YAML. Contracts stay{" "}
                 <code className="font-mono text-xs">/triggers</code> and{" "}
@@ -194,7 +194,7 @@ export function EditorWorkflowTabs({
               versionPins={versionPins}
             />
           ) : (
-            <p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+            <p className="rounded-xl border border-border bg-bg p-4 text-sm text-fg">
               Open a workflow to compare, export, or restore a published
               version as a new draft.
             </p>

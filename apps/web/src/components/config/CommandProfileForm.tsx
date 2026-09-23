@@ -45,7 +45,7 @@ export function CommandProfileForm({
   onChange,
 }: CommandProfileFormProps) {
   const inputClass =
-    "mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:bg-background";
+    "mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:bg-bg";
   const rows = parseParameterSchema(spec.parameterSchema ?? {});
   const interpolation = templateForbiddenHits(spec.template ?? "");
   const schemaGaps = parameterSchemaGaps(rows);
@@ -62,8 +62,8 @@ export function CommandProfileForm({
   return (
     <div className="grid gap-4">
       <SshSafetyNotes catalog={catalog} extraNotes={extraNotes} />
-      <p className="text-xs text-muted-foreground">{SSH_IMMUTABLE_PIN_HELP}</p>
-      <p className="text-xs text-muted-foreground">{SSH_REVIEWED_RENDER_HELP}</p>
+      <p className="text-xs text-fg">{SSH_IMMUTABLE_PIN_HELP}</p>
+      <p className="text-xs text-fg">{SSH_REVIEWED_RENDER_HELP}</p>
 
       <label className="text-sm">
         <span className="font-medium">Reviewed command template</span>
@@ -75,26 +75,26 @@ export function CommandProfileForm({
           onChange={(event) => patch({ template: event.target.value })}
           className={`${inputClass} font-mono`}
         />
-        <span className="mt-1 block text-xs text-muted-foreground">
+        <span className="mt-1 block text-xs text-fg">
           Reviewed template with curly-brace name placeholders only. The
           renderer applies POSIX single quotes. Forbidden tokens: $(),
           backticks, dollar-brace, and double-brace.
         </span>
       </label>
       {interpolation.length > 0 ? (
-        <p role="status" className="text-sm text-warning-foreground">
+        <p role="status" className="text-sm text-fg">
           Template contains forbidden interpolation: {interpolation.join(", ")}.
         </p>
       ) : null}
 
       <fieldset className="grid gap-3 rounded-xl border border-border px-4 py-3">
         <legend className="px-1 text-sm font-medium">Typed parameters</legend>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-fg">
           Constraints only — values are supplied later by the workflow node.
           Names become the parameter schema; there is no raw shell field.
         </p>
         {rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No parameters yet.</p>
+          <p className="text-sm text-fg">No parameters yet.</p>
         ) : null}
         {rows.map((row, index) => (
           <ParameterRow
@@ -119,12 +119,12 @@ export function CommandProfileForm({
               { name: "", type: "string", required: true },
             ])
           }
-          className="w-fit rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-foreground hover:bg-background disabled:opacity-60"
+          className="w-fit rounded-lg border border-border bg-bg px-3 py-1.5 text-sm font-medium text-fg hover:bg-fg/10 disabled:opacity-60"
         >
           Add typed parameter
         </button>
         {schemaGaps.length > 0 ? (
-          <ul className="list-disc pl-5 text-sm text-warning-foreground">
+          <ul className="list-disc pl-5 text-sm text-fg">
             {schemaGaps.map((gap) => (
               <li key={gap}>{gap}</li>
             ))}
@@ -181,8 +181,8 @@ export function CommandProfileForm({
         ) : null}
       </fieldset>
 
-      <details className="rounded-xl border border-border bg-background/70 px-4 py-3">
-        <summary className="cursor-pointer text-sm font-medium text-foreground">
+      <details className="rounded-xl border border-border bg-bg/70 px-4 py-3">
+        <summary className="cursor-pointer text-sm font-medium text-fg">
           Schema JSON and optional policy
         </summary>
         <div className="mt-3 grid gap-3">
@@ -231,7 +231,7 @@ function ParameterRow({
   onRemove: () => void;
 }) {
   return (
-    <div className="grid gap-2 rounded-lg border border-border bg-card p-3 sm:grid-cols-2">
+    <div className="grid gap-2 rounded-lg border border-border bg-bg p-3 sm:grid-cols-2">
       <label className="text-sm">
         <span className="font-medium">Name</span>
         <input
@@ -368,7 +368,7 @@ function ParameterRow({
         type="button"
         disabled={disabled}
         onClick={onRemove}
-        className="w-fit rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground hover:bg-card disabled:opacity-60"
+        className="w-fit rounded-lg border border-border bg-bg px-3 py-1.5 text-sm text-fg hover:bg-bg disabled:opacity-60"
       >
         Remove
       </button>
@@ -399,8 +399,8 @@ function VerificationFields({
     });
   }
   return (
-    <div className="grid gap-3 rounded-lg border border-teal-200 bg-card px-3 py-3">
-      <p className="text-xs text-accent-text">{SSH_PROBE_HELP}</p>
+    <div className="grid gap-3 rounded-lg border border-teal-200 bg-bg px-3 py-3">
+      <p className="text-xs text-fg">{SSH_PROBE_HELP}</p>
       <label className="text-sm">
         <span className="font-medium">Verification probe template</span>
         <textarea
@@ -411,7 +411,7 @@ function VerificationFields({
           onChange={(event) => patchVerification({ template: event.target.value })}
           className={`${className} font-mono`}
         />
-        <span className="mt-1 block text-xs text-muted-foreground">
+        <span className="mt-1 block text-xs text-fg">
           Idempotent read-only {"{name}"} probe. Never the mutating command.
           Same parameterSchema and POSIX quoting as the reviewed template.
         </span>
@@ -429,7 +429,7 @@ function VerificationFields({
           }
           className={className}
         />
-        <span className="mt-1 block text-xs text-muted-foreground">Default 0.</span>
+        <span className="mt-1 block text-xs text-fg">Default 0.</span>
       </label>
       <label className="text-sm">
         <span className="font-medium">expectStdoutContains (optional)</span>
@@ -472,13 +472,13 @@ function VerificationFields({
       <label className="text-sm">
         <span className="font-medium">onError</span>
         <input value="indeterminate" disabled readOnly className={className} />
-        <span className="mt-1 block text-xs text-muted-foreground">
+        <span className="mt-1 block text-xs text-fg">
           Probe failure stays loud indeterminate. The UI never implies the
           command did not run.
         </span>
       </label>
       {errors.length > 0 ? (
-        <p role="status" className="text-sm text-warning-foreground">
+        <p role="status" className="text-sm text-fg">
           {errors[0] || SSH_INVALID_VERIFICATION_MESSAGE}
         </p>
       ) : null}

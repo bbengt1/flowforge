@@ -268,14 +268,14 @@ export function ManualStartPanel({
   return (
     <section
       aria-labelledby="manual-start-heading"
-      className="rounded-2xl border border-border bg-card p-5 shadow-sm"
+      className="rounded-2xl border border-border bg-bg p-5 shadow-sm"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 id="manual-start-heading" className="text-base font-semibold">
             Authenticated manual start
           </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-sm text-fg">
             {workflowName ? `${workflowName}. ` : null}
             {MANUAL_START_PUBLISHED_ONLY_HELP} {manualStartHelp(catalog)}
           </p>
@@ -284,7 +284,7 @@ export function ManualStartPanel({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm hover:bg-background"
+            className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10"
           >
             Close
           </button>
@@ -298,17 +298,17 @@ export function ManualStartPanel({
       ) : null}
 
       {!canExecute || authMessage ? (
-        <p role="status" className="mt-4 text-sm font-medium text-destructive">
+        <p role="status" className="mt-4 text-sm font-medium text-danger">
           {authMessage || MANUAL_START_FORBIDDEN_MESSAGE}
         </p>
       ) : null}
 
       {published.length === 0 ? (
-        <p className="mt-4 text-sm text-muted-foreground">
+        <p className="mt-4 text-sm text-fg">
           Publish a version before running. There is no draft option here.{" "}
           <Link
             href={editorManualStartHref(workflowId)}
-            className="text-accent-text underline"
+            className="text-fg underline"
           >
             Open editor
           </Link>
@@ -316,7 +316,7 @@ export function ManualStartPanel({
       ) : (
         <div className="mt-4 grid gap-3">
           <label className="block text-sm">
-            <span className="text-muted-foreground">Published version</span>
+            <span className="text-fg">Published version</span>
             <select
               value={selectedVersionId}
               onChange={(event) => {
@@ -325,7 +325,7 @@ export function ManualStartPanel({
                 setJsonText("");
                 void loadVersion(event.target.value);
               }}
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-1.5 text-sm"
+              className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-1.5 text-sm"
             >
               <option value="">Select a published version</option>
               {published.map((item) => (
@@ -336,7 +336,7 @@ export function ManualStartPanel({
             </select>
           </label>
           <label className="block text-sm">
-            <span className="text-muted-foreground">Idempotency key</span>
+            <span className="text-fg">Idempotency key</span>
             <div className="mt-1 flex flex-wrap gap-2">
               <input
                 type="text"
@@ -345,17 +345,17 @@ export function ManualStartPanel({
                 onChange={(event) => setIdempotencyKey(event.target.value)}
                 autoComplete="off"
                 spellCheck={false}
-                className="min-w-0 flex-1 rounded-lg border border-border bg-card px-3 py-1.5 font-mono text-sm"
+                className="min-w-0 flex-1 rounded-lg border border-border bg-bg px-3 py-1.5 font-mono text-sm"
               />
               <button
                 type="button"
                 onClick={() => setIdempotencyKey(generateManualStartIdempotencyKey())}
-                className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm hover:bg-card"
+                className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-bg"
               >
                 Generate
               </button>
             </div>
-            <span className="mt-1 block text-xs text-muted-foreground">
+            <span className="mt-1 block text-xs text-fg">
               {MANUAL_START_IDEMPOTENCY_HELP}
             </span>
           </label>
@@ -366,44 +366,44 @@ export function ManualStartPanel({
             onFieldValues={setFieldValues}
             onJsonText={setJsonText}
           />
-          <p className="text-xs text-muted-foreground">{MANUAL_START_INPUT_HELP}</p>
-          <p className="text-xs text-muted-foreground">{MANUAL_START_CSRF_HELP}</p>
+          <p className="text-xs text-fg">{MANUAL_START_INPUT_HELP}</p>
+          <p className="text-xs text-fg">{MANUAL_START_CSRF_HELP}</p>
           {preview.confirmation ? (
             <section
               aria-labelledby="manual-start-confirm-heading"
-              className="rounded-xl border border-border bg-background px-4 py-3"
+              className="rounded-xl border border-border bg-bg px-4 py-3"
             >
               <h3 id="manual-start-confirm-heading" className="text-sm font-semibold">
                 Audit confirmation
               </h3>
-              <p className="mt-1 text-xs text-muted-foreground">{MANUAL_START_CONFIRM_HELP}</p>
+              <p className="mt-1 text-xs text-fg">{MANUAL_START_CONFIRM_HELP}</p>
               <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
                 <div>
-                  <dt className="text-muted-foreground">Version</dt>
+                  <dt className="text-fg">Version</dt>
                   <dd className="font-mono text-xs">
                     {preview.confirmation.versionLabel} ·{" "}
                     {shortDigest(preview.confirmation.digest)}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-muted-foreground">Idempotency key</dt>
+                  <dt className="text-fg">Idempotency key</dt>
                   <dd className="font-mono text-xs break-all">
                     {preview.confirmation.idempotencyKey}
                   </dd>
                 </div>
                 <div className="sm:col-span-2">
-                  <dt className="text-muted-foreground">Redacted input</dt>
+                  <dt className="text-fg">Redacted input</dt>
                   <dd>
-                    <pre className="mt-1 overflow-auto rounded-lg bg-card p-2 font-mono text-xs text-foreground">
+                    <pre className="mt-1 overflow-auto rounded-lg bg-bg p-2 font-mono text-xs text-fg">
                       {preview.confirmation.inputText}
                     </pre>
                   </dd>
                 </div>
               </dl>
-              <p className="mt-2 text-xs text-muted-foreground">{MANUAL_START_AUDIT_HELP}</p>
+              <p className="mt-2 text-xs text-fg">{MANUAL_START_AUDIT_HELP}</p>
             </section>
           ) : preview.errors.length > 0 && selectedVersionId ? (
-            <ul className="list-disc space-y-1 pl-5 text-sm text-destructive">
+            <ul className="list-disc space-y-1 pl-5 text-sm text-danger">
               {preview.errors.map((error) => (
                 <li key={error}>{error}</li>
               ))}
@@ -415,7 +415,7 @@ export function ManualStartPanel({
             problem={evaluationProblem}
           />
           {pins.length > 0 ? (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-fg">
               {pins.length} ops-config pin{pins.length === 1 ? "" : "s"} on this
               published version.
             </p>
@@ -433,7 +433,7 @@ export function ManualStartPanel({
             <DohertyStatus chrome={doherty} />
             <Link
               href={editorManualStartHref(workflowId)}
-              className="text-sm text-accent-text underline"
+              className="text-sm text-fg underline"
             >
               Open editor
             </Link>
@@ -442,31 +442,31 @@ export function ManualStartPanel({
       )}
 
       {keyConflict ? (
-        <p role="status" className="mt-3 text-sm text-warning-foreground">
+        <p role="status" className="mt-3 text-sm text-fg">
           {MANUAL_START_CONFLICT_MESSAGE}
         </p>
       ) : null}
       {outcome ? (
-        <p role="status" className="mt-3 text-sm text-foreground">
+        <p role="status" className="mt-3 text-sm text-fg">
           {outcome}
         </p>
       ) : null}
       {execution ? (
-        <div className="mt-4 space-y-2 rounded-lg bg-background px-3 py-3 text-sm">
+        <div className="mt-4 space-y-2 rounded-lg bg-bg px-3 py-3 text-sm">
           <p className="font-medium">
             {execution.status} · {execution.id}
           </p>
-          <p className="font-mono text-xs break-all text-muted-foreground">
+          <p className="font-mono text-xs break-all text-fg">
             workflowVersionId {execution.workflowVersionId}
           </p>
           <Link
             href={executionHistoryHref(execution.id, execution.workflowId)}
-            className="inline-block text-sm text-accent-text underline"
+            className="inline-block text-sm text-fg underline"
           >
             Open execution
           </Link>
           {approvals.length > 0 ? (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-fg">
               {approvals.length} approval requirement
               {approvals.length === 1 ? "" : "s"} recorded for this start.
             </p>

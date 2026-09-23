@@ -31,7 +31,7 @@ export function EditorStartDialog({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-border bg-card px-2 py-1 text-sm hover:bg-background"
+            className="rounded-md border border-border bg-bg px-2 py-1 text-sm hover:bg-fg/10"
           >
             Close
           </button>

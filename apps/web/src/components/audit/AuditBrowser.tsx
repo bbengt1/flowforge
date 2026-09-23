@@ -126,20 +126,20 @@ export function AuditBrowser() {
       ) : null}
 
       {denied ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-fg">
           This role cannot view workspace audit (
           <code className="font-mono text-xs">audit.view</code> /{" "}
           <code className="font-mono text-xs">execution.view</code> missing).
         </p>
       ) : null}
 
-      <p className="rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground">
+      <p className="rounded-xl border border-border bg-bg px-4 py-3 text-sm text-fg">
         {AUDIT_APPEND_ONLY_HELP} {AUDIT_NOT_ISOLATION_HELP}
       </p>
 
       <div className="flex flex-wrap items-end gap-3">
         <label className="block text-sm">
-          <span className="text-muted-foreground">Resource type</span>
+          <span className="text-fg">Resource type</span>
           <input
             value={query.resourceType}
             onChange={(event) =>
@@ -148,12 +148,12 @@ export function AuditBrowser() {
                 resourceType: event.target.value,
               }))
             }
-            className="mt-1 w-48 rounded-lg border border-border bg-card px-3 py-1.5 text-sm"
+            className="mt-1 w-48 rounded-lg border border-border bg-bg px-3 py-1.5 text-sm"
             placeholder="execution"
           />
         </label>
         <label className="block text-sm">
-          <span className="text-muted-foreground">Resource id</span>
+          <span className="text-fg">Resource id</span>
           <input
             value={query.resourceId}
             onChange={(event) =>
@@ -162,18 +162,18 @@ export function AuditBrowser() {
                 resourceId: event.target.value,
               }))
             }
-            className="mt-1 w-72 rounded-lg border border-border bg-card px-3 py-1.5 font-mono text-xs"
+            className="mt-1 w-72 rounded-lg border border-border bg-bg px-3 py-1.5 font-mono text-xs"
             placeholder="UUID"
           />
         </label>
         <label className="block text-sm">
-          <span className="text-muted-foreground">Action</span>
+          <span className="text-fg">Action</span>
           <input
             value={query.action}
             onChange={(event) =>
               setQuery((current) => ({ ...current, action: event.target.value }))
             }
-            className="mt-1 w-56 rounded-lg border border-border bg-card px-3 py-1.5 text-sm"
+            className="mt-1 w-56 rounded-lg border border-border bg-bg px-3 py-1.5 text-sm"
             placeholder="execution.start"
           />
         </label>
@@ -190,13 +190,13 @@ export function AuditBrowser() {
       {problem ? <ProblemBanner problem={problem} /> : null}
 
       {strippedKeys.length ? (
-        <p role="status" className="text-sm text-warning-foreground">
+        <p role="status" className="text-sm text-fg">
           Unexpected secret fields were stripped from the API response:{" "}
           {strippedKeys.join(", ")}. Treat this as a backend contract bug.
         </p>
       ) : null}
 
-      <p className="text-sm text-muted-foreground">
+      <p className="text-sm text-fg">
         {items.length} event{items.length === 1 ? "" : "s"} · read-only
         {affordances.canMutate ? " · mutable" : ""}
         {lastRequestId ? (
@@ -205,7 +205,7 @@ export function AuditBrowser() {
       </p>
 
       {denied || items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-fg">
           {denied
             ? "No audit rows are shown for this role."
             : "No audit events match. Product audit is GET /audit-events, not the E2.2 isolation stub."}
@@ -215,43 +215,43 @@ export function AuditBrowser() {
           {items.map((event) => (
             <li
               key={event.id}
-              className="rounded-xl border border-border bg-card p-4 shadow-sm"
+              className="rounded-xl border border-border bg-bg p-4 shadow-sm"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold">{event.action}</h2>
-                  <p className="mt-1 text-sm text-foreground">
+                  <p className="mt-1 text-sm text-fg">
                     {event.outcome || "outcome unreported"}
                   </p>
                 </div>
-                <p className="font-mono text-xs text-muted-foreground">
+                <p className="font-mono text-xs text-fg">
                   {event.occurredAt || "—"}
                 </p>
               </div>
-              <dl className="mt-3 grid gap-1 font-mono text-xs text-muted-foreground sm:grid-cols-2">
+              <dl className="mt-3 grid gap-1 font-mono text-xs text-fg sm:grid-cols-2">
                 <div>
-                  <dt className="inline text-muted-foreground">correlation </dt>
+                  <dt className="inline text-fg">correlation </dt>
                   <dd className="inline break-all">
                     {event.correlationId || "—"}
                   </dd>
                 </div>
                 <div>
-                  <dt className="inline text-muted-foreground">resource </dt>
+                  <dt className="inline text-fg">resource </dt>
                   <dd className="inline break-all">
                     {event.resourceType || "id"} {event.resourceId || "—"}
                   </dd>
                 </div>
                 <div>
-                  <dt className="inline text-muted-foreground">actor </dt>
+                  <dt className="inline text-fg">actor </dt>
                   <dd className="inline break-all">{event.actorId || "—"}</dd>
                 </div>
                 <div>
-                  <dt className="inline text-muted-foreground">id </dt>
+                  <dt className="inline text-fg">id </dt>
                   <dd className="inline break-all">{event.id}</dd>
                 </div>
               </dl>
               {event.details != null ? (
-                <pre className="mt-3 overflow-x-auto rounded-lg bg-background p-3 font-mono text-xs text-foreground">
+                <pre className="mt-3 overflow-x-auto rounded-lg bg-bg p-3 font-mono text-xs text-fg">
                   {redactedJson(event.details)}
                 </pre>
               ) : null}

@@ -30,14 +30,14 @@ export function PermissionMatrixTable({
   return (
     <section
       aria-labelledby="matrix-heading"
-      className="rounded-2xl border border-border bg-card p-6 shadow-sm"
+      className="rounded-2xl border border-border bg-bg p-6 shadow-sm"
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h2 id="matrix-heading" className="text-lg font-semibold">
             Permission matrix
           </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-sm text-fg">
             Read-only catalog from{" "}
             <code className="font-mono text-xs">GET /api/v1/permission-matrix</code>
             . Families: view, edit, publish, execute, credential, approval,
@@ -48,14 +48,14 @@ export function PermissionMatrixTable({
           type="button"
           onClick={onRefresh}
           disabled={pending}
-          className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-card disabled:opacity-60"
+          className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm font-medium text-fg hover:bg-bg disabled:opacity-60"
         >
           {pending ? "Loading…" : "Load matrix"}
         </button>
       </div>
 
       {permissions.length === 0 ? (
-        <p className="mt-4 text-sm text-muted-foreground">
+        <p className="mt-4 text-sm text-fg">
           Load the matrix after setting issuer and subject.
         </p>
       ) : (
@@ -92,7 +92,7 @@ export function PermissionMatrixTable({
                   >
                     {permission.key}
                   </th>
-                  <td className="py-2 pr-3 text-muted-foreground">
+                  <td className="py-2 pr-3 text-fg">
                     {permission.family ?? "—"}
                   </td>
                   {roles.map((role) => {

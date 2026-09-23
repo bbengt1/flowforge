@@ -313,26 +313,26 @@ export function MembershipOperator() {
 
       {problem ? <ProblemBanner problem={problem} /> : null}
       {problem && isStaleSessionProblem(problem) ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-fg">
           Stale session — <a className="underline" href="#session">re-establish the cookie session</a>.
         </p>
       ) : null}
       {problem && isCsrfProblem(problem) ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-fg">
           CSRF fail-closed. The mutation was not applied.
         </p>
       ) : null}
       {lastRequestId && !problem ? (
-        <p className="font-mono text-xs text-muted-foreground">
+        <p className="font-mono text-xs text-fg">
           last request_id {lastRequestId}
         </p>
       ) : null}
 
-      <details className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+      <details className="rounded-2xl border border-border bg-bg p-6 shadow-sm">
         <summary className="cursor-pointer text-lg font-semibold">
           Create tenant or workspace
         </summary>
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="mt-2 text-sm text-fg">
           Platform-admin bootstrap — not a product-home action.{" "}
           <code className="font-mono text-xs">POST /api/v1/tenants</code> then{" "}
           <code className="font-mono text-xs">POST /api/v1/workspaces</code>.
@@ -431,11 +431,11 @@ export function MembershipOperator() {
         </form>
       </details>
 
-      <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+      <section className="rounded-2xl border border-border bg-bg p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold">Caller workspaces</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1 text-sm text-fg">
               <code className="font-mono text-xs">GET /api/v1/workspaces</code>{" "}
               lists memberships from server-side bindings. Selecting a row fills
               tenant + workbench key for the current workspace view.
@@ -445,13 +445,13 @@ export function MembershipOperator() {
             type="button"
             onClick={() => void loadWorkspaces()}
             disabled={pending !== null}
-            className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-card disabled:opacity-60"
+            className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm font-medium text-fg hover:bg-bg disabled:opacity-60"
           >
             {pending === "workspaces" ? "Loading…" : "List workspaces"}
           </button>
         </div>
         {memberships.length === 0 ? (
-          <p className="mt-4 text-sm text-muted-foreground">No memberships loaded.</p>
+          <p className="mt-4 text-sm text-fg">No memberships loaded.</p>
         ) : (
           <ul className="mt-4 divide-y divide-border">
             {memberships.map((item) => (
@@ -461,17 +461,17 @@ export function MembershipOperator() {
               >
                 <div>
                   <p className="font-medium">{item.workspace.name}</p>
-                  <p className="font-mono text-xs text-muted-foreground">
+                  <p className="font-mono text-xs text-fg">
                     {item.tenant.slug} / {item.workspace.workbench_key}
                   </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
+                  <p className="mt-1 text-sm text-fg">
                     {item.roles.join(", ") || "no roles"}
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => selectMembership(item)}
-                  className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm hover:bg-background"
+                  className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10"
                 >
                   Use tenant + workbench
                 </button>
@@ -487,11 +487,11 @@ export function MembershipOperator() {
         />
       </section>
 
-      <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+      <section className="rounded-2xl border border-border bg-bg p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold">Current workspace</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1 text-sm text-fg">
               <code className="font-mono text-xs">GET /api/v1/workspace</code>{" "}
               resolves from tenant + workbench headers. Host-supplied workspace
               UUID is not sent.
@@ -501,7 +501,7 @@ export function MembershipOperator() {
             type="button"
             onClick={() => void loadCurrent()}
             disabled={pending !== null}
-            className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-card disabled:opacity-60"
+            className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm font-medium text-fg hover:bg-bg disabled:opacity-60"
           >
             {pending === "workspace" ? "Loading…" : "Load current workspace"}
           </button>
@@ -509,42 +509,42 @@ export function MembershipOperator() {
         {current ? (
           <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
             <div>
-              <dt className="text-muted-foreground">Workspace</dt>
+              <dt className="text-fg">Workspace</dt>
               <dd className="font-medium">{current.workspace.name}</dd>
-              <dd className="font-mono text-xs text-muted-foreground">
+              <dd className="font-mono text-xs text-fg">
                 {current.workspace.workbench_key}
               </dd>
             </div>
             <div>
-              <dt className="text-muted-foreground">Tenant</dt>
+              <dt className="text-fg">Tenant</dt>
               <dd className="font-medium">{current.tenant.name}</dd>
-              <dd className="font-mono text-xs text-muted-foreground">
+              <dd className="font-mono text-xs text-fg">
                 {current.tenant.slug}
               </dd>
             </div>
             <div>
-              <dt className="text-muted-foreground">Principal</dt>
+              <dt className="text-fg">Principal</dt>
               <dd>
                 {current.principal.display_name ||
                   current.principal.external_subject}
               </dd>
-              <dd className="font-mono text-xs text-muted-foreground">
+              <dd className="font-mono text-xs text-fg">
                 {current.principal.issuer}
               </dd>
             </div>
             <div>
-              <dt className="text-muted-foreground">Roles</dt>
+              <dt className="text-fg">Roles</dt>
               <dd>{current.roles.join(", ") || "—"}</dd>
             </div>
             <div className="sm:col-span-2">
-              <dt className="text-muted-foreground">Permissions</dt>
+              <dt className="text-fg">Permissions</dt>
               <dd className="font-mono text-xs leading-5">
                 {current.permissions.join(", ") || "—"}
               </dd>
             </div>
           </dl>
         ) : (
-          <p className="mt-4 text-sm text-muted-foreground">
+          <p className="mt-4 text-sm text-fg">
             Set tenant + workbench key, then load the current workspace.
           </p>
         )}
@@ -572,8 +572,8 @@ export function MembershipOperator() {
         onRefresh={() => void loadMatrix()}
       />
 
-      <p className="text-sm text-muted-foreground">
-        <Link href={isolationHref} className="text-accent-text underline">
+      <p className="text-sm text-fg">
+        <Link href={isolationHref} className="text-fg underline">
           Isolation check
         </Link>
         {" — "}

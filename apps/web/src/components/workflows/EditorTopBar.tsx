@@ -164,7 +164,7 @@ export function EditorTopBar({
                 {" · "}
                 {editorRevisionLabel(revision)}
                 {" · "}
-                <span className={dirty ? "font-medium text-warning-foreground" : FF_EDITOR_MUTED_CLASS}>
+                <span className={dirty ? "font-medium text-fg" : FF_EDITOR_MUTED_CLASS}>
                   {dirtyLabel}
                 </span>
               </>

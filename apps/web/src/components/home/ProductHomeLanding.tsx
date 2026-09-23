@@ -27,11 +27,11 @@ export function ProductHomeLanding() {
   return (
     <main className="mx-auto flex min-h-full w-full max-w-2xl flex-col gap-6 px-6 py-16">
       <header className="space-y-3">
-        <p className="text-sm font-medium tracking-wide text-accent-text uppercase">
+        <p className="text-sm font-medium tracking-wide text-fg uppercase">
           UX.8 · Product home
         </p>
         <h1 className="text-4xl font-semibold tracking-tight">FlowForge</h1>
-        <p className="max-w-xl text-base leading-7 text-muted-foreground">
+        <p className="max-w-xl text-base leading-7 text-fg">
           {denied
             ? "Workflows are hidden for this workspace role. Health and OpenAPI live under Settings."
             : "Opening the workflow list. Health and OpenAPI live under Settings."}
@@ -48,7 +48,7 @@ export function ProductHomeLanding() {
         )}
         <Link
           href={SETTINGS_HREF}
-          className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-foreground hover:bg-background"
+          className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm font-medium text-fg hover:bg-fg/10"
         >
           Settings
         </Link>

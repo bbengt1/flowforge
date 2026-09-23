@@ -288,7 +288,7 @@ export function EditorInspector({
               {ndvConversationHelp("node")}
             </p>
             {selectedCount > 1 ? (
-              <p className="mt-2 text-sm text-foreground" data-canvas-multiselect>
+              <p className="mt-2 text-sm text-fg" data-canvas-multiselect>
                 {selectedCount} nodes selected. Inspector edits the last selected
                 node. Shift+click or Shift+drag to adjust. Delete removes the
                 selection.
@@ -486,22 +486,22 @@ function EdgeInspect({
       <h2 id="edge-inspect-heading" className="text-base font-semibold">
         Edge
       </h2>
-      <p className="mt-2 font-mono text-xs text-foreground">
+      <p className="mt-2 font-mono text-xs text-fg">
         {from} → {to}
       </p>
-      <p className="mt-2 text-sm text-foreground">
+      <p className="mt-2 text-sm text-fg">
         {edge?.compatible
           ? "Ports are compatible."
           : edge?.reason || "Port compatibility could not be confirmed."}
       </p>
-      <p className="mt-2 text-xs text-muted-foreground">{NDV_MAPPING_EDGE_PORT_ONLY_HELP}</p>
+      <p className="mt-2 text-xs text-fg">{NDV_MAPPING_EDGE_PORT_ONLY_HELP}</p>
       {typing.incomplete ? (
-        <p role="status" className="mt-2 text-sm text-warning-foreground" data-ndv-port-typing="incomplete">
+        <p role="status" className="mt-2 text-sm text-fg" data-ndv-port-typing="incomplete">
           {typing.reason}
         </p>
       ) : null}
       {fromEntry || toEntry ? (
-        <div className="mt-3 space-y-2 text-xs text-muted-foreground">
+        <div className="mt-3 space-y-2 text-xs text-fg">
           {fromEntry ? (
             <p>
               from {fromEntry.name}:{" "}
@@ -597,18 +597,18 @@ function SelectedNodePins({
       <h2 id="node-pins-heading" className="text-base font-semibold">
         Pins
       </h2>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="mt-1 text-sm text-fg">
         Inspector is <span className="font-medium">edit</span>. Add action stays
         the guided wizard ({EDITOR_INSPECTOR.wizardSteps.join(" → ")}).{" "}
         {INSPECTOR_METADATA_ONLY_HELP} {INSPECTOR_NO_SECRET_SURFACE_HELP}
       </p>
       {constraint ? (
-        <p role="status" className="mt-2 text-sm text-warning-foreground">
+        <p role="status" className="mt-2 text-sm text-fg">
           {constraint}
         </p>
       ) : null}
       {entry ? (
-        <div className="mt-3 space-y-1 font-mono text-xs text-muted-foreground">
+        <div className="mt-3 space-y-1 font-mono text-xs text-fg">
           <p>
             {[
               ...(entry.inputs ?? []).map((port) => formatPort(port, "in")),
@@ -635,7 +635,7 @@ function SelectedNodePins({
               })
             }
           />
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1 text-xs text-fg">
             Authorized published cluster targets only. Display name and
             version — never kubeconfig.
             {node.type === "kubernetes.rolloutStatus"
@@ -683,11 +683,11 @@ function SelectedNodePins({
       <h2 id="node-credentials-heading" className="text-base font-semibold">
         Credentials
       </h2>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="mt-1 text-sm text-fg">
         {CREDENTIAL_NDV_ADD_HELP}
       </p>
       {constraint && !showPins ? (
-        <p role="status" className="mt-2 text-sm text-warning-foreground">
+        <p role="status" className="mt-2 text-sm text-fg">
           {constraint}
         </p>
       ) : null}
@@ -704,7 +704,7 @@ function SelectedNodePins({
             : null;
         return (
         <div key={fieldName} className="mt-3" data-ndv-field={fieldName}>
-          <p className="text-xs font-medium text-muted-foreground">{fieldName}</p>
+          <p className="text-xs font-medium text-fg">{fieldName}</p>
           <CredentialRefSelect
             identity={identity}
             ready={canCall}
@@ -756,7 +756,7 @@ function SelectedNodePins({
               Vault home
             </Link>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1 text-xs text-fg">
             Add credential opens the guided masked wizard on this graph.
             After add, the picker selects the new display name; YAML stores
             the UUID only. Wizard stays add; this rail stays edit/pick.

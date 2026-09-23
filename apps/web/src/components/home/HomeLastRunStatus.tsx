@@ -84,7 +84,7 @@ export function HomeLastRunStatus({
         </span>
       )}
       {presentation.kind === "indeterminate" ? (
-        <p className="mt-1 text-xs font-semibold text-warning-foreground">{INDETERMINATE_STATUS_HELP}</p>
+        <p className="mt-1 text-xs font-semibold text-fg">{INDETERMINATE_STATUS_HELP}</p>
       ) : null}
     </div>
   );

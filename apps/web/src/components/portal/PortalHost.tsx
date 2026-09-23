@@ -153,17 +153,17 @@ export function PortalHost() {
   }
 
   return (
-    <div className="flex min-h-full flex-col bg-background">
-      <header className="border-b border-border bg-card">
+    <div className="flex min-h-full flex-col bg-bg">
+      <header className="border-b border-border bg-bg">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-6 py-6">
-          <p className="text-sm font-medium tracking-wide text-accent-text uppercase">
+          <p className="text-sm font-medium tracking-wide text-fg uppercase">
             E11.3 · {PORTAL_HOST_NAME} · {PORTAL_ROUTE_MAP_SOURCE} ·{" "}
             {PORTAL_ENTRY_PATH}
           </p>
           <h1 className="text-3xl font-semibold tracking-tight">
             Protected workflow surface
           </h1>
-          <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+          <p className="max-w-3xl text-sm leading-6 text-fg">
             {PORTAL_BOUNDARY_HELP} {PORTAL_HELP} Relates to #123 / Part of #120 —
             keep #123 open.
           </p>
@@ -181,12 +181,12 @@ export function PortalHost() {
           </p>
         ) : null}
 
-        <section className="rounded-2xl border border-border bg-card px-5 py-4 text-sm text-foreground">
-          <p className="text-xs font-medium tracking-wide text-accent-text uppercase">
+        <section className="rounded-2xl border border-border bg-bg px-5 py-4 text-sm text-fg">
+          <p className="text-xs font-medium tracking-wide text-fg uppercase">
             Published #129 map
           </p>
           <p className="mt-2">{catalogNote}</p>
-          <p className="mt-2 font-mono text-xs text-muted-foreground">
+          <p className="mt-2 font-mono text-xs text-fg">
             sharesDatabase={String(PORTAL_BOUNDARY.sharesDatabase)} ·
             sharesExecutor={String(PORTAL_BOUNDARY.sharesExecutor)} ·
             portalEntryIsAuthorization=
@@ -195,11 +195,11 @@ export function PortalHost() {
         </section>
 
         <section className="grid gap-6 lg:grid-cols-2">
-          <div className="rounded-2xl border border-border bg-card px-5 py-5">
+          <div className="rounded-2xl border border-border bg-bg px-5 py-5">
             <h2 className="text-lg font-semibold tracking-tight">
               1. Portal entry RBAC
             </h2>
-            <p className="mt-2 text-sm text-muted-foreground">{PORTAL_RBAC_HELP}</p>
+            <p className="mt-2 text-sm text-fg">{PORTAL_RBAC_HELP}</p>
             <fieldset className="mt-4 space-y-2">
               <legend className="sr-only">Portal entry</legend>
               {(["granted", "denied"] as const).map((role) => (
@@ -214,16 +214,16 @@ export function PortalHost() {
                 </label>
               ))}
             </fieldset>
-            <p className="mt-3 text-xs text-muted-foreground">
+            <p className="mt-3 text-xs text-fg">
               authorizesFlowForge = false · Portal admin ≠ FlowForge membership
             </p>
           </div>
 
-          <div className="rounded-2xl border border-border bg-card px-5 py-5">
+          <div className="rounded-2xl border border-border bg-bg px-5 py-5">
             <h2 className="text-lg font-semibold tracking-tight">
               2. Map roles
             </h2>
-            <p className="mt-2 text-sm text-muted-foreground">{PORTAL_TENANCY_HELP}</p>
+            <p className="mt-2 text-sm text-fg">{PORTAL_TENANCY_HELP}</p>
             <label className="mt-4 block text-sm font-medium">
               Portal role
               <select
@@ -240,7 +240,7 @@ export function PortalHost() {
                 ))}
               </select>
             </label>
-            <p className="mt-2 text-xs text-muted-foreground">
+            <p className="mt-2 text-xs text-fg">
               Mapped request (API still intersects the minting caller):{" "}
               {mappedCaps.length > 0 ? mappedCaps.join(", ") : "admin → full set if member"}
             </p>
@@ -274,11 +274,11 @@ export function PortalHost() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-border bg-card px-5 py-5">
+        <section className="rounded-2xl border border-border bg-bg px-5 py-5">
           <h2 className="text-lg font-semibold tracking-tight">
             3–5. Mint, mount, exchange
           </h2>
-          <p className="mt-2 text-sm text-muted-foreground">{PORTAL_ASSERTION_HELP}</p>
+          <p className="mt-2 text-sm text-fg">{PORTAL_ASSERTION_HELP}</p>
           <label className="mt-4 block text-sm font-medium">
             Deep link
             <select
@@ -295,17 +295,17 @@ export function PortalHost() {
               ))}
             </select>
           </label>
-          <p className="mt-3 font-mono text-xs break-all text-muted-foreground">
+          <p className="mt-3 font-mono text-xs break-all text-fg">
             iframe src {embedSrc.src}
           </p>
           {rejectedAssertion ? (
-            <p className="mt-2 text-sm text-warning-foreground">
+            <p className="mt-2 text-sm text-fg">
               An assertion token was stripped from a host URL. It was never
               copied into the iframe src.
             </p>
           ) : null}
           {tokenId ? (
-            <p className="mt-2 text-xs text-muted-foreground">
+            <p className="mt-2 text-xs text-fg">
               Last mint jti {tokenId} (metadata only)
             </p>
           ) : null}
@@ -320,7 +320,7 @@ export function PortalHost() {
         </section>
 
         {mounted ? (
-          <section className="overflow-hidden rounded-2xl border border-border bg-card">
+          <section className="overflow-hidden rounded-2xl border border-border bg-bg">
             <iframe
               ref={iframeRef}
               title="FlowForge embed"
@@ -330,7 +330,7 @@ export function PortalHost() {
             />
           </section>
         ) : (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-fg">
             FlowForge stays unmounted until Portal entry is granted and an
             assertion is minted. The iframe is not given a database, executor,
             or Portal role.

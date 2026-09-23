@@ -55,7 +55,7 @@ export function SshPinsPanel({
           />
         );
       })}
-      <p className="text-xs text-muted-foreground">
+      <p className="text-xs text-fg">
         Published SSH targets and command profiles only. Display name + version
         — never privateKey, passphrase, or host private material.
       </p>

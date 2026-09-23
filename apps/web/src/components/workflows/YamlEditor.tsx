@@ -15,13 +15,13 @@ type YamlEditorProps = {
 };
 
 const TOKEN_CLASS: Record<string, string> = {
-  comment: "text-muted-foreground italic",
-  key: "text-accent-text",
-  string: "text-warning-foreground",
+  comment: "text-fg italic",
+  key: "text-fg",
+  string: "text-fg",
   number: "ff-yaml-number",
   boolean: "ff-yaml-boolean",
-  punct: "text-muted-foreground",
-  plain: "text-foreground",
+  punct: "text-fg",
+  plain: "text-fg",
 };
 
 export function YamlEditor({
@@ -78,17 +78,17 @@ export function YamlEditor({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card">
+    <div className="overflow-hidden rounded-xl border border-border bg-bg">
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
-        <label htmlFor={textareaId} className="text-sm font-medium text-foreground">
+        <label htmlFor={textareaId} className="text-sm font-medium text-fg">
           YAML
           {meta.name ? (
-            <span className="ml-2 font-mono text-xs font-normal text-muted-foreground">
+            <span className="ml-2 font-mono text-xs font-normal text-fg">
               {meta.name}
             </span>
           ) : null}
         </label>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-fg">
           Synced with the canvas. Line/column errors jump here.
         </p>
       </div>
@@ -96,14 +96,14 @@ export function YamlEditor({
         <pre
           ref={gutterRef}
           aria-hidden
-          className="min-w-12 shrink-0 overflow-hidden border-r border-border bg-background px-2 py-3 text-right font-mono text-xs leading-6 text-muted-foreground"
+          className="min-w-12 shrink-0 overflow-hidden border-r border-border bg-bg px-2 py-3 text-right font-mono text-xs leading-6 text-fg"
         >
           {Array.from({ length: lines }, (_, index) => {
             const line = index + 1;
             return (
               <span
                 key={line}
-                className={errorSet.has(line) ? "block text-warning-foreground" : "block"}
+                className={errorSet.has(line) ? "block text-fg" : "block"}
               >
                 {line}
               </span>
@@ -135,7 +135,7 @@ export function YamlEditor({
             onScroll={syncScroll}
             spellCheck={false}
             wrap="off"
-            className="relative min-h-[22rem] w-full resize-y overflow-auto bg-transparent px-3 py-3 font-mono text-xs leading-6 text-transparent caret-foreground outline-none"
+            className="relative min-h-[22rem] w-full resize-y overflow-auto bg-transparent px-3 py-3 font-mono text-xs leading-6 text-transparent caret-fg outline-none"
           />
         </div>
       </div>

@@ -68,23 +68,23 @@ export function NdvMappingPanel({
     <section
       data-ndv-panel="mapping"
       aria-labelledby="ndv-mapping-heading"
-      className="rounded-2xl border border-border bg-card p-5 shadow-sm"
+      className="rounded-2xl border border-border bg-bg p-5 shadow-sm"
     >
       <h2 id="ndv-mapping-heading" className="text-base font-semibold">
         Mapping
       </h2>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="mt-1 text-sm text-fg">
         Typed field paths between catalog ports. {NDV_MAPPING_NO_EXPRESSION_HELP}{" "}
         {NDV_MAPPING_EDGE_PORT_ONLY_HELP}
       </p>
       {typing.incomplete ? (
-        <p role="status" className="mt-2 text-sm text-warning-foreground" data-ndv-port-typing="incomplete">
+        <p role="status" className="mt-2 text-sm text-fg" data-ndv-port-typing="incomplete">
           {typing.reason ?? JONNY_PORT_TYPING_INCOMPLETE}
         </p>
       ) : null}
 
       {wires.length === 0 ? (
-        <p className="mt-3 text-sm text-muted-foreground">
+        <p className="mt-3 text-sm text-fg">
           This step has no catalog input ports to map.
         </p>
       ) : (
@@ -181,14 +181,14 @@ export function FieldPathMappingEditor({
 
   return (
     <fieldset className="space-y-2" data-ndv-field-path-editor="mapping" data-ndv-field="mapping">
-      <legend className="text-sm text-muted-foreground">dest.path ← source.path</legend>
-      <p className="text-xs text-muted-foreground">{NDV_MAPPING_NO_EXPRESSION_HELP}</p>
+      <legend className="text-sm text-fg">dest.path ← source.path</legend>
+      <p className="text-xs text-fg">{NDV_MAPPING_NO_EXPRESSION_HELP}</p>
       {list.map((row, index) => (
         <div
           key={`${row.dest}-${index}`}
           className="space-y-1 rounded-lg border border-border p-2"
         >
-          <label className="block text-xs text-muted-foreground">
+          <label className="block text-xs text-fg">
             Destination
             <input
               aria-label={`Mapping ${index + 1} dest`}
@@ -198,10 +198,10 @@ export function FieldPathMappingEditor({
               onChange={(event) =>
                 commit(replaceRow(list, index, { ...row, dest: event.target.value }))
               }
-              className="mt-1 w-full rounded-lg border border-border px-2 py-1.5 font-mono text-xs disabled:bg-background"
+              className="mt-1 w-full rounded-lg border border-border px-2 py-1.5 font-mono text-xs disabled:bg-bg"
             />
           </label>
-          <label className="block text-xs text-muted-foreground">
+          <label className="block text-xs text-fg">
             Source
             <input
               aria-label={`Mapping ${index + 1} from`}
@@ -212,10 +212,10 @@ export function FieldPathMappingEditor({
               onChange={(event) =>
                 commit(replaceRow(list, index, { ...row, from: event.target.value }))
               }
-              className="mt-1 w-full rounded-lg border border-border px-2 py-1.5 font-mono text-xs disabled:bg-background"
+              className="mt-1 w-full rounded-lg border border-border px-2 py-1.5 font-mono text-xs disabled:bg-bg"
             />
           </label>
-          <label className="block text-xs text-muted-foreground">
+          <label className="block text-xs text-fg">
             Convert
             <select
               aria-label={`Mapping ${index + 1} convert`}
@@ -229,7 +229,7 @@ export function FieldPathMappingEditor({
                   }),
                 )
               }
-              className="mt-1 w-full rounded-lg border border-border px-2 py-1.5 text-xs disabled:bg-background"
+              className="mt-1 w-full rounded-lg border border-border px-2 py-1.5 text-xs disabled:bg-bg"
             >
               <option value="">no convert</option>
               {NDV_MAPPING_CONVERT_KINDS.map((kind) => (
@@ -243,7 +243,7 @@ export function FieldPathMappingEditor({
             type="button"
             disabled={disabled}
             onClick={() => commit(list.filter((_, item) => item !== index))}
-            className="text-xs text-muted-foreground underline disabled:no-underline"
+            className="text-xs text-fg underline disabled:no-underline"
           >
             Remove
           </button>
@@ -260,12 +260,12 @@ export function FieldPathMappingEditor({
         type="button"
         disabled={disabled}
         onClick={() => commit([...list, { dest: "", from: "" }])}
-        className="text-sm text-accent-text underline decoration-teal-200 underline-offset-2 disabled:text-muted-foreground disabled:no-underline"
+        className="text-sm text-fg underline decoration-teal-200 underline-offset-2 disabled:text-fg disabled:no-underline"
       >
         Add mapping
       </button>
       {validation.errors.length > 0 ? (
-        <ul className="space-y-1 text-sm text-warning-foreground" data-ndv-mapping-errors>
+        <ul className="space-y-1 text-sm text-fg" data-ndv-mapping-errors>
           {validation.errors.map((error) => (
             <li key={error}>{error}</li>
           ))}
@@ -289,14 +289,14 @@ function ConditionPathField({
   const error = value ? ndvFieldPathError(value, "path") : null;
   return (
     <label className="mt-4 block text-sm" data-ndv-field-path-editor="path" data-ndv-field="path">
-      <span className="text-muted-foreground">path into value</span>
+      <span className="text-fg">path into value</span>
       <input
         value={value}
         disabled={disabled}
         placeholder="status"
         list={suggestedFromPaths.length > 0 ? "ndv-condition-paths" : undefined}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-lg border border-border px-2 py-1.5 font-mono text-xs disabled:bg-background"
+        className="mt-1 w-full rounded-lg border border-border px-2 py-1.5 font-mono text-xs disabled:bg-bg"
       />
       {suggestedFromPaths.length > 0 ? (
         <datalist id="ndv-condition-paths">
@@ -305,11 +305,11 @@ function ConditionPathField({
           ))}
         </datalist>
       ) : null}
-      <span className="mt-1 block text-xs text-muted-foreground">
+      <span className="mt-1 block text-xs text-fg">
         Optional dotted identifier into the inbound value port.
       </span>
       {error ? (
-        <span className="mt-1 block text-xs text-warning-foreground">{error}</span>
+        <span className="mt-1 block text-xs text-fg">{error}</span>
       ) : null}
     </label>
   );
@@ -341,11 +341,11 @@ function PortWireRow({
   );
   return (
     <li className="rounded-lg border border-border px-3 py-2">
-      <p className="font-mono text-xs text-muted-foreground">
+      <p className="font-mono text-xs text-fg">
         {formatPort(wire.input, "in")}
         {wire.input.required ? " · required" : ""}
       </p>
-      <label className="mt-2 block text-xs text-muted-foreground">
+      <label className="mt-2 block text-xs text-fg">
         Upstream output
         <select
           aria-label={`Map ${wire.input.name} from`}
@@ -354,7 +354,7 @@ function PortWireRow({
           onChange={(event) =>
             onRewire?.(node.id, wire.input.name, event.target.value || null)
           }
-          className="mt-1 w-full rounded-lg border border-border px-2 py-1.5 text-xs disabled:bg-background"
+          className="mt-1 w-full rounded-lg border border-border px-2 py-1.5 text-xs disabled:bg-bg"
         >
           <option value="">No mapping</option>
           {wire.from && !options.some((item) => item.from === wire.from) ? (
@@ -368,20 +368,20 @@ function PortWireRow({
         </select>
       </label>
       {wire.fromPort ? (
-        <p className="mt-1 font-mono text-xs text-muted-foreground">
+        <p className="mt-1 font-mono text-xs text-fg">
           from {formatPort(wire.fromPort, "out")}
         </p>
       ) : null}
       {wire.reason ? (
         <p
           role="status"
-          className="mt-1 text-xs text-warning-foreground"
+          className="mt-1 text-xs text-fg"
           data-ndv-mapping-incompatible={wire.compatible ? undefined : "true"}
         >
           {wire.reason}
         </p>
       ) : wire.from ? (
-        <p className="mt-1 text-xs text-muted-foreground">Ports are compatible.</p>
+        <p className="mt-1 text-xs text-fg">Ports are compatible.</p>
       ) : null}
     </li>
   );

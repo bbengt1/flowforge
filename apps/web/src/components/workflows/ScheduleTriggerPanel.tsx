@@ -362,7 +362,7 @@ export function ScheduleTriggerPanel({
     <section
       id="schedule-triggers"
       aria-labelledby="schedule-triggers-heading"
-      className="rounded-2xl border border-border bg-card p-5 shadow-sm"
+      className="rounded-2xl border border-border bg-bg p-5 shadow-sm"
     >
       <DestructiveUndoBar
         ticket={scheduleUndo.ticket}
@@ -375,13 +375,13 @@ export function ScheduleTriggerPanel({
       />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-medium tracking-wide text-accent-text uppercase">
+          <p className="text-sm font-medium tracking-wide text-fg uppercase">
             E10.3 · Schedules · #{SCHEDULE_TRIGGER_API_PR}
           </p>
           <h2 id="schedule-triggers-heading" className="text-base font-semibold">
             Timezone-explicit schedule config
           </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-sm text-fg">
             {workflowName ? `${workflowName}. ` : null}
             Pin a published version and enable it. Activation above composes
             that enable + pin — this form is timezone, expression, and
@@ -393,7 +393,7 @@ export function ScheduleTriggerPanel({
             type="button"
             disabled={pending !== null}
             onClick={() => void refresh()}
-            className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm hover:bg-background disabled:opacity-60"
+            className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10 disabled:opacity-60"
           >
             {pending === "list" ? "Refreshing…" : "Refresh"}
           </button>
@@ -401,14 +401,14 @@ export function ScheduleTriggerPanel({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm hover:bg-background"
+              className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10"
             >
               Close
             </button>
           ) : (
             <Link
               href={editorScheduleTriggersHref(workflowId)}
-              className="text-sm text-accent-text underline"
+              className="text-sm text-fg underline"
             >
               Editor anchor
             </Link>
@@ -416,7 +416,7 @@ export function ScheduleTriggerPanel({
         </div>
       </div>
 
-      <ul className="mt-4 grid gap-2 text-sm text-muted-foreground">
+      <ul className="mt-4 grid gap-2 text-sm text-fg">
         <li>{SCHEDULE_TIMEZONE_HELP}</li>
         <li>{SCHEDULE_EXPRESSION_HELP}</li>
         <li>{SCHEDULE_OVERLAP_HELP}</li>
@@ -427,7 +427,7 @@ export function ScheduleTriggerPanel({
       </ul>
 
       {catalogFallback ? (
-        <p role="status" className="mt-4 text-sm text-warning-foreground">
+        <p role="status" className="mt-4 text-sm text-fg">
           {SCHEDULE_CATALOG_FALLBACK_MESSAGE}
         </p>
       ) : null}
@@ -439,15 +439,15 @@ export function ScheduleTriggerPanel({
       ) : null}
 
       {authMessage ? (
-        <p role="status" className="mt-4 text-sm font-medium text-destructive">
+        <p role="status" className="mt-4 text-sm font-medium text-danger">
           {authMessage}
         </p>
       ) : null}
 
       {yamlDeclared.length > 0 ? (
-        <div className="mt-4 rounded-xl border border-border bg-background p-3">
+        <div className="mt-4 rounded-xl border border-border bg-bg p-3">
           <h3 className="text-sm font-semibold">Declared in YAML</h3>
-          <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+          <ul className="mt-2 space-y-1 text-sm text-fg">
             {yamlDeclared.map((item) => (
               <li key={item.id}>
                 <span className="font-mono text-xs">{item.id}</span>
@@ -465,7 +465,7 @@ export function ScheduleTriggerPanel({
       <div className="mt-5">
         <h3 className="text-sm font-semibold">Configured schedules</h3>
         {items.length === 0 ? (
-          <p className="mt-2 text-sm text-muted-foreground">
+          <p className="mt-2 text-sm text-fg">
             No schedule metadata from the API. Create one below when you have
             workflow.edit. Safe defaults stay skip / catchUp=0.
           </p>
@@ -479,12 +479,12 @@ export function ScheduleTriggerPanel({
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-mono text-sm break-all">{item.id}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
+                    <p className="mt-1 text-xs text-fg">
                       {item.timezone} · {scheduleExpressionLabel(item)} · overlap{" "}
                       {item.overlapPolicy} · misfire {item.misfirePolicy} ·
                       catch-up {item.catchUp}
                     </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
+                    <p className="mt-1 text-xs text-fg">
                       status {item.status}
                       {item.workflowVersionId
                         ? ` · version ${item.workflowVersionId}`
@@ -500,7 +500,7 @@ export function ScheduleTriggerPanel({
                             type="button"
                             disabled={pending !== null}
                             onClick={() => startEdit(item)}
-                            className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm hover:bg-background disabled:opacity-60"
+                            className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10 disabled:opacity-60"
                           >
                             Edit
                           </button>
@@ -508,7 +508,7 @@ export function ScheduleTriggerPanel({
                             type="button"
                             disabled={pending !== null}
                             onClick={() => void onToggle(item)}
-                            className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm hover:bg-background disabled:opacity-60"
+                            className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10 disabled:opacity-60"
                           >
                             {item.status === "disabled" ? "Enable" : "Disable"}
                           </button>
@@ -529,7 +529,7 @@ export function ScheduleTriggerPanel({
                           type="button"
                           disabled={pending !== null}
                           onClick={() => void onDispatch(item.id)}
-                          className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm hover:bg-background disabled:opacity-60"
+                          className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10 disabled:opacity-60"
                         >
                           {pending === `dispatch:${item.id}`
                             ? "Dispatching…"
@@ -552,7 +552,7 @@ export function ScheduleTriggerPanel({
       </div>
 
       {message ? (
-        <p role="status" className="mt-4 text-sm text-foreground">
+        <p role="status" className="mt-4 text-sm text-fg">
           {message}
         </p>
       ) : null}
@@ -581,7 +581,7 @@ export function ScheduleTriggerPanel({
                   ...seedDraftFromYaml(yaml),
                 }))
               }
-              className="justify-self-start text-sm text-accent-text underline"
+              className="justify-self-start text-sm text-fg underline"
             >
               Load timezone and expression from YAML
             </button>
@@ -589,7 +589,7 @@ export function ScheduleTriggerPanel({
           <Field
             id="schedule-version"
             label="Published workflow version"
-            labelClassName="text-muted-foreground"
+            labelClassName="text-fg"
             invalid={localErrors.length > 0}
             errorId={localErrors.length > 0 ? "schedule-form-error" : undefined}
           >
@@ -598,7 +598,7 @@ export function ScheduleTriggerPanel({
               onChange={(event) =>
                 patchDraft({ workflowVersionId: event.target.value })
               }
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-1.5 text-sm"
+              className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-1.5 text-sm"
             >
               <option value="">
                 {published.length === 0
@@ -615,7 +615,7 @@ export function ScheduleTriggerPanel({
           <Field
             id="schedule-timezone"
             label="IANA timezone"
-            labelClassName="text-muted-foreground"
+            labelClassName="text-fg"
             invalid={localErrors.length > 0}
             errorId={localErrors.length > 0 ? "schedule-form-error" : undefined}
           >
@@ -623,7 +623,7 @@ export function ScheduleTriggerPanel({
               list="schedule-timezones"
               value={draft.timezone}
               onChange={(event) => patchDraft({ timezone: event.target.value })}
-              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-1.5 font-mono text-sm"
+              className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-1.5 font-mono text-sm"
             />
           </Field>
           <datalist id="schedule-timezones">
@@ -632,7 +632,7 @@ export function ScheduleTriggerPanel({
             ))}
           </datalist>
           <fieldset className="grid gap-2">
-            <legend className="text-sm text-muted-foreground">Expression</legend>
+            <legend className="text-sm text-fg">Expression</legend>
             <Field
               id="schedule-expression-cron"
               label="Cron (5-field)"
@@ -676,14 +676,14 @@ export function ScheduleTriggerPanel({
             <Field
               id="schedule-cron"
               label="Cron"
-              labelClassName="text-muted-foreground"
+              labelClassName="text-fg"
               invalid={localErrors.length > 0}
               errorId={localErrors.length > 0 ? "schedule-form-error" : undefined}
             >
               <input
                 value={draft.cron}
                 onChange={(event) => patchDraft({ cron: event.target.value })}
-                className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-1.5 font-mono text-sm"
+                className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-1.5 font-mono text-sm"
                 placeholder="0 0 * * *"
               />
             </Field>
@@ -691,14 +691,14 @@ export function ScheduleTriggerPanel({
             <Field
               id="schedule-interval"
               label="Interval"
-              labelClassName="text-muted-foreground"
+              labelClassName="text-fg"
               invalid={localErrors.length > 0}
               errorId={localErrors.length > 0 ? "schedule-form-error" : undefined}
             >
               <input
                 value={draft.interval}
                 onChange={(event) => patchDraft({ interval: event.target.value })}
-                className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-1.5 font-mono text-sm"
+                className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-1.5 font-mono text-sm"
                 placeholder="PT15M"
               />
             </Field>
@@ -707,7 +707,7 @@ export function ScheduleTriggerPanel({
             <Field
               id="schedule-overlap"
               label="Overlap policy"
-              labelClassName="text-muted-foreground"
+              labelClassName="text-fg"
               invalid={localErrors.length > 0}
               errorId={localErrors.length > 0 ? "schedule-form-error" : undefined}
             >
@@ -718,7 +718,7 @@ export function ScheduleTriggerPanel({
                     overlapPolicy: event.target.value as ScheduleOverlapPolicy,
                   })
                 }
-                className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-1.5 text-sm"
+                className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-1.5 text-sm"
               >
                 {SCHEDULE_OVERLAP_POLICIES.map((policy) => (
                   <option key={policy} value={policy}>
@@ -731,7 +731,7 @@ export function ScheduleTriggerPanel({
             <Field
               id="schedule-misfire"
               label="Misfire policy"
-              labelClassName="text-muted-foreground"
+              labelClassName="text-fg"
               invalid={localErrors.length > 0}
               errorId={localErrors.length > 0 ? "schedule-form-error" : undefined}
             >
@@ -742,7 +742,7 @@ export function ScheduleTriggerPanel({
                     misfirePolicy: event.target.value as ScheduleMisfirePolicy,
                   })
                 }
-                className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-1.5 text-sm"
+                className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-1.5 text-sm"
               >
                 {SCHEDULE_MISFIRE_POLICIES.map((policy) => (
                   <option key={policy} value={policy}>
@@ -755,14 +755,14 @@ export function ScheduleTriggerPanel({
             <Field
               id="schedule-catch-up"
               label={`Catch-up (0–${SCHEDULE_MAX_CATCH_UP})`}
-              labelClassName="text-muted-foreground"
+              labelClassName="text-fg"
               invalid={localErrors.length > 0}
               errorId={localErrors.length > 0 ? "schedule-form-error" : undefined}
             >
               <select
                 value={draft.catchUp}
                 onChange={(event) => patchDraft({ catchUp: event.target.value })}
-                className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-1.5 text-sm"
+                className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-1.5 text-sm"
               >
                 {Array.from({ length: SCHEDULE_MAX_CATCH_UP + 1 }, (_, value) => (
                   <option key={value} value={String(value)}>
@@ -773,9 +773,9 @@ export function ScheduleTriggerPanel({
               </select>
             </Field>
           </div>
-          <p className="text-xs text-muted-foreground">{SCHEDULE_CSRF_HELP}</p>
+          <p className="text-xs text-fg">{SCHEDULE_CSRF_HELP}</p>
           {localErrors.length > 0 ? (
-            <FieldError id="schedule-form-error" className="text-sm text-destructive">
+            <FieldError id="schedule-form-error" className="text-sm text-danger">
               {localErrors.map((error) => (
                 <li key={error}>{error}</li>
               ))}
@@ -807,7 +807,7 @@ export function ScheduleTriggerPanel({
                     }),
                   );
                 }}
-                className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm hover:bg-background"
+                className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10"
               >
                 Cancel edit
               </button>
@@ -815,7 +815,7 @@ export function ScheduleTriggerPanel({
           </div>
         </form>
       ) : (
-        <p className="mt-4 text-sm text-muted-foreground">{SCHEDULE_FORBIDDEN_MESSAGE}</p>
+        <p className="mt-4 text-sm text-fg">{SCHEDULE_FORBIDDEN_MESSAGE}</p>
       )}
       {deleting ? (
         <ConfirmDestructive

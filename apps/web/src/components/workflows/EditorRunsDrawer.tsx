@@ -413,7 +413,7 @@ export function EditorRunsDrawer({
           </div>
         ) : null}
         {strippedKeys.length ? (
-          <p role="status" className="mt-3 text-sm text-warning-foreground">
+          <p role="status" className="mt-3 text-sm text-fg">
             Unexpected secret fields were stripped from the API response:{" "}
             {strippedKeys.join(", ")}. Treat this as a backend contract bug.
           </p>

@@ -7,8 +7,10 @@
  * zinc/orange skin.
  *
  * G.3.9 / #496: light is a follow map of these same variables on
- * :root[data-ff-theme="light"]. Dark stays the default. Not a second
- * token file. Explorer nav stays the dark rail.
+ * :root[data-ff-theme="light"]. Dark stays the default. Themeable
+ * chrome uses bg, fg, border, accent, and danger. Not a second token
+ * file or component tree. Explorer nav stays the dark rail. Contrast
+ * stays on the axe gate.
  *
  * Consume via var(--ff-*) or the shadcn-friendly aliases below.
  * Do not proliferate one-off hex in feature chrome after this file.
@@ -28,9 +30,6 @@
   --ff-danger-surface: #3f151c;
   --ff-focus-ring: #0f766e;
   --ff-border: rgb(255 255 255 / 0.10);
-  /* Text on accent fills stays --ff-accent-foreground. This ink is
-     accent-colored text on canvas/surface, and it flips with theme. */
-  --ff-accent-text: #5eead4;
   /* Drafts-never-run / loud warning. Dark values match the previous
      amber hexes so the default theme does not shift. */
   --ff-warning: #d97706;
@@ -84,6 +83,13 @@
   --ring: var(--ff-focus-ring);
   --radius: var(--ff-radius);
   --focus-ring: var(--ff-focus-ring);
+
+  /* Semantic chrome. Light overrides the --ff-* values these names use.
+     One theme attribute, not a second component tree. */
+  --bg: var(--ff-surface);
+  --fg: var(--ff-text);
+  --accent: var(--ff-accent);
+  --danger: var(--ff-danger);
 }
 
 /*
@@ -99,7 +105,6 @@
   --ff-muted: #4e5563;
   --ff-accent: #0f766e;
   --ff-accent-foreground: #ecfdf8;
-  --ff-accent-text: #115e59;
   --ff-danger: #9f1239;
   --ff-danger-foreground: #fff1f2;
   --ff-danger-surface: #9f1239;
@@ -126,9 +131,11 @@
   --color-muted-foreground: var(--ff-muted);
   --color-destructive: var(--ff-danger);
   --color-destructive-foreground: var(--ff-danger-foreground);
-  --color-accent-text: var(--ff-accent-text);
-  --color-warning-foreground: var(--ff-warning-foreground);
-  --color-border: var(--ff-border);
+  --color-bg: var(--bg);
+  --color-fg: var(--fg);
+  --color-accent: var(--accent);
+  --color-danger: var(--danger);
+  --color-border: var(--border);
   --color-input: var(--ff-border);
   --color-ring: var(--ff-focus-ring);
   --radius-sm: var(--ff-radius-sm);

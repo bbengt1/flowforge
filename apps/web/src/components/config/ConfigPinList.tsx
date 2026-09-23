@@ -8,7 +8,7 @@ type ConfigPinListProps = {
 
 export function ConfigPinList({ pins, empty }: ConfigPinListProps) {
   if (!pins || pins.length === 0) {
-    return empty ? <p className="text-xs text-muted-foreground">{empty}</p> : null;
+    return empty ? <p className="text-xs text-fg">{empty}</p> : null;
   }
   return (
     <ul className="space-y-1">
@@ -20,7 +20,7 @@ export function ConfigPinList({ pins, empty }: ConfigPinListProps) {
             digest={pin.digest}
             readOnly
           />
-          <p className="font-mono text-[11px] break-all text-muted-foreground">
+          <p className="font-mono text-[11px] break-all text-fg">
             {pin.kind} {pin.resourceId}
           </p>
         </li>

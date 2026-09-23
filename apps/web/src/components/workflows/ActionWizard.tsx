@@ -517,8 +517,8 @@ export function ActionWizard({
       returnFocusTo={satelliteOverlayTriggerId("action-wizard")}
       className="fixed inset-0 z-30 flex items-start justify-center overflow-auto bg-zinc-900/40 p-4"
     >
-      <div className="my-8 w-full max-w-3xl rounded-2xl border border-border bg-card p-6 shadow-lg">
-        <p className="text-sm font-medium tracking-wide text-accent-text uppercase">
+      <div className="my-8 w-full max-w-3xl rounded-2xl border border-border bg-bg p-6 shadow-lg">
+        <p className="text-sm font-medium tracking-wide text-fg uppercase">
           Add action · step {stepIndex + 1} of {ACTION_WIZARD_STEPS.length}
         </p>
         <div className="mt-1 flex items-start justify-between gap-3">
@@ -528,17 +528,17 @@ export function ActionWizard({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-foreground hover:bg-background"
+            className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm font-medium text-fg hover:bg-fg/10"
           >
             Close
           </button>
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 text-sm text-fg">
           Guided add: type → authorized target/credential → configure → map →
           review. Select a canvas node to edit it in the inspector. Secrets
           stay in the vault — selectors show display names only.
         </p>
-        <ol className="mt-3 flex flex-wrap gap-2 text-sm text-muted-foreground">
+        <ol className="mt-3 flex flex-wrap gap-2 text-sm text-fg">
           {ACTION_WIZARD_STEPS.map((item, index) => (
             <li key={item}>
               <button
@@ -560,7 +560,7 @@ export function ActionWizard({
           <p
             role="status"
             className={`mt-4 text-sm ${
-              feedback === "error" ? "text-destructive" : "text-accent-text"
+              feedback === "error" ? "text-danger" : "text-fg"
             }`}
           >
             {feedbackLabel(feedback)}
@@ -656,7 +656,7 @@ export function ActionWizard({
             <button
               type="button"
               onClick={() => setStep(prevWizardStep(step))}
-              className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-background"
+              className="rounded-lg border border-border bg-bg px-3 py-2 text-sm font-medium text-fg hover:bg-fg/10"
             >
               Back
             </button>
@@ -727,7 +727,7 @@ function TypeStep({
 
   return (
     <div className="space-y-4" data-uxl7="wizard-type" data-uxl7-paint={paint.kind}>
-      <p className="text-sm text-muted-foreground">{PALETTE_CATEGORY_FIRST_HELP}</p>
+      <p className="text-sm text-fg">{PALETTE_CATEGORY_FIRST_HELP}</p>
       <Field id="action-wizard-search" label="Search types">
         <input
           value={query}
@@ -770,7 +770,7 @@ function TypeStep({
                   <span className="font-medium">
                     {PALETTE_CATEGORY_LABELS[group.id]}
                   </span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-xs text-fg">
                     {group.items.length} enabled
                   </span>
                 </button>
@@ -784,7 +784,7 @@ function TypeStep({
           <button
             type="button"
             onClick={() => setSelectedCategory(null)}
-            className="text-xs font-medium text-accent-text underline"
+            className="text-xs font-medium text-fg underline"
           >
             All categories
           </button>
@@ -819,14 +819,14 @@ function TypeStep({
             ))}
           </ul>
           {paint.items.length === 0 ? (
-            <p className="mt-2 text-sm text-muted-foreground">
+            <p className="mt-2 text-sm text-fg">
               No enabled actions match that search.
             </p>
           ) : null}
         </div>
       ) : null}
       {paint.kind === "unavailable" ? (
-        <p className="text-sm text-muted-foreground" role="status">
+        <p className="text-sm text-fg" role="status">
           {paint.unavailableReason ?? PALETTE_CATALOG_UNAVAILABLE_HELP}
         </p>
       ) : null}
@@ -853,20 +853,20 @@ function TypeCard({
         className={`w-full rounded-lg border px-3 py-2 text-left text-sm ${
           selected
             ? "border-teal-800 bg-teal-50 text-teal-950"
-            : "border-border text-foreground hover:border-border"
+            : "border-border text-fg hover:border-border"
         }`}
       >
         <span className="font-medium">{entry.name}</span>
-        <span className={`ml-2 font-mono text-xs ${selected ? "text-teal-900" : "text-muted-foreground"}`}>
+        <span className={`ml-2 font-mono text-xs ${selected ? "text-teal-900" : "text-fg"}`}>
           {entry.type}
         </span>
         {entry.source === "contract-fallback" ? (
-          <span className={`ml-2 text-xs ${selected ? "text-teal-900" : "text-muted-foreground"}`}>
+          <span className={`ml-2 text-xs ${selected ? "text-teal-900" : "text-fg"}`}>
             catalog fallback (core)
           </span>
         ) : null}
         {reason ? (
-          <span className={`mt-1 block text-xs ${selected ? "text-teal-900" : "text-muted-foreground"}`}>
+          <span className={`mt-1 block text-xs ${selected ? "text-teal-900" : "text-fg"}`}>
             {reason}
           </span>
         ) : null}
@@ -898,7 +898,7 @@ function TargetStep({
 }) {
   if (kinds.length === 0 && credentialOptions.options.length === 0 && credentialOptions.closed) {
     return (
-      <p className="text-sm text-muted-foreground">
+      <p className="text-sm text-fg">
         This action has no authorized target or credential selectors. Continue
         to configure.
       </p>
@@ -907,7 +907,7 @@ function TargetStep({
   return (
     <div className="space-y-4">
       {kinds.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-fg">
           No cluster/SSH/profile selector for this type. Credentials below are
           display names only.
         </p>
@@ -992,14 +992,14 @@ function TargetStep({
         );
       })}
       {isKubernetesConfigurableType(draft.type) ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-fg">
           Display name + id only. Workspace <code className="font-mono">type=kubernetes</code>{" "}
           targets; the target binds a vault credential. The UI never receives kubeconfig
           or plaintext.
         </p>
       ) : null}
       {isSshConfigurableType(draft.type) ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-fg">
           Display name + id only. Published workspace SSH targets bind a{" "}
           <code className="font-mono">type=ssh_private_key</code> vault credential.
           Command profiles are administrator-owned templates. The UI never lists
@@ -1007,7 +1007,7 @@ function TargetStep({
         </p>
       ) : null}
       {isScriptConfigurableType(draft.type) ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-fg">
           Display name + id only. Choose a published approved runtime/dependency
           profile that matches this language — not an arbitrary image.{" "}
           {SCRIPT_RUNTIME_LANGUAGE_FILTER_HELP} Secrets are never listed.{" "}
@@ -1015,7 +1015,7 @@ function TargetStep({
         </p>
       ) : null}
       {isHttpConfigurableType(draft.type) ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-fg">
           Display name + id only. Connections, recipient lists, templates, and
           response schemas are published workspace pins. There is no free-form
           URL, recipient address, or credential field. The connection binds the
@@ -1032,13 +1032,13 @@ function TargetStep({
               ? `Selected ${draft.credentialDisplayName}.`
               : "The target pin binds the credential server-side."
           }`}
-          hintClassName="mt-1 block text-xs text-muted-foreground"
+          hintClassName="mt-1 block text-xs text-fg"
         >
           <select
             value={draft.credentialId}
             disabled={credentialOptions.closed}
             onChange={(event) => onCredential(event.target.value)}
-            className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm disabled:bg-background"
+            className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm disabled:bg-bg"
           >
             <option value="">
               {credentialOptions.closed
@@ -1053,7 +1053,7 @@ function TargetStep({
           </select>
         </Field>
         {credentialOptions.closed ? (
-          <span role="status" className="mt-1 block text-sm text-muted-foreground">
+          <span role="status" className="mt-1 block text-sm text-fg">
             {credentialOptions.reason}
           </span>
         ) : null}
@@ -1127,14 +1127,14 @@ function ConfigureStep({
         />
       </Field>
       {inferred && !kubernetes && !ssh && !script && !http ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-fg">
           Configure fields are inferred from phase/ports and the YAML schema
           until catalog <code className="font-mono">allowedWith</code> is
           richer (jonny follow-up).
         </p>
       ) : null}
       {(kubernetes || ssh || script || http) && fields.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-fg">
           Live catalog did not provide{" "}
           <code className="font-mono">allowedWith</code> for this type.
           Configuration fields are not invented. YAML remains the source of
@@ -1276,7 +1276,7 @@ function ConfigureStep({
         </details>
       ) : null}
       {kubernetes && draft.with.wait === "ready" ? (
-        <p className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground">
+        <p className="rounded-lg border border-border bg-bg px-3 py-2 text-sm text-fg">
           {waitReadyCopy}
         </p>
       ) : null}
@@ -1385,7 +1385,7 @@ function ConfigField({
         : ""
       : stringifyWizardValue(value);
   const label = field.label || field.name;
-  const hintClassName = "mt-1 block text-xs text-muted-foreground";
+  const hintClassName = "mt-1 block text-xs text-fg";
   const controlClass =
     "mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm";
   if (field.readOnly) {
@@ -1403,7 +1403,7 @@ function ConfigField({
           value={text}
           readOnly
           disabled
-          className={`${controlClass} bg-background`}
+          className={`${controlClass} bg-bg`}
         />
       </Field>
     );
@@ -1541,12 +1541,12 @@ function ConnectStep({
   const inputs = entry?.inputs ?? [];
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
+      <p className="text-sm text-fg">
         Map upstream typed outputs onto this action&apos;s inputs. Sensitive
         preview values are redacted.
       </p>
       {inputs.length === 0 ? (
-        <p className="text-sm text-muted-foreground">This action has no input ports.</p>
+        <p className="text-sm text-fg">This action has no input ports.</p>
       ) : (
         inputs.map((port) => {
           const options = compatibleUpstreamOutputs(nodes, catalog, entries, port);
@@ -1558,7 +1558,7 @@ function ConnectStep({
               label={
                 <>
                   {port.name}{" "}
-                  <span className="font-mono text-xs text-muted-foreground">({port.kind})</span>
+                  <span className="font-mono text-xs text-fg">({port.kind})</span>
                 </>
               }
             >
@@ -1586,7 +1586,7 @@ function ConnectStep({
         })
       )}
       {draft.mappings.length > 0 ? (
-        <pre className="overflow-auto rounded-lg bg-background p-3 font-mono text-xs text-foreground">
+        <pre className="overflow-auto rounded-lg bg-bg p-3 font-mono text-xs text-fg">
           {JSON.stringify(
             draft.mappings.map((item) => ({ from: item.from, to: item.toPort })),
             null,
@@ -1638,33 +1638,33 @@ function ReviewStep({
     <div className="space-y-4">
       <dl className="grid gap-2 text-sm">
         <div>
-          <dt className="inline text-muted-foreground">Type </dt>
+          <dt className="inline text-fg">Type </dt>
           <dd className="inline font-mono text-xs">{draft.type || "—"}</dd>
         </div>
         <div>
-          <dt className="inline text-muted-foreground">Name </dt>
+          <dt className="inline text-fg">Name </dt>
           <dd className="inline">{draft.name || "—"}</dd>
         </div>
         <div>
-          <dt className="inline text-muted-foreground">Credential </dt>
+          <dt className="inline text-fg">Credential </dt>
           <dd className="inline">{draft.credentialDisplayName || "bound via target"}</dd>
         </div>
       </dl>
       <section className="rounded-xl border border-border px-4 py-3">
         <h3 className="text-sm font-semibold">Policy impact</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 text-sm text-fg">
           Permissions: {policy.permissions.join(", ") || "—"}. {policy.retryHint}{" "}
           {policy.approvalHint}
         </p>
         {policy.catalogSource === "inferred" ? (
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1 text-xs text-fg">
             Policy metadata inferred from the catalog stub. Richer{" "}
             <code className="font-mono">allowedWith</code> / policy is a jonny
             follow-up.
           </p>
         ) : null}
         {draft.type.startsWith("kubernetes.") ? (
-          <p className="mt-2 text-xs text-muted-foreground">
+          <p className="mt-2 text-xs text-fg">
             SSA FieldManager={applyRules.fieldManager} Force={String(applyRules.force)}.
             Server dry-run always runs before persist. wait=ready →{" "}
             {effectiveWaitReady(engineCatalog)} (observable kinds only;
@@ -1675,7 +1675,7 @@ function ReviewStep({
           </p>
         ) : null}
         {isSshConfigurableType(draft.type) ? (
-          <p className="mt-2 text-xs text-muted-foreground">
+          <p className="mt-2 text-xs text-fg">
             ssh.run uses an ephemeral key handle (no privateKey on the wire),
             known-host fingerprint match, and every resolved IP must be in
             allowedAddresses — the worker dials only that verified address.
@@ -1690,7 +1690,7 @@ function ReviewStep({
           </p>
         ) : null}
         {isHttpConfigurableType(draft.type) ? (
-          <p className="mt-2 text-xs text-muted-foreground">
+          <p className="mt-2 text-xs text-fg">
             HTTP and notification actions pin authorized ops-config resources
             only. YAML stores resource UUIDs
             {draft.type === "http.request"
@@ -1706,7 +1706,7 @@ function ReviewStep({
           </p>
         ) : null}
         {isScriptConfigurableType(draft.type) ? (
-          <p className="mt-2 text-xs text-muted-foreground">
+          <p className="mt-2 text-xs text-fg">
             {SCRIPT_PUBLISH_BOUNDARY_HELP} {SCRIPT_DRAFT_NOT_EXECUTABLE_HELP}{" "}
             {SCRIPT_MUTABLE_REJECT_HELP} {SCRIPT_EXECUTE_FAIL_CLOSED_HELP}{" "}
             {SCRIPT_RUNTIME_ISOLATION_HELP} YAML
@@ -1739,7 +1739,7 @@ function ReviewStep({
       {parseSshEvaluateRetry(evaluation).map((item) => (
         <p
           key={`${item.nodeId}-${item.operation}`}
-          className="text-xs text-muted-foreground"
+          className="text-xs text-fg"
         >
           Evaluate {item.operation}
           {item.nodeId ? ` (${item.nodeId})` : ""}: retryAllowed=
@@ -1752,7 +1752,7 @@ function ReviewStep({
       {parseScriptEvaluateRetry(evaluation).map((item) => (
         <p
           key={`script-${item.nodeId}-${item.operation}`}
-          className="text-xs text-muted-foreground"
+          className="text-xs text-fg"
         >
           Evaluate {item.operation}
           {item.nodeId ? ` (${item.nodeId})` : ""}: retryAllowed=
@@ -1764,16 +1764,16 @@ function ReviewStep({
       ))}
       <section className="rounded-xl border border-border px-4 py-3">
         <h3 className="text-sm font-semibold">Redacted YAML preview</h3>
-        <pre className="mt-2 overflow-auto font-mono text-xs text-foreground">{preview}</pre>
+        <pre className="mt-2 overflow-auto font-mono text-xs text-fg">{preview}</pre>
       </section>
       {errors.length > 0 ? (
-        <ul className="space-y-1 text-sm text-destructive">
+        <ul className="space-y-1 text-sm text-danger">
           {errors.map((error) => (
             <li key={error}>{error}</li>
           ))}
         </ul>
       ) : (
-        <p className="text-sm text-muted-foreground">Validation passed. Add writes this node into the draft YAML.</p>
+        <p className="text-sm text-fg">Validation passed. Add writes this node into the draft YAML.</p>
       )}
     </div>
   );
@@ -1802,7 +1802,7 @@ function SshRetryPolicyFields({
   return (
     <fieldset className="space-y-3 rounded-xl border border-border px-4 py-3">
       <legend className="px-1 text-sm font-medium">Retry policy</legend>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-xs text-fg">
         {SSH_RETRY_ZERO_MESSAGE} This control never auto-retries. Lease loss
         stays indeterminate until verification — there is no blind-retry
         button.
@@ -1811,13 +1811,13 @@ function SshRetryPolicyFields({
         id="wizard-ssh-max-attempts"
         label="maxAttempts"
         hint={`Default ${SSH_DEFAULT_RETRY_MAX_ATTEMPTS}. Allowed range ${SSH_DEFAULT_RETRY_MAX_ATTEMPTS}–${SSH_MAX_RETRY_ATTEMPTS}. Values above 0 require a retrySafe profile with a declared verification probe.`}
-        hintClassName="mt-1 block text-xs text-muted-foreground"
+        hintClassName="mt-1 block text-xs text-fg"
         error={
           parsed.errors.length > 0
             ? parsed.errors[0] || SSH_RETRY_DENIED_MESSAGE
             : undefined
         }
-        errorClassName="mt-1 block text-sm text-warning-foreground"
+        errorClassName="mt-1 block text-sm text-fg"
       >
         <input
           type="number"
@@ -1832,12 +1832,12 @@ function SshRetryPolicyFields({
           className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
         />
       </Field>
-      <p className="text-sm text-foreground">
+      <p className="text-sm text-fg">
         Selected profile retrySafe is {profileRetrySafe ? "true" : "false"};
         verification is {verificationDeclared ? "declared" : "missing"}.
       </p>
       {parsed.errors.length > 0 ? null : parsed.warnings.length > 0 ? (
-        <p className="text-sm text-foreground">{parsed.warnings[0]}</p>
+        <p className="text-sm text-fg">{parsed.warnings[0]}</p>
       ) : null}
     </fieldset>
   );
@@ -1867,7 +1867,7 @@ function SshParameterFields({
         id="wizard-ssh-parameters"
         label="Parameters"
         hint="Typed profile parameters as key=value lines after a profile is selected. No raw shell, interpolation tokens, keys, or passwords."
-        hintClassName="mt-1 block text-xs text-muted-foreground"
+        hintClassName="mt-1 block text-xs text-fg"
       >
         <textarea
           value={Object.entries(value)
@@ -1893,7 +1893,7 @@ function SshParameterFields({
   return (
     <fieldset className="space-y-3 rounded-xl border border-border px-4 py-3">
       <legend className="px-1 text-sm font-medium">Typed profile parameters</legend>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-xs text-fg">
         Values are constrained by the selected command profile. The reviewed
         renderer owns quoting. This is not a free-form shell.
       </p>
@@ -1907,7 +1907,7 @@ function SshParameterFields({
               id={`wizard-ssh-param-${constraint.name}`}
               label={`${constraint.name}${constraint.required ? " *" : ""}`}
               hint={constraint.description}
-              hintClassName="mt-1 block text-xs text-muted-foreground"
+              hintClassName="mt-1 block text-xs text-fg"
               required={constraint.required}
             >
               <select
@@ -1932,7 +1932,7 @@ function SshParameterFields({
               id={`wizard-ssh-param-${constraint.name}`}
               label={`${constraint.name}${constraint.required ? " *" : ""}`}
               hint={constraint.description}
-              hintClassName="text-xs text-muted-foreground"
+              hintClassName="text-xs text-fg"
               className="flex items-center gap-2 text-sm"
               controlPlacement="before-label"
               required={constraint.required}
@@ -1958,7 +1958,7 @@ function SshParameterFields({
                 ? " Marked sensitive on the profile — redacted in audit, still a typed YAML value (not a vault secret)."
                 : ""
             }`}
-            hintClassName="mt-1 block text-xs text-muted-foreground"
+            hintClassName="mt-1 block text-xs text-fg"
             required={constraint.required}
           >
             <input

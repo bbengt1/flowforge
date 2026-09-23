@@ -188,7 +188,6 @@ export const FF_CSS_VARIABLES = [
   "--ff-danger-surface",
   "--ff-focus-ring",
   "--ff-border",
-  "--ff-accent-text",
   "--ff-warning",
   "--ff-warning-foreground",
   "--ff-code-number",
