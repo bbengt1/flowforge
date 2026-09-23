@@ -15,6 +15,9 @@ type API struct {
 	http.Handler
 	srv        *core.Server
 	replicaErr error
+	// unshared names process-local durable backends. Production boot
+	// refuses the list. Replica boot refuses it above one replica.
+	unshared []string
 }
 
 // TickDispatch fires due published schedules in every active workspace.

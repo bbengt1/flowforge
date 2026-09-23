@@ -1,7 +1,9 @@
-// Package ha is the multi-replica boot guard. A process that may run
-// beside another pod must use shared Postgres and S3 backends. In-memory
-// sessions and stores are process-local, so replica counts above one
-// refuse to start. This package does not add a second auth path.
+// Package ha is the multi-replica and production-store boot guard. A
+// process that may run beside another pod must use shared Postgres and
+// S3 backends. In-memory sessions and stores are process-local, so
+// replica counts above one refuse to start. A production-locked process
+// refuses those same backends even at one replica. This package does
+// not add a second auth path.
 package ha
 
 import (
@@ -79,7 +81,8 @@ func (s ManifestSignals) Floor() (int, error) {
 // RefuseUnshared fails closed when more than one replica would serve
 // with a process-local backend. names are backend labels (session,
 // artifact), never secret values. An empty list is shared storage.
-// replicas <= 1 allows in-memory stores (unit tests and one process).
+// replicas <= 1 does not apply this check (unit tests and one process).
+// Production-locked refusal of those same names is RefuseMemoryStores.
 func RefuseUnshared(replicas int, names []string) error {
 	if replicas <= 1 {
 		return nil
@@ -91,6 +94,18 @@ func RefuseUnshared(replicas int, names []string) error {
 		return nil
 	}
 	return fmt.Errorf("replicas=%d refuse unshared backends (%s); use Postgres and S3", replicas, strings.Join(names, ", "))
+}
+
+// RefuseMemoryStores fails closed when a production-locked process would
+// serve durable domains from process-local memory. names are backend
+// labels only, never DSNs or secrets. Non-production composition
+// (APP_ENV=development|dev|local|test and REQUIRE_TLS off) may keep
+// memory stores for tests and local dev. There is no production override.
+func RefuseMemoryStores(productionLocked bool, names []string) error {
+	if !productionLocked || len(names) == 0 {
+		return nil
+	}
+	return fmt.Errorf("production-locked process refuses in-memory stores (%s); set DATABASE_URL for Postgres and an S3 artifact store. APP_ENV=development|dev|local|test without REQUIRE_TLS may use memory for tests and local dev. There is no production override", strings.Join(names, ", "))
 }
 
 // ArtifactShared reports whether an artifact backend can be read from

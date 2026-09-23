@@ -56,6 +56,28 @@ func TestRefuseUnsharedMemoryAndShared(t *testing.T) {
 	}
 }
 
+func TestRefuseMemoryStoresProductionLocked(t *testing.T) {
+	if err := RefuseMemoryStores(false, []string{"session", "vault"}); err != nil {
+		t.Fatalf("non-production may use memory: %v", err)
+	}
+	if err := RefuseMemoryStores(true, nil); err != nil {
+		t.Fatalf("shared backends: %v", err)
+	}
+	err := RefuseMemoryStores(true, []string{"session", "workflow", "vault"})
+	if err == nil {
+		t.Fatal("production-locked memory stores must fail closed")
+	}
+	for _, name := range []string{"session", "workflow", "vault", "DATABASE_URL", "no production override"} {
+		if !strings.Contains(err.Error(), name) {
+			t.Fatalf("error = %v", err)
+		}
+	}
+	secret := "postgres://flowforge:flowforge-test-job-binding-32b!!@db/flowforge"
+	if strings.Contains(err.Error(), secret) || strings.Contains(err.Error(), "JOB_BINDING_SECRET") {
+		t.Fatalf("error must not echo secrets: %v", err)
+	}
+}
+
 func TestDeployManifestFloorRefusesMemory(t *testing.T) {
 	deployment, err := os.ReadFile("../../../../deploy/k8s/api-deployment.yaml")
 	if err != nil {

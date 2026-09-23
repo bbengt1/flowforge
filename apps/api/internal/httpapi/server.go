@@ -112,10 +112,12 @@ type Deps struct {
 	// TLSMaterials writes first-run cert/key PEMs to TLS_CERT_FILE /
 	// TLS_KEY_FILE. Nil fails closed on create/upload; skip does not.
 	TLSMaterials tlsmaterial.Store
-	// Replicas is FLOWFORGE_REPLICAS. Zero and one allow in-memory
-	// stores (unit tests and a single process). Above one refuses
-	// process-local session and store backends. There is no sticky
-	// session fallback.
+	// Replicas is FLOWFORGE_REPLICAS. Zero and one do not apply the
+	// multi-replica refusal (unit tests and a single process). Above
+	// one refuses process-local session and store backends. A
+	// production-locked process refuses those same backends even at
+	// one replica. There is no sticky session fallback and no
+	// production memory override.
 	Replicas int
 	// ArtifactBackend is the artifact.LoadStore kind (s3, filesystem,
 	// or memory). Empty is unshared when Replicas is above one.
@@ -193,6 +195,8 @@ func inferStores(db postgres.Checker) (identity.Store, isolation.Store, session.
 	if p, ok := db.(*postgres.Pool); ok {
 		return identity.NewPostgres(p), isolation.NewPostgres(p), session.NewPostgres(p), wfstore.NewPostgres(p)
 	}
+	// Non-pool composition keeps memory for unit tests and local/dev.
+	// cmd/api refuses that result when the process is production-locked.
 	return nil, isolation.NewMemory(), session.NewMemory(), wfstore.NewMemory()
 }
 
@@ -548,6 +552,8 @@ func newServer(d Deps) *API {
 		{"approval", s.Approvals},
 		{"alert", s.Alerts},
 		{"script", scriptStore},
+		{"oidc", oidcBackend(s.OIDC)},
+		{"embed-keys", embedKeyBackend(s.EmbedRing)},
 	}, d.ArtifactBackend)
 	if core.QuotaUnshared(s.Quota) {
 		unshared = append(unshared, "rate")
@@ -565,6 +571,7 @@ func newServer(d Deps) *API {
 		Handler:    core.WithRequestID(core.WithSecureHeaders(s.Sec, core.WithObserve(log, registry, core.WithRecover(log, core.WithBodyLimit(s.WithOriginPolicy(router)))))),
 		srv:        s,
 		replicaErr: ha.RefuseUnshared(d.Replicas, unshared),
+		unshared:   unshared,
 	}
 }
 
