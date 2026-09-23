@@ -1,14 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
 import { CredentialWizard } from "@/components/credentials/CredentialWizard";
+import { Dialog } from "@/components/a11y/Dialog";
 import type { CredentialRecord, CredentialType } from "@/lib/credential-types";
-import {
-  captureSatelliteOverlayTrigger,
-  restoreSatelliteOverlayFocus,
-  satelliteOverlayAfterEscape,
-  satelliteOverlayTriggerId,
-} from "@/lib/rewrite-satellite-a11y";
+import { satelliteOverlayTriggerId } from "@/lib/rewrite-satellite-a11y";
 import {
   FF_VAULT_EYEBROW_CLASS,
   FF_VAULT_GHOST_CLASS,
@@ -30,41 +25,12 @@ export function CredentialWizardDialog({
   onCreated,
   onClose,
 }: CredentialWizardDialogProps) {
-  const overlayTrigger = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    if (!open) {
-      overlayTrigger.current = null;
-      return;
-    }
-    overlayTrigger.current =
-      overlayTrigger.current ?? captureSatelliteOverlayTrigger();
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== "Escape" || event.defaultPrevented) {
-        return;
-      }
-      event.preventDefault();
-      const next = satelliteOverlayAfterEscape();
-      onClose();
-      if (next.restoreFocus) {
-        restoreSatelliteOverlayFocus(
-          overlayTrigger.current ?? satelliteOverlayTriggerId("ndv-credential"),
-        );
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  if (!open) {
-    return null;
-  }
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="inspector-credential-wizard-heading"
+    <Dialog
+      open={open}
+      onClose={onClose}
+      labelledBy="inspector-credential-wizard-heading"
+      returnFocusTo={satelliteOverlayTriggerId("ndv-credential")}
       className="fixed inset-0 z-40 flex items-start justify-center overflow-auto bg-black/60 p-4"
     >
       <div className={`my-8 w-full max-w-3xl ${FF_VAULT_PANEL_CLASS}`}>
@@ -103,6 +69,6 @@ export function CredentialWizardDialog({
           />
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }

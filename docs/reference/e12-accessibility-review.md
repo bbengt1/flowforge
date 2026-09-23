@@ -82,6 +82,14 @@ Touch stays `touch-inspector-first`.
     / Schedules and restores focus to the matching control. No nested
     `<main>` on those satellites.
 
+G.3.1 shared primitives (Relates to #478 / Part of #412).
+
+21. **Dialog** — one overlay traps Tab, marks the page behind `inert`,
+    closes on Escape, and returns focus to the opener.
+22. **Field** — label `htmlFor`, `aria-invalid`, `aria-describedby`,
+    and visible error text. Primary forms use it instead of per-screen
+    copies.
+
 Contract tests: `apps/web/src/lib/e12-accessibility-contract.test.ts`
 and `apps/web/src/lib/rewrite-satellite-a11y.test.ts`
 (picked up by `pnpm --filter @flowforge/web test`).
@@ -106,7 +114,6 @@ Do not invent a full canvas SR redesign here.
 
 | Gap | Why tracked | Suggested follow-up |
 | --- | --- | --- |
-| Action wizard / palette / search have no focus **trap** | Esc + initial focus cover the primary path; Tab can leave the overlay | Focus trap helper shared by dialogs |
 | Canvas `role="application"` is a custom widget | Keyboard pan/select/zoom exist; a full screen-reader graph is not implemented | UX.10 announces the selected node for the inspector. Do not invent an SR graph rewrite. |
 | `text-zinc-500` at 11px is near AA | Body copy uses `zinc-600`/`zinc-800`; helper text is smaller | Bump helper text to `zinc-600` if a contrast audit fails |
 | No axe/lighthouse CI gate | Unit/contract tests encode the cheap contracts | Optional playwright + axe on `/workflows` + `/credentials` |

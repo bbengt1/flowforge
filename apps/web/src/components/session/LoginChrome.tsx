@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Field } from "@/components/a11y/Field";
 import { afterLocalLoginHref } from "@/lib/change-password";
 import {
   LOGIN_SUCCESS_HREF,
@@ -125,8 +126,13 @@ export function LoginChrome({ onSuccess }: LoginChromeProps) {
               void submit();
             }}
           >
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium">Email or username</span>
+            <Field
+              id="login-identifier"
+              label="Email or username"
+              className="grid gap-1 text-sm"
+              invalid={Boolean(error)}
+              errorId={error ? "login-form-error" : undefined}
+            >
               <input
                 name="identifier"
                 type="text"
@@ -145,9 +151,27 @@ export function LoginChrome({ onSuccess }: LoginChromeProps) {
                   color: "var(--ff-text)",
                 }}
               />
-            </label>
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium">Password</span>
+            </Field>
+            <Field
+              id="login-password"
+              label="Password"
+              className="grid gap-1 text-sm"
+              invalid={Boolean(error)}
+              errorId={error ? "login-form-error" : undefined}
+              error={
+                error ? (
+                  <>
+                    <span aria-hidden="true">!</span>
+                    <span>{error}</span>
+                  </>
+                ) : undefined
+              }
+              errorClassName="flex items-start gap-2 rounded-[var(--ff-radius)] px-3 py-2 text-sm"
+              errorStyle={{
+                background: "var(--ff-danger-surface)",
+                color: "var(--ff-danger)",
+              }}
+            >
               <input
                 name="password"
                 type="password"
@@ -164,20 +188,7 @@ export function LoginChrome({ onSuccess }: LoginChromeProps) {
                   color: "var(--ff-text)",
                 }}
               />
-            </label>
-            {error ? (
-              <p
-                role="alert"
-                className="flex items-start gap-2 rounded-[var(--ff-radius)] px-3 py-2 text-sm"
-                style={{
-                  background: "var(--ff-danger-surface)",
-                  color: "var(--ff-danger)",
-                }}
-              >
-                <span aria-hidden="true">!</span>
-                <span>{error}</span>
-              </p>
-            ) : null}
+            </Field>
             <button
               type="submit"
               disabled={pending || ssoPending || !loginFormIsSubmittable(form)}

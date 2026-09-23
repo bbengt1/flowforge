@@ -2,6 +2,8 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Dialog } from "@/components/a11y/Dialog";
+import { Field } from "@/components/a11y/Field";
 import { useEmbedMode } from "@/components/embed/EmbedMode";
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
 import {
@@ -155,20 +157,25 @@ export function CommandPalette() {
         Commands
       </button>
       {open ? (
-        <div
+        <Dialog
           id="command-palette-dialog"
           className="ff-shell-scrim fixed inset-0 z-50 flex items-start justify-center px-4 pt-24"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Command palette"
+          label="Command palette"
+          onClose={closePalette}
+          returnFocusTo="command-palette-trigger"
+          restoreFocus="target"
           onClick={() => closePalette()}
         >
       <div
         className="ff-shell-panel w-full max-w-lg p-3 shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <label className="block">
-          <span className="sr-only">{PALETTE_INPUT_LABEL}</span>
+        <Field
+          id="command-palette-filter"
+          label={PALETTE_INPUT_LABEL}
+          className="block"
+          labelClassName="sr-only"
+        >
           <input
             autoFocus
             value={query}
@@ -199,7 +206,7 @@ export function CommandPalette() {
               }
             }}
           />
-        </label>
+        </Field>
         <ul
           id={PALETTE_RESULTS_ID}
           role="listbox"
@@ -236,7 +243,7 @@ export function CommandPalette() {
           {PALETTE_SHORTCUT_HELP}
         </p>
       </div>
-        </div>
+        </Dialog>
       ) : null}
     </>
   );

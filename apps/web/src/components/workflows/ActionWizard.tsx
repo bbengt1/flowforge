@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { Dialog } from "@/components/a11y/Dialog";
+import { Field } from "@/components/a11y/Field";
 import { AuthorizedResourceSelect } from "@/components/config/AuthorizedResourceSelect";
 import { PreRunPolicyReview } from "@/components/approvals/PreRunPolicyReview";
 import { listCredentials } from "@/lib/credential-client";
@@ -136,12 +138,7 @@ import {
 } from "@/lib/workflow-action-wizard";
 import type { CatalogPort, WorkflowCatalog } from "@/lib/workflow-types";
 import type { YamlWorkflowNode } from "@/lib/workflow-yaml-nodes";
-import {
-  captureSatelliteOverlayTrigger,
-  restoreSatelliteOverlayFocus,
-  satelliteOverlayAfterEscape,
-  satelliteOverlayTriggerId,
-} from "@/lib/rewrite-satellite-a11y";
+import { satelliteOverlayTriggerId } from "@/lib/rewrite-satellite-a11y";
 
 const STEP_LABEL: Record<ActionWizardStep, string> = {
   type: "Choose type",
@@ -190,7 +187,6 @@ export function ActionWizard({
   onClose,
   onAdd,
 }: ActionWizardProps) {
-  const overlayTrigger = useRef<HTMLElement | null>(null);
   const [step, setStep] = useState<ActionWizardStep>("type");
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<ActionWizardDraft>(() =>
@@ -347,30 +343,6 @@ export function ActionWizard({
 
   // Remount via parent key when the wizard opens so draft/step reset
   // without a setState-in-effect.
-
-  useEffect(() => {
-    if (!open) {
-      overlayTrigger.current = null;
-      return;
-    }
-    overlayTrigger.current =
-      overlayTrigger.current ?? captureSatelliteOverlayTrigger();
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== "Escape" || event.defaultPrevented) {
-        return;
-      }
-      event.preventDefault();
-      const next = satelliteOverlayAfterEscape();
-      onClose();
-      if (next.restoreFocus) {
-        restoreSatelliteOverlayFocus(
-          overlayTrigger.current ?? satelliteOverlayTriggerId("action-wizard"),
-        );
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
 
   useEffect(() => {
     if (!open || !ready) {
@@ -539,10 +511,10 @@ export function ActionWizard({
   }
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="action-wizard-heading"
+    <Dialog
+      onClose={onClose}
+      labelledBy="action-wizard-heading"
+      returnFocusTo={satelliteOverlayTriggerId("action-wizard")}
       className="fixed inset-0 z-30 flex items-start justify-center overflow-auto bg-zinc-900/40 p-4"
     >
       <div className="my-8 w-full max-w-3xl rounded-2xl border border-zinc-200 bg-white p-6 shadow-lg">
@@ -720,7 +692,7 @@ export function ActionWizard({
           )}
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -756,15 +728,14 @@ function TypeStep({
   return (
     <div className="space-y-4" data-uxl7="wizard-type" data-uxl7-paint={paint.kind}>
       <p className="text-sm text-zinc-600">{PALETTE_CATEGORY_FIRST_HELP}</p>
-      <label className="block text-sm">
-        <span className="font-medium">Search types</span>
+      <Field id="action-wizard-search" label="Search types">
         <input
           value={query}
           onChange={(event) => onQuery(event.target.value)}
           placeholder="kubernetes, ssh, delay…"
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
         />
-      </label>
+      </Field>
       {recEntries.length > 0 ? (
         <div>
           <h3 className="text-sm font-medium">Recommended</h3>
@@ -1044,8 +1015,17 @@ function TargetStep({
         </p>
       ) : null}
       {credentialTypesForAction(draft.type).length > 0 && !hideCredentialSelect ? (
-        <label className="block text-sm">
-          <span className="font-medium">Credential (display name)</span>
+        <>
+        <Field
+          id="action-wizard-credential"
+          label="Credential (display name)"
+          hint={`Vault metadata only. YAML stores target/profile UUIDs — never plaintext. ${
+            draft.credentialDisplayName
+              ? `Selected ${draft.credentialDisplayName}.`
+              : "The target pin binds the credential server-side."
+          }`}
+          hintClassName="mt-1 block text-xs text-zinc-500"
+        >
           <select
             value={draft.credentialId}
             disabled={credentialOptions.closed}
@@ -1063,18 +1043,13 @@ function TargetStep({
               </option>
             ))}
           </select>
-          <span className="mt-1 block text-xs text-zinc-500">
-            Vault metadata only. YAML stores target/profile UUIDs — never
-            plaintext. {draft.credentialDisplayName
-              ? `Selected ${draft.credentialDisplayName}.`
-              : "The target pin binds the credential server-side."}
+        </Field>
+        {credentialOptions.closed ? (
+          <span role="status" className="mt-1 block text-sm text-zinc-600">
+            {credentialOptions.reason}
           </span>
-          {credentialOptions.closed ? (
-            <span role="status" className="mt-1 block text-sm text-zinc-600">
-              {credentialOptions.reason}
-            </span>
-          ) : null}
-        </label>
+        ) : null}
+        </>
       ) : null}
     </div>
   );
@@ -1136,14 +1111,13 @@ function ConfigureStep({
   }
   return (
     <div className="space-y-4">
-      <label className="block text-sm">
-        <span className="font-medium">Name</span>
+      <Field id="action-wizard-name" label="Name">
         <input
           value={draft.name}
           onChange={(event) => onChange({ ...draft, name: event.target.value })}
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
         />
-      </label>
+      </Field>
       {inferred && !kubernetes && !ssh && !script && !http ? (
         <p className="text-xs text-zinc-500">
           Configure fields are inferred from phase/ports and the YAML schema
@@ -1403,31 +1377,41 @@ function ConfigField({
         : ""
       : stringifyWizardValue(value);
   const label = field.label || field.name;
+  const hintClassName = "mt-1 block text-xs text-zinc-500";
+  const controlClass =
+    "mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm";
   if (field.readOnly) {
     return (
-      <label className="block text-sm">
-        <span className="font-medium">{label}</span>
+      <Field
+        id={`wizard-config-${field.name}`}
+        label={label}
+        hint={
+          field.description ||
+          "Service-owned. FieldManager is flowforge and Force=false."
+        }
+        hintClassName={hintClassName}
+      >
         <input
           value={text}
           readOnly
           disabled
-          className="mt-1 w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm"
+          className={`${controlClass} bg-zinc-50`}
         />
-        <span className="mt-1 block text-xs text-zinc-500">
-          {field.description ||
-            "Service-owned. FieldManager is flowforge and Force=false."}
-        </span>
-      </label>
+      </Field>
     );
   }
   if (field.name === "namespace" && allowedNamespaces && allowedNamespaces.length > 0) {
     return (
-      <label className="block text-sm">
-        <span className="font-medium">{label}</span>
+      <Field
+        id={`wizard-config-${field.name}`}
+        label={label}
+        hint="Allowlisted on the selected cluster target. Empty allowlists fail closed."
+        hintClassName={hintClassName}
+      >
         <select
           value={text}
           onChange={(event) => onChange(event.target.value)}
-          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+          className={controlClass}
         >
           <option value="">Select an allowed namespace</option>
           {allowedNamespaces.map((item) => (
@@ -1436,20 +1420,21 @@ function ConfigField({
             </option>
           ))}
         </select>
-        <span className="mt-1 block text-xs text-zinc-500">
-          Allowlisted on the selected cluster target. Empty allowlists fail closed.
-        </span>
-      </label>
+      </Field>
     );
   }
   if (field.control === "enum") {
     return (
-      <label className="block text-sm">
-        <span className="font-medium">{label}</span>
+      <Field
+        id={`wizard-config-${field.name}`}
+        label={label}
+        hint={field.description}
+        hintClassName={hintClassName}
+      >
         <select
           value={text}
           onChange={(event) => onChange(event.target.value)}
-          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+          className={controlClass}
         >
           {(field.enumValues ?? []).map((item) => (
             <option key={item} value={item}>
@@ -1457,16 +1442,17 @@ function ConfigField({
             </option>
           ))}
         </select>
-        {field.description ? (
-          <span className="mt-1 block text-xs text-zinc-500">{field.description}</span>
-        ) : null}
-      </label>
+      </Field>
     );
   }
   if (field.control === "textarea" || field.control === "object-lines") {
     return (
-      <label className="block text-sm">
-        <span className="font-medium">{label}</span>
+      <Field
+        id={`wizard-config-${field.name}`}
+        label={label}
+        hint={field.description}
+        hintClassName={hintClassName}
+      >
         <textarea
           value={
             field.control === "object-lines" && value && typeof value === "object"
@@ -1491,42 +1477,41 @@ function ConfigField({
             onChange(event.target.value);
           }}
           rows={field.name === "manifests" || field.name === "source" ? 12 : 6}
-          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm"
+          className={`${controlClass} font-mono`}
         />
-        {field.description ? (
-          <span className="mt-1 block text-xs text-zinc-500">{field.description}</span>
-        ) : null}
-      </label>
+      </Field>
     );
   }
   if (field.control === "number") {
     return (
-      <label className="block text-sm">
-        <span className="font-medium">{label}</span>
+      <Field
+        id={`wizard-config-${field.name}`}
+        label={label}
+        hint={field.description}
+        hintClassName={hintClassName}
+      >
         <input
           type="number"
           value={text}
           onChange={(event) => onChange(Number(event.target.value))}
-          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+          className={controlClass}
         />
-        {field.description ? (
-          <span className="mt-1 block text-xs text-zinc-500">{field.description}</span>
-        ) : null}
-      </label>
+      </Field>
     );
   }
   return (
-    <label className="block text-sm">
-      <span className="font-medium">{label}</span>
+    <Field
+      id={`wizard-config-${field.name}`}
+      label={label}
+      hint={field.description}
+      hintClassName={hintClassName}
+    >
       <input
         value={text}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+        className={controlClass}
       />
-      {field.description ? (
-        <span className="mt-1 block text-xs text-zinc-500">{field.description}</span>
-      ) : null}
-    </label>
+    </Field>
   );
 }
 
@@ -1559,11 +1544,16 @@ function ConnectStep({
           const options = compatibleUpstreamOutputs(nodes, catalog, entries, port);
           const current = draft.mappings.find((item) => item.toPort === port.name)?.from ?? "";
           return (
-            <label key={port.name} className="block text-sm">
-              <span className="font-medium">
-                {port.name}{" "}
-                <span className="font-mono text-xs text-zinc-500">({port.kind})</span>
-              </span>
+            <Field
+              key={port.name}
+              id={`action-wizard-map-${port.name}`}
+              label={
+                <>
+                  {port.name}{" "}
+                  <span className="font-mono text-xs text-zinc-500">({port.kind})</span>
+                </>
+              }
+            >
               <select
                 value={current}
                 onChange={(event) => {
@@ -1583,7 +1573,7 @@ function ConnectStep({
                   </option>
                 ))}
               </select>
-            </label>
+            </Field>
           );
         })
       )}
@@ -1809,8 +1799,18 @@ function SshRetryPolicyFields({
         stays indeterminate until verification — there is no blind-retry
         button.
       </p>
-      <label className="block text-sm">
-        <span className="font-medium">maxAttempts</span>
+      <Field
+        id="wizard-ssh-max-attempts"
+        label="maxAttempts"
+        hint={`Default ${SSH_DEFAULT_RETRY_MAX_ATTEMPTS}. Allowed range ${SSH_DEFAULT_RETRY_MAX_ATTEMPTS}–${SSH_MAX_RETRY_ATTEMPTS}. Values above 0 require a retrySafe profile with a declared verification probe.`}
+        hintClassName="mt-1 block text-xs text-zinc-500"
+        error={
+          parsed.errors.length > 0
+            ? parsed.errors[0] || SSH_RETRY_DENIED_MESSAGE
+            : undefined
+        }
+        errorClassName="mt-1 block text-sm text-amber-950"
+      >
         <input
           type="number"
           min={SSH_DEFAULT_RETRY_MAX_ATTEMPTS}
@@ -1823,22 +1823,12 @@ function SshRetryPolicyFields({
           }
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
         />
-        <span className="mt-1 block text-xs text-zinc-500">
-          Default {SSH_DEFAULT_RETRY_MAX_ATTEMPTS}. Allowed range{" "}
-          {SSH_DEFAULT_RETRY_MAX_ATTEMPTS}–{SSH_MAX_RETRY_ATTEMPTS}. Values
-          above 0 require a retrySafe profile with a declared verification
-          probe.
-        </span>
-      </label>
+      </Field>
       <p className="text-sm text-zinc-700">
         Selected profile retrySafe is {profileRetrySafe ? "true" : "false"};
         verification is {verificationDeclared ? "declared" : "missing"}.
       </p>
-      {parsed.errors.length > 0 ? (
-        <p role="status" className="text-sm text-amber-950">
-          {parsed.errors[0] || SSH_RETRY_DENIED_MESSAGE}
-        </p>
-      ) : parsed.warnings.length > 0 ? (
+      {parsed.errors.length > 0 ? null : parsed.warnings.length > 0 ? (
         <p className="text-sm text-zinc-700">{parsed.warnings[0]}</p>
       ) : null}
     </fieldset>
@@ -1865,8 +1855,12 @@ function SshParameterFields({
   }
   if (constraints.length === 0) {
     return (
-      <label className="block text-sm">
-        <span className="font-medium">Parameters</span>
+      <Field
+        id="wizard-ssh-parameters"
+        label="Parameters"
+        hint="Typed profile parameters as key=value lines after a profile is selected. No raw shell, interpolation tokens, keys, or passwords."
+        hintClassName="mt-1 block text-xs text-zinc-500"
+      >
         <textarea
           value={Object.entries(value)
             .map(([key, nested]) => `${key}=${String(nested)}`)
@@ -1885,11 +1879,7 @@ function SshParameterFields({
           rows={6}
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm"
         />
-        <span className="mt-1 block text-xs text-zinc-500">
-          Typed profile parameters as key=value lines after a profile is
-          selected. No raw shell, interpolation tokens, keys, or passwords.
-        </span>
-      </label>
+      </Field>
     );
   }
   return (
@@ -1904,11 +1894,14 @@ function SshParameterFields({
         const text = current == null ? "" : String(current);
         if (constraint.enum?.length) {
           return (
-            <label key={constraint.name} className="block text-sm">
-              <span className="font-medium">
-                {constraint.name}
-                {constraint.required ? " *" : ""}
-              </span>
+            <Field
+              key={constraint.name}
+              id={`wizard-ssh-param-${constraint.name}`}
+              label={`${constraint.name}${constraint.required ? " *" : ""}`}
+              hint={constraint.description}
+              hintClassName="mt-1 block text-xs text-zinc-500"
+              required={constraint.required}
+            >
               <select
                 value={text}
                 onChange={(event) => patch(constraint.name, event.target.value)}
@@ -1921,38 +1914,45 @@ function SshParameterFields({
                   </option>
                 ))}
               </select>
-              {constraint.description ? (
-                <span className="mt-1 block text-xs text-zinc-500">
-                  {constraint.description}
-                </span>
-              ) : null}
-            </label>
+            </Field>
           );
         }
         if (constraint.type === "boolean") {
           return (
-            <label key={constraint.name} className="flex items-center gap-2 text-sm">
+            <Field
+              key={constraint.name}
+              id={`wizard-ssh-param-${constraint.name}`}
+              label={`${constraint.name}${constraint.required ? " *" : ""}`}
+              hint={constraint.description}
+              hintClassName="text-xs text-zinc-500"
+              className="flex items-center gap-2 text-sm"
+              controlPlacement="before-label"
+              required={constraint.required}
+            >
               <input
                 type="checkbox"
                 checked={current === true || current === "true"}
                 onChange={(event) => patch(constraint.name, event.target.checked)}
               />
-              <span className="font-medium">
-                {constraint.name}
-                {constraint.required ? " *" : ""}
-              </span>
-              {constraint.description ? (
-                <span className="text-xs text-zinc-500">{constraint.description}</span>
-              ) : null}
-            </label>
+            </Field>
           );
         }
         return (
-          <label key={constraint.name} className="block text-sm">
-            <span className="font-medium">
-              {constraint.name}
-              {constraint.required ? " *" : ""}
-            </span>
+          <Field
+            key={constraint.name}
+            id={`wizard-ssh-param-${constraint.name}`}
+            label={`${constraint.name}${constraint.required ? " *" : ""}`}
+            hint={`${
+              constraint.description ||
+              `${constraint.type} parameter. No shell interpolation.`
+            }${
+              constraint.sensitive
+                ? " Marked sensitive on the profile — redacted in audit, still a typed YAML value (not a vault secret)."
+                : ""
+            }`}
+            hintClassName="mt-1 block text-xs text-zinc-500"
+            required={constraint.required}
+          >
             <input
               type={constraint.type === "integer" ? "number" : "text"}
               value={text}
@@ -1968,14 +1968,7 @@ function SshParameterFields({
               }
               className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
             />
-            <span className="mt-1 block text-xs text-zinc-500">
-              {constraint.description ||
-                `${constraint.type} parameter. No shell interpolation.`}
-              {constraint.sensitive
-                ? " Marked sensitive on the profile — redacted in audit, still a typed YAML value (not a vault secret)."
-                : ""}
-            </span>
-          </label>
+          </Field>
         );
       })}
     </fieldset>

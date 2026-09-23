@@ -1,5 +1,6 @@
 "use client";
 
+import { Field } from "@/components/a11y/Field";
 import {
   FF_VAULT_CONTROL_CLASS,
   FF_VAULT_MUTED_CLASS,
@@ -13,6 +14,7 @@ type SecretFieldProps = {
   onChange: (value: string) => void;
   multiline?: boolean;
   required?: boolean;
+  error?: string;
 };
 
 /**
@@ -28,26 +30,32 @@ export function SecretField({
   onChange,
   multiline = false,
   required = false,
+  error,
 }: SecretFieldProps) {
-  const hintId = `${id}-hint`;
   const hintText =
     hint ??
     "Masked. Paste is allowed. Cleared from this page after a successful submit.";
   const shared = `mt-1 font-mono ${FF_VAULT_CONTROL_CLASS}`;
 
   return (
-    <label htmlFor={id} className="block text-sm">
-      <span className="font-medium">{label}</span>
+    <Field
+      id={id}
+      label={label}
+      hint={hintText}
+      error={error}
+      required={required}
+      className="block text-sm"
+      labelClassName="font-medium"
+      hintClassName={`mt-1 block text-xs ${FF_VAULT_MUTED_CLASS}`}
+      errorClassName={`mt-1 block text-xs ${FF_VAULT_MUTED_CLASS}`}
+    >
       {multiline ? (
         <textarea
-          id={id}
-          aria-describedby={hintId}
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onPaste={(event) => {
             event.stopPropagation();
           }}
-          required={required}
           name=""
           autoComplete="off"
           autoCorrect="off"
@@ -61,15 +69,12 @@ export function SecretField({
         />
       ) : (
         <input
-          id={id}
           type="password"
-          aria-describedby={hintId}
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onPaste={(event) => {
             event.stopPropagation();
           }}
-          required={required}
           name=""
           autoComplete="new-password"
           autoCorrect="off"
@@ -81,9 +86,6 @@ export function SecretField({
           className={shared}
         />
       )}
-      <span id={hintId} className={`mt-1 block text-xs ${FF_VAULT_MUTED_CLASS}`}>
-        {hintText}
-      </span>
-    </label>
+    </Field>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useSyncExternalStore } from "react";
+import { Field } from "@/components/a11y/Field";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { callIdentityProxy } from "@/lib/identity-client";
 import {
@@ -261,8 +262,7 @@ export function IsolationExercise() {
             sent.
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <label className="text-sm">
-              <span className="font-medium">Kind</span>
+            <Field id="isolation-seed-kind" label="Kind">
               <select
                 value={seedKind}
                 onChange={(event) =>
@@ -276,15 +276,14 @@ export function IsolationExercise() {
                   </option>
                 ))}
               </select>
-            </label>
-            <label className="text-sm">
-              <span className="font-medium">Name</span>
+            </Field>
+            <Field id="isolation-seed-name" label="Name">
               <input
                 value={seedName}
                 onChange={(event) => setSeedName(event.target.value)}
                 className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
               />
-            </label>
+            </Field>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
@@ -372,24 +371,32 @@ export function IsolationExercise() {
           the mismatch (403). This is not how you select a workspace.
           Workspace-ID-only remains rejected and is not offered here.
         </p>
-        <label className="mt-3 flex items-start gap-2 text-sm">
+        <Field
+          id="isolation-send-mismatch"
+          label="Also send a mismatched Workspace-ID header"
+          controlPlacement="before-label"
+          className="mt-3 flex items-start gap-2 text-sm"
+          labelClassName=""
+        >
           <input
             type="checkbox"
             checked={sendMismatch}
             onChange={(event) => setSendMismatch(event.target.checked)}
             className="mt-1"
           />
-          <span>Also send a mismatched Workspace-ID header</span>
-        </label>
+        </Field>
         {sendMismatch ? (
-          <label className="mt-3 block text-sm">
-            <span className="font-medium">Mismatched workspace UUID</span>
+          <Field
+            id="isolation-mismatch-workspace"
+            label="Mismatched workspace UUID"
+            className="mt-3 block text-sm"
+          >
             <input
               value={mismatchWorkspaceId}
               onChange={(event) => setMismatchWorkspaceId(event.target.value)}
               className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
             />
-          </label>
+          </Field>
         ) : null}
       </fieldset>
 
@@ -503,16 +510,19 @@ function IdField({
   onChange: (value: string) => void;
 }) {
   return (
-    <label htmlFor={id} className="block text-sm">
-      <span className="font-medium text-zinc-800">{label}</span>
+    <Field
+      id={id}
+      label={label}
+      className="block text-sm"
+      labelClassName="font-medium text-zinc-800"
+    >
       <input
-        id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         spellCheck={false}
         autoComplete="off"
         className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
       />
-    </label>
+    </Field>
   );
 }

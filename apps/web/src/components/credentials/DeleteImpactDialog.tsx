@@ -1,5 +1,7 @@
 "use client";
 
+import { Dialog } from "@/components/a11y/Dialog";
+import { Field } from "@/components/a11y/Field";
 import { deletionConfirmationState, formatRef } from "@/lib/credential";
 import type { CredentialDeletionImpact } from "@/lib/credential-types";
 import {
@@ -39,10 +41,9 @@ export function DeleteImpactDialog({
   const confirmation = deletionConfirmationState(impact, typedName);
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="credential-delete-heading"
+    <Dialog
+      onClose={onClose}
+      labelledBy="credential-delete-heading"
       className="fixed inset-0 z-20 flex items-center justify-center bg-black/60 p-4"
     >
       <div className={`max-h-[90vh] w-full max-w-xl overflow-auto ${FF_VAULT_PANEL_CLASS}`}>
@@ -84,23 +85,20 @@ export function DeleteImpactDialog({
               items={impact.activeExecutions.map(formatRef)}
             />
 
-            {confirmation.blockingReason ? (
-              <p role="status" className={FF_VAULT_DANGER_CLASS}>
-                {confirmation.blockingReason}
-              </p>
-            ) : null}
-
-            <label className="block">
-              <span className="font-medium">
-                Type {impact.displayName} to confirm
-              </span>
+            <Field
+              id="credential-delete-confirm"
+              label={`Type ${impact.displayName} to confirm`}
+              error={confirmation.blockingReason || undefined}
+              errorClassName={FF_VAULT_DANGER_CLASS}
+              className="block"
+            >
               <input
                 value={typedName}
                 onChange={(event) => onTypedName(event.target.value)}
                 autoComplete="off"
                 className={`mt-1 ${FF_VAULT_CONTROL_CLASS}`}
               />
-            </label>
+            </Field>
           </div>
         )}
 
@@ -122,7 +120,7 @@ export function DeleteImpactDialog({
           </button>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }
 

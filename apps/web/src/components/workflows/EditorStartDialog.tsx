@@ -1,12 +1,8 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
-import {
-  captureSatelliteOverlayTrigger,
-  restoreSatelliteOverlayFocus,
-  satelliteOverlayAfterEscape,
-  satelliteOverlayTriggerId,
-} from "@/lib/rewrite-satellite-a11y";
+import type { ReactNode } from "react";
+import { Dialog } from "@/components/a11y/Dialog";
+import { satelliteOverlayTriggerId } from "@/lib/rewrite-satellite-a11y";
 
 type EditorStartDialogProps = {
   open: boolean;
@@ -19,42 +15,12 @@ export function EditorStartDialog({
   onClose,
   children,
 }: EditorStartDialogProps) {
-  const overlayTrigger = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    if (!open) {
-      overlayTrigger.current = null;
-      return;
-    }
-    overlayTrigger.current =
-      overlayTrigger.current ?? captureSatelliteOverlayTrigger();
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== "Escape" || event.defaultPrevented) {
-        return;
-      }
-      event.preventDefault();
-      const next = satelliteOverlayAfterEscape();
-      onClose();
-      if (next.restoreFocus) {
-        restoreSatelliteOverlayFocus(
-          overlayTrigger.current ??
-            satelliteOverlayTriggerId("start-published"),
-        );
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  if (!open) {
-    return null;
-  }
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="editor-start-heading"
+    <Dialog
+      open={open}
+      onClose={onClose}
+      labelledBy="editor-start-heading"
+      returnFocusTo={satelliteOverlayTriggerId("start-published")}
       className="fixed inset-0 z-30 flex items-start justify-center overflow-auto bg-zinc-900/40 p-4"
     >
       <div className="w-full max-w-2xl rounded-2xl bg-[var(--background)] p-4 shadow-lg">
@@ -72,6 +38,6 @@ export function EditorStartDialog({
         </div>
         {children}
       </div>
-    </div>
+    </Dialog>
   );
 }

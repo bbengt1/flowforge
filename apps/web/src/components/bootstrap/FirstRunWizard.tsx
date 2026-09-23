@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Field } from "@/components/a11y/Field";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
 import {
@@ -331,8 +332,7 @@ export function FirstRunWizard({
             {BOOTSTRAP_STEP_HELP.firstAdmin}
           </p>
           <div className="grid gap-3">
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium">Issuer</span>
+            <Field id="bootstrap-issuer" label="Issuer" className="grid gap-1 text-sm">
               <input
                 value={issuer}
                 onChange={(event) => setIssuer(event.target.value)}
@@ -340,9 +340,12 @@ export function FirstRunWizard({
                 className={FF_WIZARD_CONTROL_CLASS}
                 placeholder="https://idp.example"
               />
-            </label>
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium">External subject</span>
+            </Field>
+            <Field
+              id="bootstrap-subject"
+              label="External subject"
+              className="grid gap-1 text-sm"
+            >
               <input
                 value={subject}
                 onChange={(event) => setSubject(event.target.value)}
@@ -350,16 +353,19 @@ export function FirstRunWizard({
                 className={FF_WIZARD_CONTROL_CLASS}
                 placeholder="admin-1"
               />
-            </label>
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium">Display name (optional)</span>
+            </Field>
+            <Field
+              id="bootstrap-display-name"
+              label="Display name (optional)"
+              className="grid gap-1 text-sm"
+            >
               <input
                 value={displayName}
                 onChange={(event) => setDisplayName(event.target.value)}
                 autoComplete="off"
                 className={FF_WIZARD_CONTROL_CLASS}
               />
-            </label>
+            </Field>
           </div>
           <button
             type="button"
@@ -390,8 +396,11 @@ export function FirstRunWizard({
           <p className={`text-sm leading-6 ${FF_WIZARD_MUTED_CLASS}`}>
             {BOOTSTRAP_STEP_HELP.publicUrl}
           </p>
-          <label className="grid gap-1 text-sm">
-            <span className="font-medium">Public base URL</span>
+          <Field
+            id="bootstrap-public-url"
+            label="Public base URL"
+            className="grid gap-1 text-sm"
+          >
             <input
               value={publicBaseUrl}
               onChange={(event) => setPublicBaseUrl(event.target.value)}
@@ -399,7 +408,7 @@ export function FirstRunWizard({
               className={FF_WIZARD_CONTROL_CLASS}
               placeholder="https://flows.example.com"
             />
-          </label>
+          </Field>
           <button
             type="button"
             disabled={busy || !normalizePublicBaseUrl(publicBaseUrl)}
@@ -441,7 +450,13 @@ export function FirstRunWizard({
           </p>
           <fieldset className="grid gap-2 text-sm">
             <legend className="font-medium">Certificate</legend>
-            <label className="flex items-center gap-2">
+            <Field
+              id="bootstrap-tls-self-signed"
+              label="Create self-signed"
+              className="flex items-center gap-2"
+              labelClassName=""
+              controlPlacement="before-label"
+            >
               <input
                 type="radio"
                 name="tls-action"
@@ -451,18 +466,28 @@ export function FirstRunWizard({
                   setTlsDraft(emptyTlsUploadDraft());
                 }}
               />
-              Create self-signed
-            </label>
-            <label className="flex items-center gap-2">
+            </Field>
+            <Field
+              id="bootstrap-tls-upload"
+              label="Upload PEM"
+              className="flex items-center gap-2"
+              labelClassName=""
+              controlPlacement="before-label"
+            >
               <input
                 type="radio"
                 name="tls-action"
                 checked={tlsAction === "upload"}
                 onChange={() => setTlsAction("upload")}
               />
-              Upload PEM
-            </label>
-            <label className="flex items-center gap-2">
+            </Field>
+            <Field
+              id="bootstrap-tls-skip"
+              label={BOOTSTRAP_TLS_SKIP_LABEL}
+              className="flex items-center gap-2"
+              labelClassName=""
+              controlPlacement="before-label"
+            >
               <input
                 type="radio"
                 name="tls-action"
@@ -473,13 +498,15 @@ export function FirstRunWizard({
                   setTlsDraft(emptyTlsUploadDraft());
                 }}
               />
-              {BOOTSTRAP_TLS_SKIP_LABEL}
-            </label>
+            </Field>
           </fieldset>
           {tlsAction === "upload" ? (
             <div className="grid gap-3">
-              <label className="grid gap-1 text-sm">
-                <span className="font-medium">Certificate PEM</span>
+              <Field
+                id="bootstrap-tls-cert"
+                label="Certificate PEM"
+                className="grid gap-1 text-sm"
+              >
                 <textarea
                   value={tlsDraft.certPem}
                   onChange={(event) =>
@@ -493,9 +520,12 @@ export function FirstRunWizard({
                   rows={6}
                   className={`${FF_WIZARD_CONTROL_CLASS} font-mono text-xs`}
                 />
-              </label>
-              <label className="grid gap-1 text-sm">
-                <span className="font-medium">Private key PEM</span>
+              </Field>
+              <Field
+                id="bootstrap-tls-key"
+                label="Private key PEM"
+                className="grid gap-1 text-sm"
+              >
                 <textarea
                   value={tlsDraft.keyPem}
                   onChange={(event) =>
@@ -509,7 +539,7 @@ export function FirstRunWizard({
                   rows={6}
                   className={`${FF_WIZARD_CONTROL_CLASS} font-mono text-xs`}
                 />
-              </label>
+              </Field>
             </div>
           ) : null}
           <button

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { Field, FieldError } from "@/components/a11y/Field";
 import { CollectionLoadMore } from "@/components/CollectionLoadMore";
 import { CredentialRefSelect } from "@/components/config/CredentialRefSelect";
 import { ProblemBanner } from "@/components/ProblemBanner";
@@ -508,8 +509,11 @@ export function WebhookTriggerPanel({
                 </div>
                 {canManage ? (
                   <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
-                    <label className="block text-sm">
-                      <span className="text-zinc-600">Rotate secret</span>
+                    <Field
+                      id={`webhook-rotate-${item.id}`}
+                      label="Rotate secret"
+                      labelClassName="text-zinc-600"
+                    >
                       <input
                         type="password"
                         autoComplete="new-password"
@@ -522,7 +526,7 @@ export function WebhookTriggerPanel({
                         }
                         className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-sm"
                       />
-                    </label>
+                    </Field>
                     <button
                       type="button"
                       disabled={pending !== null}
@@ -584,8 +588,13 @@ export function WebhookTriggerPanel({
               Load contentType from YAML
             </button>
           ) : null}
-          <label className="block text-sm">
-            <span className="text-zinc-600">Published workflow version</span>
+          <Field
+            id="webhook-version"
+            label="Published workflow version"
+            labelClassName="text-zinc-600"
+            invalid={localErrors.length > 0}
+            errorId={localErrors.length > 0 ? "webhook-form-error" : undefined}
+          >
             <select
               value={draft.workflowVersionId}
               onChange={(event) =>
@@ -604,29 +613,43 @@ export function WebhookTriggerPanel({
                 </option>
               ))}
             </select>
-          </label>
+          </Field>
           {!editingId ? (
             <>
               <fieldset className="grid gap-2">
                 <legend className="text-sm text-zinc-600">Secret</legend>
-                <label className="flex items-center gap-2 text-sm">
+                <Field
+                  id="webhook-secret-vault"
+                  label="Existing vault webhook_secret"
+                  className="flex items-center gap-2 text-sm"
+                  labelClassName=""
+                  controlPlacement="before-label"
+                  invalid={localErrors.length > 0}
+                  errorId={localErrors.length > 0 ? "webhook-form-error" : undefined}
+                >
                   <input
                     type="radio"
                     name="webhook-secret-mode"
                     checked={draft.secretMode === "vault"}
                     onChange={() => patchDraft({ secretMode: "vault" })}
                   />
-                  Existing vault webhook_secret
-                </label>
-                <label className="flex items-center gap-2 text-sm">
+                </Field>
+                <Field
+                  id="webhook-secret-inline"
+                  label={'One-shot {secret:{secret}} (never shown again)'}
+                  className="flex items-center gap-2 text-sm"
+                  labelClassName=""
+                  controlPlacement="before-label"
+                  invalid={localErrors.length > 0}
+                  errorId={localErrors.length > 0 ? "webhook-form-error" : undefined}
+                >
                   <input
                     type="radio"
                     name="webhook-secret-mode"
                     checked={draft.secretMode === "inline"}
                     onChange={() => patchDraft({ secretMode: "inline" })}
                   />
-                  One-shot {"{secret:{secret}}"} (never shown again)
-                </label>
+                </Field>
               </fieldset>
               {draft.secretMode === "vault" ? (
                 <CredentialRefSelect
@@ -639,8 +662,13 @@ export function WebhookTriggerPanel({
                   }
                 />
               ) : (
-                <label className="block text-sm">
-                  <span className="text-zinc-600">Inline webhook secret</span>
+                <Field
+                  id="webhook-inline-secret"
+                  label="Inline webhook secret"
+                  labelClassName="text-zinc-600"
+                  invalid={localErrors.length > 0}
+                  errorId={localErrors.length > 0 ? "webhook-form-error" : undefined}
+                >
                   <input
                     type="password"
                     autoComplete="new-password"
@@ -650,61 +678,83 @@ export function WebhookTriggerPanel({
                     }
                     className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-sm"
                   />
-                </label>
+                </Field>
               )}
             </>
           ) : (
             <p className="text-xs text-zinc-500">{WEBHOOK_ROTATE_SECRET_HELP}</p>
           )}
-          <label className="block text-sm">
-            <span className="text-zinc-600">Accepted content type</span>
+          <Field
+            id="webhook-content-type"
+            label="Accepted content type"
+            labelClassName="text-zinc-600"
+            invalid={localErrors.length > 0}
+            errorId={localErrors.length > 0 ? "webhook-form-error" : undefined}
+          >
             <input
               value={draft.contentType}
               onChange={(event) => patchDraft({ contentType: event.target.value })}
               className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-sm"
             />
-          </label>
+          </Field>
           <div className="grid gap-3 sm:grid-cols-2">
             <NumberField
+              id="webhook-max-body"
               label="Max body bytes"
               value={draft.maxBodyBytes}
+              invalid={localErrors.length > 0}
               onChange={(value) => patchDraft({ maxBodyBytes: value })}
             />
             <NumberField
+              id="webhook-rate"
               label="Rate / minute"
               value={draft.rateLimitPerMinute}
+              invalid={localErrors.length > 0}
               onChange={(value) => patchDraft({ rateLimitPerMinute: value })}
             />
             <NumberField
+              id="webhook-workspace-rate"
               label="Workspace rate / minute"
               value={draft.workspaceRatePerMinute}
+              invalid={localErrors.length > 0}
               onChange={(value) => patchDraft({ workspaceRatePerMinute: value })}
             />
             <NumberField
+              id="webhook-concurrency"
               label="Max concurrency"
               value={draft.maxConcurrency}
+              invalid={localErrors.length > 0}
               onChange={(value) => patchDraft({ maxConcurrency: value })}
             />
             <NumberField
+              id="webhook-workspace-concurrency"
               label="Workspace max concurrency"
               value={draft.workspaceMaxConcurrency}
+              invalid={localErrors.length > 0}
               onChange={(value) => patchDraft({ workspaceMaxConcurrency: value })}
             />
             <NumberField
+              id="webhook-clock-skew"
               label="Clock skew (seconds)"
               value={draft.clockSkewSeconds}
+              invalid={localErrors.length > 0}
               onChange={(value) => patchDraft({ clockSkewSeconds: value })}
             />
             <NumberField
+              id="webhook-replay-retention"
               label="Replay retention (seconds)"
               value={draft.replayRetentionSeconds}
+              invalid={localErrors.length > 0}
               onChange={(value) => patchDraft({ replayRetentionSeconds: value })}
             />
           </div>
-          <label className="block text-sm">
-            <span className="text-zinc-600">
-              Field mapping (one dest: from per line)
-            </span>
+          <Field
+            id="webhook-field-mapping"
+            label="Field mapping (one dest: from per line)"
+            labelClassName="text-zinc-600"
+            invalid={localErrors.length > 0}
+            errorId={localErrors.length > 0 ? "webhook-form-error" : undefined}
+          >
             <textarea
               value={draft.fieldMappingText}
               onChange={(event) =>
@@ -714,17 +764,17 @@ export function WebhookTriggerPanel({
               placeholder="alertId: payload.id"
               className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-xs"
             />
-          </label>
+          </Field>
           <p className="text-xs text-zinc-500">
             Signature-before-parse, timestamp, and replay protection are required.
             There is no off switch. {WEBHOOK_CSRF_HELP}
           </p>
           {localErrors.length > 0 ? (
-            <ul className="text-sm text-rose-900">
+            <FieldError id="webhook-form-error" className="text-sm text-rose-900">
               {localErrors.map((error) => (
                 <li key={error}>{error}</li>
               ))}
-            </ul>
+            </FieldError>
           ) : null}
           <div className="flex flex-wrap gap-2">
             <button
@@ -767,24 +817,33 @@ export function WebhookTriggerPanel({
 }
 
 function NumberField({
+  id,
   label,
   value,
+  invalid = false,
   onChange,
 }: {
+  id: string;
   label: string;
   value: string;
+  invalid?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="block text-sm">
-      <span className="text-zinc-600">{label}</span>
+    <Field
+      id={id}
+      label={label}
+      labelClassName="text-zinc-600"
+      invalid={invalid}
+      errorId={invalid ? "webhook-form-error" : undefined}
+    >
       <input
         inputMode="numeric"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-sm"
       />
-    </label>
+    </Field>
   );
 }
 
