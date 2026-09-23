@@ -92,11 +92,11 @@ export function ActionCatalogPage() {
   return (
     <main className="mx-auto flex min-h-full w-full max-w-3xl flex-col gap-6 px-6 py-12">
       <header className="space-y-3">
-        <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
+        <p className="text-sm font-medium tracking-wide text-accent-text uppercase">
           Catalog
         </p>
         <h1 className="text-3xl font-semibold tracking-tight">Actions</h1>
-        <p className="text-base leading-7 text-zinc-600">
+        <p className="text-base leading-7 text-muted-foreground">
           Catalog reference for enabled implementations. Triggers stay
           workflow-level and are not placeable. Add actions from a workflow
           canvas at{" "}
@@ -124,7 +124,7 @@ export function ActionCatalogPage() {
       <p>
         <Link
           href="/workflows"
-          className="text-sm font-medium text-teal-800 underline"
+          className="text-sm font-medium text-accent-text underline"
         >
           Back to workflow home
         </Link>

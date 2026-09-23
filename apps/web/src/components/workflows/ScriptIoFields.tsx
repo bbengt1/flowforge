@@ -39,9 +39,9 @@ export function ScriptIoFields({
 }: ScriptIoFieldsProps) {
   const bounds = scriptIoBounds(catalog);
   return (
-    <fieldset className="space-y-4 rounded-xl border border-zinc-200 px-4 py-3">
+    <fieldset className="space-y-4 rounded-xl border border-border px-4 py-3">
       <legend className="px-1 text-sm font-medium">Typed I/O schema</legend>
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-muted-foreground">
         {SCRIPT_IO_SCHEMA_HELP} {SCRIPT_IO_SIZE_HELP} Inputs are validated
         against the schema and the catalog 16 KiB bound before inject. Outputs
         are schema/size checked and redacted before persist.{" "}
@@ -50,7 +50,7 @@ export function ScriptIoFields({
         {catalog?.source ? ` · ${catalog.source}` : ""}.
       </p>
       {isInventedCatalogSource(catalog?.source) ? (
-        <p className="text-xs text-amber-950">{ENGINE_CATALOG_UNAVAILABLE_HELP}</p>
+        <p className="text-xs text-warning-foreground">{ENGINE_CATALOG_UNAVAILABLE_HELP}</p>
       ) : null}
       <SchemaEditor
         name="inputSchema"
@@ -80,7 +80,7 @@ export function ScriptIoFields({
         disabled={disabled}
         onChange={(next) => onChange({ outputSchema: next })}
       />
-      <p className="text-xs text-zinc-600">
+      <p className="text-xs text-muted-foreground">
         Catalog cap is {bounds.maxInputBytes} input bytes and{" "}
         {bounds.maxOutputBytes} output bytes. Secrets fail closed. Handles TTL{" "}
         {scriptIoCatalog(catalog).io.handleTTLSeconds}s (max{" "}
@@ -132,24 +132,24 @@ function SchemaEditor({
           setDraft(null);
           onChange(parsed.value);
         }}
-        className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm disabled:bg-zinc-50"
+        className="mt-1 w-full rounded-lg border border-border px-3 py-2 font-mono text-sm disabled:bg-background"
       />
       {stub ? (
-        <span className="mt-1 block text-xs text-amber-950">
+        <span className="mt-1 block text-xs text-warning-foreground">
           Name=type stubs are coerced to the documented JSON Schema subset on
           display. Save writes the object form the API validates.
         </span>
       ) : null}
       {parseError ? (
-        <span className="mt-1 block text-xs text-rose-900">{parseError}</span>
+        <span className="mt-1 block text-xs text-destructive">{parseError}</span>
       ) : errors.length > 0 ? (
-        <ul className="mt-1 space-y-1 text-xs text-rose-900">
+        <ul className="mt-1 space-y-1 text-xs text-destructive">
           {errors.map((error) => (
             <li key={error}>{error}</li>
           ))}
         </ul>
       ) : (
-        <span className="mt-1 block text-xs text-zinc-500">
+        <span className="mt-1 block text-xs text-muted-foreground">
           Optional. Empty means no declared schema. Secrets and handles are
           rejected.
         </span>
@@ -178,7 +178,7 @@ function SizeBoundFields({
       : undefined;
   return (
     <div>
-      <p className="text-xs font-medium text-zinc-700">{label}</p>
+      <p className="text-xs font-medium text-foreground">{label}</p>
       <div className="mt-2 grid gap-3 sm:grid-cols-3">
         <NumberBound
           label="maxProperties"
@@ -227,7 +227,7 @@ function NumberBound({
 }) {
   return (
     <label className="block text-xs">
-      <span className="font-medium text-zinc-700">{label}</span>
+      <span className="font-medium text-foreground">{label}</span>
       <input
         type="number"
         min={0}
@@ -240,7 +240,7 @@ function NumberBound({
             onChange(next);
           }
         }}
-        className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm disabled:bg-zinc-50"
+        className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm disabled:bg-background"
       />
     </label>
   );

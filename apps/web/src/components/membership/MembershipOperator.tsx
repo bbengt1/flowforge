@@ -313,26 +313,26 @@ export function MembershipOperator() {
 
       {problem ? <ProblemBanner problem={problem} /> : null}
       {problem && isStaleSessionProblem(problem) ? (
-        <p className="text-sm text-zinc-600">
+        <p className="text-sm text-muted-foreground">
           Stale session — <a className="underline" href="#session">re-establish the cookie session</a>.
         </p>
       ) : null}
       {problem && isCsrfProblem(problem) ? (
-        <p className="text-sm text-zinc-600">
+        <p className="text-sm text-muted-foreground">
           CSRF fail-closed. The mutation was not applied.
         </p>
       ) : null}
       {lastRequestId && !problem ? (
-        <p className="font-mono text-xs text-zinc-500">
+        <p className="font-mono text-xs text-muted-foreground">
           last request_id {lastRequestId}
         </p>
       ) : null}
 
-      <details className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+      <details className="rounded-2xl border border-border bg-card p-6 shadow-sm">
         <summary className="cursor-pointer text-lg font-semibold">
           Create tenant or workspace
         </summary>
-        <p className="mt-2 text-sm text-zinc-600">
+        <p className="mt-2 text-sm text-muted-foreground">
           Platform-admin bootstrap — not a product-home action.{" "}
           <code className="font-mono text-xs">POST /api/v1/tenants</code> then{" "}
           <code className="font-mono text-xs">POST /api/v1/workspaces</code>.
@@ -354,7 +354,7 @@ export function MembershipOperator() {
             <input
               value={tenantSlug}
               onChange={(event) => setTenantSlug(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+              className="mt-1 w-full rounded-lg border border-border px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
             />
           </label>
           <label className="text-sm">
@@ -362,7 +362,7 @@ export function MembershipOperator() {
             <input
               value={tenantName}
               onChange={(event) => setTenantName(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+              className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
             />
           </label>
           <div className="flex items-end">
@@ -388,7 +388,7 @@ export function MembershipOperator() {
             <input
               value={workspaceTenantId}
               onChange={(event) => setWorkspaceTenantId(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+              className="mt-1 w-full rounded-lg border border-border px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
             />
           </label>
           <label className="text-sm">
@@ -396,7 +396,7 @@ export function MembershipOperator() {
             <input
               value={workspaceTenantSlug}
               onChange={(event) => setWorkspaceTenantSlug(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+              className="mt-1 w-full rounded-lg border border-border px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
             />
           </label>
           <label className="text-sm">
@@ -404,7 +404,7 @@ export function MembershipOperator() {
             <input
               value={workspaceKey}
               onChange={(event) => setWorkspaceKey(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+              className="mt-1 w-full rounded-lg border border-border px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
             />
           </label>
           <label className="text-sm">
@@ -412,7 +412,7 @@ export function MembershipOperator() {
             <input
               value={workspaceName}
               onChange={(event) => setWorkspaceName(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+              className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
             />
           </label>
           <div>
@@ -431,11 +431,11 @@ export function MembershipOperator() {
         </form>
       </details>
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+      <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold">Caller workspaces</h2>
-            <p className="mt-1 text-sm text-zinc-600">
+            <p className="mt-1 text-sm text-muted-foreground">
               <code className="font-mono text-xs">GET /api/v1/workspaces</code>{" "}
               lists memberships from server-side bindings. Selecting a row fills
               tenant + workbench key for the current workspace view.
@@ -445,15 +445,15 @@ export function MembershipOperator() {
             type="button"
             onClick={() => void loadWorkspaces()}
             disabled={pending !== null}
-            className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+            className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-card disabled:opacity-60"
           >
             {pending === "workspaces" ? "Loading…" : "List workspaces"}
           </button>
         </div>
         {memberships.length === 0 ? (
-          <p className="mt-4 text-sm text-zinc-600">No memberships loaded.</p>
+          <p className="mt-4 text-sm text-muted-foreground">No memberships loaded.</p>
         ) : (
-          <ul className="mt-4 divide-y divide-zinc-100">
+          <ul className="mt-4 divide-y divide-border">
             {memberships.map((item) => (
               <li
                 key={item.workspace.id}
@@ -461,17 +461,17 @@ export function MembershipOperator() {
               >
                 <div>
                   <p className="font-medium">{item.workspace.name}</p>
-                  <p className="font-mono text-xs text-zinc-500">
+                  <p className="font-mono text-xs text-muted-foreground">
                     {item.tenant.slug} / {item.workspace.workbench_key}
                   </p>
-                  <p className="mt-1 text-sm text-zinc-600">
+                  <p className="mt-1 text-sm text-muted-foreground">
                     {item.roles.join(", ") || "no roles"}
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => selectMembership(item)}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50"
+                  className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm hover:bg-background"
                 >
                   Use tenant + workbench
                 </button>
@@ -487,11 +487,11 @@ export function MembershipOperator() {
         />
       </section>
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+      <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold">Current workspace</h2>
-            <p className="mt-1 text-sm text-zinc-600">
+            <p className="mt-1 text-sm text-muted-foreground">
               <code className="font-mono text-xs">GET /api/v1/workspace</code>{" "}
               resolves from tenant + workbench headers. Host-supplied workspace
               UUID is not sent.
@@ -501,7 +501,7 @@ export function MembershipOperator() {
             type="button"
             onClick={() => void loadCurrent()}
             disabled={pending !== null}
-            className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+            className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-card disabled:opacity-60"
           >
             {pending === "workspace" ? "Loading…" : "Load current workspace"}
           </button>
@@ -509,42 +509,42 @@ export function MembershipOperator() {
         {current ? (
           <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
             <div>
-              <dt className="text-zinc-500">Workspace</dt>
+              <dt className="text-muted-foreground">Workspace</dt>
               <dd className="font-medium">{current.workspace.name}</dd>
-              <dd className="font-mono text-xs text-zinc-500">
+              <dd className="font-mono text-xs text-muted-foreground">
                 {current.workspace.workbench_key}
               </dd>
             </div>
             <div>
-              <dt className="text-zinc-500">Tenant</dt>
+              <dt className="text-muted-foreground">Tenant</dt>
               <dd className="font-medium">{current.tenant.name}</dd>
-              <dd className="font-mono text-xs text-zinc-500">
+              <dd className="font-mono text-xs text-muted-foreground">
                 {current.tenant.slug}
               </dd>
             </div>
             <div>
-              <dt className="text-zinc-500">Principal</dt>
+              <dt className="text-muted-foreground">Principal</dt>
               <dd>
                 {current.principal.display_name ||
                   current.principal.external_subject}
               </dd>
-              <dd className="font-mono text-xs text-zinc-500">
+              <dd className="font-mono text-xs text-muted-foreground">
                 {current.principal.issuer}
               </dd>
             </div>
             <div>
-              <dt className="text-zinc-500">Roles</dt>
+              <dt className="text-muted-foreground">Roles</dt>
               <dd>{current.roles.join(", ") || "—"}</dd>
             </div>
             <div className="sm:col-span-2">
-              <dt className="text-zinc-500">Permissions</dt>
+              <dt className="text-muted-foreground">Permissions</dt>
               <dd className="font-mono text-xs leading-5">
                 {current.permissions.join(", ") || "—"}
               </dd>
             </div>
           </dl>
         ) : (
-          <p className="mt-4 text-sm text-zinc-600">
+          <p className="mt-4 text-sm text-muted-foreground">
             Set tenant + workbench key, then load the current workspace.
           </p>
         )}
@@ -572,8 +572,8 @@ export function MembershipOperator() {
         onRefresh={() => void loadMatrix()}
       />
 
-      <p className="text-sm text-zinc-600">
-        <Link href={isolationHref} className="text-teal-800 underline">
+      <p className="text-sm text-muted-foreground">
+        <Link href={isolationHref} className="text-accent-text underline">
           Isolation check
         </Link>
         {" — "}

@@ -84,12 +84,12 @@ export function WorkflowConfigPins({ identity, ready }: WorkflowConfigPinsProps)
     <section
       id="config-pins"
       aria-labelledby="config-pins-heading"
-      className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+      className="rounded-2xl border border-border bg-card p-5 shadow-sm"
     >
       <h2 id="config-pins-heading" className="text-base font-semibold">
         Config pins
       </h2>
-      <p className="mt-1 text-sm text-zinc-600">
+      <p className="mt-1 text-sm text-muted-foreground">
         Workflow YAML stores resource UUIDs. This picker lists published heads,
         then POSTs <code className="font-mono text-xs">…/select</code> for a
         server-authorized pin (name + version). Secrets never appear. 403 or
@@ -103,7 +103,7 @@ export function WorkflowConfigPins({ identity, ready }: WorkflowConfigPinsProps)
             value={kind}
             disabled={!ready || pending}
             onChange={(event) => void load(event.target.value as OpsConfigKind)}
-            className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm"
           >
             {OPS_CONFIG_KIND_CATALOG.filter((item) =>
               PICKER_KINDS.includes(item.kind),
@@ -131,7 +131,7 @@ export function WorkflowConfigPins({ identity, ready }: WorkflowConfigPinsProps)
           type="button"
           onClick={() => void load(kind)}
           disabled={!ready || pending}
-          className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm hover:bg-zinc-100 disabled:opacity-60"
+          className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm hover:bg-card disabled:opacity-60"
         >
           {pending ? "Loading…" : "Load published pins"}
         </button>
@@ -145,7 +145,7 @@ export function WorkflowConfigPins({ identity, ready }: WorkflowConfigPinsProps)
             digest={selected.digest}
             readOnly
           />
-          <p className="font-mono text-xs break-all text-zinc-500">
+          <p className="font-mono text-xs break-all text-muted-foreground">
             {OPS_CONFIG_KIND_CATALOG.find((item) => item.kind === kind)?.yamlRef}
             : {selected.resourceId}
           </p>

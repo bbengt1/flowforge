@@ -112,7 +112,7 @@ export function ExecutionHistoryListbox({
         }}
         className={
           inbox
-            ? `min-w-0 divide-y divide-white/10 overflow-x-auto ${FF_INBOX_LIST_CLASS} outline-none`
+            ? `min-w-0 divide-y divide-border overflow-x-auto ${FF_INBOX_LIST_CLASS} outline-none`
             : "grid gap-3 outline-none"
         }
       >

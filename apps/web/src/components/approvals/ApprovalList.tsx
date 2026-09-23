@@ -221,7 +221,7 @@ export function ApprovalList() {
                   <h2 className="text-base font-semibold">
                     <Link
                       href={`/approvals/${item.id}`}
-                      className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
+                      className="underline decoration-border underline-offset-2 hover:decoration-muted-foreground"
                     >
                       {item.workflowName || item.binding.operation}
                     </Link>

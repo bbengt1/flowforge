@@ -77,7 +77,7 @@ export function HttpNotificationPinsPanel({
           }}
         />
       ))}
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-muted-foreground">
         Published workspace pins only. Display name + version — never a URL,
         recipient address, or credential.
       </p>

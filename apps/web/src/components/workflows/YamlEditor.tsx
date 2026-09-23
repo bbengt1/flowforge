@@ -15,13 +15,13 @@ type YamlEditorProps = {
 };
 
 const TOKEN_CLASS: Record<string, string> = {
-  comment: "text-zinc-400 italic",
-  key: "text-teal-900",
-  string: "text-amber-900",
-  number: "text-sky-900",
-  boolean: "text-violet-900",
-  punct: "text-zinc-500",
-  plain: "text-zinc-900",
+  comment: "text-muted-foreground italic",
+  key: "text-accent-text",
+  string: "text-warning-foreground",
+  number: "ff-yaml-number",
+  boolean: "ff-yaml-boolean",
+  punct: "text-muted-foreground",
+  plain: "text-foreground",
 };
 
 export function YamlEditor({
@@ -78,17 +78,17 @@ export function YamlEditor({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-zinc-300 bg-white">
-      <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
-        <label htmlFor={textareaId} className="text-sm font-medium text-zinc-800">
+    <div className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+        <label htmlFor={textareaId} className="text-sm font-medium text-foreground">
           YAML
           {meta.name ? (
-            <span className="ml-2 font-mono text-xs font-normal text-zinc-500">
+            <span className="ml-2 font-mono text-xs font-normal text-muted-foreground">
               {meta.name}
             </span>
           ) : null}
         </label>
-        <p className="text-xs text-zinc-500">
+        <p className="text-xs text-muted-foreground">
           Synced with the canvas. Line/column errors jump here.
         </p>
       </div>
@@ -96,14 +96,14 @@ export function YamlEditor({
         <pre
           ref={gutterRef}
           aria-hidden
-          className="min-w-12 shrink-0 overflow-hidden border-r border-zinc-200 bg-zinc-50 px-2 py-3 text-right font-mono text-xs leading-6 text-zinc-400"
+          className="min-w-12 shrink-0 overflow-hidden border-r border-border bg-background px-2 py-3 text-right font-mono text-xs leading-6 text-muted-foreground"
         >
           {Array.from({ length: lines }, (_, index) => {
             const line = index + 1;
             return (
               <span
                 key={line}
-                className={errorSet.has(line) ? "block text-amber-800" : "block"}
+                className={errorSet.has(line) ? "block text-warning-foreground" : "block"}
               >
                 {line}
               </span>
@@ -135,7 +135,7 @@ export function YamlEditor({
             onScroll={syncScroll}
             spellCheck={false}
             wrap="off"
-            className="relative min-h-[22rem] w-full resize-y overflow-auto bg-transparent px-3 py-3 font-mono text-xs leading-6 text-transparent caret-zinc-900 outline-none"
+            className="relative min-h-[22rem] w-full resize-y overflow-auto bg-transparent px-3 py-3 font-mono text-xs leading-6 text-transparent caret-foreground outline-none"
           />
         </div>
       </div>

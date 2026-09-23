@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Field } from "@/components/a11y/Field";
+import { ThemePreferenceControl } from "@/components/theme/ThemePreference";
 import {
   CHANGE_PASSWORD_SUCCESS_HREF,
   changePasswordClientError,
@@ -72,6 +73,9 @@ export function ChangePasswordChrome({ onSuccess }: ChangePasswordChromeProps) {
             borderColor: "var(--ff-border)",
           }}
         >
+          <div className="mb-4 flex justify-end">
+            <ThemePreferenceControl theme="dark" />
+          </div>
           <p
             className="text-xs font-medium tracking-wide uppercase"
             style={{ color: "var(--ff-accent)" }}

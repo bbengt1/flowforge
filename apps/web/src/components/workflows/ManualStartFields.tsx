@@ -26,7 +26,7 @@ export function ManualStartFields({
       <Field
         id="manual-start-json"
         label={`Trigger input${schema.source === "contract-fallback" ? " (optional JSON)" : ""}`}
-        labelClassName="text-zinc-600"
+        labelClassName="text-muted-foreground"
         hint={MANUAL_START_INPUT_HELP}
       >
         <textarea
@@ -36,7 +36,7 @@ export function ManualStartFields({
           spellCheck={false}
           autoComplete="off"
           placeholder='{"dryRun":true}'
-          className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-sm"
+          className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-1.5 font-mono text-sm"
         />
       </Field>
     );
@@ -44,13 +44,13 @@ export function ManualStartFields({
 
   return (
     <fieldset className="grid gap-3">
-      <legend className="text-sm text-zinc-600">Typed start input</legend>
+      <legend className="text-sm text-muted-foreground">Typed start input</legend>
       {schema.fields.map((field) => (
         <Field
           key={field.name}
           id={`manual-start-${field.name}`}
           label={`${field.name}${field.required ? " (required)" : ""}`}
-          labelClassName="text-zinc-600"
+          labelClassName="text-muted-foreground"
           hint={field.description}
           required={field.required}
         >
@@ -60,7 +60,7 @@ export function ManualStartFields({
               onChange={(event) =>
                 onFieldValues({ ...fieldValues, [field.name]: event.target.value })
               }
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-1.5 text-sm"
             >
               <option value="">{field.required ? "Select…" : "Unset"}</option>
               <option value="true">true</option>
@@ -72,7 +72,7 @@ export function ManualStartFields({
               onChange={(event) =>
                 onFieldValues({ ...fieldValues, [field.name]: event.target.value })
               }
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-1.5 text-sm"
             >
               <option value="">{field.required ? "Select…" : "Unset"}</option>
               {field.enum.map((item) => (
@@ -94,7 +94,7 @@ export function ManualStartFields({
               }
               autoComplete="off"
               spellCheck={false}
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-mono text-sm"
+              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-1.5 font-mono text-sm"
             />
           )}
         </Field>

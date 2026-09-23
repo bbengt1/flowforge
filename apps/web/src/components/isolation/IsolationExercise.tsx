@@ -220,16 +220,16 @@ export function IsolationExercise() {
   return (
     <section
       aria-labelledby="isolation-heading"
-      className="space-y-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm"
+      className="space-y-6 rounded-2xl border border-border bg-card p-6 shadow-sm"
     >
       <div>
-        <p className="text-sm font-medium tracking-wide text-zinc-500 uppercase">
+        <p className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
           Negative check
         </p>
         <h2 id="isolation-heading" className="mt-1 text-lg font-semibold">
           Isolation check
         </h2>
-        <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-600">
+        <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
           Same cookie session (or temporary header fallback) and tenant +
           workbench lookup as members admin. These calls hit isolation hook
           routes. <strong>Success is a denial</strong> — cross-workspace
@@ -243,7 +243,7 @@ export function IsolationExercise() {
       </div>
 
       {!ready ? (
-        <p className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
+        <p className="rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground">
           Establish a cookie session (or enable the temporary header
           fallback) and set tenant + workbench key. Workspace UUID is not a
           lookup field.
@@ -253,7 +253,7 @@ export function IsolationExercise() {
       <div className="grid gap-6 lg:grid-cols-2">
         <div>
           <h3 className="font-medium">Current-workspace seed</h3>
-          <p className="mt-1 text-sm text-zinc-600">
+          <p className="mt-1 text-sm text-muted-foreground">
             Optional. Create a record in the <em>current</em> workspace, copy
             its id, then switch workbench key and replay the foreign-id
             exercises. Body{" "}
@@ -268,7 +268,7 @@ export function IsolationExercise() {
                 onChange={(event) =>
                   setSeedKind(event.target.value as IsolationKind)
                 }
-                className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+                className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
               >
                 {ISOLATION_KINDS.map((kind) => (
                   <option key={kind} value={kind}>
@@ -281,7 +281,7 @@ export function IsolationExercise() {
               <input
                 value={seedName}
                 onChange={(event) => setSeedName(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
               />
             </Field>
           </div>
@@ -298,19 +298,19 @@ export function IsolationExercise() {
               type="button"
               onClick={() => void listCurrent(seedKind)}
               disabled={pending !== null || !ready}
-              className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+              className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-card disabled:opacity-60"
             >
               List current {seedKind}
             </button>
           </div>
           {seeded.length > 0 ? (
-            <ul className="mt-3 divide-y divide-zinc-100 text-sm">
+            <ul className="mt-3 divide-y divide-border text-sm">
               {seeded.map((record) => (
                 <li key={record.id} className="py-2">
                   <p className="font-medium">
                     {record.kind} · {record.name}
                   </p>
-                  <p className="font-mono text-xs break-all text-zinc-500">
+                  <p className="font-mono text-xs break-all text-muted-foreground">
                     {record.id}
                   </p>
                 </li>
@@ -321,7 +321,7 @@ export function IsolationExercise() {
 
         <div>
           <h3 className="font-medium">Foreign identifiers</h3>
-          <p className="mt-1 text-sm text-zinc-600">
+          <p className="mt-1 text-sm text-muted-foreground">
             IDs and cache keys treated as belonging to another workspace.
             They are not a workspace selector.
           </p>
@@ -360,11 +360,11 @@ export function IsolationExercise() {
         </div>
       </div>
 
-      <fieldset className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-4 py-3">
+      <fieldset className="rounded-xl border border-dashed border-border bg-background px-4 py-3">
         <legend className="px-1 text-sm font-medium">
           Deliberate Workspace-ID mismatch (fail demo)
         </legend>
-        <p className="text-sm text-zinc-600">
+        <p className="text-sm text-muted-foreground">
           Optional. Sends{" "}
           <code className="font-mono text-xs">X-FlowForge-Workspace-ID</code>{" "}
           <em>in addition to</em> tenant + workbench so the API can reject
@@ -394,7 +394,7 @@ export function IsolationExercise() {
             <input
               value={mismatchWorkspaceId}
               onChange={(event) => setMismatchWorkspaceId(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
             />
           </Field>
         ) : null}
@@ -416,11 +416,11 @@ export function IsolationExercise() {
           {exercises.map((exercise) => (
             <li
               key={exercise.id}
-              className="flex flex-col gap-2 rounded-xl border border-zinc-100 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+              className="flex flex-col gap-2 rounded-xl border border-border px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
             >
               <div>
                 <p className="text-sm font-medium">{exercise.label}</p>
-                <p className="font-mono text-xs text-zinc-500">
+                <p className="font-mono text-xs text-muted-foreground">
                   {exercise.method} {exercise.path}
                 </p>
               </div>
@@ -428,7 +428,7 @@ export function IsolationExercise() {
                 type="button"
                 onClick={() => void runOne(exercise)}
                 disabled={pending !== null || !ready}
-                className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
+                className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm hover:bg-background disabled:opacity-60"
               >
                 {pending === exercise.id ? "Calling…" : "Check"}
               </button>
@@ -439,13 +439,13 @@ export function IsolationExercise() {
 
       <div aria-live="polite">
         <h3 className="font-medium">Results</h3>
-        <p className="mt-1 text-sm text-zinc-600">
+        <p className="mt-1 text-sm text-muted-foreground">
           Fail-closed (403/404/400 with problem details) is a denial —
           the expected success for foreign-id and host-supplied identity
           attempts. A 2xx on a fail-closed check did not hold.
         </p>
         {results.length === 0 ? (
-          <p className="mt-3 text-sm text-zinc-600">No exercises run yet.</p>
+          <p className="mt-3 text-sm text-muted-foreground">No exercises run yet.</p>
         ) : (
           <ul className="mt-3 space-y-3">
             {results.map((item) => (
@@ -514,14 +514,14 @@ function IdField({
       id={id}
       label={label}
       className="block text-sm"
-      labelClassName="font-medium text-zinc-800"
+      labelClassName="font-medium text-foreground"
     >
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
         spellCheck={false}
         autoComplete="off"
-        className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+        className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
       />
     </Field>
   );

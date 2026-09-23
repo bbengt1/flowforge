@@ -7,6 +7,7 @@ import {
   DOCUMENT_DIR_COOKIE,
   documentDirection,
 } from "@/lib/document-dir";
+import { THEME_COOKIE, colorTheme } from "@/lib/theme-preference";
 import {
   EMBED_MOUNT_HEADER,
   EMBED_REJECTED_ASSERTION_HEADER,
@@ -40,10 +41,12 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       dir={documentDirection(cookieStore.get(DOCUMENT_DIR_COOKIE)?.value)}
       className={`h-full ${FF_SHELL_ROOT_CLASS}`}
       data-ff-tokens={FF_SHELL_ROOT_VALUE}
+      data-ff-theme={colorTheme(cookieStore.get(THEME_COOKIE)?.value)}
     >
       <body className="h-full min-h-full antialiased">
         <QueryProvider>
           <WorkspaceShell
+            colorTheme={colorTheme(cookieStore.get(THEME_COOKIE)?.value)}
             swaggerUrl={getPublicSwaggerUrl()}
             embedMount={headerList.get(EMBED_MOUNT_HEADER) === "1"}
             rejectedAssertion={

@@ -23,19 +23,19 @@ export function PreRunPolicyReview({
   return (
     <section
       aria-labelledby="pre-run-policy-heading"
-      className="rounded-xl border border-zinc-200 bg-white px-4 py-3"
+      className="rounded-xl border border-border bg-card px-4 py-3"
     >
       <h3 id="pre-run-policy-heading" className="text-sm font-semibold">
         Pre-run policy review
       </h3>
-      <p className="mt-1 text-sm text-zinc-600">
+      <p className="mt-1 text-sm text-muted-foreground">
         Policy is evaluated on the server before dispatch. A stale local
         &quot;approved&quot; flag never starts a run.{" "}
         <code className="font-mono text-xs">dispatchAllowed</code> is
         authoritative.
       </p>
       {pending ? (
-        <p className="mt-3 text-sm text-zinc-600">Evaluating policy…</p>
+        <p className="mt-3 text-sm text-muted-foreground">Evaluating policy…</p>
       ) : null}
       {problem ? <ProblemBanner problem={problem} className="mt-3" /> : null}
       {evaluation ? (
@@ -46,18 +46,18 @@ export function PreRunPolicyReview({
               {policyDecisionLabel(evaluation.decision)}
             </span>
             {evaluation.operation ? (
-              <span className="font-mono text-xs text-zinc-600">
+              <span className="font-mono text-xs text-muted-foreground">
                 {" "}
                 · {evaluation.operation}
               </span>
             ) : null}
           </p>
           {canDispatchFromEvaluation(evaluation) ? (
-            <p className="text-sm text-zinc-600">
+            <p className="text-sm text-muted-foreground">
               Server evaluation allows dispatch of this published version.
             </p>
           ) : (
-            <p className="text-sm text-zinc-600">
+            <p className="text-sm text-muted-foreground">
               Run stays blocked until evaluate allows dispatch or every
               bound approval is a current <code className="font-mono text-xs">approved</code>{" "}
               row. Start execution still rechecks on the server.
@@ -66,7 +66,7 @@ export function PreRunPolicyReview({
           {evaluation.denied.map((item, index) => (
             <p
               key={`${item.nodeId}-${item.operation}-${index}`}
-              className="text-sm text-rose-900"
+              className="text-sm text-destructive"
             >
               Denied {item.operation || "operation"}
               {item.nodeId ? ` (${item.nodeId})` : ""}: {item.reason || "policy deny"}
@@ -75,7 +75,7 @@ export function PreRunPolicyReview({
           {evaluation.requirements.map((requirement, index) => (
             <p
               key={`${requirement.nodeId}-${requirement.operation}-${index}`}
-              className="text-sm text-zinc-700"
+              className="text-sm text-foreground"
             >
               Requires approval for{" "}
               <code className="font-mono text-xs">{requirement.operation}</code>
@@ -92,7 +92,7 @@ export function PreRunPolicyReview({
               <p className="text-sm">
                 <Link
                   href={`/approvals/${item.id}`}
-                  className="font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                  className="font-medium text-accent-text underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
                 >
                   Open approval {item.id}
                 </Link>

@@ -64,7 +64,7 @@ export function CredentialVaultListbox({ rows }: CredentialVaultListboxProps) {
             activate(rows[next.index]);
           }
         }}
-        className={`min-w-0 divide-y divide-white/10 overflow-x-auto ${FF_VAULT_LIST_CLASS} outline-none`}
+        className={`min-w-0 divide-y divide-border overflow-x-auto ${FF_VAULT_LIST_CLASS} outline-none`}
       >
         {rows.map((row, index) => {
           const focused = index === safeIndex;

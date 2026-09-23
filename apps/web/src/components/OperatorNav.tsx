@@ -16,7 +16,7 @@ import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 import { canSeeMembershipIsolationNav } from "@/lib/workspace-nav";
 
 const linkClass =
-  "text-sm text-zinc-600 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-900 hover:decoration-zinc-600";
+  "text-sm text-muted-foreground underline decoration-border underline-offset-2 hover:text-foreground hover:decoration-muted-foreground";
 
 export function OperatorNav() {
   const identity = useSyncExternalStore(

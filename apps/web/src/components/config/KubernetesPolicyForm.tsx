@@ -44,7 +44,7 @@ export function KubernetesPolicyForm({
     ? engine.allowedVerbs
     : KUBERNETES_ALLOWED_VERBS;
   const inputClass =
-    "mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:bg-zinc-50";
+    "mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:bg-background";
 
   function patch(next: KubernetesPolicyBody) {
     onChange(applyKubernetesPolicyToSpec(spec, next));
@@ -69,14 +69,14 @@ export function KubernetesPolicyForm({
           }
           className={`${inputClass} font-mono`}
         />
-        <span className="mt-1 block text-xs text-zinc-500">
+        <span className="mt-1 block text-xs text-muted-foreground">
           One namespace per line. Empty allowlist fails closed.
         </span>
       </label>
 
       <fieldset className="text-sm">
         <legend className="font-medium">Allowed kinds</legend>
-        <p className="mt-1 text-xs text-zinc-500">{KUBERNETES_KIND_HELP}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{KUBERNETES_KIND_HELP}</p>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
           {kinds.map((kind) => (
             <label key={kind} className="flex items-center gap-2">
@@ -103,7 +103,7 @@ export function KubernetesPolicyForm({
 
       <fieldset className="text-sm">
         <legend className="font-medium">Allowed verbs</legend>
-        <p className="mt-1 text-xs text-zinc-500">{KUBERNETES_VERB_HELP}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{KUBERNETES_VERB_HELP}</p>
         <div className="mt-2 flex flex-wrap gap-3">
           {verbs.map((verb) => (
             <label key={verb} className="flex items-center gap-2">
@@ -142,7 +142,7 @@ export function KubernetesPolicyForm({
 
       <fieldset className="text-sm">
         <legend className="font-medium">Approval-required actions</legend>
-        <p className="mt-1 text-xs text-zinc-500">{KUBERNETES_APPROVAL_HELP}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{KUBERNETES_APPROVAL_HELP}</p>
         <div className="mt-2 grid gap-2">
           {KUBERNETES_APPROVAL_OPERATIONS.map((operation) => (
             <label key={operation} className="flex items-center gap-2">
@@ -206,7 +206,7 @@ export function KubernetesPolicyForm({
       </label>
 
       {gaps.length > 0 ? (
-        <ul className="space-y-1 text-sm text-amber-900" role="status">
+        <ul className="space-y-1 text-sm text-warning-foreground" role="status">
           {gaps.map((gap) => (
             <li key={gap}>{gap}</li>
           ))}

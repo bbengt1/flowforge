@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { ApiDocsLinks } from "@/components/ApiDocsLinks";
 import { ApiHealthCard } from "@/components/ApiHealthCard";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
@@ -5,6 +6,7 @@ import { MfaAccountPanel } from "@/components/session/MfaAccountPanel";
 import { BootstrapSettings } from "@/components/settings/BootstrapSettings";
 import { DeveloperSettings } from "@/components/settings/DeveloperSettings";
 import { FoundationAdminLinks } from "@/components/settings/FoundationAdminLinks";
+import { ThemePreferenceControl } from "@/components/theme/ThemePreference";
 import {
   getPublicHealthUrl,
   getPublicOpenApiJsonUrl,
@@ -13,6 +15,7 @@ import {
   getPublicSwaggerUrl,
 } from "@/lib/config";
 import { checkApiHealth, checkApiReadiness } from "@/lib/health";
+import { THEME_COOKIE, colorTheme } from "@/lib/theme-preference";
 import {
   FF_SETTINGS_EYEBROW_CLASS,
   FF_SETTINGS_HELP_CLASS,
@@ -24,6 +27,7 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
+  const cookieStore = await cookies();
   const [health, readiness] = await Promise.all([
     checkApiHealth(),
     checkApiReadiness(),
@@ -48,6 +52,10 @@ export default async function SettingsPage() {
           here.
         </p>
       </header>
+      <ThemePreferenceControl
+        variant="settings"
+        theme={colorTheme(cookieStore.get(THEME_COOKIE)?.value)}
+      />
       <BootstrapSettings />
       <MfaAccountPanel />
       <IsolationIdentityPanel />

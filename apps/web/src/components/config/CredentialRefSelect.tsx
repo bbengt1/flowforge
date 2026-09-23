@@ -96,7 +96,7 @@ export function CredentialRefSelect({
     <label className="block text-sm">
       <span className="font-medium">Vault credential</span>
       {stopAfterStrip ? (
-        <p role="alert" className="mt-1 text-sm text-amber-950">
+        <p role="alert" className="mt-1 text-sm text-warning-foreground">
           {CREDENTIAL_VAULT_STRIP_STOP_HELP} Stripped keys:{" "}
           {strippedKeys.join(", ")}.
         </p>
@@ -108,7 +108,7 @@ export function CredentialRefSelect({
             const next = visibleItems.find((item) => item.id === event.target.value);
             onChange(next?.id ?? "", next?.displayName ?? "");
           }}
-          className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm disabled:bg-zinc-50"
+          className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm disabled:bg-background"
         >
           <option value="">
             {problem
@@ -124,7 +124,7 @@ export function CredentialRefSelect({
           ))}
         </select>
       )}
-      <span className="mt-1 block text-xs text-zinc-500">
+      <span className="mt-1 block text-xs text-muted-foreground">
         {allowedTypes?.includes("kubernetes")
           ? "Workspace type=kubernetes vault credentials only. Kubeconfig is never listed or pasted."
           : allowedTypes?.includes("ssh_private_key")
@@ -132,7 +132,7 @@ export function CredentialRefSelect({
             : "E4.1 vault metadata only — display name and id. Kubeconfig and plaintext are never listed or stored here."}
       </span>
       {problem ? (
-        <span className="mt-1 block text-sm text-amber-900">
+        <span className="mt-1 block text-sm text-warning-foreground">
           {problem.title}: credential list failed closed.
         </span>
       ) : null}

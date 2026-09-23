@@ -277,18 +277,18 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
         </p>
       ) : null}
       {lastRequestId && !problem ? (
-        <p className="font-mono text-xs text-zinc-500">
+        <p className="font-mono text-xs text-muted-foreground">
           last request_id {lastRequestId}
         </p>
       ) : null}
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+      <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-muted-foreground">
               <Link
                 href={`/config/${descriptor.collection}`}
-                className="underline decoration-zinc-300 underline-offset-2"
+                className="underline decoration-border underline-offset-2"
               >
                 {descriptor.title}
               </Link>
@@ -296,7 +296,7 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
             <h2 className="mt-1 text-lg font-semibold">
               {resourceId ? "Edit draft" : "Create draft"}
             </h2>
-            <p className="mt-1 max-w-2xl text-sm text-zinc-600">
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
               Save updates the mutable draft with body{" "}
               <code className="font-mono text-xs">revision</code> (no If-Match).
               Publish copies the last saved draft into an immutable revision.
@@ -311,7 +311,7 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
               readOnly
             />
           ) : (
-            <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-700">
+            <span className="rounded-full bg-card px-2.5 py-1 text-xs text-foreground">
               unpublished draft
             </span>
           )}
@@ -327,7 +327,7 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
               setName(event.target.value);
               setDirty(true);
             }}
-            className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:bg-zinc-50"
+            className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:bg-background"
           />
         </label>
 
@@ -372,7 +372,7 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
               value={note}
               disabled={!id || readOnly}
               onChange={(event) => setNote(event.target.value)}
-              className="mt-1 w-56 rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+              className="mt-1 w-56 rounded-lg border border-border px-3 py-2 text-sm"
             />
           </label>
           <button
@@ -386,13 +386,13 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
               Boolean(publishGap) ||
               !canPublishDraft(draft, name, dirty)
             }
-            className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+            className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-card disabled:opacity-60"
           >
             {pending === "publish" ? "Publishing…" : "Publish immutable revision"}
           </button>
         </div>
         {dirty && draft ? (
-          <p className="mt-3 text-sm text-amber-900">
+          <p className="mt-3 text-sm text-warning-foreground">
             Unsaved edits are not published. Save the draft first.
           </p>
         ) : null}

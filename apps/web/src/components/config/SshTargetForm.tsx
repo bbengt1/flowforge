@@ -35,7 +35,7 @@ export function SshTargetForm({
   onChange,
 }: SshTargetFormProps) {
   const inputClass =
-    "mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:bg-zinc-50";
+    "mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:bg-background";
   const defaultPort = catalog?.defaultPort ?? 22;
   const allowedTypes = sshCredentialTypes(catalog ?? undefined);
 
@@ -55,9 +55,9 @@ export function SshTargetForm({
         allowedTypes={allowedTypes}
         onChange={(credentialId) => patch({ credentialId })}
       />
-      <p className="text-xs text-zinc-500">{SSH_SECRET_FREE_HELP}</p>
-      <p className="text-xs text-zinc-500">{SSH_KEY_ONLY_HELP}</p>
-      <p className="text-xs text-zinc-500">{SSH_NOT_A_TERMINAL_HELP}</p>
+      <p className="text-xs text-muted-foreground">{SSH_SECRET_FREE_HELP}</p>
+      <p className="text-xs text-muted-foreground">{SSH_KEY_ONLY_HELP}</p>
+      <p className="text-xs text-muted-foreground">{SSH_NOT_A_TERMINAL_HELP}</p>
 
       <label className="text-sm">
         <span className="font-medium">Hostname</span>
@@ -68,7 +68,7 @@ export function SshTargetForm({
           onChange={(event) => patch({ hostname: event.target.value })}
           className={inputClass}
         />
-        <span className="mt-1 block text-xs text-zinc-500">
+        <span className="mt-1 block text-xs text-muted-foreground">
           Resolved through an approved resolver. Every address must be allowlisted.
         </span>
       </label>
@@ -83,13 +83,13 @@ export function SshTargetForm({
           onChange={(event) => patch({ hostKeyFingerprint: event.target.value })}
           className={`${inputClass} font-mono`}
         />
-        <span className="mt-1 block text-xs text-zinc-500">
+        <span className="mt-1 block text-xs text-muted-foreground">
           {SSH_FINGERPRINT_HELP} Host-key auto-accept is denied.
         </span>
       </label>
 
-      <details className="rounded-xl border border-zinc-200 bg-zinc-50/70 px-4 py-3">
-        <summary className="cursor-pointer text-sm font-medium text-zinc-800">
+      <details className="rounded-xl border border-border bg-background/70 px-4 py-3">
+        <summary className="cursor-pointer text-sm font-medium text-foreground">
           Host and port allowlist
         </summary>
         <div className="mt-3 grid gap-3">
@@ -105,7 +105,7 @@ export function SshTargetForm({
               }
               className={inputClass}
             />
-            <span className="mt-1 block text-xs text-zinc-500">
+            <span className="mt-1 block text-xs text-muted-foreground">
               Default {defaultPort}. Port forwarding is denied.
             </span>
           </label>
@@ -120,7 +120,7 @@ export function SshTargetForm({
               }
               className={inputClass}
             />
-            <span className="mt-1 block text-xs text-zinc-500">
+            <span className="mt-1 block text-xs text-muted-foreground">
               {SSH_ADDRESS_HELP}
             </span>
           </label>
@@ -144,7 +144,7 @@ export function SshTargetForm({
 
 function DeniedFeatureList() {
   return (
-    <p className="text-xs text-zinc-500">
+    <p className="text-xs text-muted-foreground">
       Denied in MVP (no toggles): {SSH_DENIED_FEATURES.join(", ")}.
     </p>
   );

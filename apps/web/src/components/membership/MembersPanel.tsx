@@ -66,14 +66,14 @@ export function MembersPanel({
   return (
     <section
       aria-labelledby="members-heading"
-      className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm"
+      className="rounded-2xl border border-border bg-card p-6 shadow-sm"
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h2 id="members-heading" className="text-lg font-semibold">
             Members
           </h2>
-          <p className="mt-1 text-sm text-zinc-600">
+          <p className="mt-1 text-sm text-muted-foreground">
             <code className="font-mono text-xs">GET|PUT /api/v1/workspace/members</code>{" "}
             and{" "}
             <code className="font-mono text-xs">
@@ -90,19 +90,19 @@ export function MembersPanel({
           type="button"
           onClick={onRefresh}
           disabled={pending}
-          className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+          className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-card disabled:opacity-60"
         >
           {pending ? "Loading…" : "Refresh members"}
         </button>
       </div>
 
       {members.length === 0 ? (
-        <p className="mt-4 text-sm text-zinc-600">
+        <p className="mt-4 text-sm text-muted-foreground">
           No members loaded. Current workspace must resolve and you need
           administer permission.
         </p>
       ) : (
-        <ul className="mt-4 divide-y divide-zinc-100">
+        <ul className="mt-4 divide-y divide-border">
           {members.map((member) => (
             <li
               key={member.user.id}
@@ -112,13 +112,13 @@ export function MembersPanel({
                 <p className="font-medium">
                   {member.user.display_name || member.user.external_subject}
                 </p>
-                <p className="font-mono text-xs text-zinc-500">
+                <p className="font-mono text-xs text-muted-foreground">
                   {member.user.issuer} · {member.user.external_subject}
                 </p>
-                <p className="mt-1 text-sm text-zinc-600">
+                <p className="mt-1 text-sm text-muted-foreground">
                   roles {member.roles.join(", ") || "—"}
                 </p>
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-muted-foreground">
                   {member.permissions.join(", ") || "no permissions"}
                 </p>
               </div>
@@ -126,7 +126,7 @@ export function MembersPanel({
                 <button
                   type="button"
                   onClick={() => applyMember(member)}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50"
+                  className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm hover:bg-background"
                 >
                   Edit roles
                 </button>
@@ -145,7 +145,7 @@ export function MembersPanel({
       )}
 
       <form
-        className="mt-6 space-y-4 border-t border-zinc-100 pt-5"
+        className="mt-6 space-y-4 border-t border-border pt-5"
         onSubmit={(event) => {
           event.preventDefault();
           void onSave({
@@ -164,7 +164,7 @@ export function MembersPanel({
             <input
               value={userId}
               onChange={(event) => setUserId(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+              className="mt-1 w-full rounded-lg border border-border px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
             />
           </label>
           <label className="text-sm">
@@ -172,7 +172,7 @@ export function MembersPanel({
             <input
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+              className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
             />
           </label>
           <label className="text-sm">
@@ -180,7 +180,7 @@ export function MembersPanel({
             <input
               value={issuer}
               onChange={(event) => setIssuer(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+              className="mt-1 w-full rounded-lg border border-border px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
             />
           </label>
           <label className="text-sm">
@@ -188,7 +188,7 @@ export function MembersPanel({
             <input
               value={subject}
               onChange={(event) => setSubject(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
+              className="mt-1 w-full rounded-lg border border-border px-3 py-2 font-mono text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
             />
           </label>
         </div>

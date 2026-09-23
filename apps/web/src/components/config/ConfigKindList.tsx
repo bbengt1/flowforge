@@ -91,16 +91,16 @@ export function ConfigKindList({ kind }: ConfigKindListProps) {
     <div className="space-y-6">
       {problem ? <ProblemBanner problem={problem} /> : null}
       {lastRequestId && !problem ? (
-        <p className="font-mono text-xs text-zinc-500">
+        <p className="font-mono text-xs text-muted-foreground">
           last request_id {lastRequestId}
         </p>
       ) : null}
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+      <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold">{descriptor.title}</h2>
-            <p className="mt-1 max-w-2xl text-sm text-zinc-600">
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
               {descriptor.summary} Drafts are editable; published versions are
               immutable pins for workflows.
               {kind === "cluster_target"
@@ -121,7 +121,7 @@ export function ConfigKindList({ kind }: ConfigKindListProps) {
               type="button"
               onClick={() => void refresh()}
               disabled={pending || !ready}
-              className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-60"
+              className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-card disabled:opacity-60"
             >
               {pending ? "Loading…" : "Refresh"}
             </button>
@@ -134,7 +134,7 @@ export function ConfigKindList({ kind }: ConfigKindListProps) {
       ) : items.length === 0 && !problem ? (
         <EmptyKindState descriptor={descriptor} />
       ) : items.length === 0 && problem ? (
-        <p className="text-sm text-zinc-600">
+        <p className="text-sm text-muted-foreground">
           List and select fail closed when the API returns 403 or an empty
           published set. Pins come from POST …/select, not GET …/authorized.
         </p>
@@ -144,11 +144,11 @@ export function ConfigKindList({ kind }: ConfigKindListProps) {
             <li key={item.id}>
               <Link
                 href={`/config/${descriptor.collection}/${item.id}`}
-                className="block rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm hover:border-teal-700"
+                className="block rounded-2xl border border-border bg-card p-5 shadow-sm hover:border-teal-700"
               >
                 <div className="flex items-start justify-between gap-3">
                   <h3 className="font-semibold">{item.name}</h3>
-                  <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700">
+                  <span className="rounded-full bg-card px-2 py-0.5 text-xs text-foreground">
                     {item.status}
                   </span>
                 </div>
@@ -161,10 +161,10 @@ export function ConfigKindList({ kind }: ConfigKindListProps) {
                       readOnly
                     />
                   ) : (
-                    <span className="text-sm text-zinc-600">Draft only — not pinned yet</span>
+                    <span className="text-sm text-muted-foreground">Draft only — not pinned yet</span>
                   )}
                 </p>
-                <p className="mt-2 font-mono text-xs text-zinc-500">
+                <p className="mt-2 font-mono text-xs text-muted-foreground">
                   draft rev {item.draftRevision ?? "—"}
                 </p>
               </Link>
@@ -183,16 +183,16 @@ export function ConfigKindList({ kind }: ConfigKindListProps) {
 
 function EmptyKindState({ descriptor }: { descriptor: KindDescriptor }) {
   return (
-    <section className="rounded-2xl border border-dashed border-zinc-300 bg-white/60 p-8 text-center">
+    <section className="rounded-2xl border border-dashed border-border bg-card/60 p-8 text-center">
       <h2 className="text-lg font-semibold">No {descriptor.title.toLowerCase()} yet</h2>
-      <p className="mt-2 text-sm text-zinc-600">
+      <p className="mt-2 text-sm text-muted-foreground">
         Create a draft, then publish an immutable revision. Workflows pin the
         published version, never a live draft.
       </p>
       <p className="mt-4">
         <Link
           href={`/config/${descriptor.collection}/new`}
-          className="text-sm font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+          className="text-sm font-medium text-accent-text underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
         >
           Create the first draft
         </Link>

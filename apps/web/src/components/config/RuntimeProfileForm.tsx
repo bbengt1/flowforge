@@ -47,7 +47,7 @@ export function RuntimeProfileForm({
   onChange,
 }: RuntimeProfileFormProps) {
   const inputClass =
-    "mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:bg-zinc-50";
+    "mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:bg-background";
   const limits = spec.limits ?? {};
   const destinations = spec.egress?.destinations ?? [];
   const gap = runtimeProfilePublishGap(spec, map);
@@ -77,7 +77,7 @@ export function RuntimeProfileForm({
   return (
     <div className="grid gap-4">
       <ScriptIsolationNotes map={map} extraNotes={extraNotes} />
-      <p className="text-xs text-zinc-500">{SCRIPT_RUNTIME_PROFILE_REQUIRED_HELP}</p>
+      <p className="text-xs text-muted-foreground">{SCRIPT_RUNTIME_PROFILE_REQUIRED_HELP}</p>
 
       <label className="text-sm">
         <span className="font-medium">Language</span>
@@ -93,7 +93,7 @@ export function RuntimeProfileForm({
             </option>
           ))}
         </select>
-        <span className="mt-1 block text-xs text-zinc-500">
+        <span className="mt-1 block text-xs text-muted-foreground">
           python or go only. Script nodes list published profiles that match
           this language.
         </span>
@@ -110,11 +110,11 @@ export function RuntimeProfileForm({
           onChange={(event) => patch({ imageDigest: event.target.value })}
           className={`${inputClass} font-mono`}
         />
-        <span className="mt-1 block text-xs text-zinc-500">
+        <span className="mt-1 block text-xs text-muted-foreground">
           {SCRIPT_RUNTIME_DIGEST_HELP} {SCRIPT_RUNTIME_NO_IMAGE_HELP}
         </span>
         {spec.imageDigest && !imagePinned ? (
-          <span role="status" className="mt-1 block text-sm text-amber-900">
+          <span role="status" className="mt-1 block text-sm text-warning-foreground">
             Image digest is not sha256:&lt;64 hex&gt;. Tags and names are rejected.
           </span>
         ) : null}
@@ -131,17 +131,17 @@ export function RuntimeProfileForm({
           onChange={(event) => patch({ dependencyLockDigest: event.target.value })}
           className={`${inputClass} font-mono`}
         />
-        <span className="mt-1 block text-xs text-zinc-500">
+        <span className="mt-1 block text-xs text-muted-foreground">
           Pin the approved lockfile digest. {SCRIPT_RUNTIME_NO_INSTALL_HELP}
         </span>
         {spec.dependencyLockDigest && !lockPinned ? (
-          <span role="status" className="mt-1 block text-sm text-amber-900">
+          <span role="status" className="mt-1 block text-sm text-warning-foreground">
             Dependency lock digest is not sha256:&lt;64 hex&gt;.
           </span>
         ) : null}
       </label>
 
-      <fieldset className="grid gap-3 rounded-xl border border-zinc-200 px-4 py-3 sm:grid-cols-2">
+      <fieldset className="grid gap-3 rounded-xl border border-border px-4 py-3 sm:grid-cols-2">
         <legend className="px-1 text-sm font-medium">Resource limits</legend>
         {LIMIT_FIELDS.map((field) => {
           const bounds = SCRIPT_RUNTIME_LIMIT_BOUNDS[field.key];
@@ -164,7 +164,7 @@ export function RuntimeProfileForm({
                 }
                 className={inputClass}
               />
-              <span className="mt-1 block text-xs text-zinc-500">
+              <span className="mt-1 block text-xs text-muted-foreground">
                 {bounds.min}–{bounds.max}
               </span>
             </label>
@@ -173,15 +173,15 @@ export function RuntimeProfileForm({
       </fieldset>
 
       {showEgress ? (
-        <fieldset className="grid gap-3 rounded-xl border border-zinc-200 px-4 py-3">
+        <fieldset className="grid gap-3 rounded-xl border border-border px-4 py-3">
           <legend className="px-1 text-sm font-medium">Egress allowlist</legend>
-          <p className="text-xs text-zinc-500">{SCRIPT_RUNTIME_EGRESS_HELP}</p>
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-muted-foreground">{SCRIPT_RUNTIME_EGRESS_HELP}</p>
+          <p className="text-xs text-muted-foreground">
             dnsConstrained is required and always true. There is no toggle for
             package install, Docker socket, metadata, or unconstrained DNS.
           </p>
           {destinations.length === 0 ? (
-            <p className="text-sm text-zinc-600">
+            <p className="text-sm text-muted-foreground">
               No destinations — default-deny egress.
             </p>
           ) : null}
@@ -246,12 +246,12 @@ export function RuntimeProfileForm({
                 onClick={() =>
                   setDestinations(destinations.filter((_, i) => i !== index))
                 }
-                className="self-end rounded-lg border border-zinc-300 px-3 py-2 text-sm disabled:opacity-60"
+                className="self-end rounded-lg border border-border px-3 py-2 text-sm disabled:opacity-60"
               >
                 Remove
               </button>
               {deniedEgressHost(row.host) ? (
-                <p className="sm:col-span-4 text-sm text-amber-900">
+                <p className="sm:col-span-4 text-sm text-warning-foreground">
                   {row.host} is denied (metadata, loopback, Docker socket, or *).
                 </p>
               ) : null}
@@ -266,17 +266,17 @@ export function RuntimeProfileForm({
                 { host: "", port: 443, protocol: "tcp" },
               ])
             }
-            className="w-fit rounded-lg border border-zinc-300 px-3 py-1.5 text-sm disabled:opacity-60"
+            className="w-fit rounded-lg border border-border px-3 py-1.5 text-sm disabled:opacity-60"
           >
             Add destination
           </button>
         </fieldset>
       ) : (
-        <p className="text-xs text-zinc-500">{SCRIPT_RUNTIME_EGRESS_HELP}</p>
+        <p className="text-xs text-muted-foreground">{SCRIPT_RUNTIME_EGRESS_HELP}</p>
       )}
 
       {gap ? (
-        <p role="status" className="text-sm text-amber-900">
+        <p role="status" className="text-sm text-warning-foreground">
           {gap}
         </p>
       ) : null}

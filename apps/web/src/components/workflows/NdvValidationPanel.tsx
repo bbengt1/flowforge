@@ -89,12 +89,12 @@ export function NdvValidationPanel({
       data-ndv-panel="validation"
       aria-labelledby="ndv-validation-heading"
       aria-live="polite"
-      className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+      className="rounded-2xl border border-border bg-card p-5 shadow-sm"
     >
       <h2 id="ndv-validation-heading" className="text-base font-semibold">
         Validation and policy
       </h2>
-      <p className="mt-1 text-sm text-zinc-600">
+      <p className="mt-1 text-sm text-muted-foreground">
         {NDV_VALIDATION_JUMP_HELP} {NDV_EVALUATE_WHEN_PUBLISHED_HELP}
       </p>
 
@@ -125,10 +125,10 @@ export function NdvValidationPanel({
           {view.warnings.map((warning, index) => (
             <li
               key={`${warning.path}-${warning.code}-${index}`}
-              className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm"
+              className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
             >
               <p className="font-medium">{warning.path || "warning"}</p>
-              <p className="mt-1 text-zinc-700">{warning.message}</p>
+              <p className="mt-1 text-foreground">{warning.message}</p>
             </li>
           ))}
         </ul>
@@ -136,7 +136,7 @@ export function NdvValidationPanel({
 
       {view.workflow.length > 0 ? (
         <div className="mt-4">
-          <h3 className="text-sm font-medium text-zinc-800">Workflow notes</h3>
+          <h3 className="text-sm font-medium text-foreground">Workflow notes</h3>
           <ol className="mt-2 space-y-2">
             {view.workflow.map((error, index) => (
               <ValidationJumpItem
@@ -153,12 +153,12 @@ export function NdvValidationPanel({
       errors.length === 0 &&
       problem &&
       !evaluationProblem ? (
-        <p className="mt-3 text-sm text-amber-950">
+        <p className="mt-3 text-sm text-warning-foreground">
           {safeProblemDetail(problem.detail)}
         </p>
       ) : null}
 
-      <div className="mt-4 space-y-1 font-mono text-xs text-zinc-600">
+      <div className="mt-4 space-y-1 font-mono text-xs text-muted-foreground">
         {policy.policyLabel ? <p>policy: {policy.policyLabel}</p> : null}
         {policy.boundsLabel ? <p>bounds: {policy.boundsLabel}</p> : null}
         {policy.redactionLabel ? <p>redaction: {policy.redactionLabel}</p> : null}
@@ -169,15 +169,15 @@ export function NdvValidationPanel({
 
       <div className="mt-4 space-y-2 text-sm" data-ndv-evaluate>
         {evaluationPending ? (
-          <p className="text-zinc-600">Evaluating published-version policy…</p>
+          <p className="text-muted-foreground">Evaluating published-version policy…</p>
         ) : null}
         {evaluationProblem ? (
-          <p className="text-amber-950">
+          <p className="text-warning-foreground">
             {safeProblemDetail(evaluationProblem.detail)}
           </p>
         ) : null}
         {evaluateGap ? (
-          <p role="status" className="text-amber-950">
+          <p role="status" className="text-warning-foreground">
             {evaluateGap}
           </p>
         ) : null}
@@ -189,12 +189,12 @@ export function NdvValidationPanel({
           </p>
         ) : null}
         {!scoped.publishedVersionInPlay ? (
-          <p className="text-zinc-600">{NDV_NO_DRAFT_EXECUTE_HELP}</p>
+          <p className="text-muted-foreground">{NDV_NO_DRAFT_EXECUTE_HELP}</p>
         ) : null}
         {scoped.denied.map((item, index) => (
           <p
             key={`${item.nodeId}-${item.operation}-${index}`}
-            className="text-rose-900"
+            className="text-destructive"
           >
             Denied {item.operation}
             {item.reason ? `: ${item.reason}` : ""}
@@ -212,7 +212,7 @@ export function NdvValidationPanel({
           item.retryMaxAttempts !== undefined || item.verificationDeclared ? (
             <p
               key={`${item.nodeId}-${item.operation}-retry-${index}`}
-              className="font-mono text-xs text-zinc-600"
+              className="font-mono text-xs text-muted-foreground"
             >
               retryAllowed={String(item.retryAllowed ?? false)} retrySafe=
               {String(item.retrySafe ?? false)} maxAttempts=
@@ -224,23 +224,23 @@ export function NdvValidationPanel({
         {scoped.workflowNotes
           .filter((note) => note !== NDV_NO_DRAFT_EXECUTE_HELP)
           .map((note) => (
-            <p key={note} className="text-xs text-zinc-600">
+            <p key={note} className="text-xs text-muted-foreground">
               {note}
             </p>
           ))}
         {approvals.length > 0 ? (
           <div className="space-y-2">
-            <p className="text-xs text-zinc-600">{NDV_APPROVAL_DECIDE_HELP}</p>
+            <p className="text-xs text-muted-foreground">{NDV_APPROVAL_DECIDE_HELP}</p>
             {approvals.map((item) => (
               <p key={item.id}>
                 <Link
                   href={ndvDecideHref(item.id)}
-                  className="font-medium text-teal-800 underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                  className="font-medium text-accent-text underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
                 >
                   Decide approval {item.id}
                 </Link>
                 {item.status ? (
-                  <span className="text-xs text-zinc-500"> · {item.status}</span>
+                  <span className="text-xs text-muted-foreground"> · {item.status}</span>
                 ) : null}
               </p>
             ))}
@@ -274,7 +274,7 @@ function ValidationJumpItem({
         <span className="font-medium">{error.path || "document"}</span>
       )}
       <p className="mt-1">{error.message}</p>
-      <p className="mt-1 font-mono text-xs text-amber-900/80">{error.code}</p>
+      <p className="mt-1 font-mono text-xs text-warning-foreground/80">{error.code}</p>
     </li>
   );
 }

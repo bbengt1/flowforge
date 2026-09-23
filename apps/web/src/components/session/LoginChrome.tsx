@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Field } from "@/components/a11y/Field";
+import { ThemePreferenceControl } from "@/components/theme/ThemePreference";
 import { afterLocalLoginHref } from "@/lib/change-password";
 import {
   LOGIN_SUCCESS_HREF,
@@ -102,6 +103,9 @@ export function LoginChrome({ onSuccess }: LoginChromeProps) {
             borderColor: "var(--ff-border)",
           }}
         >
+          <div className="mb-4 flex justify-end">
+            <ThemePreferenceControl theme="dark" />
+          </div>
           <p
             className="text-xs font-medium tracking-wide uppercase"
             style={{ color: "var(--ff-muted)" }}
