@@ -9,6 +9,11 @@
  * dispatch — callers must re-evaluate on the server.
  */
 
+import {
+  openCollectionPath,
+  readCollectionPageFields,
+  scrubCollectionPageProblem,
+} from "./collection-page.ts";
 import { callIdentityProxy, type IdentityClientResult } from "./identity-client.ts";
 import type { DevIdentity } from "./identity-headers.ts";
 import { type ProblemDetails } from "./problem.ts";
@@ -69,6 +74,9 @@ export type ApprovalListSuccess = {
   statusCode: number;
   requestId: string;
   items: ApprovalRequest[];
+  limit: number;
+  cursor: string;
+  next: string;
   strippedKeys: string[];
 };
 
@@ -100,10 +108,26 @@ export async function listApprovals(
   identity: DevIdentity,
   filter: ApprovalListFilter = {},
 ): Promise<ApprovalListSuccess | ApprovalClientFailure> {
-  const path = listApprovalsPath(filter);
-  const result = await callIdentityProxy<unknown>(path, identity);
+  const opened = openCollectionPath(listApprovalsPath(filter), {
+    limit: filter.limit,
+    cursor: filter.cursor,
+    q: filter.q,
+  });
+  if (!opened.ok) {
+    return {
+      ok: false,
+      statusCode: opened.problem.status,
+      requestId: opened.problem.request_id,
+      problem: opened.problem,
+      expired: false,
+      invalidated: false,
+      selfApproval: false,
+      strippedKeys: [],
+    };
+  }
+  const result = await callIdentityProxy<unknown>(opened.path, identity);
   if (!result.ok) {
-    return failure(result);
+    return failure(result, true);
   }
   const strippedKeys: string[] = [];
   stripSecretKeys(result.data, strippedKeys);
@@ -112,6 +136,7 @@ export async function listApprovals(
     statusCode: result.statusCode,
     requestId: result.requestId,
     items: parseApprovalList(result.data),
+    ...readCollectionPageFields(result.data),
     strippedKeys,
   };
 }
@@ -194,6 +219,7 @@ export async function createApprovals(
     statusCode: result.statusCode,
     requestId: result.requestId,
     items: parseApprovalList(result.data),
+    ...readCollectionPageFields(result.data),
     strippedKeys,
   };
 }
@@ -342,13 +368,17 @@ function classifyProblem(problem: ProblemDetails): {
 
 function failure(
   result: Extract<IdentityClientResult<unknown>, { ok: false }>,
+  collectionPage = false,
 ): ApprovalClientFailure {
+  const problem = collectionPage
+    ? scrubCollectionPageProblem(result.problem)
+    : result.problem;
   return {
     ok: false,
     statusCode: result.statusCode,
     requestId: result.requestId,
-    problem: result.problem,
-    ...classifyProblem(result.problem),
+    problem,
+    ...classifyProblem(problem),
     strippedKeys: [],
   };
 }

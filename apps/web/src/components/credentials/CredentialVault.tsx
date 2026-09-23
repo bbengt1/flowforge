@@ -3,9 +3,14 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { CollectionLoadMore } from "@/components/CollectionLoadMore";
 import { CredentialVaultListbox } from "@/components/credentials/CredentialVaultListbox";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
+import {
+  COLLECTION_PAGE_DEFAULT_LIMIT,
+  appendCollectionItems,
+} from "@/lib/collection-page";
 import { getCredentialCatalog, listCredentials } from "@/lib/credential-client";
 import { FALLBACK_CREDENTIAL_CATALOG } from "@/lib/credential-contract";
 import {
@@ -80,6 +85,7 @@ export function CredentialVault() {
   );
 
   const [items, setItems] = useState<CredentialRecord[]>([]);
+  const [pageNext, setPageNext] = useState("");
   const [catalog, setCatalog] = useState<CredentialCatalog>(
     FALLBACK_CREDENTIAL_CATALOG,
   );
@@ -113,7 +119,10 @@ export function CredentialVault() {
     setPending(true);
     setProblem(null);
     const [list, catalogResult, workspace] = await Promise.all([
-      listCredentials(identity),
+      listCredentials(identity, {
+        q: query.q,
+        limit: COLLECTION_PAGE_DEFAULT_LIMIT,
+      }),
       getCredentialCatalog(identity),
       callIdentityProxy<CurrentWorkspace>("/workspace", identity),
     ]);
@@ -128,14 +137,36 @@ export function CredentialVault() {
       setProblem(list.problem);
       if (isCredentialForbidden(list.problem)) {
         setItems([]);
+        setPageNext("");
       }
       return;
     }
     setItems(list.items);
+    setPageNext(list.next);
     setStrippedKeys(list.strippedKeys);
     if (catalogResult.ok) {
       setCatalog(catalogResult.catalog);
     }
+  }
+
+  async function loadMore() {
+    if (!pageNext) {
+      return;
+    }
+    setPending(true);
+    setProblem(null);
+    const list = await listCredentials(identity, {
+      q: query.q,
+      limit: COLLECTION_PAGE_DEFAULT_LIMIT,
+      cursor: pageNext,
+    });
+    setPending(false);
+    if (!list.ok) {
+      setProblem(list.problem);
+      return;
+    }
+    setItems((current) => appendCollectionItems(current, list.items));
+    setPageNext(list.next);
   }
 
   useEffect(() => {
@@ -147,7 +178,7 @@ export function CredentialVault() {
     }, 0);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh closes over identity
-  }, [ready, identity]);
+  }, [ready, identity, query.q]);
 
   return (
     <div
@@ -345,6 +376,14 @@ export function CredentialVault() {
         </section>
       ) : (
         <CredentialVaultListbox rows={visible} />
+      )}
+      {forbidden || denied ? null : (
+        <CollectionLoadMore
+          next={pageNext}
+          pending={pending}
+          onLoadMore={() => void loadMore()}
+          label="Load more credentials"
+        />
       )}
     </div>
   );

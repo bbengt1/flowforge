@@ -93,6 +93,13 @@ export type ExecutionListQuery = {
   workflowId?: string;
   status?: string;
   limit?: number;
+  /**
+   * Opaque keyset token from the previous `next`. Keep it in memory.
+   * Do not copy it into the browser URL or localStorage.
+   */
+  cursor?: string;
+  /** Server substring: workflow name, slug, correlation id, status. */
+  q?: string;
 };
 
 export type AuditEventQuery = {
@@ -100,6 +107,8 @@ export type AuditEventQuery = {
   resourceId?: string;
   action?: string;
   limit?: number;
+  cursor?: string;
+  q?: string;
 };
 
 export type ExecutionStartBody = {

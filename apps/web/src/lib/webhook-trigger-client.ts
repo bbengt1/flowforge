@@ -5,6 +5,12 @@
  * or shown — unexpected secret fields are a #113 contract leak.
  */
 
+import {
+  openCollectionPath,
+  readCollectionPageFields,
+  scrubCollectionPageProblem,
+  type CollectionPageQuery,
+} from "./collection-page.ts";
 import { forgetSecretDraft } from "./credential-contract.ts";
 import { callIdentityProxy } from "./identity-client.ts";
 import type { DevIdentity } from "./identity-headers.ts";
@@ -52,6 +58,9 @@ export type WebhookTriggerListSuccess = {
   statusCode: number;
   requestId: string;
   items: WebhookTriggerRecord[];
+  limit: number;
+  cursor: string;
+  next: string;
   strippedKeys: string[];
   secretLeak: boolean;
 };
@@ -69,8 +78,11 @@ function failure(result: {
   statusCode: number;
   requestId: string;
   problem: ProblemDetails;
-}): WebhookTriggerClientFailure {
-  const code = String(result.problem.code ?? "").trim();
+}, collectionPage = false): WebhookTriggerClientFailure {
+  const problem = collectionPage
+    ? scrubCollectionPageProblem(result.problem)
+    : result.problem;
+  const code = String(problem.code ?? "").trim();
   const forbidden =
     result.statusCode === 403 ||
     code === WEBHOOK_TRIGGER_PROBLEM_CODES.forbidden ||
@@ -79,7 +91,7 @@ function failure(result: {
     ok: false,
     statusCode: result.statusCode,
     requestId: result.requestId,
-    problem: result.problem,
+    problem,
     forbidden,
   };
 }
@@ -158,14 +170,24 @@ export async function listWebhookTriggers(
   identity: DevIdentity,
   workflowId: string,
   catalog?: WorkflowCatalog | null,
+  query: CollectionPageQuery = {},
 ): Promise<WebhookTriggerListSuccess | WebhookTriggerClientFailure> {
   if (!isResourceId(workflowId)) {
     return invalidWorkflowProblem("/workflows/{workflowId}/triggers");
   }
-  const path = webhookTriggerListPath(workflowId, catalog);
-  const result = await callIdentityProxy<unknown>(path, identity);
+  const opened = openCollectionPath(webhookTriggerListPath(workflowId, catalog), query);
+  if (!opened.ok) {
+    return {
+      ok: false,
+      statusCode: opened.problem.status,
+      requestId: opened.problem.request_id,
+      problem: opened.problem,
+      forbidden: false,
+    };
+  }
+  const result = await callIdentityProxy<unknown>(opened.path, identity);
   if (!result.ok) {
-    const failed = failure(result);
+    const failed = failure(result, true);
     if (failed.forbidden) {
       failed.problem = {
         ...failed.problem,
@@ -180,6 +202,7 @@ export async function listWebhookTriggers(
     statusCode: result.statusCode,
     requestId: result.requestId,
     items: parseWebhookTriggerList(result.data, workflowId, catalog),
+    ...readCollectionPageFields(result.data),
     strippedKeys: extracted.strippedKeys,
     secretLeak: extracted.leaked,
   };

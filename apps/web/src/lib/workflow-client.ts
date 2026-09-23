@@ -1,3 +1,9 @@
+import {
+  openCollectionPath,
+  readCollectionPageFields,
+  scrubCollectionPageProblem,
+  type CollectionPageQuery,
+} from "./collection-page.ts";
 import { callIdentityProxy, type IdentityClientResult } from "./identity-client.ts";
 import type { DevIdentity } from "./identity-headers.ts";
 import { problemFieldErrors, type ProblemDetails } from "./problem.ts";
@@ -142,6 +148,9 @@ export type ListWorkflowsSuccess = {
   statusCode: number;
   requestId: string;
   items: WorkflowRecord[];
+  limit: number;
+  cursor: string;
+  next: string;
 };
 
 export type WorkflowRecordSuccess = {
@@ -175,6 +184,9 @@ export type VersionsClientSuccess = {
   statusCode: number;
   requestId: string;
   items: WorkflowVersion[];
+  limit: number;
+  cursor: string;
+  next: string;
 };
 
 export type VersionClientSuccess = {
@@ -296,17 +308,32 @@ function definitionBody(yaml: string): DefinitionYamlBody {
 
 function failure(
   result: Extract<IdentityClientResult<unknown>, { ok: false }>,
+  collectionPage = false,
 ): WorkflowClientFailure {
+  const problem = collectionPage
+    ? scrubCollectionPageProblem(result.problem)
+    : result.problem;
   return {
     ok: false,
     statusCode: result.statusCode,
     requestId: result.requestId,
     problem: {
-      ...result.problem,
+      ...problem,
       errors: problemFieldErrors(result.problem),
     },
     errors: workflowErrorsFromProblem(result.problem),
     conflict: isConflictProblem(result.problem),
+  };
+}
+
+function pageRejected(problem: ProblemDetails): WorkflowClientFailure {
+  return {
+    ok: false,
+    statusCode: problem.status,
+    requestId: problem.request_id,
+    problem,
+    errors: [],
+    conflict: false,
   };
 }
 
@@ -336,23 +363,30 @@ function malformed(
 
 export async function listWorkflows(
   identity: DevIdentity,
-  query: { folderId?: string } = {},
+  query: { folderId?: string } & CollectionPageQuery = {},
 ): Promise<ListWorkflowsSuccess | WorkflowClientFailure> {
-  const result = await callIdentityProxy<WorkflowList>(
-    listWorkflowsPath(query.folderId),
-    identity,
-  );
+  const opened = openCollectionPath(listWorkflowsPath(query.folderId), {
+    limit: query.limit,
+    cursor: query.cursor,
+    q: query.q,
+  });
+  if (!opened.ok) {
+    return pageRejected(opened.problem);
+  }
+  const result = await callIdentityProxy<WorkflowList>(opened.path, identity);
   if (!result.ok) {
-    return failure(result);
+    return failure(result, true);
   }
   const items = Array.isArray(result.data.items)
     ? result.data.items.filter(isWorkflowRecord)
     : [];
+  const page = readCollectionPageFields(result.data);
   return {
     ok: true,
     statusCode: result.statusCode,
     requestId: result.requestId,
     items,
+    ...page,
   };
 }
 
@@ -551,11 +585,16 @@ export async function publishWorkflow(
 export async function listWorkflowVersions(
   identity: DevIdentity,
   workflowId: string,
+  query: CollectionPageQuery = {},
 ): Promise<VersionsClientSuccess | WorkflowClientFailure> {
   const path = workflowVersionsPath(workflowId);
-  const result = await callIdentityProxy<WorkflowVersionList>(path, identity);
+  const opened = openCollectionPath(path, query);
+  if (!opened.ok) {
+    return pageRejected(opened.problem);
+  }
+  const result = await callIdentityProxy<WorkflowVersionList>(opened.path, identity);
   if (!result.ok) {
-    return failure(result);
+    return failure(result, true);
   }
   const items = Array.isArray(result.data.items)
     ? result.data.items.filter(isWorkflowVersion)
@@ -565,6 +604,7 @@ export async function listWorkflowVersions(
     statusCode: result.statusCode,
     requestId: result.requestId,
     items,
+    ...readCollectionPageFields(result.data),
   };
 }
 

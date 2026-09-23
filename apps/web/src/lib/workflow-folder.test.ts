@@ -996,8 +996,10 @@ describe("F.6 search / filter across folders", () => {
     assert.equal(F6_HOME_FOLDER.noSecretSearch, true);
     assert.equal(F6_HOME_FOLDER.noMarketplace, true);
     assert.equal(F6_HOME_FOLDER.commandsDoNotFileViaActions, true);
-    assert.equal(F6_HOME_FOLDER.clientNameSlugFilterFirst, true);
-    assert.equal(F6_HOME_FOLDER.noInventedQApi, true);
+    assert.equal(F6_HOME_FOLDER.clientNameSlugFilterFirst, false);
+    assert.equal(F6_HOME_FOLDER.serverNameSlugSearch, true);
+    assert.equal(F6_HOME_FOLDER.noInventedQApi, false);
+    assert.equal(F6_HOME_FOLDER.collectionPageQ, true);
     assert.equal(F6_HOME_FOLDER.noNewApi, true);
     assert.equal(F6_HOME_FOLDER.foldersNotInYaml, true);
     assert.equal(F6_HOME_FOLDER.draftsNeverRun, true);
@@ -1125,7 +1127,8 @@ describe("F.6 search / filter across folders", () => {
     assert.match(home, /folderId: selectedFolderListFolderId/);
     assert.doesNotMatch(home, /folderId:\s*filters\.query/);
     const client = source("src/lib/workflow-client.ts");
-    assert.doesNotMatch(client, /[?&]q=/);
+    assert.match(client, /openCollectionPath/);
+    assert.match(source("src/lib/collection-page.ts"), /COLLECTION_PAGE_INVALID_DETAIL/);
     assert.match(FOLDER_PATH_REVEAL_LABEL, /folder/i);
   });
 
@@ -1195,10 +1198,12 @@ describe("F.6 search / filter across folders", () => {
     assert.match(home, /FOLDER_SEARCH_HELP/);
     assert.doesNotMatch(home, /marketplace/i);
     assert.doesNotMatch(home, /\/actions/);
-    assert.doesNotMatch(client, /[?&]q=/);
+    assert.match(client, /openCollectionPath/);
+    assert.doesNotMatch(client, /kubeconfig=/);
     assert.match(search, /searchIndexContainsSecret/);
     assert.equal(F6_HOME_FOLDER.noSecretSearch, true);
-    assert.equal(F6_HOME_FOLDER.noInventedQApi, true);
+    assert.equal(F6_HOME_FOLDER.collectionPageQ, true);
+    assert.equal(F6_HOME_FOLDER.noInventedQApi, false);
     assert.equal(F6_HOME_FOLDER.commandsDoNotFileViaActions, true);
     assert.match(home, /subscribeWorkspaceCommands/);
     assert.match(home, /createFromYaml/);

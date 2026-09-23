@@ -1,10 +1,15 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { CollectionLoadMore } from "@/components/CollectionLoadMore";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { auditRowAffordances, canSeeAuditNav } from "@/lib/alert";
 import { listWorkspaceAuditEvents } from "@/lib/alert-client";
+import {
+  COLLECTION_PAGE_DEFAULT_LIMIT,
+  appendCollectionItems,
+} from "@/lib/collection-page";
 import { AUDIT_APPEND_ONLY_HELP, AUDIT_NOT_ISOLATION_HELP } from "@/lib/alert-contract";
 import type { WorkspaceAuditEvent } from "@/lib/alert-types";
 import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
@@ -34,6 +39,7 @@ export function AuditBrowser() {
   );
 
   const [items, setItems] = useState<WorkspaceAuditEvent[]>([]);
+  const [pageNext, setPageNext] = useState("");
   const [query, setQuery] = useState({
     resourceType: "",
     resourceId: "",
@@ -58,6 +64,7 @@ export function AuditBrowser() {
         resourceType: query.resourceType.trim() || undefined,
         resourceId: query.resourceId.trim() || undefined,
         action: query.action.trim() || undefined,
+        limit: COLLECTION_PAGE_DEFAULT_LIMIT,
       }),
       callIdentityProxy<CurrentWorkspace>("/workspace", identity),
     ]);
@@ -69,10 +76,34 @@ export function AuditBrowser() {
     if (!list.ok) {
       setProblem(list.problem);
       setItems([]);
+      setPageNext("");
       return;
     }
     setItems(list.items);
+    setPageNext(list.next);
     setStrippedKeys(list.strippedKeys);
+  }
+
+  async function loadMore() {
+    if (!pageNext) {
+      return;
+    }
+    setPending(true);
+    setProblem(null);
+    const list = await listWorkspaceAuditEvents(identity, {
+      resourceType: query.resourceType.trim() || undefined,
+      resourceId: query.resourceId.trim() || undefined,
+      action: query.action.trim() || undefined,
+      limit: COLLECTION_PAGE_DEFAULT_LIMIT,
+      cursor: pageNext,
+    });
+    setPending(false);
+    if (!list.ok) {
+      setProblem(list.problem);
+      return;
+    }
+    setItems((current) => appendCollectionItems(current, list.items));
+    setPageNext(list.next);
   }
 
   useEffect(() => {
@@ -228,6 +259,11 @@ export function AuditBrowser() {
           ))}
         </ul>
       )}
+      <CollectionLoadMore
+        next={pageNext}
+        pending={pending}
+        onLoadMore={() => void loadMore()}
+      />
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { CollectionLoadMore } from "@/components/CollectionLoadMore";
 import { DeleteImpactDialog } from "@/components/credentials/DeleteImpactDialog";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
@@ -13,6 +14,10 @@ import {
   parseTagsInput,
   recordHasAction,
 } from "@/lib/credential";
+import {
+  COLLECTION_PAGE_DEFAULT_LIMIT,
+  appendCollectionItems,
+} from "@/lib/collection-page";
 import {
   deleteCredential,
   disableCredential,
@@ -118,6 +123,7 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
   const [secret, setSecret] = useState<CredentialSecretDraft>(emptySecretDraft());
   const [usage, setUsage] = useState<CredentialUsage | null>(null);
   const [events, setEvents] = useState<CredentialEvent[]>([]);
+  const [eventNext, setEventNext] = useState("");
   const [impact, setImpact] = useState<CredentialDeletionImpact | null>(null);
   const [typedName, setTypedName] = useState("");
   const [testResult, setTestResult] = useState<CredentialTestResult | null>(null);
@@ -314,13 +320,37 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
   async function loadEvents() {
     setPending("events");
     setProblem(null);
-    const result = await getCredentialEvents(identity, credentialId);
+    const result = await getCredentialEvents(identity, credentialId, {
+      limit: COLLECTION_PAGE_DEFAULT_LIMIT,
+    });
+    setPending(null);
+    if (!result.ok) {
+      setProblem(result.problem);
+      setEventNext("");
+      return;
+    }
+    setEvents(result.items);
+    setEventNext(result.next);
+    mergeStripped(result.strippedKeys);
+  }
+
+  async function loadMoreEvents() {
+    if (!eventNext) {
+      return;
+    }
+    setPending("events");
+    setProblem(null);
+    const result = await getCredentialEvents(identity, credentialId, {
+      limit: COLLECTION_PAGE_DEFAULT_LIMIT,
+      cursor: eventNext,
+    });
     setPending(null);
     if (!result.ok) {
       setProblem(result.problem);
       return;
     }
-    setEvents(result.items);
+    setEvents((current) => appendCollectionItems(current, result.items));
+    setEventNext(result.next);
     mergeStripped(result.strippedKeys);
   }
 
@@ -694,6 +724,12 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                     <code className="font-mono text-xs">/audit</code>.
                   </p>
                 )}
+                <CollectionLoadMore
+                  next={eventNext}
+                  pending={pending === "events"}
+                  onLoadMore={() => void loadMoreEvents()}
+                  label="Load more events"
+                />
               </section>
             </>
           )}

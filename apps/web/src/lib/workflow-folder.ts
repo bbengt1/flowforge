@@ -363,8 +363,11 @@ export const F6_HOME_FOLDER = {
   noSecretSearch: true,
   noMarketplace: true,
   commandsDoNotFileViaActions: true,
-  clientNameSlugFilterFirst: true,
-  noInventedQApi: true,
+  /** Name/slug search is GET /workflows `q` (#471). Client filter remains a second pass. */
+  clientNameSlugFilterFirst: false,
+  serverNameSlugSearch: true,
+  noInventedQApi: false,
+  collectionPageQ: true,
   noNewApi: true,
   d6MigrateInPlace: true,
   keep313Open: true,

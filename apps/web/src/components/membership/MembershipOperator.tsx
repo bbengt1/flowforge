@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useState, useSyncExternalStore } from "react";
 import { useEmbedMode } from "@/components/embed/EmbedMode";
+import { CollectionLoadMore } from "@/components/CollectionLoadMore";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { IdentityBootstrap } from "@/components/membership/IdentityBootstrap";
 import { MembersPanel } from "@/components/membership/MembersPanel";
@@ -21,6 +22,11 @@ import {
   setHeaderFallback,
   subscribeHeaderFallback,
 } from "@/lib/header-fallback";
+import {
+  COLLECTION_PAGE_DEFAULT_LIMIT,
+  openCollectionPath,
+  readCollectionPageFields,
+} from "@/lib/collection-page";
 import { callIdentityProxy } from "@/lib/identity-client";
 import { emptyDevIdentity, type DevIdentity } from "@/lib/identity-headers";
 import {
@@ -76,6 +82,8 @@ export function MembershipOperator() {
   const [matrix, setMatrix] = useState<PermissionMatrix | null>(null);
   const [roles, setRoles] = useState<RoleCatalogEntry[]>([]);
   const [memberships, setMemberships] = useState<Membership[]>([]);
+  const [workspaceNext, setWorkspaceNext] = useState("");
+  const [memberNext, setMemberNext] = useState("");
   const [current, setCurrent] = useState<CurrentWorkspace | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
 
@@ -120,10 +128,23 @@ export function MembershipOperator() {
     }
   }
 
-  async function loadWorkspaces() {
-    const data = await run<ItemList<Membership>>("workspaces", "/workspaces");
+  async function loadWorkspaces(cursor = "") {
+    const opened = openCollectionPath("/workspaces", {
+      limit: COLLECTION_PAGE_DEFAULT_LIMIT,
+      cursor,
+    });
+    if (!opened.ok) {
+      setProblem(opened.problem);
+      return;
+    }
+    const data = await run<ItemList<Membership>>("workspaces", opened.path);
     if (data) {
-      setMemberships(data.items ?? []);
+      const page = readCollectionPageFields(data);
+      const rows = data.items ?? [];
+      setMemberships((current) =>
+        cursor ? mergeMemberships(current, rows) : rows,
+      );
+      setWorkspaceNext(page.next);
     }
   }
 
@@ -134,10 +155,21 @@ export function MembershipOperator() {
     }
   }
 
-  async function loadMembers() {
-    const data = await run<ItemList<Member>>("members", "/workspace/members");
+  async function loadMembers(cursor = "") {
+    const opened = openCollectionPath("/workspace/members", {
+      limit: COLLECTION_PAGE_DEFAULT_LIMIT,
+      cursor,
+    });
+    if (!opened.ok) {
+      setProblem(opened.problem);
+      return;
+    }
+    const data = await run<ItemList<Member>>("members", opened.path);
     if (data) {
-      setMembers(data.items ?? []);
+      const page = readCollectionPageFields(data);
+      const rows = data.items ?? [];
+      setMembers((current) => (cursor ? mergeMembers(current, rows) : rows));
+      setMemberNext(page.next);
     }
   }
 
@@ -447,6 +479,12 @@ export function MembershipOperator() {
             ))}
           </ul>
         )}
+        <CollectionLoadMore
+          next={workspaceNext}
+          pending={pending !== null}
+          onLoadMore={() => void loadWorkspaces(workspaceNext)}
+          label="Load more workspaces"
+        />
       </section>
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
@@ -521,6 +559,12 @@ export function MembershipOperator() {
         onSave={saveMember}
         onRemove={removeMember}
       />
+      <CollectionLoadMore
+        next={memberNext}
+        pending={pending !== null}
+        onLoadMore={() => void loadMembers(memberNext)}
+        label="Load more members"
+      />
 
       <PermissionMatrixTable
         matrix={matrix}
@@ -537,4 +581,31 @@ export function MembershipOperator() {
       </p>
     </div>
   );
+}
+
+function mergeMemberships(
+  current: Membership[],
+  page: Membership[],
+): Membership[] {
+  const seen = new Set(current.map((item) => item.workspace.id));
+  const next = [...current];
+  for (const item of page) {
+    if (!seen.has(item.workspace.id)) {
+      seen.add(item.workspace.id);
+      next.push(item);
+    }
+  }
+  return next;
+}
+
+function mergeMembers(current: Member[], page: Member[]): Member[] {
+  const seen = new Set(current.map((item) => item.user.id));
+  const next = [...current];
+  for (const item of page) {
+    if (!seen.has(item.user.id)) {
+      seen.add(item.user.id);
+      next.push(item);
+    }
+  }
+  return next;
 }

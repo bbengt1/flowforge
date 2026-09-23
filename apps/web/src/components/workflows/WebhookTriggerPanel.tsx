@@ -2,8 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { CollectionLoadMore } from "@/components/CollectionLoadMore";
 import { CredentialRefSelect } from "@/components/config/CredentialRefSelect";
 import { ProblemBanner } from "@/components/ProblemBanner";
+import {
+  COLLECTION_PAGE_DEFAULT_LIMIT,
+  appendCollectionItems,
+} from "@/lib/collection-page";
 import { publishedRunVersions } from "@/lib/execution-replay";
 import type { DevIdentity } from "@/lib/identity-headers";
 import type { ProblemDetails } from "@/lib/problem";
@@ -74,6 +79,7 @@ export function WebhookTriggerPanel({
   const [catalog, setCatalog] = useState<WorkflowCatalog | null>(null);
   const [versions, setVersions] = useState<WorkflowVersion[]>([]);
   const [items, setItems] = useState<WebhookTriggerRecord[]>([]);
+  const [pageNext, setPageNext] = useState("");
   const [draft, setDraft] = useState<WebhookTriggerDraft>(() =>
     emptyWebhookTriggerDraft(seedDraftFromYaml(yaml)),
   );
@@ -95,7 +101,9 @@ export function WebhookTriggerPanel({
       fetchWorkflowCatalog(identity),
       listWorkflowVersions(identity, workflowId),
       canView
-        ? listWebhookTriggers(identity, workflowId)
+        ? listWebhookTriggers(identity, workflowId, undefined, {
+            limit: COLLECTION_PAGE_DEFAULT_LIMIT,
+          })
         : Promise.resolve(null),
     ]).then(([catalogResult, versionResult, list]) => {
       if (cancelled) {
@@ -120,10 +128,12 @@ export function WebhookTriggerPanel({
       }
       if (!list.ok) {
         setItems([]);
+        setPageNext("");
         setProblem(list.problem);
         return;
       }
       setItems(list.items);
+      setPageNext(list.next);
       setSecretLeak(list.secretLeak);
     });
     return () => {
@@ -137,14 +147,38 @@ export function WebhookTriggerPanel({
     }
     setPending("list");
     setProblem(null);
-    const list = await listWebhookTriggers(identity, workflowId, catalog);
+    const list = await listWebhookTriggers(identity, workflowId, catalog, {
+      limit: COLLECTION_PAGE_DEFAULT_LIMIT,
+    });
     setPending(null);
     if (!list.ok) {
       setItems([]);
+      setPageNext("");
       setProblem(list.problem);
       return;
     }
     setItems(list.items);
+    setPageNext(list.next);
+    setSecretLeak(list.secretLeak);
+  }
+
+  async function loadMore() {
+    if (!pageNext || !canView) {
+      return;
+    }
+    setPending("list");
+    setProblem(null);
+    const list = await listWebhookTriggers(identity, workflowId, catalog, {
+      limit: COLLECTION_PAGE_DEFAULT_LIMIT,
+      cursor: pageNext,
+    });
+    setPending(null);
+    if (!list.ok) {
+      setProblem(list.problem);
+      return;
+    }
+    setItems((current) => appendCollectionItems(current, list.items));
+    setPageNext(list.next);
     setSecretLeak(list.secretLeak);
   }
 
@@ -506,6 +540,12 @@ export function WebhookTriggerPanel({
             ))}
           </ul>
         )}
+        <CollectionLoadMore
+          next={pageNext}
+          pending={pending !== null}
+          onLoadMore={() => void loadMore()}
+          label="Load more triggers"
+        />
       </div>
 
       {message ? (

@@ -8,6 +8,12 @@
  * CREDENTIAL_KEK is never read or sent.
  */
 
+import {
+  openCollectionPath,
+  readCollectionPageFields,
+  scrubCollectionPageProblem,
+  type CollectionPageQuery,
+} from "./collection-page.ts";
 import { callIdentityProxy, type IdentityClientResult } from "./identity-client.ts";
 import type { DevIdentity } from "./identity-headers.ts";
 import { type ProblemDetails } from "./problem.ts";
@@ -74,6 +80,9 @@ export type CredentialListSuccess = {
   statusCode: number;
   requestId: string;
   items: CredentialRecord[];
+  limit: number;
+  cursor: string;
+  next: string;
   strippedKeys: string[];
 };
 
@@ -99,6 +108,9 @@ export type CredentialEventsSuccess = {
   statusCode: number;
   requestId: string;
   items: CredentialEvent[];
+  limit: number;
+  cursor: string;
+  next: string;
   strippedKeys: string[];
 };
 
@@ -159,10 +171,21 @@ export async function getCredentialCatalog(
 
 export async function listCredentials(
   identity: DevIdentity,
+  query: CollectionPageQuery = {},
 ): Promise<CredentialListSuccess | CredentialClientFailure> {
-  const result = await callIdentityProxy<unknown>(credentialListPath(), identity);
+  const opened = openCollectionPath(credentialListPath(), query);
+  if (!opened.ok) {
+    return {
+      ok: false,
+      statusCode: opened.problem.status,
+      requestId: opened.problem.request_id,
+      problem: opened.problem,
+      strippedKeys: [],
+    };
+  }
+  const result = await callIdentityProxy<unknown>(opened.path, identity);
   if (!result.ok) {
-    return failure(result);
+    return failure(result, true);
   }
   const sanitized = sanitizeCredentialList(result.data);
   return {
@@ -170,6 +193,7 @@ export async function listCredentials(
     statusCode: result.statusCode,
     requestId: result.requestId,
     items: sanitized.value,
+    ...readCollectionPageFields(result.data),
     strippedKeys: sanitized.strippedKeys,
   };
 }
@@ -326,17 +350,29 @@ export async function getCredentialUsage(
 export async function getCredentialEvents(
   identity: DevIdentity,
   credentialId: string,
+  query: CollectionPageQuery = {},
 ): Promise<CredentialEventsSuccess | CredentialClientFailure> {
   const path = credentialEventsPath(credentialId);
-  const result = await callIdentityProxy<unknown>(path, identity);
+  const opened = openCollectionPath(path, query);
+  if (!opened.ok) {
+    return {
+      ok: false,
+      statusCode: opened.problem.status,
+      requestId: opened.problem.request_id,
+      problem: opened.problem,
+      strippedKeys: [],
+    };
+  }
+  const result = await callIdentityProxy<unknown>(opened.path, identity);
   if (!result.ok) {
-    return failure(result);
+    return failure(result, true);
   }
   const sanitized = sanitizeEvents(result.data);
   return {
     ok: true,
     statusCode: result.statusCode,
     requestId: result.requestId,
+    ...readCollectionPageFields(result.data),
     items: sanitized.value,
     strippedKeys: sanitized.strippedKeys,
   };
@@ -416,12 +452,15 @@ function recordResult(
 
 function failure(
   result: Extract<IdentityClientResult<unknown>, { ok: false }>,
+  collectionPage = false,
 ): CredentialClientFailure {
   return {
     ok: false,
     statusCode: result.statusCode,
     requestId: result.requestId,
-    problem: result.problem,
+    problem: collectionPage
+      ? scrubCollectionPageProblem(result.problem)
+      : result.problem,
     strippedKeys: [],
   };
 }

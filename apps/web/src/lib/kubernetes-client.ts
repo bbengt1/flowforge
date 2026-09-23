@@ -4,6 +4,12 @@
  * mutations. credentials: include. Specs are secret-stripped.
  */
 
+import {
+  openCollectionPath,
+  readCollectionPageFields,
+  scrubCollectionPageProblem,
+  type CollectionPageQuery,
+} from "./collection-page.ts";
 import { callIdentityProxy, type IdentityClientResult } from "./identity-client.ts";
 import type { DevIdentity } from "./identity-headers.ts";
 import {
@@ -73,6 +79,9 @@ export type ClusterTargetListSuccess = {
   statusCode: number;
   requestId: string;
   items: OpsConfigSummary[];
+  limit: number;
+  cursor: string;
+  next: string;
   strippedKeys: string[];
 };
 
@@ -123,6 +132,9 @@ export type KubernetesVersionsSuccess = {
   statusCode: number;
   requestId: string;
   items: OpsConfigVersion[];
+  limit: number;
+  cursor: string;
+  next: string;
   strippedKeys: string[];
 };
 
@@ -144,8 +156,9 @@ export type KubernetesCatalogSuccess = {
 
 export async function listClusterTargets(
   identity: DevIdentity,
+  query: CollectionPageQuery = {},
 ): Promise<ClusterTargetListSuccess | KubernetesClientFailure> {
-  return listCollection(identity, clusterTargetsPath(), "cluster_target");
+  return listCollection(identity, clusterTargetsPath(), "cluster_target", query);
 }
 
 export async function getKubernetesCatalog(
@@ -266,11 +279,13 @@ export async function selectClusterTarget(
 export async function listClusterTargetVersions(
   identity: DevIdentity,
   resourceId: string,
+  query: CollectionPageQuery = {},
 ): Promise<KubernetesVersionsSuccess | KubernetesClientFailure> {
   return listVersions(
     identity,
     clusterTargetVersionsPath(resourceId),
     "cluster_target",
+    query,
   );
 }
 
@@ -288,8 +303,9 @@ export async function getClusterTargetVersion(
 
 export async function listKubernetesPolicies(
   identity: DevIdentity,
+  query: CollectionPageQuery = {},
 ): Promise<ClusterTargetListSuccess | KubernetesClientFailure> {
-  return listCollection(identity, kubernetesPoliciesPath(), "policy");
+  return listCollection(identity, kubernetesPoliciesPath(), "policy", query);
 }
 
 export async function createKubernetesPolicy(
@@ -410,11 +426,13 @@ export async function selectKubernetesPolicy(
 export async function listKubernetesPolicyVersions(
   identity: DevIdentity,
   resourceId: string,
+  query: CollectionPageQuery = {},
 ): Promise<KubernetesVersionsSuccess | KubernetesClientFailure> {
   return listVersions(
     identity,
     kubernetesPolicyVersionsPath(resourceId),
     "policy",
+    query,
   );
 }
 
@@ -458,16 +476,29 @@ async function listCollection(
   identity: DevIdentity,
   path: string,
   kind: OpsConfigKind,
+  query: CollectionPageQuery = {},
 ): Promise<ClusterTargetListSuccess | KubernetesClientFailure> {
-  const result = await callIdentityProxy<unknown>(path, identity);
+  const opened = openCollectionPath(path, query);
+  if (!opened.ok) {
+    return {
+      ok: false,
+      statusCode: opened.problem.status,
+      requestId: opened.problem.request_id,
+      problem: opened.problem,
+      conflict: false,
+      strippedKeys: [],
+    };
+  }
+  const result = await callIdentityProxy<unknown>(opened.path, identity);
   if (!result.ok) {
-    return failure(result);
+    return failure(result, true);
   }
   return {
     ok: true,
     statusCode: result.statusCode,
     requestId: result.requestId,
     items: parseOpsConfigList(result.data).map((item) => ({ ...item, kind })),
+    ...readCollectionPageFields(result.data),
     strippedKeys: [],
   };
 }
@@ -610,10 +641,22 @@ async function listVersions(
   identity: DevIdentity,
   path: string,
   kind: OpsConfigKind,
+  query: CollectionPageQuery = {},
 ): Promise<KubernetesVersionsSuccess | KubernetesClientFailure> {
-  const result = await callIdentityProxy<unknown>(path, identity);
+  const opened = openCollectionPath(path, query);
+  if (!opened.ok) {
+    return {
+      ok: false,
+      statusCode: opened.problem.status,
+      requestId: opened.problem.request_id,
+      problem: opened.problem,
+      conflict: false,
+      strippedKeys: [],
+    };
+  }
+  const result = await callIdentityProxy<unknown>(opened.path, identity);
   if (!result.ok) {
-    return failure(result);
+    return failure(result, true);
   }
   const items = asItems(result.data)
     .map(parseOpsConfigVersion)
@@ -628,6 +671,7 @@ async function listVersions(
     statusCode: result.statusCode,
     requestId: result.requestId,
     items,
+    ...readCollectionPageFields(result.data),
     strippedKeys: [],
   };
 }
@@ -708,13 +752,17 @@ function rejectHostIdentity(
 
 function failure(
   result: Extract<IdentityClientResult<unknown>, { ok: false }>,
+  collectionPage = false,
 ): KubernetesClientFailure {
+  const problem = collectionPage
+    ? scrubCollectionPageProblem(result.problem)
+    : result.problem;
   return {
     ok: false,
     statusCode: result.statusCode,
     requestId: result.requestId,
     problem: {
-      ...result.problem,
+      ...problem,
       errors: problemFieldErrors(result.problem),
     },
     conflict: result.problem.code === "conflict" || result.statusCode === 409,

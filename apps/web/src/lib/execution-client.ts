@@ -11,6 +11,12 @@
  */
 
 import {
+  openCollectionPath,
+  readCollectionPageFields,
+  scrubCollectionPageProblem,
+  type CollectionPageQuery,
+} from "./collection-page.ts";
+import {
   callIdentityProxy,
   streamIdentityProxy,
   type IdentityClientResult,
@@ -94,6 +100,9 @@ export type ExecutionListSuccess = {
   statusCode: number;
   requestId: string;
   items: ExecutionRecord[];
+  limit: number;
+  cursor: string;
+  next: string;
   strippedKeys: string[];
 };
 
@@ -110,6 +119,9 @@ export type ExecutionStepsSuccess = {
   statusCode: number;
   requestId: string;
   items: ExecutionStep[];
+  limit: number;
+  cursor: string;
+  next: string;
   strippedKeys: string[];
 };
 
@@ -118,6 +130,9 @@ export type ExecutionJobsSuccess = {
   statusCode: number;
   requestId: string;
   items: ExecutionJob[];
+  limit: number;
+  cursor: string;
+  next: string;
   strippedKeys: string[];
 };
 
@@ -126,6 +141,9 @@ export type ExecutionEventsSuccess = {
   statusCode: number;
   requestId: string;
   items: ExecutionAuditEvent[];
+  limit: number;
+  cursor: string;
+  next: string;
   strippedKeys: string[];
 };
 
@@ -153,6 +171,9 @@ export type ExecutionArtifactsSuccess = {
   statusCode: number;
   requestId: string;
   items: ExecutionArtifact[];
+  limit: number;
+  cursor: string;
+  next: string;
   strippedKeys: string[];
 };
 
@@ -177,27 +198,44 @@ export async function listExecutions(
   identity: DevIdentity,
   filter: ExecutionListQuery = {},
 ): Promise<ExecutionListSuccess | ExecutionClientFailure> {
-  return listFromPath(identity, listExecutionsPath(filter));
+  return listFromPath(identity, listExecutionsPath(filter), pageQuery(filter));
 }
 
 export async function listWorkflowExecutions(
   identity: DevIdentity,
   workflowId: string,
-  filter: Pick<ExecutionListQuery, "status" | "limit"> = {},
+  filter: Pick<ExecutionListQuery, "status" | "limit" | "cursor" | "q"> = {},
 ): Promise<ExecutionListSuccess | ExecutionClientFailure> {
   return listFromPath(
     identity,
     listWorkflowExecutionsPath(workflowId, filter),
+    pageQuery(filter),
   );
+}
+
+function pageQuery(filter: CollectionPageQuery): CollectionPageQuery {
+  return { limit: filter.limit, cursor: filter.cursor, q: filter.q };
 }
 
 async function listFromPath(
   identity: DevIdentity,
   path: string,
+  query: CollectionPageQuery = {},
 ): Promise<ExecutionListSuccess | ExecutionClientFailure> {
-  const result = await callIdentityProxy<unknown>(path, identity);
+  const opened = openCollectionPath(path, query);
+  if (!opened.ok) {
+    return {
+      ok: false,
+      statusCode: opened.problem.status,
+      requestId: opened.problem.request_id,
+      problem: opened.problem,
+      forbidden: false,
+      strippedKeys: [],
+    };
+  }
+  const result = await callIdentityProxy<unknown>(opened.path, identity);
   if (!result.ok) {
-    return failure(result);
+    return failure(result, true);
   }
   const strippedKeys: string[] = [];
   stripSecretFields(result.data, strippedKeys);
@@ -206,6 +244,7 @@ async function listFromPath(
     statusCode: result.statusCode,
     requestId: result.requestId,
     items: parseExecutionList(result.data),
+    ...readCollectionPageFields(result.data),
     strippedKeys,
   };
 }
@@ -270,13 +309,26 @@ export async function getExecutionEvents(
 export async function getExecutionAuditEvents(
   identity: DevIdentity,
   executionId: string,
+  query: CollectionPageQuery = {},
 ): Promise<ExecutionEventsSuccess | ExecutionClientFailure> {
+  const opened = openCollectionPath(
+    executionAuditEventsPath(executionId),
+    query,
+  );
+  if (!opened.ok) {
+    return {
+      ok: false,
+      statusCode: opened.problem.status,
+      requestId: opened.problem.request_id,
+      problem: opened.problem,
+      forbidden: false,
+      strippedKeys: [],
+    };
+  }
   return itemsResult(
-    await callIdentityProxy<unknown>(
-      executionAuditEventsPath(executionId),
-      identity,
-    ),
+    await callIdentityProxy<unknown>(opened.path, identity),
     parseExecutionEvent,
+    true,
   );
 }
 
@@ -766,12 +818,25 @@ export async function listWorkspaceAuditEvents(
   identity: DevIdentity,
   filter: AuditEventQuery = {},
 ): Promise<ExecutionEventsSuccess | ExecutionClientFailure> {
+  const opened = openCollectionPath(listWorkspaceAuditEventsPath(filter), {
+    limit: filter.limit,
+    cursor: filter.cursor,
+    q: filter.q,
+  });
+  if (!opened.ok) {
+    return {
+      ok: false,
+      statusCode: opened.problem.status,
+      requestId: opened.problem.request_id,
+      problem: opened.problem,
+      forbidden: false,
+      strippedKeys: [],
+    };
+  }
   return itemsResult(
-    await callIdentityProxy<unknown>(
-      listWorkspaceAuditEventsPath(filter),
-      identity,
-    ),
+    await callIdentityProxy<unknown>(opened.path, identity),
     parseExecutionEvent,
+    true,
   );
 }
 
@@ -838,17 +903,21 @@ export async function loadExecutionHistory(
 function itemsResult<T>(
   result: IdentityClientResult<unknown>,
   parse: (item: unknown) => T | null,
+  collectionPage = false,
 ):
   | {
       ok: true;
       statusCode: number;
       requestId: string;
       items: T[];
+      limit: number;
+      cursor: string;
+      next: string;
       strippedKeys: string[];
     }
   | ExecutionClientFailure {
   if (!result.ok) {
-    return failure(result);
+    return failure(result, collectionPage);
   }
   const strippedKeys: string[] = [];
   stripSecretFields(result.data, strippedKeys);
@@ -857,6 +926,7 @@ function itemsResult<T>(
     statusCode: result.statusCode,
     requestId: result.requestId,
     items: parseItemList(result.data, parse),
+    ...readCollectionPageFields(result.data),
     strippedKeys,
   };
 }
@@ -899,12 +969,15 @@ function detailResult(
 
 function failure(
   result: Extract<IdentityClientResult<unknown>, { ok: false }>,
+  collectionPage = false,
 ): ExecutionClientFailure {
   return {
     ok: false,
     statusCode: result.statusCode,
     requestId: result.requestId,
-    problem: result.problem,
+    problem: collectionPage
+      ? scrubCollectionPageProblem(result.problem)
+      : result.problem,
     forbidden: isExecutionForbidden(result.problem),
     strippedKeys: [],
   };
