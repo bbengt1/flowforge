@@ -36,6 +36,20 @@ func ReplicaBootError(h http.Handler) error {
 	return api.replicaErr
 }
 
+// ProductionStoreBootError fails closed when a production-locked process
+// selected an in-memory store for a durable domain (workflows, vault,
+// executions, sessions, and the other process-local backends). cmd/api
+// exits before listen. Non-production composition may keep memory stores
+// for tests and local/dev. The error names backends only. There is no
+// production override.
+func ProductionStoreBootError(h http.Handler, productionLocked bool) error {
+	api, ok := h.(*API)
+	if !ok || api == nil {
+		return errors.New("api handler is not configured")
+	}
+	return ha.RefuseMemoryStores(productionLocked, api.unshared)
+}
+
 func unsharedBackends(parts []namedBackend, artifactKind string) []string {
 	var names []string
 	for _, part := range parts {
@@ -56,13 +70,35 @@ type namedBackend struct {
 
 func memoryBackend(v any) bool {
 	switch v.(type) {
-	case *session.Memory, *wfstore.Memory, *embed.MemoryJTI, *lockout.Memory,
-		*vault.Memory, *identity.Memory, *isolation.Memory, *machine.Memory,
-		*scim.Memory, *mfa.Memory, *bootstrap.Memory, *webhook.Memory,
-		*schedule.Memory, *opsconfig.Memory, *approval.Memory, *opsalert.Memory,
-		*scripts.Memory, *oidc.Memory, nil:
+	case *session.Memory, *wfstore.Memory, *embed.MemoryJTI, *embed.MemoryKeys,
+		*lockout.Memory, *vault.Memory, *identity.Memory, *isolation.Memory,
+		*machine.Memory, *scim.Memory, *mfa.Memory, *bootstrap.Memory,
+		*webhook.Memory, *schedule.Memory, *opsconfig.Memory, *approval.Memory,
+		*opsalert.Memory, *scripts.Memory, *oidc.Memory, nil:
 		return true
 	default:
 		return false
 	}
+}
+
+func oidcBackend(c *oidc.Client) any {
+	if c == nil {
+		return nil
+	}
+	store := c.TransactionStore()
+	if store == nil {
+		return nil
+	}
+	return store
+}
+
+func embedKeyBackend(r *embed.Ring) any {
+	if r == nil {
+		return nil
+	}
+	store := r.KeyBackend()
+	if store == nil {
+		return nil
+	}
+	return store
 }

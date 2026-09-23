@@ -55,6 +55,15 @@ type discoveryDoc struct {
 	SigningAlgs           []string `json:"id_token_signing_alg_values_supported"`
 }
 
+// TransactionStore returns the PKCE transaction backend. Production boot
+// refuses an in-memory store. A nil client or store is process-local.
+func (c *Client) TransactionStore() Store {
+	if c == nil {
+		return nil
+	}
+	return c.store
+}
+
 // NewClient returns a client. Start and Complete fail closed until
 // settings and a store are both ready.
 func NewClient(s Settings, store Store) *Client {

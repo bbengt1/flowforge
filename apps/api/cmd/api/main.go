@@ -143,6 +143,10 @@ func main() {
 		log.Error("multi-replica stores", "error", err)
 		os.Exit(1)
 	}
+	if err := httpapi.ProductionStoreBootError(handler, authz.ProductionLocked(cfg.AppEnv, cfg.RequireTLS)); err != nil {
+		log.Error("production store", "error", err)
+		os.Exit(1)
+	}
 	if cfg.SchedulerEnabled {
 		api, ok := handler.(*httpapi.API)
 		if !ok {

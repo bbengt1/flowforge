@@ -25,6 +25,15 @@ type Ring struct {
 	store   KeyStore
 }
 
+// KeyBackend returns the overlap store. Nil is process-local (tests and
+// non-production composition). Production boot refuses that.
+func (r *Ring) KeyBackend() KeyStore {
+	if r == nil {
+		return nil
+	}
+	return r.store
+}
+
 // NewRing wraps signing material. store may be nil (env/runtime only).
 func NewRing(active Material, store KeyStore) *Ring {
 	if active.Overlap == nil {
