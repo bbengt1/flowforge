@@ -1,6 +1,7 @@
 package core
 
 import (
+	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -41,6 +42,75 @@ func TestSessionCookieFlagsKeepFirstPartyDefaults(t *testing.T) {
 	if csrfHTTPS.SameSite != http.SameSiteStrictMode || !csrfHTTPS.Secure || csrfHTTPS.Partitioned {
 		t.Fatalf("HTTPS CSRF: %+v", csrfHTTPS)
 	}
+}
+
+func TestRequestCookieSecure(t *testing.T) {
+	plain := httptest.NewRequest(http.MethodGet, "/api/v1/session", nil)
+	if RequestCookieSecure(Security{}, plain) {
+		t.Fatal("local HTTP must not force Secure")
+	}
+	if !RequestCookieSecure(Security{ProductionLocked: true}, plain) {
+		t.Fatal("production-locked HTTP must set Secure")
+	}
+	if !RequestCookieSecure(Security{RequireTLS: true}, plain) {
+		t.Fatal("REQUIRE_TLS must set Secure")
+	}
+	https := httptest.NewRequest(http.MethodGet, "/api/v1/session", nil)
+	https.TLS = &tls.ConnectionState{}
+	if !RequestCookieSecure(Security{}, https) {
+		t.Fatal("HTTPS must set Secure")
+	}
+}
+
+func TestWriteSessionCookiePairLocalHTTPOmitsSecure(t *testing.T) {
+	got := httptest.NewRecorder()
+	writeSessionCookiePair(got, "sess", "csrf", 60, false, false)
+	assertRawFirstPartySetCookie(t, got, false)
+
+	want := httptest.NewRecorder()
+	for _, c := range []http.Cookie{
+		{Name: session.CookieName, Value: "sess", Path: session.CookiePath, HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 60},
+		{Name: session.CSRFCookieName, Value: "csrf", Path: session.CookiePath, HttpOnly: false, SameSite: http.SameSiteStrictMode, MaxAge: 60},
+	} {
+		if v := c.String(); v != "" {
+			want.Header().Add("Set-Cookie", v)
+		}
+	}
+	if diff := cmpSetCookie(want, got); diff != "" {
+		t.Fatal(diff)
+	}
+	raw := strings.ToLower(strings.Join(got.Header().Values("Set-Cookie"), "\n"))
+	if strings.Contains(raw, "secure") {
+		t.Fatalf("local HTTP Set-Cookie must omit Secure: %v", got.Header().Values("Set-Cookie"))
+	}
+}
+
+func TestWriteSessionCookiePairSecurePathUsesSetCookie(t *testing.T) {
+	got := httptest.NewRecorder()
+	writeSessionCookiePair(got, "sess", "csrf", 60, true, false)
+	assertRawFirstPartySetCookie(t, got, true)
+
+	want := httptest.NewRecorder()
+	http.SetCookie(want, &http.Cookie{
+		Name: session.CookieName, Value: "sess", Path: session.CookiePath,
+		HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: 60,
+	})
+	http.SetCookie(want, &http.Cookie{
+		Name: session.CSRFCookieName, Value: "csrf", Path: session.CookiePath,
+		HttpOnly: false, Secure: true, SameSite: http.SameSiteStrictMode, MaxAge: 60,
+	})
+	if diff := cmpSetCookie(want, got); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
+func cmpSetCookie(want, got *httptest.ResponseRecorder) string {
+	w := want.Header().Values("Set-Cookie")
+	g := got.Header().Values("Set-Cookie")
+	if strings.Join(w, "\n") != strings.Join(g, "\n") {
+		return "Set-Cookie mismatch\nwant:\n" + strings.Join(w, "\n") + "\ngot:\n" + strings.Join(g, "\n")
+	}
+	return ""
 }
 
 func TestWriteSessionCookiePairSetCookieAttributes(t *testing.T) {

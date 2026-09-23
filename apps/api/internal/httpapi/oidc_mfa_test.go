@@ -174,6 +174,9 @@ func TestOIDCAndMFAAPIContract(t *testing.T) {
 	cb.Header.Set(RequestIDHeader, "caller-request-16")
 	for _, c := range start.Result().Cookies() {
 		if c.Name == oidc.StateCookie {
+			if c.Secure {
+				t.Fatal("local HTTP OIDC state cookie must omit Secure")
+			}
 			cb.AddCookie(c)
 		}
 	}

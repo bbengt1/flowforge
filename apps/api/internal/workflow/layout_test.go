@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"encoding/json"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -91,6 +92,43 @@ func TestLayoutPersistAndReturn(t *testing.T) {
 	}
 	if !reflect.DeepEqual(again.Document.UILayout(), res.Document.UILayout()) {
 		t.Fatalf("layout drifted on round trip: %+v vs %+v", again.Document.UILayout(), res.Document.UILayout())
+	}
+}
+
+func TestFiniteIntBoundsBeforeNarrowing(t *testing.T) {
+	if n, ok := finiteInt(int64(1)); !ok || n != 1 {
+		t.Fatalf("int64 1 = %d %v", n, ok)
+	}
+	if n, ok := finiteInt(int(UILayoutVersion)); !ok || n != UILayoutVersion {
+		t.Fatalf("int version = %d %v", n, ok)
+	}
+	if n, ok := finiteInt(float64(1)); !ok || n != 1 {
+		t.Fatalf("integral float = %d %v", n, ok)
+	}
+	if _, ok := finiteInt(float64(1.5)); ok {
+		t.Fatal("non-integer float must not become an int")
+	}
+	if _, ok := finiteInt(uint64(math.MaxInt) + 1); ok {
+		t.Fatal("uint64 above MaxInt must not narrow")
+	}
+	if _, ok := finiteInt(0x1p63); ok {
+		t.Fatal("float at 2^63 must not narrow")
+	}
+	if _, ok := finiteInt("1"); ok {
+		t.Fatal("string must not become an int")
+	}
+	src := layoutYAML(`  ui:
+    layout:
+      version: 9223372036854775807
+      nodes:
+        restart: { x: 1, y: 2 }
+`)
+	res, errs := ParseAndNormalize([]byte(src))
+	if len(errs) > 0 {
+		t.Fatalf("max int64 version: %+v", errs)
+	}
+	if res.Document.UILayout() != nil {
+		t.Fatalf("version outside the accepted layout version must be absent: %+v", res.Document.UILayout())
 	}
 }
 

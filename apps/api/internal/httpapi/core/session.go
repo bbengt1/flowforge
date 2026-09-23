@@ -487,20 +487,20 @@ func attachEmbedChromeKnown(chrome *sessionEmbedView, tenant identity.Tenant, ws
 }
 
 func (s *Server) issueSessionCookies(w http.ResponseWriter, r *http.Request, issued session.Issued) {
-	https := s.Sec.RequestIsHTTPS(r)
 	maxAge := int(issued.Record.IdleExpiresAt.Sub(s.ClockNow()).Seconds())
 	if maxAge < 1 {
 		maxAge = 1
 	}
-	writeSessionCookiePair(w, issued.Token, issued.CSRF, maxAge, https, issued.Record.Binding.Bound())
+	writeSessionCookiePair(w, issued.Token, issued.CSRF, maxAge, RequestCookieSecure(s.Sec, r), issued.Record.Binding.Bound())
 }
 
 func (s *Server) clearSessionCookies(w http.ResponseWriter, r *http.Request) {
-	https := s.Sec.RequestIsHTTPS(r)
 	// Expire both first-party and CHIPS pairs. Partitioned cookies live
 	// in a different jar; clearing only Lax/Strict would leave the
-	// embed session cookie in a cross-site iframe.
-	writeSessionCookiePair(w, "", "", -1, https, false)
+	// embed session cookie in a cross-site iframe. The first-party
+	// clear uses the same Secure decision as issue, so a production
+	// Secure cookie is actually replaced.
+	writeSessionCookiePair(w, "", "", -1, RequestCookieSecure(s.Sec, r), false)
 	writeSessionCookiePair(w, "", "", -1, true, true)
 }
 

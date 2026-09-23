@@ -34,9 +34,15 @@ type Security struct {
 	RequireTLS           bool
 	AllowedOrigins       []string
 	TrustIdentityHeaders bool
-	Session              SessionPolicy
-	VaultKeys            vault.Keys
-	JobBindingKey        []byte
+	// ProductionLocked forces Secure on first-party session and OIDC
+	// cookies. cmd/api sets it from authz.ProductionLocked (empty,
+	// production, or unknown APP_ENV, or REQUIRE_TLS). The zero value
+	// does not lock, so unit tests and explicit local/dev/test HTTP
+	// can still bootstrap Login.
+	ProductionLocked bool
+	Session          SessionPolicy
+	VaultKeys        vault.Keys
+	JobBindingKey    []byte
 }
 
 // SessionPolicy is idle/absolute lifetime for browser sessions.
