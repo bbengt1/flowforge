@@ -40,9 +40,9 @@ export const THEME_MAX_AGE = 60 * 60 * 24 * 365;
 
 export type ColorTheme = "dark" | "light";
 
-/** Canvas edges still use a light stroke. Called out, not restyled. */
+/** G.3.12 closed the parked canvas stroke. Node family shapes stay. */
 export const CANVAS_THEME_GAP =
-  "WorkflowCanvas edge stroke stays rgb(255 255 255 / 0.28); it is faint on the light canvas. Node family shapes are unchanged.";
+  "WorkflowCanvas edge stroke uses var(--ff-accent) when selected and color-mix of var(--ff-text) at 28% otherwise. Node family shapes are unchanged.";
 
 /** Themeable chrome. Axe owns contrast; this list is not a checker. */
 export const SEMANTIC_CHROME = ["bg", "fg", "border", "accent", "danger"] as const;
@@ -86,7 +86,7 @@ export const THEME_PREFERENCE = {
   adv021HoldoutUnchanged: true,
   vaultDisplayNameUuidOnly: true,
   notAnN8nClone: true,
-  canvasEdgeGap: true,
+  canvasEdgeGap: false,
 } as const;
 
 /** Unknown values fail closed to the dark default. */

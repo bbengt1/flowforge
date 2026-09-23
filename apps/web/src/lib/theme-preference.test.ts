@@ -156,8 +156,13 @@ describe("G.3.9 zinc chrome on design tokens", () => {
     assert.match(settings, /variant="settings"/);
     assert.match(settings, /ThemePreferenceControl/);
     assert.doesNotMatch(settings, /localStorage|FirstRunWizard/);
-    assert.match(gate, /bg-zinc-900/);
-    assert.doesNotMatch(gate, /LoginChrome|FirstRunWizard|ChangePasswordChrome/);
+    assert.doesNotMatch(gate, /zinc-/);
+    assert.match(gate, /bg-accent/);
+    assert.match(gate, /text-fg/);
+    assert.match(gate, /var\(--ff-accent-foreground\)/);
+    assert.match(gate, /var\(--ff-accent\)/);
+    assert.match(gate, /var\(--ff-warning\)/);
+    assert.doesNotMatch(gate, /LoginChrome|FirstRunWizard|ChangePasswordChrome|ThemePreferenceControl/);
     assert.doesNotMatch(embedChrome, /LoginChrome|FirstRunWizard|ChangePasswordChrome|ThemePreferenceControl/);
     assert.match(source("src/components/session/LoginChrome.tsx"), /ThemePreferenceControl/);
     assert.match(source("src/components/session/ChangePasswordChrome.tsx"), /ThemePreferenceControl/);
@@ -202,7 +207,11 @@ describe("G.3.9 zinc chrome on design tokens", () => {
     }
     assert.deepEqual(offenders, []);
     const canvas = source("src/components/workflows/WorkflowCanvas.tsx");
-    assert.match(canvas, /rgb\(255 255 255 \/ 0\.28\)/);
+    assert.match(canvas, /var\(--ff-accent\)/);
+    assert.match(canvas, /color-mix\(in srgb, var\(--ff-text\) 28%, transparent\)/);
+    assert.doesNotMatch(canvas, /rgb\(255 255 255 \/ 0\.28\)/);
+    assert.doesNotMatch(canvas, /#0f766e/);
+    assert.match(CANVAS_THEME_GAP, /var\(--ff-accent\)/);
     assert.match(CANVAS_THEME_GAP, /WorkflowCanvas/);
   });
 });
