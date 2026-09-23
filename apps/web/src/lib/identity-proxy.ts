@@ -18,6 +18,7 @@ import {
   retargetAlertApiPath,
 } from "./alert-contract.ts";
 import {
+  isArtifactDownloadStreamSegments,
   isExecutionProxySegments,
   retargetExecutionApiPath,
 } from "./execution-contract.ts";
