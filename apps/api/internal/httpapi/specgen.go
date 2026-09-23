@@ -112,7 +112,7 @@ func RenderProxyAllowlist(routes []Route) ([]byte, error) {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			b.WriteString(fmt.Sprintf("%q", m))
+			fmt.Fprintf(&b, "%q", m)
 		}
 		b.WriteString("],\n")
 		b.WriteString("    pattern: [")
@@ -120,10 +120,10 @@ func RenderProxyAllowlist(routes []Route) ([]byte, error) {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			b.WriteString(fmt.Sprintf("%q", p))
+			fmt.Fprintf(&b, "%q", p)
 		}
 		b.WriteString("],\n")
-		b.WriteString(fmt.Sprintf("    auth: %q,\n", g.auth))
+		fmt.Fprintf(&b, "    auth: %q,\n", g.auth)
 		b.WriteString("    params: {")
 		names := make([]string, 0, len(g.params))
 		for name := range g.params {
