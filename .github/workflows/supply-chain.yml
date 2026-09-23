@@ -164,6 +164,32 @@ jobs:
       - name: Test
         run: pnpm --filter @flowforge/web test
 
+  # G.3.3 / #480: Playwright + axe on primary surfaces. Serious and
+  # critical violations fail the job. The browser is the gate; do not
+  # reintroduce source-text aria greps for the same intent.
+  web-a11y-e2e:
+    name: Web Playwright axe (primary surfaces)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.3
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - name: Install
+        run: pnpm install --filter @flowforge/web...
+      - name: Install Chromium
+        run: pnpm --filter @flowforge/web exec playwright install --with-deps chromium
+      - name: Playwright axe
+        run: pnpm --filter @flowforge/web test:e2e
+
   # G.0.5 / H3: required web quality gates. next build is the app type-check
   # (Next 16 typegen); do not use bare tsc — LayoutProps lives in .next/types.
   # G.0.6 / H4: *.test.ts are in tsconfig (and tsconfig.tests.json); web-tests

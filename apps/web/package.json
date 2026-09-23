@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --experimental-strip-types --test src/lib/*.test.ts",
+    "test:e2e": "playwright test",
     "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json"
   },
   "dependencies": {
@@ -16,6 +17,8 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

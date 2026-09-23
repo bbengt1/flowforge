@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useState } from "react";
@@ -178,13 +177,9 @@ export function ExecutionHistoryListbox({
                     <p className={`mt-1 text-[11px] ${FF_INBOX_MUTED_CLASS}`}>Replayed</p>
                   ) : null}
                   <p className="mt-2 text-xs">
-                    <Link
-                      href={row.href}
-                      onClick={(event) => event.stopPropagation()}
-                      className={`font-medium ${FF_INBOX_LINK_CLASS}`}
-                    >
+                    <span className={`font-medium ${FF_INBOX_LINK_CLASS}`}>
                       {EXECUTION_INBOX_OPEN_LABEL}
-                    </Link>
+                    </span>
                     <span className={FF_INBOX_MUTED_CLASS}> — /executions/{"{id}"}</span>
                   </p>
                   {operateActions ? (
@@ -199,13 +194,7 @@ export function ExecutionHistoryListbox({
                   </div>
                   <div className="min-w-0">
                     <p className={`truncate text-sm ${FF_INBOX_TITLE_CLASS}`}>
-                      <Link
-                        href={row.href}
-                        onClick={(event) => event.stopPropagation()}
-                        className={FF_INBOX_LINK_CLASS}
-                      >
-                        {row.workflowLabel}
-                      </Link>
+                      <span className={FF_INBOX_LINK_CLASS}>{row.workflowLabel}</span>
                     </p>
                     <p className={FF_VAULT_UUID_CLASS}>
                       {row.id}
@@ -230,13 +219,9 @@ export function ExecutionHistoryListbox({
                     {row.correlationId}
                   </p>
                   <p className="text-sm">
-                    <Link
-                      href={row.href}
-                      onClick={(event) => event.stopPropagation()}
-                      className={`font-medium ${FF_INBOX_LINK_CLASS}`}
-                    >
+                    <span className={`font-medium ${FF_INBOX_LINK_CLASS}`}>
                       {EXECUTION_INBOX_OPEN_LABEL}
-                    </Link>
+                    </span>
                   </p>
                 </div>
                 {operateActions ? (
@@ -248,25 +233,7 @@ export function ExecutionHistoryListbox({
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <h3 className={compact ? "text-sm font-semibold" : "text-base font-semibold"}>
-                        {onActivate ? (
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onActivate(row);
-                            }}
-                            className={`text-left ${FF_INBOX_LINK_CLASS}`}
-                          >
-                            {row.workflowLabel}
-                          </button>
-                        ) : (
-                          <Link
-                            href={row.href}
-                            className={FF_INBOX_LINK_CLASS}
-                          >
-                            {row.workflowLabel}
-                          </Link>
-                        )}
+                        <span className={FF_INBOX_LINK_CLASS}>{row.workflowLabel}</span>
                       </h3>
                       <p className={`mt-1 ${FF_VAULT_UUID_CLASS}`}>{row.id}</p>
                     </div>
@@ -299,13 +266,9 @@ export function ExecutionHistoryListbox({
                   ) : null}
                   {onActivate ? (
                     <p className="mt-3 text-xs">
-                      <Link
-                        href={row.href}
-                        onClick={(event) => event.stopPropagation()}
-                        className={`font-medium ${FF_INBOX_LINK_CLASS}`}
-                      >
+                      <span className={`font-medium ${FF_INBOX_LINK_CLASS}`}>
                         Open execution
-                      </Link>
+                      </span>
                       <span className={FF_INBOX_MUTED_CLASS}> — workspace replay</span>
                     </p>
                   ) : null}

@@ -233,7 +233,15 @@ export function CommandPalette() {
                   <span className="text-sm font-medium">
                     {command.label}
                   </span>
-                  <span className="ff-shell-muted text-xs">{command.hint}</span>
+                  <span
+                    className={
+                      index === highlight
+                        ? "text-xs text-[var(--ff-accent-foreground)]"
+                        : "ff-shell-muted text-xs"
+                    }
+                  >
+                    {command.hint}
+                  </span>
                 </button>
               </li>
             ))

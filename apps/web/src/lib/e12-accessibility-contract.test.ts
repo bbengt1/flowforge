@@ -18,7 +18,6 @@ import {
   EDITOR_DRAWER_PANEL_IDS,
   EDITOR_INSPECTOR_FIRST_MEDIA,
   EDITOR_INSPECTOR_OPEN_ON_FIRST_PAINT,
-  EDITOR_TOP_BAR_CONTROLS,
   UX10_A11Y_ID,
   UX10_EPIC,
   UX10_KEEP_STORY_OPEN,
@@ -40,10 +39,6 @@ import {
 } from "./e12-accessibility-contract.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
-
-function source(relative: string): string {
-  return readFileSync(join(here, "..", "..", relative), "utf8");
-}
 
 describe("E12.3 accessibility contract", () => {
   it("keeps #184 open and points at the operator guide + review", () => {
@@ -133,15 +128,6 @@ describe("UX.10 canvas-first chrome a11y contract", () => {
     const skip = e12A11ySkipTarget();
     assert.equal(skip.href, "#main-content");
     assert.equal(skip.id, "main-content");
-
-    const shell = source("src/components/shell/WorkspaceShell.tsx");
-    const chrome = source("src/components/workflows/EditorChrome.tsx");
-    const page = source("src/app/workflows/[id]/page.tsx");
-    assert.match(shell, /href="#main-content"/);
-    assert.match(shell, /id="main-content"/);
-    assert.doesNotMatch(shell, /<main[\s>]/);
-    assert.doesNotMatch(chrome, /<main[\s>]/);
-    assert.equal((page.match(/<main[\s>]/g) ?? []).length, 1);
   });
 
   it("labels editor top bar controls including drawer toggles", () => {
@@ -167,15 +153,6 @@ describe("UX.10 canvas-first chrome a11y contract", () => {
     assert.equal(editorDrawerTriggerId("library"), "editor-topbar-library");
     assert.equal(EDITOR_DRAWER_PANEL_IDS.yaml, "editor-yaml-drawer");
     assert.equal(EDITOR_DRAWER_PANEL_IDS.inspector, "editor-inspector-panel");
-
-    const topBar = source("src/components/workflows/EditorTopBar.tsx");
-    assert.match(topBar, /editorTopBarControlLabel/);
-    for (const control of EDITOR_TOP_BAR_CONTROLS) {
-      if (control.id === "back") {
-        continue;
-      }
-      assert.match(topBar, new RegExp(`"${control.id}"`));
-    }
   });
 
   it("closes palette and inspector drawers on Escape and restores focus", () => {
@@ -221,14 +198,6 @@ describe("UX.10 canvas-first chrome a11y contract", () => {
     );
     assert.equal(editorDrawerToClose(closed, null, { inspectorIsDrawer: true }), "inspector");
     assert.equal(editorDrawerToClose(closed, "inspector"), "inspector");
-
-    const operator = source("src/components/workflows/WorkflowOperator.tsx");
-    assert.match(operator, /editorDrawerToClose/);
-    assert.match(operator, /editorRestoreDrawerFocus/);
-    assert.match(operator, /Escape/);
-    const chrome = source("src/components/workflows/EditorChrome.tsx");
-    assert.match(chrome, /order-first/);
-    assert.match(chrome, /editor-inspector-panel|EDITOR_INSPECTOR_PANEL_ID/);
   });
 
   it("keeps canvas application role, names, icon+text, and selection announcements", () => {
@@ -276,15 +245,6 @@ describe("UX.10 canvas-first chrome a11y contract", () => {
       }),
       /Selected 3 nodes/,
     );
-
-    const canvas = source("src/components/workflows/WorkflowCanvas.tsx");
-    assert.match(canvas, /role="application"/);
-    assert.match(canvas, /aria-label="Workflow canvas"/);
-    assert.match(canvas, /canvasNodeStateLabel/);
-    assert.match(canvas, /canvasNodeStateIcon/);
-    assert.match(canvas, /Edge \$\{edge\.from\} to \$\{edge\.to\}/);
-    const chrome = source("src/components/workflows/EditorChrome.tsx");
-    assert.match(chrome, /editor-selection-status|EDITOR_SELECTION_STATUS_ID/);
   });
 
   it("documents the inspector-first breakpoint as a frontend-ui gap, not a mobile app", () => {

@@ -99,12 +99,7 @@ describe("G.3.1 Field primitive", () => {
     assert.equal(clean["aria-describedby"], undefined);
   });
 
-  it("owns label, invalid, describedby, and visible error text in one component", () => {
-    const field = source("src/components/a11y/Field.tsx");
-    assert.match(field, /htmlFor=\{id\}/);
-    assert.match(field, /aria-invalid/);
-    assert.match(field, /aria-describedby/);
-    assert.match(field, /role="alert"/);
+  it("primary forms use the shared Field primitive", () => {
     for (const relative of FIELD_SURFACES) {
       const text = source(relative);
       assert.match(text, /from "@\/components\/a11y\/Field"/, relative);
@@ -201,38 +196,11 @@ describe("G.3.1 Dialog primitive", () => {
     dialogStackReset();
   });
 
-  it("keeps focus trap, Escape, inert backdrop, and focus return on the shared dialog", () => {
-    const dialog = source("src/components/a11y/Dialog.tsx");
-    assert.match(dialog, /role="dialog"/);
-    assert.match(dialog, /aria-modal="true"/);
-    assert.match(dialog, /data-a11y-backdrop="inert"/);
-    assert.match(dialog, /setAttribute\("inert"/);
-    assert.match(dialog, /Escape/);
-    assert.match(dialog, /dialogTabTargetIndex/);
-    assert.match(dialog, /restoreSatelliteOverlayFocus/);
-    assert.match(dialog, /focusin/);
+  it("primary overlays use the shared Dialog primitive", () => {
     for (const relative of DIALOG_SURFACES) {
       const text = source(relative);
       assert.match(text, /from "@\/components\/a11y\/Dialog"/, relative);
       assert.equal(text.includes('role="dialog"'), false, relative);
     }
-  });
-});
-
-describe("G.3.1 embed parity", () => {
-  it("keeps wizard, Login, and Change-password off /embed/v1", () => {
-    const embed = source("src/components/embed/EmbedChrome.tsx");
-    const gate = source("src/components/bootstrap/BootstrapGate.tsx");
-    const shellBranch = source("src/components/shell/WorkspaceShell.tsx");
-    const field = source("src/components/a11y/Field.tsx");
-    const dialog = source("src/components/a11y/Dialog.tsx");
-    for (const text of [embed, shellBranch, field, dialog]) {
-      assert.equal(text.includes("LoginChrome"), false);
-      assert.equal(text.includes("ChangePasswordChrome"), false);
-      assert.equal(text.includes("FirstRunWizard"), false);
-    }
-    assert.match(gate, /if \(embed\)/);
-    assert.equal(embed.includes("FirstRunWizard"), false);
-    assert.equal(gate.includes("/embed/v1"), false);
   });
 });

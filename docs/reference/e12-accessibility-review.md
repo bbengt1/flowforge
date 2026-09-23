@@ -90,6 +90,14 @@ G.3.1 shared primitives (Relates to #478 / Part of #412).
     and visible error text. Primary forms use it instead of per-screen
     copies.
 
+G.3.3 rendered gate (Relates to #480 / Part of #412).
+
+23. **Playwright + axe** — primary surfaces run in Chromium. Serious
+    and critical axe violations fail CI. Embed `/embed/v1` without
+    `session.embed` stays the ADV-021 alert (no wizard, Login, or
+    Change-password). Source-text aria greps are retired where this
+    job covers the same intent.
+
 Contract tests: `apps/web/src/lib/e12-accessibility-contract.test.ts`
 and `apps/web/src/lib/rewrite-satellite-a11y.test.ts`
 (picked up by `pnpm --filter @flowforge/web test`).
@@ -116,7 +124,7 @@ Do not invent a full canvas SR redesign here.
 | --- | --- | --- |
 | Canvas `role="application"` is a custom widget | Keyboard pan/select/zoom exist; a full screen-reader graph is not implemented | UX.10 announces the selected node for the inspector. Do not invent an SR graph rewrite. |
 | `text-zinc-500` at 11px is near AA | Body copy uses `zinc-600`/`zinc-800`; helper text is smaller | Bump helper text to `zinc-600` if a contrast audit fails |
-| No axe/lighthouse CI gate | Unit/contract tests encode the cheap contracts | Optional playwright + axe on `/workflows` + `/credentials` |
+| Lighthouse CI | Playwright + `@axe-core/playwright` gates serious/critical findings on the primary surfaces (G.3.3 / #480) | Lighthouse remains optional; do not add a second a11y gate |
 | Touch “inspector-first” editing | UX.10 documents a `max-width: 767px` inspector-first **breakpoint** (not a mobile app). Full touch graph editing is still a gap | Separate UX story — not a mobile app |
 | Settings still *links* to membership/isolation | Nav hides them (ADV-024); ungranted roles get API 403 | Acceptable; do not hide Settings |
 
@@ -125,6 +133,7 @@ Do not invent a full canvas SR redesign here.
 ```bash
 pnpm --filter @flowforge/web test
 pnpm --filter @flowforge/web lint
+pnpm --filter @flowforge/web test:e2e
 ```
 
 Manual (secret-free): Tab from load → skip link → nav → search →

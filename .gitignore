@@ -33,6 +33,9 @@ pnpm-debug.log*
 
 # next / frontend build
 .next/
+apps/web/playwright-report/
+apps/web/test-results/
+apps/web/blob-report/
 out/
 build/
 dist/

@@ -85,12 +85,12 @@ export function ApprovalDecideControls({
         </p>
       ) : (
         <label className="block text-sm">
-          <span className="text-zinc-600">Decision note</span>
+          <span className="text-[var(--ff-muted)]">Decision note</span>
           <textarea
             value={note}
             onChange={(event) => setNote(event.target.value)}
             rows={2}
-            className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-lg border border-[var(--ff-border)] bg-[var(--ff-canvas)] px-3 py-2 text-sm text-[var(--ff-text)]"
           />
         </label>
       )}
@@ -109,14 +109,14 @@ export function ApprovalDecideControls({
               type="button"
               onClick={() => void decide("reject")}
               disabled={!canDecide || pending !== null}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-60"
+              className="rounded-lg border border-[var(--ff-border)] bg-[var(--ff-surface)] px-3 py-1.5 text-sm text-[var(--ff-text)] hover:bg-[var(--ff-canvas)] disabled:opacity-60"
             >
               {pending === "reject" ? "Rejecting…" : "Reject"}
             </button>
           </>
         )}
       </div>
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-[var(--ff-muted)]">
         {APPROVAL_SOD_HELP} {APPROVAL_DECIDE_HELP}
       </p>
     </div>

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import {
@@ -84,13 +83,7 @@ export function CredentialVaultListbox({ rows }: CredentialVaultListboxProps) {
               <div className={VAULT_GRID}>
                 <div className="min-w-0">
                   <p className={`truncate text-sm ${FF_VAULT_TITLE_CLASS}`}>
-                    <Link
-                      href={row.href}
-                      onClick={(event) => event.stopPropagation()}
-                      className={FF_VAULT_LINK_CLASS}
-                    >
-                      {row.displayName}
-                    </Link>
+                    <span className={FF_VAULT_LINK_CLASS}>{row.displayName}</span>
                   </p>
                   <p className={FF_VAULT_UUID_CLASS}>
                     {row.id}
@@ -110,13 +103,9 @@ export function CredentialVaultListbox({ rows }: CredentialVaultListboxProps) {
                 <p className="font-mono text-xs">{row.lastTestLabel}</p>
                 <p className="font-mono text-xs">{row.rotatedLabel}</p>
                 <p className="text-sm">
-                  <Link
-                    href={row.href}
-                    onClick={(event) => event.stopPropagation()}
-                    className={`font-medium ${FF_VAULT_LINK_CLASS}`}
-                  >
+                  <span className={`font-medium ${FF_VAULT_LINK_CLASS}`}>
                     {CREDENTIAL_VAULT_OPEN_LABEL}
-                  </Link>
+                  </span>
                 </p>
               </div>
             </li>
