@@ -4,4 +4,4 @@
 # Keep this list small. Web may reuse these names when aligning to UID 65532.
 golang:1.26-alpine
 alpine:3.24
-node:22-alpine
+node:25-alpine
