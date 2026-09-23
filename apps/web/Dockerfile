@@ -43,7 +43,11 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # tar 7.5.11 (CVE-2026-59873, fixed in 7.5.19). That copy is not in
 # pnpm-lock.yaml. Drop npm and corepack so the runtime image does not
 # ship it. Build stages above still use corepack/pnpm.
-RUN addgroup -S -g 65532 flowforge \
+# The pinned index ships libssl3 3.5.7-r0 (CVE-2026-14456, fixed in
+# 3.5.8-r0). Upgrade those two packages so the HIGH image gate can pass.
+# The build fails if Alpine v3.24 no longer publishes that version.
+RUN apk add --no-cache 'libcrypto3=3.5.8-r0' 'libssl3=3.5.8-r0' \
+ && addgroup -S -g 65532 flowforge \
  && adduser -S -u 65532 -G flowforge -H -D flowforge \
  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
  && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \

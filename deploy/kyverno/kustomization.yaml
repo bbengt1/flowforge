@@ -1,0 +1,7 @@
+# Cluster-scoped. Do not set namespace here.
+# Apply after Kyverno is installed, before deploy/k8s workloads:
+#   kubectl apply -k deploy/kyverno
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - flowforge-verify-images.yaml

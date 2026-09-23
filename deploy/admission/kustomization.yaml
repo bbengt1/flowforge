@@ -1,0 +1,10 @@
+# Cluster-scoped. Do not set namespace here. deploy/k8s sets namespace:
+# flowforge, and kustomize would stamp that onto these policies, which the
+# API server rejects.
+#
+# Apply before workloads. This does not install Kyverno and does not check
+# signatures. Signature enforcement is deploy/kyverno.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - image-digest-policy.yaml

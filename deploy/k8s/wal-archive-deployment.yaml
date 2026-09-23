@@ -7,8 +7,8 @@
 # and EXECUTE on pg_switch_wal(). A lost slot holds WAL on the primary
 # until it is dropped — monitor restart_lsn lag.
 #
-# Replace ghcr.io/bbengt1/flowforge-backup:foundation with a digest-pinned
-# image before production. CI rejects :latest.
+# Image digest below is the unset pin (not a published image). Replace it
+# with the publish-images digest before apply. CI rejects a tag with no @sha256:.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -45,8 +45,8 @@ spec:
           type: RuntimeDefault
       containers:
         - name: wal-archive
-          # Replace with a digest-pinned image before production.
-          image: ghcr.io/bbengt1/flowforge-backup:foundation
+          # Unset digest pin. Replace with the publish-images digest.
+          image: ghcr.io/bbengt1/flowforge-backup:foundation@sha256:0000000000000000000000000000000000000000000000000000000000000000
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/receive-wal"]
           env:

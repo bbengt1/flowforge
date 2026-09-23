@@ -213,6 +213,11 @@
           "argv": ["bash", "scripts/check-deploy-defaults.sh"]
         },
         {
+          "id": "image-signing",
+          "title": "Image signing, provenance, and admission manifests",
+          "argv": ["bash", "scripts/check-image-signing.sh"]
+        },
+        {
           "id": "govulncheck-clean-fixture",
           "title": "govulncheck gate accepts clean fixture",
           "argv": ["python3", "scripts/govulncheck-gate.py", "scripts/testdata/govulncheck-clean.json"]

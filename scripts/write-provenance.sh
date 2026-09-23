@@ -1,46 +1,14 @@
 #!/usr/bin/env bash
-# Record a thin SLSA-style provenance statement for a locally built image.
-# Does not print registry credentials.
+# Retired. Do not call this script.
+#
+# It used to write an unsigned SLSA-shaped JSON file from the local image
+# id. That file was not a cosign signature, not an in-toto attestation, and
+# not attached to a registry digest. CI treats a successful exit as a bug.
+#
+# Signed provenance is actions/attest-build-provenance in
+# .github/workflows/supply-chain.yml (job publish-images, push to main).
+# Operator verification: deploy/supply-chain/policy.md.
 set -euo pipefail
 
-IMAGE="${1:?image tag required}"
-OUT="${2:?output path required}"
-# Optional third arg keeps the API call (two args) on apps/api/Dockerfile.
-DOCKERFILE="${3:-apps/api/Dockerfile}"
-
-digest="$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE" 2>/dev/null || true)"
-id="$(docker image inspect --format '{{.Id}}' "$IMAGE")"
-# Local load often has no repo digest; fall back to the image id.
-subject_digest="${digest##*:}"
-if [[ -z "$digest" || "$digest" == "<no value>" ]]; then
-  subject_digest="${id#sha256:}"
-fi
-
-mkdir -p "$(dirname "$OUT")"
-cat > "$OUT" <<EOF
-{
-  "predicateType": "https://slsa.dev/provenance/v1",
-  "subject": [
-    {
-      "name": "${IMAGE}",
-      "digest": { "sha256": "${subject_digest}" }
-    }
-  ],
-  "predicate": {
-    "buildDefinition": {
-      "buildType": "https://github.com/bbengt1/flowforge/deploy/supply-chain",
-      "externalParameters": {
-        "source": "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-bbengt1/flowforge}",
-        "revision": "${GITHUB_SHA:-unknown}",
-        "dockerfile": "${DOCKERFILE}",
-        "workflow": "${GITHUB_WORKFLOW:-local}"
-      }
-    },
-    "runDetails": {
-      "builder": { "id": "${GITHUB_WORKFLOW_REF:-local}" }
-    }
-  }
-}
-EOF
-
-echo "wrote provenance $OUT"
+echo "write-provenance.sh is retired and does not emit provenance" >&2
+exit 1

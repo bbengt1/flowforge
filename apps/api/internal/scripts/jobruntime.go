@@ -13,10 +13,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Published script-runner image. The Job template references the tag.
-// Each created Job is rewritten to ScriptRunnerRepository@<imageDigest>
-// from the pinned runtime profile. CI rejects :latest; operators replace
-// the tag with a digest in the manifest before a real cluster rollout.
+// Published script-runner image. The Job template names the tag as an
+// identity check (ScriptRunnerImageRef). RenderScriptJob rewrites the
+// container to ScriptRunnerRepository@<imageDigest> from the pinned
+// runtime profile before the Job is submitted, so admission sees the
+// digest. Do not kubectl apply the template and do not change this tag
+// without updating both template copies. CI rejects :latest.
 const (
 	ScriptRunnerRepository = "ghcr.io/bbengt1/flowforge-script-runner"
 	ScriptRunnerTag        = "foundation"

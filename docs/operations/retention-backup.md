@@ -128,8 +128,9 @@ Do not store the raw passphrase next to the ciphertext. Retention purge
 is the in-process leader scheduler, not a CronJob. Encrypted backups are
 the `flowforge-db-backup` CronJob in `deploy/k8s` (image
 `ghcr.io/bbengt1/flowforge-backup`, built from
-`scripts/backup/Dockerfile`). Apply the example Secret
-`backup-secret.example.yaml`, digest-pin the image, and open allowlisted
+`scripts/backup/Dockerfile`, digest-pinned; replace the all-zero digest
+with the `publish-images` digest). Apply the example Secret
+`backup-secret.example.yaml` and open allowlisted
 object-store egress on `flowforge-backup` (and Postgres ingress already
 allows the `backup` component). Ciphertext lands in `BACKUP_S3_BUCKET`
 under `flowforge-db/` — **not** the `ARTIFACT_S3_*`

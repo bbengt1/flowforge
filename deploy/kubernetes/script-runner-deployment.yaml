@@ -5,11 +5,14 @@
 # step. Apply script-runner-networkpolicy.yaml only after substituting
 # CONTROL_PLANE_API_CIDR. Do not apply this Job template.
 #
-# The image is built from apps/api/Dockerfile.script-runner and published as
-# ghcr.io/bbengt1/flowforge-script-runner:foundation. The runner rewrites
-# that reference to repository@sha256:<runtime profile imageDigest> on each
-# Job. CI does not start these pods — go tests use scripts.HarnessRuntime
-# or a fake Job client. Build, tag, and push: docs/deployment.md#script-runner-image
+# The image is built from apps/api/Dockerfile.script-runner. publish-images
+# signs ghcr.io/bbengt1/flowforge-script-runner@sha256:… . This template
+# keeps the :foundation tag as an identity check. The runner rewrites each
+# Job to repository@sha256:<runtime profile imageDigest> before create.
+# Do not replace that tag in the template (the process rejects any other
+# reference) and do not kubectl apply the template. CI does not start
+# these pods — go tests use scripts.HarnessRuntime or a fake Job client.
+# Build and verify: docs/deployment.md#script-runner-image
 #
 # Guarantees:
 # - non-root UID/GID 65532
@@ -47,8 +50,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: runner
-          # Published reference. The runner pins repository@imageDigest
-          # from the runtime profile before create. CI rejects :latest.
+          # Identity tag. The runner pins repository@imageDigest from the
+          # runtime profile before create. CI rejects :latest. Do not put
+          # a digest here; admission sees the rewritten Job, not this line.
           image: ghcr.io/bbengt1/flowforge-script-runner:foundation
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/scriptrunner"]
