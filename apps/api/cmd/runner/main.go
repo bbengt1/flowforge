@@ -115,6 +115,7 @@ func main() {
 	loop := runner.NewRunner(queue, disp, runner.Config{
 		WorkerID:     workerID,
 		PollInterval: durationEnv("WORKER_POLL_INTERVAL", time.Second),
+		DrainTimeout: durationEnv("WORKER_DRAIN_TIMEOUT", 30*time.Second),
 		Log:          log,
 	})
 

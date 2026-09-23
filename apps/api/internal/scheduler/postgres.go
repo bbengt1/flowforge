@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 )
@@ -84,6 +85,14 @@ func advisoryLockParts(key int64) (classid, objid int64) {
 func (s *pgSession) Release(ctx context.Context) {
 	if s == nil || s.conn == nil {
 		return
+	}
+	// A cancelled parent (SIGTERM) must not skip the unlock. Dropping
+	// the TCP session eventually releases the lock; an explicit unlock
+	// lets the next replica campaign immediately.
+	if ctx == nil || ctx.Err() != nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
 	}
 	conn := s.conn
 	s.conn = nil

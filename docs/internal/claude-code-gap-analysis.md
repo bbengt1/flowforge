@@ -312,6 +312,8 @@ the deploy checklist. Add a key-ring so both can be rotated with overlap.
 
 #### B2 — S2 — Single-replica by construction; no HA primitives
 
+**Status (G.2.6 / #451):** API, web, and runner Deployments run at `replicas: 2` with a PodDisruptionBudget (`maxUnavailable: 1`), a HorizontalPodAutoscaler (minimum 2), preferred pod anti-affinity, `preStop`, and `terminationGracePeriodSeconds`. SIGTERM resigns scheduler leadership before HTTP drain. The runner finishes the in-flight claim up to `WORKER_DRAIN_TIMEOUT`. HMAC keys stay on the shared Secret. The notes below are the original finding. Web and runner manifests landed in G.1.7. A managed-Postgres manifest is still not in this directory.
+
 `deploy/k8s/` contains **only** the API. There is:
 
 - no `web` Deployment or Service — yet `api-networkpolicy.yaml` selects a `web` pod

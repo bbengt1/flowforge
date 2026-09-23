@@ -7,9 +7,15 @@ resources:
   - api-secret.example.yaml
   - api-deployment.yaml
   - api-service.yaml
+  - api-pdb.yaml
+  - api-hpa.yaml
   - web-deployment.yaml
   - web-service.yaml
+  - web-pdb.yaml
+  - web-hpa.yaml
   - runner-deployment.yaml
+  - runner-pdb.yaml
+  - runner-hpa.yaml
   - script-runner-rbac.yaml
   - backup-secret.example.yaml
   - backup-cronjob.yaml

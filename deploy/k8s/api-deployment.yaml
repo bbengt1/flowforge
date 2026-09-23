@@ -7,7 +7,14 @@ metadata:
     app.kubernetes.io/component: api
     app.kubernetes.io/part-of: flowforge
 spec:
-  replicas: 1
+  # HA floor. The HorizontalPodAutoscaler owns the live count between
+  # applies (minReplicas 2). Do not lower this below 2.
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: flowforge
@@ -19,6 +26,17 @@ spec:
         app.kubernetes.io/component: api
         app.kubernetes.io/part-of: flowforge
     spec:
+      terminationGracePeriodSeconds: 45
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: flowforge
+                    app.kubernetes.io/component: api
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
@@ -34,10 +52,24 @@ spec:
           image: ghcr.io/bbengt1/flowforge-api:foundation
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/api"]
+          # Endpoints drop when the pod is terminating. Sleep so
+          # in-flight requests finish before SIGTERM. SIGTERM resigns
+          # scheduler leadership, then HTTP drains for SHUTDOWN_TIMEOUT
+          # (25s). 15 + 25 stays inside terminationGracePeriodSeconds.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "15"]
           ports:
             - name: http
               containerPort: 8080
               protocol: TCP
+          env:
+            # Must be >= spec.replicas and the HPA minReplicas. Above 1
+            # the process boot-fails if a session or store is in-memory
+            # or pod-local. Do not set Service sessionAffinity.
+            - name: FLOWFORGE_REPLICAS
+              value: "2"
           envFrom:
             - configMapRef:
                 name: flowforge-api

@@ -7,7 +7,14 @@ metadata:
     app.kubernetes.io/component: runner
     app.kubernetes.io/part-of: flowforge
 spec:
-  replicas: 1
+  # HA floor. The HorizontalPodAutoscaler owns the live count between
+  # applies (minReplicas 2). Do not lower this below 2.
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: flowforge
@@ -19,6 +26,20 @@ spec:
         app.kubernetes.io/component: runner
         app.kubernetes.io/part-of: flowforge
     spec:
+      # No Service. Grace covers WORKER_DRAIN_TIMEOUT (30s) plus a
+      # buffer so SIGTERM can finish the in-flight claim. A claim that
+      # outlives the budget is left for lease recovery.
+      terminationGracePeriodSeconds: 40
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: flowforge
+                    app.kubernetes.io/component: runner
       # Script Jobs use this account. Customer kubeconfigs stay in the vault.
       serviceAccountName: flowforge-runner-scripts
       # Do not automount the token. A projected token is mounted below and
@@ -39,8 +60,16 @@ spec:
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/runner"]
           env:
+            # Pod name, not a shared literal. Two replicas must be
+            # distinct fencing holders. Not a secret.
             - name: WORKER_ID
-              value: production-runner
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            # Finish the in-flight claim after SIGTERM. Do not start
+            # another. Must stay inside terminationGracePeriodSeconds.
+            - name: WORKER_DRAIN_TIMEOUT
+              value: "30s"
             # Control-plane API for script Jobs. The token file is a projected
             # SA token, not a vault credential. Do not log it.
             # CONTROL_PLANE_API_CIDR (or SERVICE + NAMESPACE) comes from the

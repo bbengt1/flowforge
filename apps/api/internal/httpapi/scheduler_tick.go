@@ -17,7 +17,8 @@ import (
 // cmd/api type-asserts this so one process can tick without an external cron.
 type API struct {
 	http.Handler
-	srv *Server
+	srv        *Server
+	replicaErr error
 }
 
 // TickDispatch fires due published schedules in every active workspace.

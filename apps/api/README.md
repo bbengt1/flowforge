@@ -145,7 +145,7 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `POSTGRES_PASSWORD` / `PGPASSWORD` | empty | |
 | `POSTGRES_DB` / `PGDATABASE` | `flowforge` | |
 | `POSTGRES_SSLMODE` / `PGSSLMODE` | `disable` | |
-| `SHUTDOWN_TIMEOUT` | `10s` | Graceful HTTP shutdown. |
+| `SHUTDOWN_TIMEOUT` | `10s` (`25s` on `deploy/k8s`) | Graceful HTTP shutdown after the scheduler resigns leadership. |
 | `MIGRATE_TIMEOUT` | `5m` | Deadline for applying migrations after PostgreSQL is reachable. Separate from the 5s connect/ping timeout. |
 | `TRUSTED_PROXY_CIDRS` | empty | CIDRs allowed to set `X-Forwarded-Proto`. Empty ignores forwarded headers. |
 | `REQUIRE_TLS` | `false` | When `true`, reject non-HTTPS (direct TLS or trusted-proxy proto). Probe paths `/api/v1/health` and `/api/v1/readiness` stay reachable over plain HTTP for kubelet. |
@@ -186,9 +186,12 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `SEED_LOCAL_DEFAULTS` | unset (on in local/dev/test) | Seeds tenant `local`, workbench `default`, `PLATFORM_ADMINS` as workspace admin, demo vault credentials, and marks first-run bootstrap complete (wizard skip). Off / boot-fail in production-locked `APP_ENV` or `REQUIRE_TLS=true`. Set `0` to opt out. Do not set in `deploy/k8s`. |
 | `PUBLIC_BASE_URL` | empty | Operator-facing origin (`http`/`https`) persisted by localseed skip. Never returned by `GET /api/v1/bootstrap`. Compose defaults `http://localhost:3000`. |
 | `LOCAL_WORKER` | unset (on in local/dev/test) | Compose `worker` (`/usr/local/bin/worker`) claims `/api/v1/jobs/claim`. Off / boot-fail in production-locked `APP_ENV` or `REQUIRE_TLS=true`. Set `0` to opt out. Do not set in `deploy/k8s`. |
-| `SCHEDULER_ENABLED` | on | In-process leader ticks schedule dispatch, lease recovery, and retention purge. `0`/`false`/`no`/`off` opts out. Any other non-empty value is a boot-fail. Multi-replica safe (advisory lock `881726402`). Losing the lock stops the tick immediately. |
+| `SCHEDULER_ENABLED` | on | In-process leader ticks schedule dispatch, lease recovery, and retention purge. `0`/`false`/`no`/`off` opts out. Any other non-empty value is a boot-fail. Multi-replica safe (advisory lock `881726402`). Losing the lock stops the tick immediately. SIGTERM unlocks on a live context before HTTP drain. |
 | `SCHEDULER_INTERVAL` | `30s` | Go duration `1s`–`24h` for all three ticks. Invalid is a boot-fail. |
 | `RUNNER` | unset (on when production-locked) | `cmd/runner` (`/usr/local/bin/runner`). Refuses local/dev. `0`/`false`/`off`/`no` exits 0. Do not run it from compose. |
+| `WORKER_ID` | `production-runner` when unset | Claim/heartbeat/complete id. `deploy/k8s` sets the pod name so replicas are distinct fence holders. |
+| `WORKER_DRAIN_TIMEOUT` | `30s` | After SIGTERM, finish the in-flight claim and do not start another. Zero or invalid uses 30s. |
+| `FLOWFORGE_REPLICAS` | `1` when unset | API pod count. `deploy/k8s` sets `2` (at least Deployment replicas and HPA minReplicas). Above 1, boot-fails if a session or store is in-memory or pod-local. Postgres and S3 stay. Invalid values boot-fail. |
 | `RUNNER_USER_ID` or `RUNNER_ISSUER` / `RUNNER_SUBJECT` | `PLATFORM_ADMINS` pair | Existing principal for in-process claim. Lookup does not upsert. |
 | `API_URL` | `http://127.0.0.1:8080` | API origin for `cmd/worker` (compose: `http://api:8080`). Not used by `cmd/runner`. |
 | `LOCKOUT_MAX_FAILURES` | `5` | Durable failed-password threshold (1–50) in `auth_lockouts`. Unset uses 5. `0`, negative, and non-integers are a boot-fail. Separate from the in-process login rate limit. |

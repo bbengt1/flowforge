@@ -1,0 +1,14 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: flowforge-runner
+  labels:
+    app.kubernetes.io/name: flowforge
+    app.kubernetes.io/component: runner
+    app.kubernetes.io/part-of: flowforge
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: flowforge
+      app.kubernetes.io/component: runner
