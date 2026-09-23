@@ -7,7 +7,7 @@
 # Build from the repository root:
 #   docker build -f scripts/backup/Dockerfile -t ghcr.io/bbengt1/flowforge-backup:foundation .
 
-FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 
 RUN addgroup -S -g 65532 app && adduser -S -u 65532 -G app app \
  && apk add --no-cache \
