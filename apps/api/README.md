@@ -153,9 +153,11 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `CORS_ALLOWED_ORIGINS` | empty | Comma-separated exact origins (e.g. `http://localhost:3000`). Empty is fail-closed for foreign `Origin`. `*` and `null` are rejected. |
 | `SESSION_IDLE_TIMEOUT` | `30m` | Browser session idle lifetime. Refresh extends this up to the absolute cap. |
 | `SESSION_ABSOLUTE_TIMEOUT` | `12h` | Hard session lifetime. |
-| `CREDENTIAL_KEK` | empty | 32-byte AES-256 vault KEK (base64 or 64 hex). Required for create/rotate/test/use and for local demo credential seed. Compose may default a local-only value — do not copy it to k8s. |
-| `CREDENTIAL_KEK_FILE` | empty | Optional file whose contents are parsed like `CREDENTIAL_KEK` (or raw 32 bytes). |
-| `CREDENTIAL_KEK_ID` | `env:CREDENTIAL_KEK` | Stored `keyReference` for the active KEK. |
+| `CREDENTIAL_KEK` | empty | Non-production 32-byte AES-256 vault KEK (base64 or 64 hex). Required for create/rotate/test/use and for local demo credential seed. Compose may default a local-only value — do not copy it to k8s. A production-locked process refuses this variable. |
+| `CREDENTIAL_KEK_FILE` | empty | Optional file whose contents are parsed like `CREDENTIAL_KEK` (or raw 32 bytes). Refused when the process is production-locked. |
+| `CREDENTIAL_KEK_ID` | `env:CREDENTIAL_KEK` | Stored `keyReference` for the active KEK. Not the key. Rotation sets a new id. |
+| `CREDENTIAL_KEK_WRAPPED` | empty | KMS ciphertext of the data KEK (`ff1:…`). Required with `KMS_PROVIDER` in production. Never log it as if it were the plaintext key, and never put the plaintext key here. |
+| `KMS_PROVIDER` | empty | `aws`, `gcp`, `azure`, or `vault`. Partial `KMS_*` configuration is a boot-fail. See [KEK rotation](../../docs/operations/kek-rotation.md). |
 | `JOB_BINDING_SECRET` | **required** (boot-fail) | 32-byte HMAC key (base64 or 64 hex) for worker job tickets. Missing or malformed refuses to start — no per-process random default. Compose may default a documented local-only value — do not copy it to k8s. |
 | `SCRIPT_SIGNING_KEY` | **required** (boot-fail) | 32-byte HMAC key (base64 or 64 hex) for script artifact signatures (E9.1). Domain-separated with SHA-3. Missing or malformed refuses to start — no per-process random default. Compose may default a documented local-only value — do not copy it to k8s. |
 | `ARTIFACT_S3_ENDPOINT` | empty (compose: `http://minio:9000`) | S3-compatible origin. Empty uses the regional AWS endpoint. No userinfo, path, query, or fragment. |

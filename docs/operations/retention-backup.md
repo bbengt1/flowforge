@@ -166,8 +166,9 @@ Incident steps after a real restore:
    (`flowforge-backup` Secret).
 2. `flowforge-db-backup` CronJob is applied; image is digest-pinned;
    object-store egress is allowlisted.
-3. `CREDENTIAL_KEK` is set (vault + artifact envelopes). Lost KEK =
-   undecryptable credentials/artifacts after restore.
+3. The data KEK is recoverable: production uses `CREDENTIAL_KEK_WRAPPED`
+   with `KMS_PROVIDER` ([KEK rotation](kek-rotation.md)). A lost KEK or
+   a lost KMS key leaves credentials and artifacts undecryptable.
 4. `JOB_BINDING_SECRET` and `SCRIPT_SIGNING_KEY` are set (boot-fail if
    missing or malformed). They are not in the dump; generate unique
    values and do not copy compose defaults.

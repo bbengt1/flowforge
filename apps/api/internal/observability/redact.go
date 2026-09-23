@@ -78,12 +78,13 @@ func shouldRedactKey(key string) bool {
 		"api_key", "apikey", "x_api_key", "database_url", "dsn",
 		"credential", "credentials", "private_key", "client_secret",
 		"webhook_secret", "kubeconfig", "dek_envelope", "ciphertext",
-		"credential_kek", "assertion", "embed_assertion", "signing_key",
+		"credential_kek", "credential_kek_wrapped", "kek", "plaintext",
+		"assertion", "embed_assertion", "signing_key",
 		"embed_signing_key", "script_signing_key", "job_binding_secret",
 		"access_key_id", "sse_kms_key_id", "kms_key_id":
 		return true
 	}
-	for _, part := range []string{"password", "secret", "token", "authorization", "credential", "api_key", "access_key", "kms_key"} {
+	for _, part := range []string{"password", "secret", "token", "authorization", "credential", "api_key", "access_key", "kms_key", "kek"} {
 		if k == part || strings.HasSuffix(k, "_"+part) || strings.HasPrefix(k, part+"_") || strings.Contains(k, "_"+part+"_") {
 			return true
 		}

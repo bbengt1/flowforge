@@ -33,7 +33,10 @@ RUN go build -trimpath \
     -o /out/worker ./cmd/worker \
  && go build -trimpath \
     -ldflags="-s -w -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.Version=${BUILD_VERSION} -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.SHA=${BUILD_SHA}" \
-    -o /out/runner ./cmd/runner
+    -o /out/runner ./cmd/runner \
+ && go build -trimpath \
+    -ldflags="-s -w -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.Version=${BUILD_VERSION} -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.SHA=${BUILD_SHA}" \
+    -o /out/kek-rotate ./cmd/kek-rotate
 
 FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
 RUN addgroup -S -g 65532 app && adduser -S -u 65532 -G app app \
@@ -44,6 +47,7 @@ COPY --from=build --chown=65532:65532 /out/api /usr/local/bin/api
 COPY --from=build --chown=65532:65532 /out/migrate /usr/local/bin/migrate
 COPY --from=build --chown=65532:65532 /out/worker /usr/local/bin/worker
 COPY --from=build --chown=65532:65532 /out/runner /usr/local/bin/runner
+COPY --from=build --chown=65532:65532 /out/kek-rotate /usr/local/bin/kek-rotate
 
 USER 65532:65532
 EXPOSE 8080

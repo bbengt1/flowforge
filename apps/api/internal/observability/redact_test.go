@@ -49,7 +49,8 @@ func TestShouldRedactKey(t *testing.T) {
 	if !shouldRedactKey("Authorization") || !shouldRedactKey("client_secret") || !shouldRedactKey("assertion") ||
 		!shouldRedactKey("JOB_BINDING_SECRET") || !shouldRedactKey("SCRIPT_SIGNING_KEY") ||
 		!shouldRedactKey("access_key_id") || !shouldRedactKey("secret_access_key") ||
-		!shouldRedactKey("ARTIFACT_S3_SSE_KMS_KEY_ID") {
+		!shouldRedactKey("ARTIFACT_S3_SSE_KMS_KEY_ID") || !shouldRedactKey("credential_kek") ||
+		!shouldRedactKey("CREDENTIAL_KEK_WRAPPED") || !shouldRedactKey("kek") {
 		t.Fatal("expected secret keys to redact")
 	}
 	if shouldRedactKey("request_id") || shouldRedactKey("status") || shouldRedactKey("timeout") || shouldRedactKey("jti") {
