@@ -213,5 +213,12 @@ describe("G.3.9 zinc chrome on design tokens", () => {
     assert.doesNotMatch(canvas, /#0f766e/);
     assert.match(CANVAS_THEME_GAP, /var\(--ff-accent\)/);
     assert.match(CANVAS_THEME_GAP, /WorkflowCanvas/);
+    const scrim = /color-mix\(in_srgb,var\(--ff-canvas\)_40%,transparent\)/;
+    const start = source("src/components/workflows/EditorStartDialog.tsx");
+    const wizard = source("src/components/workflows/ActionWizard.tsx");
+    assert.match(start, scrim);
+    assert.match(wizard, scrim);
+    assert.doesNotMatch(start, /bg-zinc-|rgb\(|#[0-9a-fA-F]{3,8}/);
+    assert.doesNotMatch(wizard, /bg-zinc-900\/40/);
   });
 });

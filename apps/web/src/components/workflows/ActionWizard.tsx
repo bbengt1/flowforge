@@ -515,7 +515,7 @@ export function ActionWizard({
       onClose={onClose}
       labelledBy="action-wizard-heading"
       returnFocusTo={satelliteOverlayTriggerId("action-wizard")}
-      className="fixed inset-0 z-30 flex items-start justify-center overflow-auto bg-zinc-900/40 p-4"
+      className="fixed inset-0 z-30 flex items-start justify-center overflow-auto bg-[color-mix(in_srgb,var(--ff-canvas)_40%,transparent)] p-4"
     >
       <div className="my-8 w-full max-w-3xl rounded-2xl border border-border bg-bg p-6 shadow-lg">
         <p className="text-sm font-medium tracking-wide text-fg uppercase">

@@ -92,6 +92,9 @@ describe("V.4 Editor chrome", () => {
     assert.match(canvas, /FF_EDITOR_GRID_CLASS/);
     assert.match(globals, /\.ff-editor-canvas/);
     assert.match(globals, /\.ff-editor-grid/);
+    const gridRule = globals.slice(globals.indexOf(".ff-editor-grid"), globals.indexOf(".ff-editor-primary"));
+    assert.match(gridRule, /color-mix\(in srgb, var\(--ff-text\) 8%, transparent\)/);
+    assert.doesNotMatch(gridRule, /rgb\(|#[0-9a-fA-F]{3,8}|zinc-/);
     assert.match(globals, /background: var\(--ff-canvas\)/);
     assert.match(globals, /background: var\(--ff-surface\)/);
     assert.match(globals, /box-shadow: 0 0 0 2px var\(--ff-accent\)/);

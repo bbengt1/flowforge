@@ -656,7 +656,7 @@ html[dir="rtl"] .ff-explorer-row.ff-explorer-row-selected {
   background-color: var(--ff-canvas);
   background-image: radial-gradient(
     circle at 1px 1px,
-    rgb(255 255 255 / 0.08) 1px,
+    color-mix(in srgb, var(--ff-text) 8%, transparent) 1px,
     transparent 0
   );
   background-size: 16px 16px;
