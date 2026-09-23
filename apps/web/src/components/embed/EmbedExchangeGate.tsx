@@ -159,7 +159,11 @@ export function EmbedExchangeGate({
       {message ? (
         <p
           role="status"
-          className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-950"
+          className="rounded-xl border px-4 py-3 text-sm text-fg"
+          style={{
+            background: "color-mix(in srgb, var(--ff-accent) 16%, var(--ff-canvas))",
+            borderColor: "var(--ff-accent)",
+          }}
         >
           {message}
         </p>
@@ -199,14 +203,14 @@ export function EmbedExchangeGate({
           />
         </label>
         {receivedVia === "postMessage" ? (
-          <p className="mt-2 text-xs text-zinc-500">
+          <p className="mt-2 text-xs text-fg">
             Received via {EMBED_ASSERTION_MESSAGE_TYPE} postMessage. It will be
             forgotten after exchange.
           </p>
         ) : null}
         <button
           type="button"
-          className="mt-4 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="mt-4 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-[var(--ff-accent-foreground)] disabled:opacity-50"
           disabled={pending || !assertion.trim()}
           onClick={() => void exchange()}
         >
@@ -229,11 +233,20 @@ function VerifiedContextCard({
     return null;
   }
   return (
-    <section className="rounded-2xl border border-teal-200 bg-teal-50 px-5 py-4 text-sm">
-      <p className="text-xs font-medium tracking-wide text-teal-800 uppercase">
+    <section
+      className="rounded-2xl border px-5 py-4 text-sm text-fg"
+      style={{
+        background: "color-mix(in srgb, var(--ff-accent) 16%, var(--ff-canvas))",
+        borderColor: "var(--ff-accent)",
+      }}
+    >
+      <p
+        className="text-xs font-medium tracking-wide uppercase"
+        style={{ color: "var(--ff-accent)" }}
+      >
         FlowForge verified · {context.sdk}
       </p>
-      <p className="mt-2 text-teal-950">{EMBED_VERIFIED_HELP}</p>
+      <p className="mt-2">{EMBED_VERIFIED_HELP}</p>
       <dl className="mt-3 grid gap-1">
         <DisplayRow label="Tenant / workbench" value={embedVerifiedLabel(verified)} />
         <DisplayRow label="Workspace" value={verified.workspaceName} />
@@ -255,11 +268,20 @@ function HostDisplayCard({ display }: { display: EmbedHostDisplay }) {
     );
   }
   return (
-    <section className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm">
-      <p className="text-xs font-medium tracking-wide text-amber-800 uppercase">
+    <section
+      className="rounded-2xl border px-5 py-4 text-sm text-fg"
+      style={{
+        background: "color-mix(in srgb, var(--ff-warning) 18%, var(--ff-canvas))",
+        borderColor: "var(--ff-warning)",
+      }}
+    >
+      <p
+        className="text-xs font-medium tracking-wide uppercase"
+        style={{ color: "var(--ff-warning-foreground)" }}
+      >
         Host display · unverified
       </p>
-      <p className="mt-2 text-zinc-700">{EMBED_HOST_DISPLAY_HELP}</p>
+      <p className="mt-2">{EMBED_HOST_DISPLAY_HELP}</p>
       <dl className="mt-3 grid gap-1">
         <DisplayRow label="Host" value={display.host} />
         <DisplayRow label="Tenant" value={display.tenant || display.tenantId} />
@@ -276,8 +298,8 @@ function DisplayRow({ label, value }: { label: string; value: string }) {
   }
   return (
     <div>
-      <dt className="text-zinc-500">{label}</dt>
-      <dd className="font-medium text-zinc-900">{value}</dd>
+      <dt className="text-fg">{label}</dt>
+      <dd className="font-medium text-fg">{value}</dd>
     </div>
   );
 }

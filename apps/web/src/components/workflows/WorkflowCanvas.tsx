@@ -644,7 +644,11 @@ export function WorkflowCanvas({
                   key={edge.id}
                   d={`M ${start.x} ${start.y} C ${start.x + 48} ${start.y}, ${end.x - 48} ${end.y}, ${end.x} ${end.y}`}
                   fill="none"
-                  stroke={selected ? "#0f766e" : "rgb(255 255 255 / 0.28)"}
+                  stroke={
+                    selected
+                      ? "var(--ff-accent)"
+                      : "color-mix(in srgb, var(--ff-text) 28%, transparent)"
+                  }
                   strokeWidth={selected ? 2.5 : 1.5}
                 />
               );
