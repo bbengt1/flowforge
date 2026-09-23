@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
+import { QueryProvider } from "@/components/query/QueryProvider";
 import { WorkspaceShell } from "@/components/shell/WorkspaceShell";
 import { getPublicSwaggerUrl } from "@/lib/config";
 import {
@@ -36,19 +37,21 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       data-ff-tokens={FF_SHELL_ROOT_VALUE}
     >
       <body className="h-full min-h-full antialiased">
-        <WorkspaceShell
-          swaggerUrl={getPublicSwaggerUrl()}
-          embedMount={headerList.get(EMBED_MOUNT_HEADER) === "1"}
-          rejectedAssertion={
-            headerList.get(EMBED_REJECTED_ASSERTION_HEADER) === "1"
-          }
-          hasSessionCookie={cookieStore.has(SESSION_COOKIE_NAME)}
-          portalIssuer={hostIssuers.portalIssuer}
-          embedIssuer={hostIssuers.embedIssuer}
-          portalReferrerAllowlist={hostIssuers.portalReferrerAllowlist}
-        >
-          {children}
-        </WorkspaceShell>
+        <QueryProvider>
+          <WorkspaceShell
+            swaggerUrl={getPublicSwaggerUrl()}
+            embedMount={headerList.get(EMBED_MOUNT_HEADER) === "1"}
+            rejectedAssertion={
+              headerList.get(EMBED_REJECTED_ASSERTION_HEADER) === "1"
+            }
+            hasSessionCookie={cookieStore.has(SESSION_COOKIE_NAME)}
+            portalIssuer={hostIssuers.portalIssuer}
+            embedIssuer={hostIssuers.embedIssuer}
+            portalReferrerAllowlist={hostIssuers.portalReferrerAllowlist}
+          >
+            {children}
+          </WorkspaceShell>
+        </QueryProvider>
       </body>
     </html>
   );

@@ -232,18 +232,22 @@ describe("G.0.12 execution poll visibility + backoff", () => {
 
   it("wires detail + Runs overlay to the helper and leaves inbox as a one-shot load", () => {
     const detail = source("components/executions/ExecutionDetail.tsx");
+    const detailQuery = source("components/executions/useExecutionDetailQuery.ts");
     const operator = source("components/workflows/WorkflowOperator.tsx");
     const history = source("components/executions/ExecutionHistory.tsx");
     const drawer = source("components/workflows/EditorRunsDrawer.tsx");
-    assert.match(detail, /startExecutionStatusPoll/);
+    assert.match(detail, /useExecutionDetailQuery/);
+    assert.match(detailQuery, /startExecutionStatusPoll/);
     assert.match(operator, /startExecutionStatusPoll/);
     assert.doesNotMatch(detail, /setInterval/);
+    assert.doesNotMatch(detailQuery, /setInterval/);
     assert.doesNotMatch(operator, /setInterval/);
     assert.doesNotMatch(history, /startExecutionStatusPoll/);
     assert.doesNotMatch(history, /setInterval/);
     assert.doesNotMatch(drawer, /startExecutionStatusPoll/);
     assert.doesNotMatch(drawer, /setInterval/);
     assert.doesNotMatch(detail, /EventSource|text\/event-stream|new WebSocket/);
+    assert.doesNotMatch(detailQuery, /EventSource|text\/event-stream|new WebSocket/);
     assert.doesNotMatch(operator, /EventSource|text\/event-stream|new WebSocket/);
     assert.match(STATUS_POLL_HELP, /visible/);
     assert.match(STATUS_POLL_HELP, /backoff/);

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { ExecutionApprovalState } from "@/components/approvals/ExecutionApprovalState";
 import { ConfigPinList } from "@/components/config/ConfigPinList";
 import { ExecutionArtifacts } from "@/components/executions/ExecutionArtifacts";
@@ -15,9 +15,7 @@ import type { EditorSelection } from "@/components/workflows/WorkflowCanvas";
 import {
   cancelExecution,
   downloadExecutionArtifact,
-  getExecutionStepLogs,
   loadExecutionHistory,
-  pollExecutionStatus,
   retryExecution,
   retryExecutionStep,
 } from "@/lib/execution-client";
@@ -36,19 +34,16 @@ import {
   STATUS_POLL_HELP,
 } from "@/lib/execution-contract";
 import { manualStartHref } from "@/lib/manual-start-contract";
-import { listExecutionApprovals } from "@/lib/approval-client";
-import type { ApprovalRequest } from "@/lib/approval-types";
+import { useExecutionDetailQuery } from "@/components/executions/useExecutionDetailQuery";
 import {
   boundRedactedDisplay,
   canCancelExecution,
   canRetryExecution,
   canRetryExecutionStep,
-  canSeeExecutionsNav,
   downloadGrantFailureMessage,
   executionDetailDisplay,
   isExecutionForbidden,
   isIndeterminateStatus,
-  normalizeExecutionStatus,
   retentionStatusMessage,
   retryAffordanceMessage,
 } from "@/lib/execution";
@@ -57,24 +52,15 @@ import {
   executionErrorNavLinks,
 } from "@/lib/execution-replay";
 import { adaptActionLibrary } from "@/lib/workflow-action-library";
-import { compareWorkflow, fetchWorkflowCatalog, getWorkflowVersion } from "@/lib/workflow-client";
+import { compareWorkflow } from "@/lib/workflow-client";
 import { versionCompareRef } from "@/lib/workflow";
-import type {
-  CompareWorkflowResult,
-  WorkflowCatalog,
-  WorkflowVersion,
-} from "@/lib/workflow-types";
-import type { ExecutionLogSlice } from "@/lib/execution-types";
+import type { CompareWorkflowResult } from "@/lib/workflow-types";
 import { EXECUTION_CANCEL_PERMISSION } from "@/lib/execution-types";
 import type { ExecutionDetail as ExecutionDetailModel } from "@/lib/execution-types";
 import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
-import { callIdentityProxy } from "@/lib/identity-client";
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
-import type { CurrentWorkspace } from "@/lib/identity-types";
-import type { ProblemDetails } from "@/lib/problem";
-import { startExecutionStatusPoll } from "@/lib/execution-poll";
-import { createGenerationGate } from "@/lib/request-generation";
+import { sanitizeQueryCacheValue } from "@/lib/query-cache";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 import {
   KUBERNETES_ROLLOUT_CANCEL_HELP,
@@ -158,13 +144,35 @@ export function ExecutionDetail({
     () => false,
   );
 
-  const [detail, setDetail] = useState<ExecutionDetailModel | null>(null);
-  const [problem, setProblem] = useState<ProblemDetails | null>(null);
-  const [pending, setPending] = useState(false);
-  const [lastRequestId, setLastRequestId] = useState<string | null>(null);
-  const [strippedKeys, setStrippedKeys] = useState<string[]>([]);
-  const [permissions, setPermissions] = useState<string[] | null>(null);
-  const [actorUserId, setActorUserId] = useState("");
+  const ready =
+    hasOperatorCaller(session.active, identity, headerFallback) &&
+    hasWorkspaceLookup(identity);
+  const server = useExecutionDetailQuery({
+    identity,
+    executionId,
+    workflowId,
+    ready,
+  });
+  const {
+    detail,
+    problem,
+    pending,
+    lastRequestId,
+    strippedKeys,
+    permissions,
+    actorUserId,
+    stepLogs,
+    approvals,
+    version,
+    catalog,
+    denied,
+    refresh,
+    reportProblem,
+    noteRequestId,
+    replaceDetail,
+    patchApprovals,
+  } = server;
+
   const [cancelPending, setCancelPending] = useState(false);
   const [cancelMessage, setCancelMessage] = useState<string | null>(null);
   const [retryPending, setRetryPending] = useState<string | null>(null);
@@ -175,12 +183,6 @@ export function ExecutionDetail({
   const [stoppedUncertain, setStoppedUncertain] = useState(false);
   const [downloadPending, setDownloadPending] = useState<string | null>(null);
   const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
-  const [stepLogs, setStepLogs] = useState<Record<string, ExecutionLogSlice>>(
-    {},
-  );
-  const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
-  const [version, setVersion] = useState<WorkflowVersion | null>(null);
-  const [catalog, setCatalog] = useState<WorkflowCatalog | null>(null);
   const [selection, setSelection] = useState<EditorSelection>({ kind: "workflow" });
   const [compareId, setCompareId] = useState("");
   const [compareDetail, setCompareDetail] = useState<ExecutionDetailModel | null>(
@@ -188,12 +190,7 @@ export function ExecutionDetail({
   );
   const [versionCompare, setVersionCompare] =
     useState<CompareWorkflowResult | null>(null);
-  const requestGate = useRef(createGenerationGate());
 
-  const ready =
-    hasOperatorCaller(session.active, identity, headerFallback) &&
-    hasWorkspaceLookup(identity);
-  const denied = ready && permissions != null && !canSeeExecutionsNav(permissions);
   const forbidden = isExecutionForbidden(problem);
   const view = detail && !forbidden && !denied ? executionDetailDisplay(detail) : null;
   const canCancel =
@@ -243,92 +240,22 @@ export function ExecutionDetail({
     steps: view?.steps,
   });
   const indeterminate = Boolean(view?.header.indeterminate);
-  const live =
-    normalizeExecutionStatus(view?.header.status) === "queued" ||
-    normalizeExecutionStatus(view?.header.status) === "running";
-
-  async function refresh() {
-    const token = requestGate.current.begin();
-    setPending(true);
-    setProblem(null);
-    const [result, workspace] = await Promise.all([
-      loadExecutionHistory(identity, executionId, workflowId),
-      callIdentityProxy<CurrentWorkspace>("/workspace", identity),
-    ]);
-    if (!requestGate.current.isCurrent(token)) {
-      return;
-    }
-    setLastRequestId(result.requestId);
-    setPending(false);
-    if (workspace.ok) {
-      setPermissions(workspace.data.permissions ?? []);
-      setActorUserId(workspace.data.principal?.id ?? "");
-    } else if (workspace.statusCode === 403 || workspace.statusCode === 401) {
-      setPermissions([]);
-    }
-    if (!result.ok) {
-      setProblem(result.problem);
-      if (result.forbidden) {
-        setDetail(null);
-      }
-      return;
-    }
-    setDetail(result.execution);
-    setStrippedKeys(result.strippedKeys);
-    void loadStepLogs(result.execution.steps.map((step) => step.id));
-    const workflowIdForPin = result.execution.workflowId || workflowId;
-    if (workflowIdForPin && result.execution.workflowVersionId) {
-      const [versionResult, catalogResult, approvalResult] = await Promise.all([
-        getWorkflowVersion(
-          identity,
-          workflowIdForPin,
-          result.execution.workflowVersionId,
-        ),
-        fetchWorkflowCatalog(identity),
-        listExecutionApprovals(identity, workflowIdForPin, result.execution.id),
-      ]);
-      if (versionResult.ok) {
-        setVersion(versionResult.version);
-      }
-      if (catalogResult.ok) {
-        setCatalog(catalogResult.catalog);
-      }
-      if (approvalResult.ok) {
-        setApprovals(approvalResult.items);
-      }
-    }
-  }
-
-  async function loadStepLogs(stepIds: string[]) {
-    const next: Record<string, ExecutionLogSlice> = {};
-    await Promise.all(
-      stepIds.map(async (stepId) => {
-        const logs = await getExecutionStepLogs(identity, executionId, stepId);
-        if (logs.ok) {
-          next[stepId] = logs.logs;
-        }
-      }),
-    );
-    if (Object.keys(next).length > 0) {
-      setStepLogs((current) => ({ ...current, ...next }));
-    }
-  }
 
   async function onCancel() {
     if (!canCancel || cancelPending) {
       return;
     }
     setCancelPending(true);
-    setProblem(null);
+    reportProblem(null);
     setCancelMessage(null);
     const result = await cancelExecution(identity, executionId, {
       workflowId: workflowId || detail?.workflowId,
       previousStatus: detail?.status,
     });
-    setLastRequestId(result.requestId);
+    noteRequestId(result.requestId);
     setCancelPending(false);
     if (!result.ok) {
-      setProblem(result.problem);
+      reportProblem(result.problem);
       if (result.forbidden && result.problem.code === "forbidden") {
         setCancelMessage(CANCEL_FORBIDDEN_MESSAGE);
       }
@@ -336,8 +263,7 @@ export function ExecutionDetail({
     }
     setCancelMessage(result.message);
     if (result.execution) {
-      setDetail(result.execution);
-      setStrippedKeys(result.strippedKeys);
+      replaceDetail(result.execution, result.strippedKeys);
     }
     await refresh();
   }
@@ -353,7 +279,7 @@ export function ExecutionDetail({
       return;
     }
     setStopPending(confirmKey);
-    setProblem(null);
+    reportProblem(null);
     setStopMessage(null);
     const status = stepId
       ? view?.steps.find((step) => step.id === stepId)?.status
@@ -363,11 +289,11 @@ export function ExecutionDetail({
       uncertain: emergencyStopShouldMarkUncertain(status),
       status,
     });
-    setLastRequestId(result.requestId);
+    noteRequestId(result.requestId);
     setStopPending(null);
     setStopConfirm(null);
     if (!result.ok) {
-      setProblem(result.problem);
+      reportProblem(result.problem);
       if (result.forbidden) {
         setStopMessage(SCRIPT_EMERGENCY_STOP_FORBIDDEN_MESSAGE);
       }
@@ -417,17 +343,17 @@ export function ExecutionDetail({
       return;
     }
     setRetryPending(stepId ?? "execution");
-    setProblem(null);
+    reportProblem(null);
     setRetryMessage(null);
     const result = stepId
       ? await retryExecutionStep(identity, executionId, stepId)
       : await retryExecution(identity, executionId, {
           workflowId: workflowId || detail?.workflowId,
         });
-    setLastRequestId(result.requestId);
+    noteRequestId(result.requestId);
     setRetryPending(null);
     if (!result.ok) {
-      setProblem(result.problem);
+      reportProblem(result.problem);
       if (result.forbidden) {
         setRetryMessage(RETRY_FORBIDDEN_MESSAGE);
       } else if (result.statusCode === 409) {
@@ -441,8 +367,7 @@ export function ExecutionDetail({
     }
     setRetryMessage(result.message);
     if (result.execution) {
-      setDetail(result.execution);
-      setStrippedKeys(result.strippedKeys);
+      replaceDetail(result.execution, result.strippedKeys);
     }
     await refresh();
   }
@@ -453,7 +378,7 @@ export function ExecutionDetail({
     }
     const artifact = detail?.artifacts.find((item) => item.id === artifactId);
     setDownloadPending(artifactId);
-    setProblem(null);
+    reportProblem(null);
     setDownloadMessage(null);
     const result = await downloadExecutionArtifact(
       identity,
@@ -475,10 +400,10 @@ export function ExecutionDetail({
         },
       },
     );
-    setLastRequestId(result.requestId);
+    noteRequestId(result.requestId);
     setDownloadPending(null);
     if (!result.ok) {
-      setProblem(result.problem);
+      reportProblem(result.problem);
       setDownloadMessage(
         downloadGrantFailureMessage({
           forbidden: result.forbidden,
@@ -490,67 +415,6 @@ export function ExecutionDetail({
     }
     setDownloadMessage(result.message);
   }
-
-  useEffect(() => {
-    if (!ready) {
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      void refresh();
-    }, 0);
-    return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh closes over identity
-  }, [ready, identity, executionId, workflowId]);
-
-  useEffect(() => {
-    const gate = requestGate.current;
-    if (!ready || denied || !live) {
-      return;
-    }
-    const loop = startExecutionStatusPoll({
-      async tick() {
-        const token = gate.begin();
-        const result = await pollExecutionStatus(
-          identity,
-          executionId,
-          workflowId,
-        );
-        if (!gate.isCurrent(token)) {
-          return true;
-        }
-        setLastRequestId(result.requestId);
-        if (!result.ok) {
-          if (result.forbidden) {
-            setProblem(result.problem);
-            setDetail(null);
-          }
-          return false;
-        }
-        setDetail((current) => {
-          if (!current) {
-            return result.execution;
-          }
-          return {
-            ...result.execution,
-            auditEvents:
-              result.execution.auditEvents.length > 0
-                ? result.execution.auditEvents
-                : current.auditEvents,
-            artifacts:
-              result.execution.artifacts.length > 0
-                ? result.execution.artifacts
-                : current.artifacts,
-          };
-        });
-        setStrippedKeys(result.strippedKeys);
-        return true;
-      },
-    });
-    return () => {
-      gate.begin();
-      loop.stop();
-    };
-  }, [ready, denied, live, identity, executionId, workflowId]);
 
   return (
     <div data-ff-inbox={FF_INBOX_VALUE} className={`${FF_INBOX_ROOT_CLASS} space-y-6`}>
@@ -933,7 +797,7 @@ export function ExecutionDetail({
             actorUserId={actorUserId}
             permissions={permissions}
             onApprovalUpdated={(next) =>
-              setApprovals((current) =>
+              patchApprovals((current) =>
                 current.map((item) => (item.id === next.id ? next : item)),
               )
             }
@@ -958,12 +822,12 @@ export function ExecutionDetail({
                   id,
                   workflowId || detail?.workflowId,
                 ).then(async (result) => {
-                  setLastRequestId(result.requestId);
+                  noteRequestId(result.requestId);
                   if (!result.ok) {
-                    setProblem(result.problem);
+                    reportProblem(result.problem);
                     return;
                   }
-                  setCompareDetail(result.execution);
+                  setCompareDetail(sanitizeQueryCacheValue(result.execution).value);
                   const leftRef = versionCompareRef(detail.workflowVersionId);
                   const rightRef = versionCompareRef(result.execution.workflowVersionId);
                   if (
