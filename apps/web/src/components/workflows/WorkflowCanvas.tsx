@@ -536,6 +536,8 @@ export function WorkflowCanvas({
         ref={surfaceRef}
         role="application"
         aria-label="Workflow canvas"
+        // Graph coordinates and port sides are physical.
+        dir="ltr"
         data-canvas-grid={CANVAS_GRID_SIZE}
         tabIndex={0}
         onPointerDown={startPan}

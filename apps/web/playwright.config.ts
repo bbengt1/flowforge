@@ -1,8 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * G.3.3 / #480. One production server, one worker, no retries.
- * Waits live in the specs (role/heading), not animation timers.
+ * G.3.3 / #480 and G.3.8 / #495. One production server, one worker,
+ * no retries. RTL specs send `x-ff-dir: rtl`. Waits live in the specs
+ * (role/heading), not animation timers.
  */
 const port = 3100;
 const baseURL = `http://127.0.0.1:${port}`;

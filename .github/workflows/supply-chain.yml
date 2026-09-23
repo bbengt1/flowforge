@@ -170,9 +170,11 @@ jobs:
       - name: Test
         run: pnpm --filter @flowforge/web test
 
-  # G.3.3 / #480: Playwright + axe on primary surfaces. Serious and
-  # critical violations fail the job. The browser is the gate; do not
-  # reintroduce source-text aria greps for the same intent.
+  # G.3.3 / #480 and G.3.8 / #495: Playwright + axe on primary surfaces,
+  # including real dir=rtl layout and behavior (Field, Dialog,
+  # ConfirmDestructive, and the same surfaces). Serious and critical
+  # axe violations and RTL geometry or focus regressions fail the job.
+  # Do not reintroduce source-text aria or RTL greps for the same intent.
   web-a11y-e2e:
     name: Web Playwright axe (primary surfaces)
     runs-on: ubuntu-latest

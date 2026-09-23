@@ -4,6 +4,10 @@ import { QueryProvider } from "@/components/query/QueryProvider";
 import { WorkspaceShell } from "@/components/shell/WorkspaceShell";
 import { getPublicSwaggerUrl } from "@/lib/config";
 import {
+  DOCUMENT_DIRECTION_HEADER,
+  documentDirectionFromHeader,
+} from "@/lib/document-direction";
+import {
   EMBED_MOUNT_HEADER,
   EMBED_REJECTED_ASSERTION_HEADER,
   readConfiguredHostIssuers,
@@ -23,6 +27,9 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const headerList = await headers();
   const cookieStore = await cookies();
+  const documentDirection = documentDirectionFromHeader(
+    headerList.get(DOCUMENT_DIRECTION_HEADER),
+  );
   const hostIssuers = readConfiguredHostIssuers({
     PORTAL_ISSUER: process.env.PORTAL_ISSUER,
     EMBED_ISSUER: process.env.EMBED_ISSUER,
@@ -33,6 +40,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
+      dir={documentDirection}
       className={`h-full ${FF_SHELL_ROOT_CLASS}`}
       data-ff-tokens={FF_SHELL_ROOT_VALUE}
     >

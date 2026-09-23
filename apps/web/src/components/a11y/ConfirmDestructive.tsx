@@ -29,7 +29,7 @@ import { FF_LOUD_DANGER_CLASS } from "@/lib/vault-executions-visual";
 
 const DEFAULT_BACKDROP =
   "fixed inset-0 z-30 flex items-center justify-center bg-black/60 p-4";
-const DEFAULT_PANEL = `${FF_OVERVIEW_DIALOG_CLASS} max-h-[90vh] w-full max-w-xl overflow-auto`;
+const DEFAULT_PANEL = `${FF_OVERVIEW_DIALOG_CLASS} max-h-[90vh] w-full max-w-xl overflow-auto text-start`;
 const DEFAULT_CONFIRM = `${FF_LOUD_DANGER_CLASS} rounded-lg px-3 py-1.5 text-sm disabled:opacity-60`;
 
 export type ConfirmDestructiveProps = {
@@ -118,7 +118,7 @@ export function ConfirmDestructive({
           </ul>
         )}
         {children}
-        <div className="mt-5 flex flex-wrap gap-2">
+        <div className="mt-5 flex flex-wrap justify-start gap-2" data-confirm-destructive="actions">
           <button type="button" onClick={onClose} className={cancelClassName}>
             Cancel
           </button>

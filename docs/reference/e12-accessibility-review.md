@@ -98,6 +98,17 @@ G.3.3 rendered gate (Relates to #480 / Part of #412).
     Change-password). Source-text aria greps are retired where this
     job covers the same intent.
 
+G.3.8 RTL behavior (Relates to #495 / Part of #412).
+
+24. **dir=rtl** — `<html dir>` follows the exact `x-ff-dir: rtl` request
+    header; any other value stays `ltr`. The same Playwright job checks
+    Field label association, Dialog focus trap / Escape / focus return,
+    and ConfirmDestructive impact chrome, plus the G.3.3 surfaces, under
+    that direction. Shell, explorer, and dialog actions use inline-start
+    / inline-end. The workflow canvas surface stays `dir="ltr"` so graph
+    coordinates and port sides stay physical. This is rendered behavior,
+    not a source-text RTL grep.
+
 Contract tests: `apps/web/src/lib/e12-accessibility-contract.test.ts`
 and `apps/web/src/lib/rewrite-satellite-a11y.test.ts`
 (picked up by `pnpm --filter @flowforge/web test`).
