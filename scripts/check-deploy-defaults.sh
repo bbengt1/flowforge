@@ -26,7 +26,7 @@ forbid() {
 api_df="$ROOT/apps/api/Dockerfile"
 need "$api_df" '^USER 65532:65532'
 need "$api_df" '^FROM golang:1\.26-alpine@sha256:[0-9a-f]{64} AS build$'
-need "$api_df" '^FROM alpine:3\.20@sha256:[0-9a-f]{64}$'
+need "$api_df" '^FROM alpine:3\.24@sha256:[0-9a-f]{64}$'
 need "$api_df" '^HEALTHCHECK '
 need "$api_df" '/api/v1/health'
 
@@ -281,7 +281,7 @@ forbid "$wal_conf" 'postgres://'
 
 backup_df="$ROOT/scripts/backup/Dockerfile"
 need "$backup_df" '^USER 65532:65532'
-need "$backup_df" '^FROM alpine:3\.20@sha256:[0-9a-f]{64}$'
+need "$backup_df" '^FROM alpine:3\.24@sha256:[0-9a-f]{64}$'
 need "$backup_df" 'postgresql16-client'
 need "$backup_df" 'py3-cryptography'
 need "$backup_df" 'run-encrypted-backup'
