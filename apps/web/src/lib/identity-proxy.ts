@@ -13,52 +13,37 @@ import {
   collectSetCookies,
   rewriteUpstreamSetCookies,
 } from "./session-cookies.ts";
-import { APPROVAL_PROXY_ROUTES } from "./approval-contract.ts";
-import { SCHEDULE_TRIGGER_PROXY_ROUTES } from "./schedule-trigger-contract.ts";
-import { WEBHOOK_TRIGGER_PROXY_ROUTES } from "./webhook-trigger-contract.ts";
 import {
-  ALERT_PROXY_ROUTES,
   isAlertProxySegments,
   retargetAlertApiPath,
 } from "./alert-contract.ts";
 import {
-  EXECUTION_PROXY_ROUTES,
-  isArtifactDownloadStreamSegments,
   isExecutionProxySegments,
   retargetExecutionApiPath,
 } from "./execution-contract.ts";
 import {
-  KUBERNETES_PROXY_ROUTES,
   isKubernetesProxySegments,
   retargetKubernetesApiPath,
 } from "./kubernetes-contract.ts";
 import {
-  SSH_PROXY_ROUTES,
   isSshProxySegments,
   retargetSshApiPath,
 } from "./ssh-contract.ts";
 import {
-  SCRIPT_PROXY_ROUTES,
   isScriptProxySegments,
   retargetScriptApiPath,
 } from "./script-contract.ts";
 import {
-  SCRIPT_OPS_PROXY_ROUTES,
   isScriptOpsProxySegments,
   retargetScriptOpsApiPath,
 } from "./script-ops-contract.ts";
 import {
-  HTTP_NOTIFICATION_PROXY_ROUTES,
   isHttpNotificationProxySegments,
   retargetHttpNotificationApiPath,
 } from "./core-http-notification-contract.ts";
 import { isResourceId } from "./identity-proxy-ids.ts";
-import { isOpsConfigCollection } from "./ops-config-contract.ts";
 import { CSRF_HEADER } from "./session-contract.ts";
-import { EMBED_PROXY_ROUTES } from "./embed-contract.ts";
-import { PORTAL_PROXY_ROUTES } from "./portal-adapter-contract.ts";
 import {
-  EMBED_TENANCY_PROXY_ROUTES,
   isEmbedTenancyProxySegments,
   retargetEmbedTenancyApiPath,
 } from "./embed-tenancy-contract.ts";
@@ -66,7 +51,8 @@ import {
   isSessionEmbedProxySegments,
   retargetSessionEmbedApiPath,
 } from "./session-embed-contract.ts";
-import { WORKFLOW_FOLDER_PROXY_ROUTES } from "./workflow-folder.ts";
+import { isWebhookTriggerRef } from "./webhook-trigger-contract.ts";
+import { GENERATED_PROXY_ROUTES } from "./identity-proxy-allowlist.gen.ts";
 
 export { isResourceId } from "./identity-proxy-ids.ts";
 
@@ -79,294 +65,46 @@ type AllowedRoute = {
   match: (segments: string[]) => boolean;
 };
 
-const ALLOWED_ROUTES: readonly AllowedRoute[] = [
-  { methods: ["GET"], match: (s) => eq(s, ["permission-matrix"]) },
-  { methods: ["GET"], match: (s) => eq(s, ["roles"]) },
-  { methods: ["GET"], match: (s) => eq(s, ["permissions"]) },
-  { methods: ["POST"], match: (s) => eq(s, ["tenants"]) },
-  { methods: ["GET", "POST"], match: (s) => eq(s, ["workspaces"]) },
-  { methods: ["GET"], match: (s) => eq(s, ["workspace"]) },
-  { methods: ["GET", "PUT"], match: (s) => eq(s, ["workspace", "members"]) },
-  {
-    methods: ["DELETE"],
-    match: (s) =>
-      s.length === 3 &&
-      s[0] === "workspace" &&
-      s[1] === "members" &&
-      Boolean(s[2]),
-  },
-  { methods: ["GET", "POST"], match: (s) => eq(s, ["workspace", "records"]) },
-  {
-    methods: ["GET"],
-    match: (s) =>
-      s.length === 3 &&
-      s[0] === "workspace" &&
-      s[1] === "records" &&
-      Boolean(s[2]),
-  },
-  {
-    methods: ["POST"],
-    match: (s) =>
-      s.length === 4 &&
-      s[0] === "workspace" &&
-      s[1] === "credentials" &&
-      s[3] === "use" &&
-      Boolean(s[2]),
-  },
-  {
-    methods: ["GET"],
-    match: (s) =>
-      s.length === 3 &&
-      s[0] === "workspace" &&
-      s[1] === "artifacts" &&
-      Boolean(s[2]),
-  },
-  { methods: ["GET", "POST"], match: (s) => eq(s, ["workspace", "jobs"]) },
-  {
-    methods: ["GET", "PUT"],
-    match: (s) =>
-      s.length === 3 &&
-      s[0] === "workspace" &&
-      s[1] === "cache" &&
-      Boolean(s[2]),
-  },
-  {
-    methods: ["POST"],
-    match: (s) =>
-      s.length === 5 &&
-      s[0] === "workspace" &&
-      s[1] === "realtime" &&
-      s[2] === "channels" &&
-      s[4] === "subscribe" &&
-      Boolean(s[3]),
-  },
-  { methods: ["GET"], match: (s) => eq(s, ["workspace", "audit-events"]) },
-  { methods: ["GET"], match: (s) => eq(s, ["bootstrap"]) },
-  { methods: ["POST"], match: (s) => eq(s, ["bootstrap", "persistence"]) },
-  { methods: ["POST"], match: (s) => eq(s, ["bootstrap", "admins"]) },
-  { methods: ["POST"], match: (s) => eq(s, ["bootstrap", "public-url"]) },
-  { methods: ["POST"], match: (s) => eq(s, ["bootstrap", "tls"]) },
-  { methods: ["POST"], match: (s) => eq(s, ["login"]) },
-  // G.2.1 OIDC + MFA (#446 / API #466). Verifier and TOTP secret stay on the API.
-  { methods: ["POST"], match: (s) => eq(s, ["oidc", "start"]) },
-  { methods: ["POST"], match: (s) => eq(s, ["oidc", "callback"]) },
-  { methods: ["GET"], match: (s) => eq(s, ["session", "mfa"]) },
-  { methods: ["POST"], match: (s) => eq(s, ["session", "mfa", "enroll"]) },
-  { methods: ["POST"], match: (s) => eq(s, ["session", "mfa", "verify"]) },
-  { methods: ["GET", "POST"], match: (s) => eq(s, ["session"]) },
-  { methods: ["POST"], match: (s) => eq(s, ["session", "refresh"]) },
-  { methods: ["POST"], match: (s) => eq(s, ["session", "logout"]) },
-  { methods: ["POST"], match: (s) => eq(s, ["session", "password"]) },
-  { methods: ["GET"], match: (s) => eq(s, ["session", "audit-events"]) },
-  // E11.1 embed catalog / JWKS / mint / exchange. Paths live in embed-contract.ts.
-  ...EMBED_PROXY_ROUTES,
-  // E11.2 tenancy retarget. Empty until jonny publishes new embed tenancy
-  // routes. GET /workspace + GET /workspaces stay on the E2 allowlist.
-  ...EMBED_TENANCY_PROXY_ROUTES,
-  // E11.3 CP Ops Portal adapter. Catalog + role-mapped mint. Exchange stays embed.
-  ...PORTAL_PROXY_ROUTES,
-  { methods: ["GET"], match: (s) => eq(s, ["workflows", "catalog"]) },
-  { methods: ["POST"], match: (s) => eq(s, ["workflows", "validate"]) },
-  { methods: ["POST"], match: (s) => eq(s, ["workflows", "normalize"]) },
-  { methods: ["GET", "POST"], match: (s) => eq(s, ["workflows"]) },
-  // F.1 folder resource (#308 / #315). Paths live in workflow-folder.ts.
-  // F.2 GETs the collection; writes stay allowlisted for F.3/F.4.
-  ...WORKFLOW_FOLDER_PROXY_ROUTES,
-  {
-    methods: ["GET"],
-    match: (s) => s.length === 2 && s[0] === "workflows" && isResourceId(s[1]),
-  },
-  {
-    methods: ["GET", "PUT"],
-    match: (s) =>
-      s.length === 3 &&
-      s[0] === "workflows" &&
-      isResourceId(s[1]) &&
-      s[2] === "draft",
-  },
-  {
-    methods: ["POST"],
-    match: (s) =>
-      s.length === 3 &&
-      s[0] === "workflows" &&
-      isResourceId(s[1]) &&
-      (s[2] === "publish" || s[2] === "compare" || s[2] === "executions"),
-  },
-  {
-    methods: ["GET"],
-    match: (s) =>
-      s.length === 3 &&
-      s[0] === "workflows" &&
-      isResourceId(s[1]) &&
-      s[2] === "executions",
-  },
-  {
-    methods: ["GET"],
-    match: (s) =>
-      s.length === 3 &&
-      s[0] === "workflows" &&
-      isResourceId(s[1]) &&
-      s[2] === "versions",
-  },
-  {
-    methods: ["GET"],
-    match: (s) =>
-      s.length === 4 &&
-      s[0] === "workflows" &&
-      isResourceId(s[1]) &&
-      s[2] === "versions" &&
-      isResourceId(s[3]),
-  },
-  {
-    methods: ["GET"],
-    match: (s) =>
-      s.length === 5 &&
-      s[0] === "workflows" &&
-      isResourceId(s[1]) &&
-      s[2] === "versions" &&
-      isResourceId(s[3]) &&
-      (s[4] === "export" || s[4] === "pins"),
-  },
-  {
-    methods: ["POST"],
-    match: (s) =>
-      s.length === 5 &&
-      s[0] === "workflows" &&
-      isResourceId(s[1]) &&
-      s[2] === "versions" &&
-      isResourceId(s[3]) &&
-      s[4] === "restore",
-  },
-  {
-    methods: ["GET"],
-    match: (s) =>
-      s.length === 4 &&
-      s[0] === "workflows" &&
-      isResourceId(s[1]) &&
-      s[2] === "executions" &&
-      isResourceId(s[3]),
-  },
-  // E4.1 vault UI (#35) stacked on jonny's #38 routes. Isolation hook
-  // POST /workspace/credentials/{id}/use stays above this block.
-  { methods: ["GET"], match: (s) => eq(s, ["credentials", "catalog"]) },
-  { methods: ["GET", "POST"], match: (s) => eq(s, ["credentials"]) },
-  {
-    methods: ["GET", "PATCH", "DELETE"],
-    match: (s) =>
-      s.length === 2 && s[0] === "credentials" && isResourceId(s[1]),
-  },
-  {
-    methods: ["POST"],
-    match: (s) =>
-      s.length === 3 &&
-      s[0] === "credentials" &&
-      isResourceId(s[1]) &&
-      (s[2] === "rotate" ||
-        s[2] === "disable" ||
-        s[2] === "enable" ||
-        s[2] === "test" ||
-        s[2] === "use"),
-  },
-  {
-    methods: ["GET"],
-    match: (s) =>
-      s.length === 3 &&
-      s[0] === "credentials" &&
-      isResourceId(s[1]) &&
-      (s[2] === "usage" || s[2] === "events" || s[2] === "deletion-impact"),
-  },
-  // E4.2 ops config UI aligned to #41 on main.
-  { methods: ["GET"], match: (s) => eq(s, ["ops-config", "catalog"]) },
-  { methods: ["POST"], match: (s) => eq(s, ["ops-config", "select"]) },
-  { methods: ["GET"], match: (s) => eq(s, ["kubernetes", "catalog"]) },
-  { methods: ["GET"], match: (s) => eq(s, ["ssh", "catalog"]) },
-  {
-    methods: ["GET", "POST"],
-    match: (s) => s.length === 1 && isOpsConfigCollection(s[0]),
-  },
-  {
-    methods: ["GET"],
-    match: (s) =>
-      s.length === 2 && isOpsConfigCollection(s[0]) && isResourceId(s[1]),
-  },
-  {
-    methods: ["GET", "PUT"],
-    match: (s) =>
-      s.length === 3 &&
-      isOpsConfigCollection(s[0]) &&
-      isResourceId(s[1]) &&
-      s[2] === "draft",
-  },
-  {
-    methods: ["POST"],
-    match: (s) =>
-      s.length === 3 &&
-      isOpsConfigCollection(s[0]) &&
-      isResourceId(s[1]) &&
-      (s[2] === "publish" ||
-        s[2] === "select" ||
-        s[2] === "disable" ||
-        s[2] === "enable"),
-  },
-  {
-    methods: ["GET"],
-    match: (s) =>
-      s.length === 3 &&
-      isOpsConfigCollection(s[0]) &&
-      isResourceId(s[1]) &&
-      s[2] === "versions",
-  },
-  {
-    methods: ["GET"],
-    match: (s) =>
-      s.length === 4 &&
-      isOpsConfigCollection(s[0]) &&
-      isResourceId(s[1]) &&
-      s[2] === "versions" &&
-      isResourceId(s[3]),
-  },
-  // E10.2 webhook admin (#113). Paths live in webhook-trigger-contract.ts.
-  ...WEBHOOK_TRIGGER_PROXY_ROUTES,
-  // E10.3 schedules (#116). Paths live in schedule-trigger-contract.ts.
-  ...SCHEDULE_TRIGGER_PROXY_ROUTES,
-  // E4.3 policy-eval / approvals UI (#44 on main). Paths live in
-  // approval-contract.ts.
-  ...APPROVAL_PROXY_ROUTES,
-  // E5.1/E5.2/E5.3 execution UI. Paths live in execution-contract.ts.
-  // POST start stays above this block. Cancel/retry/downloads are CSRF
-  // POSTs. Do not invent POST /executions or any /jobs/* worker route.
-  // GET /workspace/artifacts/{id} above is the E2.2 isolation hook.
-  // GET /artifact-downloads/{grantId} streams bytes (not JSON).
-  ...EXECUTION_PROXY_ROUTES,
-  // E5.4 alert/audit UI (#58). Paths live in alert-contract.ts.
-  // GET /audit-events list stays on EXECUTION_PROXY_ROUTES. This
-  // block adds GET /alerts, GET /alerts/{id}, and CSRF POST
-  // /alerts/{id}/ack. No catalog, resolve, or GET
-  // /audit-events/{id}. Do not allowlist audit mutations.
-  // Isolation GET /workspace/audit-events stays above this block.
-  ...ALERT_PROXY_ROUTES,
-  // E7.1 cluster-target + Kubernetes policy UI (#70 / #74). Paths live
-  // in kubernetes-contract.ts. Upstream is ops-config collections plus
-  // GET /kubernetes/catalog. Duplicate ops-config allowlist matches
-  // are intentional.
-  ...KUBERNETES_PROXY_ROUTES,
-  // E8.1 SSH target + command-profile UI (#82 / #86). Paths live in
-  // ssh-contract.ts. Upstream is ops-config collections plus
-  // GET /ssh/catalog. Duplicate allowlist matches are intentional.
-  ...SSH_PROXY_ROUTES,
-  // E9.1 script catalog / artifact UI (#92 / #97). Paths live in
-  // script-contract.ts. GET /scripts/catalog, POST /scripts,
-  // GET /scripts/{id}, GET …/script-artifacts. Never package blobs.
-  ...SCRIPT_PROXY_ROUTES,
-  // E9.4 revoke + emergency-stop UI (#95 / #103). Paths live in
-  // script-ops-contract.ts. POST /scripts/{id}/revoke and
-  // POST /executions/{id}/emergency-stop (+ step twin). CSRF POSTs.
-  ...SCRIPT_OPS_PROXY_ROUTES,
-  // E10.4 HTTP/notification catalog (#118). Paths live in
-  // core-http-notification-contract.ts. GET /http/catalog only.
-  // Connection / recipient / template collections stay on ops-config.
-  ...HTTP_NOTIFICATION_PROXY_ROUTES,
-];
+function proxyParamMatches(
+  kind: "uuid" | "segment" | "trigger" | undefined,
+  value: string,
+): boolean {
+  if (!value) {
+    return false;
+  }
+  if (kind === "segment") {
+    return true;
+  }
+  if (kind === "trigger") {
+    return isWebhookTriggerRef(value);
+  }
+  return isResourceId(value);
+}
+
+function proxyPatternMatches(
+  route: (typeof GENERATED_PROXY_ROUTES)[number],
+  segments: string[],
+): boolean {
+  if (route.pattern.length !== segments.length) {
+    return false;
+  }
+  return route.pattern.every((part, index) => {
+    const value = segments[index] ?? "";
+    if (part.startsWith("{") && part.endsWith("}")) {
+      return proxyParamMatches(route.params[part.slice(1, -1)], value);
+    }
+    return part === value;
+  });
+}
+
+// Browser allowlist generated from the API route table. Hand-written
+// adapters such as WORKFLOW_FOLDER_PROXY_ROUTES are not a second list.
+const ALLOWED_ROUTES: readonly AllowedRoute[] = GENERATED_PROXY_ROUTES.map(
+  (route) => ({
+    methods: route.methods,
+    match: (segments) => proxyPatternMatches(route, segments),
+  }),
+);
 
 /** Append the inbound query string so GET /workspace/records?kind= is mirrored. */
 export function withRequestSearch(apiPath: string, requestUrl: string): string {
@@ -376,13 +114,6 @@ export function withRequestSearch(apiPath: string, requestUrl: string): string {
   } catch {
     return apiPath;
   }
-}
-
-function eq(segments: string[], expected: string[]): boolean {
-  return (
-    segments.length === expected.length &&
-    expected.every((part, index) => segments[index] === part)
-  );
 }
 
 export type IdentityProxyTarget = {

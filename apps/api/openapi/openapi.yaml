@@ -73,6 +73,1409 @@ info:
       It must not be used to gate `/embed/v1`.
 servers:
   - url: /api/v1
+# BEGIN generated-route-table
+# Generated from the mux route table. Do not edit.
+# Regenerate: go run ./cmd/genroutes
+x-flowforge-route-table:
+  generated: true
+  source: apps/api/internal/httpapi/routes.go
+x-flowforge-routes:
+  - method: GET
+    path: /health
+    auth: public
+    proxy: none
+    pattern: /api/v1/health
+  - method: GET
+    path: /readiness
+    auth: public
+    proxy: none
+    pattern: /api/v1/readiness
+  - method: GET
+    path: /bootstrap
+    auth: public
+    proxy: browser
+    pattern: /api/v1/bootstrap
+  - method: POST
+    path: /bootstrap/persistence
+    auth: public
+    proxy: browser
+    pattern: /api/v1/bootstrap/persistence
+  - method: POST
+    path: /bootstrap/admins
+    auth: public
+    proxy: browser
+    pattern: /api/v1/bootstrap/admins
+  - method: POST
+    path: /bootstrap/public-url
+    auth: public
+    proxy: browser
+    pattern: /api/v1/bootstrap/public-url
+  - method: POST
+    path: /bootstrap/tls
+    auth: public
+    proxy: browser
+    pattern: /api/v1/bootstrap/tls
+  - method: GET
+    path: /metrics
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/metrics
+  - method: GET
+    path: /openapi.yaml
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/openapi.yaml
+  - method: GET
+    path: /openapi.json
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/openapi.json
+  - method: GET
+    path: /swagger
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/swagger
+  - method: GET
+    path: /permission-matrix
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/permission-matrix
+  - method: GET
+    path: /roles
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/roles
+  - method: GET
+    path: /permissions
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/permissions
+  - method: POST
+    path: /tenants
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/tenants
+  - method: GET
+    path: /workspaces
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspaces
+  - method: POST
+    path: /workspaces
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspaces
+  - method: GET
+    path: /workspace
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace
+  - method: DELETE
+    path: /workspace
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace
+  - method: GET
+    path: /workspace/members
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/members
+  - method: PUT
+    path: /workspace/members
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/members
+  - method: DELETE
+    path: /workspace/members/{userID}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/members/{userID}
+  - method: GET
+    path: /workspace/records
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/records
+  - method: POST
+    path: /workspace/records
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/records
+  - method: GET
+    path: /workspace/records/{id}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/records/{id}
+  - method: POST
+    path: /workspace/records/{id}/links
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/records/{id}/links
+  - method: POST
+    path: /workspace/credentials/{id}/use
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/credentials/{id}/use
+  - method: GET
+    path: /workspace/artifacts/{id}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/artifacts/{id}
+  - method: GET
+    path: /workspace/jobs
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/jobs
+  - method: POST
+    path: /workspace/jobs
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/jobs
+  - method: GET
+    path: /workspace/cache/{key}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/cache/{key}
+  - method: PUT
+    path: /workspace/cache/{key}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/cache/{key}
+  - method: POST
+    path: /workspace/realtime/channels/{id}/subscribe
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/realtime/channels/{id}/subscribe
+  - method: GET
+    path: /workspace/audit-events
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/audit-events
+  - method: POST
+    path: /login
+    auth: public
+    proxy: browser
+    pattern: /api/v1/login
+  - method: POST
+    path: /oidc/start
+    auth: public
+    proxy: browser
+    pattern: /api/v1/oidc/start
+  - method: POST
+    path: /oidc/callback
+    auth: public
+    proxy: browser
+    pattern: /api/v1/oidc/callback
+  - method: GET
+    path: /users/{userID}/lockout
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/users/{userID}/lockout
+  - method: POST
+    path: /users/{userID}/unlock
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/users/{userID}/unlock
+  - method: GET
+    path: /scim/v2/ServiceProviderConfig
+    auth: authenticated
+    proxy: none
+    pattern: /scim/v2/ServiceProviderConfig
+  - method: GET
+    path: /scim/v2/Schemas
+    auth: authenticated
+    proxy: none
+    pattern: /scim/v2/Schemas
+  - method: GET
+    path: /scim/v2/ResourceTypes
+    auth: authenticated
+    proxy: none
+    pattern: /scim/v2/ResourceTypes
+  - method: GET
+    path: /scim/v2/Users
+    auth: authenticated
+    proxy: none
+    pattern: /scim/v2/Users
+  - method: POST
+    path: /scim/v2/Users
+    auth: authenticated
+    proxy: none
+    pattern: /scim/v2/Users
+  - method: GET
+    path: /scim/v2/Users/{id}
+    auth: authenticated
+    proxy: none
+    pattern: /scim/v2/Users/{id}
+  - method: PUT
+    path: /scim/v2/Users/{id}
+    auth: authenticated
+    proxy: none
+    pattern: /scim/v2/Users/{id}
+  - method: PATCH
+    path: /scim/v2/Users/{id}
+    auth: authenticated
+    proxy: none
+    pattern: /scim/v2/Users/{id}
+  - method: DELETE
+    path: /scim/v2/Users/{id}
+    auth: authenticated
+    proxy: none
+    pattern: /scim/v2/Users/{id}
+  - method: GET
+    path: /scim/v2/Groups
+    auth: authenticated
+    proxy: none
+    pattern: /scim/v2/Groups
+  - method: POST
+    path: /scim/v2/Groups
+    auth: authenticated
+    proxy: none
+    pattern: /scim/v2/Groups
+  - method: GET
+    path: /scim/v2/Groups/{id}
+    auth: authenticated
+    proxy: none
+    pattern: /scim/v2/Groups/{id}
+  - method: PUT
+    path: /scim/v2/Groups/{id}
+    auth: authenticated
+    proxy: none
+    pattern: /scim/v2/Groups/{id}
+  - method: PATCH
+    path: /scim/v2/Groups/{id}
+    auth: authenticated
+    proxy: none
+    pattern: /scim/v2/Groups/{id}
+  - method: DELETE
+    path: /scim/v2/Groups/{id}
+    auth: authenticated
+    proxy: none
+    pattern: /scim/v2/Groups/{id}
+  - method: POST
+    path: /machine/token
+    auth: public
+    proxy: none
+    pattern: /api/v1/machine/token
+  - method: GET
+    path: /machine/principals
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/machine/principals
+  - method: POST
+    path: /machine/principals
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/machine/principals
+  - method: GET
+    path: /machine/principals/{id}
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/machine/principals/{id}
+  - method: POST
+    path: /machine/principals/{id}/rotate
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/machine/principals/{id}/rotate
+  - method: POST
+    path: /machine/principals/{id}/revoke
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/machine/principals/{id}/revoke
+  - method: POST
+    path: /session
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/session
+  - method: GET
+    path: /session
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/session
+  - method: POST
+    path: /session/refresh
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/session/refresh
+  - method: POST
+    path: /session/logout
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/session/logout
+  - method: POST
+    path: /session/password
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/session/password
+  - method: GET
+    path: /session/mfa
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/session/mfa
+  - method: POST
+    path: /session/mfa/enroll
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/session/mfa/enroll
+  - method: POST
+    path: /session/mfa/verify
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/session/mfa/verify
+  - method: GET
+    path: /session/audit-events
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/session/audit-events
+  - method: GET
+    path: /embed/catalog
+    auth: embed
+    proxy: browser
+    pattern: /api/v1/embed/catalog
+  - method: GET
+    path: /embed/jwks
+    auth: embed
+    proxy: browser
+    pattern: /api/v1/embed/jwks
+  - method: POST
+    path: /embed/assertions
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/embed/assertions
+  - method: POST
+    path: /embed/exchange
+    auth: embed
+    proxy: browser
+    pattern: /api/v1/embed/exchange
+  - method: POST
+    path: /embed/keys/rotate
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/embed/keys/rotate
+  - method: GET
+    path: /portal/adapter
+    auth: embed
+    proxy: browser
+    pattern: /api/v1/portal/adapter
+  - method: POST
+    path: /portal/adapter/assertions
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/portal/adapter/assertions
+  - method: GET
+    path: /workflows/catalog
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/catalog
+  - method: POST
+    path: /workflows/validate
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/validate
+  - method: POST
+    path: /workflows/normalize
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/normalize
+  - method: GET
+    path: /workflow-folders
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflow-folders
+  - method: POST
+    path: /workflow-folders
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflow-folders
+  - method: GET
+    path: /workflow-folders/{folderId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflow-folders/{folderId}
+  - method: PATCH
+    path: /workflow-folders/{folderId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflow-folders/{folderId}
+  - method: DELETE
+    path: /workflow-folders/{folderId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflow-folders/{folderId}
+  - method: GET
+    path: /workflows
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows
+  - method: POST
+    path: /workflows
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows
+  - method: GET
+    path: /workflows/{workflowId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/{workflowId}
+  - method: PATCH
+    path: /workflows/{workflowId}/folder
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/{workflowId}/folder
+  - method: GET
+    path: /workflows/{workflowId}/draft
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/{workflowId}/draft
+  - method: PUT
+    path: /workflows/{workflowId}/draft
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/{workflowId}/draft
+  - method: POST
+    path: /workflows/{workflowId}/publish
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/{workflowId}/publish
+  - method: POST
+    path: /workflows/{workflowId}/compare
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/{workflowId}/compare
+  - method: GET
+    path: /workflows/{workflowId}/versions
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/{workflowId}/versions
+  - method: GET
+    path: /workflows/{workflowId}/versions/{versionId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/{workflowId}/versions/{versionId}
+  - method: GET
+    path: /workflows/{workflowId}/versions/{versionId}/export
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/{workflowId}/versions/{versionId}/export
+  - method: POST
+    path: /workflows/{workflowId}/versions/{versionId}/restore
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/{workflowId}/versions/{versionId}/restore
+  - method: GET
+    path: /workflows/{workflowId}/triggers
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/{workflowId}/triggers
+  - method: POST
+    path: /workflows/{workflowId}/triggers
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/{workflowId}/triggers
+  - method: GET
+    path: /triggers/{triggerId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/triggers/{triggerId}
+  - method: PATCH
+    path: /triggers/{triggerId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/triggers/{triggerId}
+  - method: POST
+    path: /triggers/{triggerId}/rotate
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/triggers/{triggerId}/rotate
+  - method: POST
+    path: /triggers/{triggerId}/disable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/triggers/{triggerId}/disable
+  - method: POST
+    path: /triggers/{triggerId}/enable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/triggers/{triggerId}/enable
+  - method: DELETE
+    path: /triggers/{triggerId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/triggers/{triggerId}
+  - method: POST
+    path: /hooks/{publicId}
+    auth: public
+    proxy: none
+    pattern: /api/v1/hooks/{publicId}
+  - method: GET
+    path: /schedules/catalog
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/schedules/catalog
+  - method: GET
+    path: /schedules
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/schedules
+  - method: POST
+    path: /schedules
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/schedules
+  - method: POST
+    path: /schedules/dispatch
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/schedules/dispatch
+  - method: GET
+    path: /schedules/{scheduleId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/schedules/{scheduleId}
+  - method: PATCH
+    path: /schedules/{scheduleId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/schedules/{scheduleId}
+  - method: POST
+    path: /schedules/{scheduleId}/enable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/schedules/{scheduleId}/enable
+  - method: POST
+    path: /schedules/{scheduleId}/disable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/schedules/{scheduleId}/disable
+  - method: DELETE
+    path: /schedules/{scheduleId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/schedules/{scheduleId}
+  - method: POST
+    path: /workflows/{workflowId}/executions
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/{workflowId}/executions
+  - method: GET
+    path: /workflows/{workflowId}/executions
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/{workflowId}/executions
+  - method: GET
+    path: /workflows/{workflowId}/executions/{executionId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/{workflowId}/executions/{executionId}
+  - method: GET
+    path: /executions
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/executions
+  - method: GET
+    path: /executions/{executionId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/executions/{executionId}
+  - method: GET
+    path: /executions/{executionId}/steps
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/executions/{executionId}/steps
+  - method: GET
+    path: /executions/{executionId}/steps/{stepId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/executions/{executionId}/steps/{stepId}
+  - method: GET
+    path: /executions/{executionId}/steps/{stepId}/logs
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/executions/{executionId}/steps/{stepId}/logs
+  - method: POST
+    path: /executions/{executionId}/steps/{stepId}/logs
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/executions/{executionId}/steps/{stepId}/logs
+  - method: GET
+    path: /executions/{executionId}/artifacts
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/executions/{executionId}/artifacts
+  - method: POST
+    path: /executions/{executionId}/artifacts
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/executions/{executionId}/artifacts
+  - method: POST
+    path: /executions/{executionId}/steps/{stepId}/artifacts
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/executions/{executionId}/steps/{stepId}/artifacts
+  - method: GET
+    path: /executions/{executionId}/jobs
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/executions/{executionId}/jobs
+  - method: GET
+    path: /executions/{executionId}/audit-events
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/executions/{executionId}/audit-events
+  - method: POST
+    path: /executions/{executionId}/cancel
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/executions/{executionId}/cancel
+  - method: POST
+    path: /executions/{executionId}/emergency-stop
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/executions/{executionId}/emergency-stop
+  - method: POST
+    path: /executions/{executionId}/steps/{stepId}/emergency-stop
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/executions/{executionId}/steps/{stepId}/emergency-stop
+  - method: POST
+    path: /executions/{executionId}/retry
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/executions/{executionId}/retry
+  - method: POST
+    path: /executions/{executionId}/steps/{stepId}/retry
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/executions/{executionId}/steps/{stepId}/retry
+  - method: POST
+    path: /jobs/claim
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/jobs/claim
+  - method: POST
+    path: /jobs/recover
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/jobs/recover
+  - method: POST
+    path: /jobs/{jobId}/heartbeat
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/jobs/{jobId}/heartbeat
+  - method: POST
+    path: /jobs/{jobId}/release
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/jobs/{jobId}/release
+  - method: POST
+    path: /jobs/{jobId}/complete
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/jobs/{jobId}/complete
+  - method: POST
+    path: /jobs/{jobId}/fail
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/jobs/{jobId}/fail
+  - method: GET
+    path: /audit-events
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/audit-events
+  - method: GET
+    path: /alerts
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/alerts
+  - method: GET
+    path: /alerts/{alertId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/alerts/{alertId}
+  - method: POST
+    path: /alerts/{alertId}/ack
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/alerts/{alertId}/ack
+  - method: GET
+    path: /artifacts/{artifactId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/artifacts/{artifactId}
+  - method: POST
+    path: /artifacts/{artifactId}/downloads
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/artifacts/{artifactId}/downloads
+  - method: GET
+    path: /artifact-downloads/{grantId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/artifact-downloads/{grantId}
+  - method: POST
+    path: /artifacts/{artifactId}/legal-hold
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/artifacts/{artifactId}/legal-hold
+  - method: POST
+    path: /retention/purge
+    auth: authenticated
+    proxy: none
+    pattern: /api/v1/retention/purge
+  - method: GET
+    path: /credentials/catalog
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/credentials/catalog
+  - method: GET
+    path: /credentials
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/credentials
+  - method: POST
+    path: /credentials
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/credentials
+  - method: GET
+    path: /credentials/{credentialId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/credentials/{credentialId}
+  - method: PATCH
+    path: /credentials/{credentialId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/credentials/{credentialId}
+  - method: POST
+    path: /credentials/{credentialId}/rotate
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/credentials/{credentialId}/rotate
+  - method: POST
+    path: /credentials/{credentialId}/disable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/credentials/{credentialId}/disable
+  - method: POST
+    path: /credentials/{credentialId}/enable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/credentials/{credentialId}/enable
+  - method: POST
+    path: /credentials/{credentialId}/test
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/credentials/{credentialId}/test
+  - method: POST
+    path: /credentials/{credentialId}/use
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/credentials/{credentialId}/use
+  - method: GET
+    path: /credentials/{credentialId}/usage
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/credentials/{credentialId}/usage
+  - method: GET
+    path: /credentials/{credentialId}/deletion-impact
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/credentials/{credentialId}/deletion-impact
+  - method: DELETE
+    path: /credentials/{credentialId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/credentials/{credentialId}
+  - method: GET
+    path: /credentials/{credentialId}/events
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/credentials/{credentialId}/events
+  - method: GET
+    path: /ops-config/catalog
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/ops-config/catalog
+  - method: GET
+    path: /kubernetes/catalog
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/kubernetes/catalog
+  - method: GET
+    path: /ssh/catalog
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/ssh/catalog
+  - method: GET
+    path: /scripts/catalog
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/scripts/catalog
+  - method: GET
+    path: /http/catalog
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/http/catalog
+  - method: POST
+    path: /scripts
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/scripts
+  - method: GET
+    path: /scripts/{artifactId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/scripts/{artifactId}
+  - method: POST
+    path: /scripts/{artifactId}/revoke
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/scripts/{artifactId}/revoke
+  - method: GET
+    path: /workflows/{workflowId}/versions/{versionId}/script-artifacts
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/{workflowId}/versions/{versionId}/script-artifacts
+  - method: POST
+    path: /ops-config/select
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/ops-config/select
+  - method: GET
+    path: /workflows/{workflowId}/versions/{versionId}/pins
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/{workflowId}/versions/{versionId}/pins
+  - method: GET
+    path: /cluster-targets
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/cluster-targets
+  - method: POST
+    path: /cluster-targets
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/cluster-targets
+  - method: GET
+    path: /cluster-targets/{resourceId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/cluster-targets/{resourceId}
+  - method: GET
+    path: /cluster-targets/{resourceId}/draft
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/cluster-targets/{resourceId}/draft
+  - method: PUT
+    path: /cluster-targets/{resourceId}/draft
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/cluster-targets/{resourceId}/draft
+  - method: POST
+    path: /cluster-targets/{resourceId}/publish
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/cluster-targets/{resourceId}/publish
+  - method: GET
+    path: /cluster-targets/{resourceId}/versions
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/cluster-targets/{resourceId}/versions
+  - method: GET
+    path: /cluster-targets/{resourceId}/versions/{versionId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/cluster-targets/{resourceId}/versions/{versionId}
+  - method: POST
+    path: /cluster-targets/{resourceId}/disable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/cluster-targets/{resourceId}/disable
+  - method: POST
+    path: /cluster-targets/{resourceId}/enable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/cluster-targets/{resourceId}/enable
+  - method: POST
+    path: /cluster-targets/{resourceId}/select
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/cluster-targets/{resourceId}/select
+  - method: GET
+    path: /ssh-targets
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/ssh-targets
+  - method: POST
+    path: /ssh-targets
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/ssh-targets
+  - method: GET
+    path: /ssh-targets/{resourceId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/ssh-targets/{resourceId}
+  - method: GET
+    path: /ssh-targets/{resourceId}/draft
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/ssh-targets/{resourceId}/draft
+  - method: PUT
+    path: /ssh-targets/{resourceId}/draft
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/ssh-targets/{resourceId}/draft
+  - method: POST
+    path: /ssh-targets/{resourceId}/publish
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/ssh-targets/{resourceId}/publish
+  - method: GET
+    path: /ssh-targets/{resourceId}/versions
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/ssh-targets/{resourceId}/versions
+  - method: GET
+    path: /ssh-targets/{resourceId}/versions/{versionId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/ssh-targets/{resourceId}/versions/{versionId}
+  - method: POST
+    path: /ssh-targets/{resourceId}/disable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/ssh-targets/{resourceId}/disable
+  - method: POST
+    path: /ssh-targets/{resourceId}/enable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/ssh-targets/{resourceId}/enable
+  - method: POST
+    path: /ssh-targets/{resourceId}/select
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/ssh-targets/{resourceId}/select
+  - method: GET
+    path: /command-profiles
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/command-profiles
+  - method: POST
+    path: /command-profiles
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/command-profiles
+  - method: GET
+    path: /command-profiles/{resourceId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/command-profiles/{resourceId}
+  - method: GET
+    path: /command-profiles/{resourceId}/draft
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/command-profiles/{resourceId}/draft
+  - method: PUT
+    path: /command-profiles/{resourceId}/draft
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/command-profiles/{resourceId}/draft
+  - method: POST
+    path: /command-profiles/{resourceId}/publish
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/command-profiles/{resourceId}/publish
+  - method: GET
+    path: /command-profiles/{resourceId}/versions
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/command-profiles/{resourceId}/versions
+  - method: GET
+    path: /command-profiles/{resourceId}/versions/{versionId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/command-profiles/{resourceId}/versions/{versionId}
+  - method: POST
+    path: /command-profiles/{resourceId}/disable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/command-profiles/{resourceId}/disable
+  - method: POST
+    path: /command-profiles/{resourceId}/enable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/command-profiles/{resourceId}/enable
+  - method: POST
+    path: /command-profiles/{resourceId}/select
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/command-profiles/{resourceId}/select
+  - method: GET
+    path: /runtime-profiles
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/runtime-profiles
+  - method: POST
+    path: /runtime-profiles
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/runtime-profiles
+  - method: GET
+    path: /runtime-profiles/{resourceId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/runtime-profiles/{resourceId}
+  - method: GET
+    path: /runtime-profiles/{resourceId}/draft
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/runtime-profiles/{resourceId}/draft
+  - method: PUT
+    path: /runtime-profiles/{resourceId}/draft
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/runtime-profiles/{resourceId}/draft
+  - method: POST
+    path: /runtime-profiles/{resourceId}/publish
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/runtime-profiles/{resourceId}/publish
+  - method: GET
+    path: /runtime-profiles/{resourceId}/versions
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/runtime-profiles/{resourceId}/versions
+  - method: GET
+    path: /runtime-profiles/{resourceId}/versions/{versionId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/runtime-profiles/{resourceId}/versions/{versionId}
+  - method: POST
+    path: /runtime-profiles/{resourceId}/disable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/runtime-profiles/{resourceId}/disable
+  - method: POST
+    path: /runtime-profiles/{resourceId}/enable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/runtime-profiles/{resourceId}/enable
+  - method: POST
+    path: /runtime-profiles/{resourceId}/select
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/runtime-profiles/{resourceId}/select
+  - method: GET
+    path: /connections
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/connections
+  - method: POST
+    path: /connections
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/connections
+  - method: GET
+    path: /connections/{resourceId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/connections/{resourceId}
+  - method: GET
+    path: /connections/{resourceId}/draft
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/connections/{resourceId}/draft
+  - method: PUT
+    path: /connections/{resourceId}/draft
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/connections/{resourceId}/draft
+  - method: POST
+    path: /connections/{resourceId}/publish
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/connections/{resourceId}/publish
+  - method: GET
+    path: /connections/{resourceId}/versions
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/connections/{resourceId}/versions
+  - method: GET
+    path: /connections/{resourceId}/versions/{versionId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/connections/{resourceId}/versions/{versionId}
+  - method: POST
+    path: /connections/{resourceId}/disable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/connections/{resourceId}/disable
+  - method: POST
+    path: /connections/{resourceId}/enable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/connections/{resourceId}/enable
+  - method: POST
+    path: /connections/{resourceId}/select
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/connections/{resourceId}/select
+  - method: GET
+    path: /recipient-lists
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/recipient-lists
+  - method: POST
+    path: /recipient-lists
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/recipient-lists
+  - method: GET
+    path: /recipient-lists/{resourceId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/recipient-lists/{resourceId}
+  - method: GET
+    path: /recipient-lists/{resourceId}/draft
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/recipient-lists/{resourceId}/draft
+  - method: PUT
+    path: /recipient-lists/{resourceId}/draft
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/recipient-lists/{resourceId}/draft
+  - method: POST
+    path: /recipient-lists/{resourceId}/publish
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/recipient-lists/{resourceId}/publish
+  - method: GET
+    path: /recipient-lists/{resourceId}/versions
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/recipient-lists/{resourceId}/versions
+  - method: GET
+    path: /recipient-lists/{resourceId}/versions/{versionId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/recipient-lists/{resourceId}/versions/{versionId}
+  - method: POST
+    path: /recipient-lists/{resourceId}/disable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/recipient-lists/{resourceId}/disable
+  - method: POST
+    path: /recipient-lists/{resourceId}/enable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/recipient-lists/{resourceId}/enable
+  - method: POST
+    path: /recipient-lists/{resourceId}/select
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/recipient-lists/{resourceId}/select
+  - method: GET
+    path: /message-templates
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/message-templates
+  - method: POST
+    path: /message-templates
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/message-templates
+  - method: GET
+    path: /message-templates/{resourceId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/message-templates/{resourceId}
+  - method: GET
+    path: /message-templates/{resourceId}/draft
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/message-templates/{resourceId}/draft
+  - method: PUT
+    path: /message-templates/{resourceId}/draft
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/message-templates/{resourceId}/draft
+  - method: POST
+    path: /message-templates/{resourceId}/publish
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/message-templates/{resourceId}/publish
+  - method: GET
+    path: /message-templates/{resourceId}/versions
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/message-templates/{resourceId}/versions
+  - method: GET
+    path: /message-templates/{resourceId}/versions/{versionId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/message-templates/{resourceId}/versions/{versionId}
+  - method: POST
+    path: /message-templates/{resourceId}/disable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/message-templates/{resourceId}/disable
+  - method: POST
+    path: /message-templates/{resourceId}/enable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/message-templates/{resourceId}/enable
+  - method: POST
+    path: /message-templates/{resourceId}/select
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/message-templates/{resourceId}/select
+  - method: GET
+    path: /response-schemas
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/response-schemas
+  - method: POST
+    path: /response-schemas
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/response-schemas
+  - method: GET
+    path: /response-schemas/{resourceId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/response-schemas/{resourceId}
+  - method: GET
+    path: /response-schemas/{resourceId}/draft
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/response-schemas/{resourceId}/draft
+  - method: PUT
+    path: /response-schemas/{resourceId}/draft
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/response-schemas/{resourceId}/draft
+  - method: POST
+    path: /response-schemas/{resourceId}/publish
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/response-schemas/{resourceId}/publish
+  - method: GET
+    path: /response-schemas/{resourceId}/versions
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/response-schemas/{resourceId}/versions
+  - method: GET
+    path: /response-schemas/{resourceId}/versions/{versionId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/response-schemas/{resourceId}/versions/{versionId}
+  - method: POST
+    path: /response-schemas/{resourceId}/disable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/response-schemas/{resourceId}/disable
+  - method: POST
+    path: /response-schemas/{resourceId}/enable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/response-schemas/{resourceId}/enable
+  - method: POST
+    path: /response-schemas/{resourceId}/select
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/response-schemas/{resourceId}/select
+  - method: GET
+    path: /policies
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/policies
+  - method: POST
+    path: /policies
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/policies
+  - method: GET
+    path: /policies/{resourceId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/policies/{resourceId}
+  - method: GET
+    path: /policies/{resourceId}/draft
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/policies/{resourceId}/draft
+  - method: PUT
+    path: /policies/{resourceId}/draft
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/policies/{resourceId}/draft
+  - method: POST
+    path: /policies/{resourceId}/publish
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/policies/{resourceId}/publish
+  - method: GET
+    path: /policies/{resourceId}/versions
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/policies/{resourceId}/versions
+  - method: GET
+    path: /policies/{resourceId}/versions/{versionId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/policies/{resourceId}/versions/{versionId}
+  - method: POST
+    path: /policies/{resourceId}/disable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/policies/{resourceId}/disable
+  - method: POST
+    path: /policies/{resourceId}/enable
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/policies/{resourceId}/enable
+  - method: POST
+    path: /policies/{resourceId}/select
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/policies/{resourceId}/select
+  - method: GET
+    path: /approvals/catalog
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/approvals/catalog
+  - method: POST
+    path: /policy/evaluate
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/policy/evaluate
+  - method: GET
+    path: /approvals
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/approvals
+  - method: POST
+    path: /approvals
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/approvals
+  - method: GET
+    path: /approvals/{approvalId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/approvals/{approvalId}
+  - method: POST
+    path: /approvals/{approvalId}/decide
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/approvals/{approvalId}/decide
+  - method: GET
+    path: /approvals/{approvalId}/events
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/approvals/{approvalId}/events
+# END generated-route-table
 paths:
   /health:
     get:
@@ -6869,6 +8272,359 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /users/{userID}/lockout:
+    get:
+      operationId: getUsersUserIDLockout
+      summary: GET /users/{userID}/lockout
+      description: |
+        Generated from the route table (GET /api/v1/users/{userID}/lockout).
+        Auth class: authenticated. Identity proxy: none.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+        Vault references are display name and UUID only.
+      responses:
+        "200":
+          description: Success
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /users/{userID}/unlock:
+    post:
+      operationId: postUsersUserIDUnlock
+      summary: POST /users/{userID}/unlock
+      description: |
+        Generated from the route table (POST /api/v1/users/{userID}/unlock).
+        Auth class: authenticated. Identity proxy: none.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+        Vault references are display name and UUID only.
+      responses:
+        "200":
+          description: Success
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /scim/v2/ServiceProviderConfig:
+    servers:
+      - url: "/"
+        description: "Mounted at the origin root, outside the /api/v1 prefix."
+    get:
+      operationId: getScimV2ServiceProviderConfig
+      summary: GET /scim/v2/ServiceProviderConfig
+      description: |
+        Generated from the route table (GET /scim/v2/ServiceProviderConfig).
+        Auth class: authenticated. Identity proxy: none.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+        Vault references are display name and UUID only.
+      responses:
+        "200":
+          description: Success
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /scim/v2/Schemas:
+    servers:
+      - url: "/"
+        description: "Mounted at the origin root, outside the /api/v1 prefix."
+    get:
+      operationId: getScimV2Schemas
+      summary: GET /scim/v2/Schemas
+      description: |
+        Generated from the route table (GET /scim/v2/Schemas).
+        Auth class: authenticated. Identity proxy: none.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+        Vault references are display name and UUID only.
+      responses:
+        "200":
+          description: Success
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /scim/v2/ResourceTypes:
+    servers:
+      - url: "/"
+        description: "Mounted at the origin root, outside the /api/v1 prefix."
+    get:
+      operationId: getScimV2ResourceTypes
+      summary: GET /scim/v2/ResourceTypes
+      description: |
+        Generated from the route table (GET /scim/v2/ResourceTypes).
+        Auth class: authenticated. Identity proxy: none.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+        Vault references are display name and UUID only.
+      responses:
+        "200":
+          description: Success
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /scim/v2/Users:
+    servers:
+      - url: "/"
+        description: "Mounted at the origin root, outside the /api/v1 prefix."
+    get:
+      operationId: getScimV2Users
+      summary: GET /scim/v2/Users
+      description: |
+        Generated from the route table (GET /scim/v2/Users).
+        Auth class: authenticated. Identity proxy: none.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+        Vault references are display name and UUID only.
+      responses:
+        "200":
+          description: Success
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      operationId: postScimV2Users
+      summary: POST /scim/v2/Users
+      description: |
+        Generated from the route table (POST /scim/v2/Users).
+        Auth class: authenticated. Identity proxy: none.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+        Vault references are display name and UUID only.
+      responses:
+        "200":
+          description: Success
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /scim/v2/Users/{id}:
+    servers:
+      - url: "/"
+        description: "Mounted at the origin root, outside the /api/v1 prefix."
+    get:
+      operationId: getScimV2UsersId
+      summary: GET /scim/v2/Users/{id}
+      description: |
+        Generated from the route table (GET /scim/v2/Users/{id}).
+        Auth class: authenticated. Identity proxy: none.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+        Vault references are display name and UUID only.
+      responses:
+        "200":
+          description: Success
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      operationId: putScimV2UsersId
+      summary: PUT /scim/v2/Users/{id}
+      description: |
+        Generated from the route table (PUT /scim/v2/Users/{id}).
+        Auth class: authenticated. Identity proxy: none.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+        Vault references are display name and UUID only.
+      responses:
+        "200":
+          description: Success
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    patch:
+      operationId: patchScimV2UsersId
+      summary: PATCH /scim/v2/Users/{id}
+      description: |
+        Generated from the route table (PATCH /scim/v2/Users/{id}).
+        Auth class: authenticated. Identity proxy: none.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+        Vault references are display name and UUID only.
+      responses:
+        "200":
+          description: Success
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: deleteScimV2UsersId
+      summary: DELETE /scim/v2/Users/{id}
+      description: |
+        Generated from the route table (DELETE /scim/v2/Users/{id}).
+        Auth class: authenticated. Identity proxy: none.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+        Vault references are display name and UUID only.
+      responses:
+        "200":
+          description: Success
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /scim/v2/Groups:
+    servers:
+      - url: "/"
+        description: "Mounted at the origin root, outside the /api/v1 prefix."
+    get:
+      operationId: getScimV2Groups
+      summary: GET /scim/v2/Groups
+      description: |
+        Generated from the route table (GET /scim/v2/Groups).
+        Auth class: authenticated. Identity proxy: none.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+        Vault references are display name and UUID only.
+      responses:
+        "200":
+          description: Success
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      operationId: postScimV2Groups
+      summary: POST /scim/v2/Groups
+      description: |
+        Generated from the route table (POST /scim/v2/Groups).
+        Auth class: authenticated. Identity proxy: none.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+        Vault references are display name and UUID only.
+      responses:
+        "200":
+          description: Success
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /scim/v2/Groups/{id}:
+    servers:
+      - url: "/"
+        description: "Mounted at the origin root, outside the /api/v1 prefix."
+    get:
+      operationId: getScimV2GroupsId
+      summary: GET /scim/v2/Groups/{id}
+      description: |
+        Generated from the route table (GET /scim/v2/Groups/{id}).
+        Auth class: authenticated. Identity proxy: none.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+        Vault references are display name and UUID only.
+      responses:
+        "200":
+          description: Success
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      operationId: putScimV2GroupsId
+      summary: PUT /scim/v2/Groups/{id}
+      description: |
+        Generated from the route table (PUT /scim/v2/Groups/{id}).
+        Auth class: authenticated. Identity proxy: none.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+        Vault references are display name and UUID only.
+      responses:
+        "200":
+          description: Success
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    patch:
+      operationId: patchScimV2GroupsId
+      summary: PATCH /scim/v2/Groups/{id}
+      description: |
+        Generated from the route table (PATCH /scim/v2/Groups/{id}).
+        Auth class: authenticated. Identity proxy: none.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+        Vault references are display name and UUID only.
+      responses:
+        "200":
+          description: Success
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: deleteScimV2GroupsId
+      summary: DELETE /scim/v2/Groups/{id}
+      description: |
+        Generated from the route table (DELETE /scim/v2/Groups/{id}).
+        Auth class: authenticated. Identity proxy: none.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+        Vault references are display name and UUID only.
+      responses:
+        "200":
+          description: Success
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   pathItems:
     OpsCollection:
