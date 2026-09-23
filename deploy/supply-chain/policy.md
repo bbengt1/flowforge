@@ -47,7 +47,7 @@ On a push to `main` (and `workflow_dispatch` on `main`), job `publish-images` pu
 
 `<owner>` is the GitHub repository owner (`bbengt1` for this repo). The job does not push the mutable `:foundation` tag. The digest in the job summary is what deploy manifests must pin. BuildKit provenance and SBOM attestations are turned off (`provenance: false`, `sbom: false`) so they are not confused with the signed statement.
 
-Signing is keyless. `sigstore/cosign-installer@v4` installs cosign **v2.5.3** (pinned; cosign v3 bundle layout is not what the Kyverno policy below is written against). `cosign sign --yes` uses the GitHub Actions OIDC token. The certificate subject is:
+Signing is keyless. `sigstore/cosign-installer@v4.1.2` installs cosign **v2.5.3** (pinned; the major-only `@v4` ref is not a git tag, and cosign v3 bundle layout is not what the Kyverno policy below is written against). `cosign sign --yes` uses the GitHub Actions OIDC token. The certificate subject is:
 
 `https://github.com/bbengt1/flowforge/.github/workflows/supply-chain.yml@refs/heads/main`
 
