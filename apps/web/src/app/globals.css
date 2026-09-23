@@ -27,7 +27,7 @@ body {
 
 .skip-link {
   position: absolute;
-  left: var(--ff-space-3);
+  inset-inline-start: var(--ff-space-3);
   top: var(--ff-space-3);
   z-index: 100;
   transform: translateY(-200%);
@@ -62,7 +62,7 @@ body {
 .ff-shell-aside {
   background: var(--ff-surface);
   color: var(--ff-text);
-  border-right: 1px solid var(--ff-border);
+  border-inline-end: 1px solid var(--ff-border);
 }
 
 .ff-shell-header {
@@ -299,7 +299,7 @@ body {
   border-radius: var(--ff-radius-sm);
   padding: 4px var(--ff-space-2);
   color: var(--ff-text);
-  text-align: left;
+  text-align: start;
   font-size: var(--ff-type-body);
 }
 
@@ -314,7 +314,7 @@ body {
   color: var(--ff-accent-foreground);
   border-radius: var(--ff-radius-sm);
   padding: 4px var(--ff-space-2);
-  text-align: left;
+  text-align: start;
   font-size: var(--ff-type-body);
 }
 
@@ -348,8 +348,11 @@ body {
 
 .ff-explorer-tree.ff-overview-rail {
   border: none;
-  border-right: 1px solid var(--ff-border);
-  border-radius: var(--ff-radius) 0 0 var(--ff-radius);
+  border-inline-end: 1px solid var(--ff-border);
+  border-start-start-radius: var(--ff-radius);
+  border-end-start-radius: var(--ff-radius);
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
   background: var(--ff-explorer-nav);
   color: var(--ff-text);
   overflow-x: hidden;
@@ -391,7 +394,7 @@ body {
   align-items: center;
   width: 100%;
   min-height: var(--ff-explorer-row);
-  padding-left: calc(var(--ff-explorer-depth, 0) * var(--ff-explorer-indent));
+  padding-inline-start: calc(var(--ff-explorer-depth, 0) * var(--ff-explorer-indent));
   border: 1px solid transparent;
   border-radius: 2px;
   background: transparent;
@@ -437,7 +440,7 @@ body {
   border: none;
   background: transparent;
   color: var(--ff-text);
-  text-align: left;
+  text-align: start;
   font-size: var(--ff-type-body);
   line-height: 1.2;
 }
@@ -524,9 +527,14 @@ body {
   color: var(--ff-text);
 }
 
+html[dir="rtl"] .ff-explorer-row-selected.ff-overview-card,
+html[dir="rtl"] .ff-explorer-row.ff-explorer-row-selected {
+  box-shadow: inset -3px 0 0 var(--ff-accent);
+}
+
 @media (max-width: 767px) {
   .ff-explorer-tree.ff-overview-rail {
-    border-right: none;
+    border-inline-end: none;
     border-bottom: 1px solid var(--ff-border);
     border-radius: var(--ff-radius) var(--ff-radius) 0 0;
   }
@@ -552,7 +560,7 @@ body {
 .ff-explorer-menu-item {
   display: block;
   width: 100%;
-  text-align: left;
+  text-align: start;
   border: none;
   background: transparent;
   color: var(--ff-text);
@@ -589,11 +597,11 @@ body {
 }
 
 .ff-explorer-empty-folder {
-  border-left: 3px solid var(--ff-accent);
+  border-inline-start: 3px solid var(--ff-accent);
 }
 
 .ff-explorer-empty-unfiled {
-  border-left: 3px solid var(--ff-muted);
+  border-inline-start: 3px solid var(--ff-muted);
 }
 
 .ff-explorer-virtual-chip {
@@ -810,7 +818,7 @@ body {
 }
 
 .ff-editor-divider {
-  border-left: 1px solid var(--ff-border);
+  border-inline-start: 1px solid var(--ff-border);
 }
 
 .ff-editor-danger {
@@ -874,14 +882,14 @@ body {
 }
 
 .ff-inbox-row-indeterminate {
-  border-left: 4px solid #d97706;
+  border-inline-start: 4px solid #d97706;
   background: color-mix(in srgb, #d97706 18%, var(--ff-canvas));
   color: #fde68a;
   cursor: pointer;
 }
 
 .ff-inbox-row-waiting {
-  border-left: 4px solid var(--ff-accent);
+  border-inline-start: 4px solid var(--ff-accent);
   background: color-mix(in srgb, var(--ff-accent) 16%, var(--ff-canvas));
   color: var(--ff-text);
   cursor: pointer;

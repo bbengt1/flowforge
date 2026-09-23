@@ -80,7 +80,7 @@ type EditorTopBarProps = {
 const SATELLITE_CONTROL = `${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-sm`;
 const HISTORY_CONTROL = `${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-sm disabled:opacity-60`;
 const GROUP = "flex shrink-0 items-center gap-1.5";
-const GROUP_DIVIDER = `${GROUP} ${FF_EDITOR_DIVIDER_CLASS} pl-3`;
+const GROUP_DIVIDER = `${GROUP} ${FF_EDITOR_DIVIDER_CLASS} ps-3`;
 
 export function EditorTopBar({
   workflow,
@@ -293,7 +293,7 @@ export function EditorTopBar({
           {editorTopBarControlLabel("runs", runsOpen)}
         </button>
       </div>
-      <div data-editor-topbar="activation" className={`shrink-0 ${FF_EDITOR_DIVIDER_CLASS} pl-3`}>
+      <div data-editor-topbar="activation" className={`shrink-0 ${FF_EDITOR_DIVIDER_CLASS} ps-3`}>
         <EditorActivationChrome
           variant="compact"
           identity={identity}

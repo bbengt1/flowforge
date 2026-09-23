@@ -216,93 +216,16 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 		t.Fatal(err)
 	}
 	paths, _ := doc["paths"].(map[string]any)
-	for _, p := range []string{
-		"/health", "/readiness", "/bootstrap", "/bootstrap/persistence", "/bootstrap/admins", "/bootstrap/public-url", "/bootstrap/tls", "/metrics", "/openapi.yaml", "/openapi.json", "/swagger",
-		"/login", "/oidc/start", "/oidc/callback",
-		"/machine/token", "/machine/principals", "/machine/principals/{id}",
-		"/machine/principals/{id}/rotate", "/machine/principals/{id}/revoke",
-		"/session", "/session/refresh", "/session/logout", "/session/password",
-		"/session/mfa", "/session/mfa/enroll", "/session/mfa/verify",
-		"/session/audit-events",
-		"/embed/catalog", "/embed/jwks", "/embed/assertions", "/embed/exchange", "/embed/keys/rotate",
-		"/portal/adapter", "/portal/adapter/assertions",
-		"/permission-matrix", "/roles", "/permissions", "/tenants", "/workspaces", "/workspace",
-		"/workspace/members", "/workspace/records", "/workspace/credentials/{id}/use",
-		"/workspace/artifacts/{id}", "/workspace/jobs", "/workspace/cache/{key}",
-		"/workspace/realtime/channels/{id}/subscribe", "/workspace/audit-events",
-		"/workflows/catalog", "/workflows/validate", "/workflows/normalize",
-		"/workflow-folders", "/workflow-folders/{folderId}",
-		"/workflows", "/workflows/{workflowId}", "/workflows/{workflowId}/folder", "/workflows/{workflowId}/draft",
-		"/workflows/{workflowId}/publish", "/workflows/{workflowId}/compare",
-		"/workflows/{workflowId}/versions", "/workflows/{workflowId}/versions/{versionId}",
-		"/workflows/{workflowId}/versions/{versionId}/export",
-		"/workflows/{workflowId}/versions/{versionId}/restore",
-		"/workflows/{workflowId}/executions",
-		"/workflows/{workflowId}/executions/{executionId}",
-		"/workflows/{workflowId}/triggers",
-		"/triggers/{triggerId}",
-		"/triggers/{triggerId}/rotate",
-		"/triggers/{triggerId}/disable",
-		"/triggers/{triggerId}/enable",
-		"/hooks/{publicId}",
-		"/schedules/catalog",
-		"/schedules",
-		"/schedules/dispatch",
-		"/schedules/{scheduleId}",
-		"/schedules/{scheduleId}/enable",
-		"/schedules/{scheduleId}/disable",
-		"/executions",
-		"/executions/{executionId}",
-		"/executions/{executionId}/steps",
-		"/executions/{executionId}/steps/{stepId}",
-		"/executions/{executionId}/jobs",
-		"/executions/{executionId}/audit-events",
-		"/executions/{executionId}/cancel",
-		"/executions/{executionId}/emergency-stop",
-		"/executions/{executionId}/steps/{stepId}/emergency-stop",
-		"/executions/{executionId}/retry",
-		"/executions/{executionId}/steps/{stepId}/retry",
-		"/executions/{executionId}/artifacts",
-		"/executions/{executionId}/steps/{stepId}/artifacts",
-		"/executions/{executionId}/steps/{stepId}/logs",
-		"/artifacts/{artifactId}",
-		"/artifacts/{artifactId}/downloads",
-		"/artifact-downloads/{grantId}",
-		"/artifacts/{artifactId}/legal-hold",
-		"/retention/purge",
-		"/jobs/claim",
-		"/jobs/recover",
-		"/jobs/{jobId}/heartbeat",
-		"/jobs/{jobId}/release",
-		"/jobs/{jobId}/complete",
-		"/jobs/{jobId}/fail",
-		"/audit-events",
-		"/alerts",
-		"/alerts/{alertId}",
-		"/alerts/{alertId}/ack",
-		"/credentials/catalog", "/credentials", "/credentials/{credentialId}",
-		"/credentials/{credentialId}/rotate", "/credentials/{credentialId}/disable",
-		"/credentials/{credentialId}/enable", "/credentials/{credentialId}/test",
-		"/credentials/{credentialId}/use", "/credentials/{credentialId}/usage",
-		"/credentials/{credentialId}/deletion-impact",
-		"/credentials/{credentialId}/events",
-		"/ops-config/catalog", "/ops-config/select", "/kubernetes/catalog", "/ssh/catalog",
-		"/scripts/catalog", "/http/catalog", "/scripts", "/scripts/{artifactId}", "/scripts/{artifactId}/revoke",
-		"/workflows/{workflowId}/versions/{versionId}/script-artifacts",
-		"/cluster-targets", "/cluster-targets/{resourceId}",
-		"/cluster-targets/{resourceId}/draft", "/cluster-targets/{resourceId}/publish",
-		"/cluster-targets/{resourceId}/versions", "/cluster-targets/{resourceId}/versions/{versionId}",
-		"/cluster-targets/{resourceId}/disable", "/cluster-targets/{resourceId}/enable",
-		"/cluster-targets/{resourceId}/select",
-		"/ssh-targets", "/command-profiles", "/runtime-profiles", "/connections",
-		"/recipient-lists", "/message-templates", "/response-schemas", "/policies",
-		"/workflows/{workflowId}/versions/{versionId}/pins",
-		"/policy/evaluate", "/approvals/catalog", "/approvals",
-		"/approvals/{approvalId}", "/approvals/{approvalId}/decide",
-		"/approvals/{approvalId}/events",
-	} {
-		if paths[p] == nil {
-			t.Fatalf("openapi missing path %s", p)
+	known := map[string]bool{}
+	for _, rt := range Routes(nil) {
+		known[rt.OpenAPIPath()] = true
+		if paths[rt.OpenAPIPath()] == nil {
+			t.Fatalf("openapi missing path %s (%s %s)", rt.OpenAPIPath(), rt.Method, rt.Pattern)
+		}
+	}
+	for p := range paths {
+		if !known[p] {
+			t.Fatalf("openapi path %s is not in the route table", p)
 		}
 	}
 

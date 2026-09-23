@@ -12,7 +12,9 @@ swagger/OpenAPI are **not** a product screen (ADV-020).
 
 | Form | Location |
 | --- | --- |
-| Source of truth (embedded at build time) | [`apps/api/openapi/openapi.yaml`](../../apps/api/openapi/openapi.yaml) |
+| Info and servers input (not a route list) | [`apps/api/openapi/document.yaml`](../../apps/api/openapi/document.yaml) |
+| Schema library input (not a route list) | [`apps/api/openapi/components.yaml`](../../apps/api/openapi/components.yaml) |
+| Generated artifact (embedded at build time) | [`apps/api/openapi/openapi.yaml`](../../apps/api/openapi/openapi.yaml) |
 | Go embed | [`apps/api/openapi/fs.go`](../../apps/api/openapi/fs.go) (`//go:embed openapi.yaml`) |
 | Runtime YAML | `GET /api/v1/openapi.yaml` |
 | Runtime JSON | `GET /api/v1/openapi.json` (YAML unmarshaled in-process; not a second file) |
@@ -21,17 +23,33 @@ swagger/OpenAPI are **not** a product screen (ADV-020).
 OpenAPI **3.0.3**. `info.version` is the document version (currently
 `0.26.0` in the YAML). That is not the URL prefix.
 
-There is no code-generated spec. When a route or problem code changes,
-update `apps/api/openapi/openapi.yaml` in the same change as
-`docs/reference/backend-api-map.md` and the Go handlers. Tests in
-`apps/api/internal/httpapi` assert the published document includes
-foundation paths (`/health`, `/readiness`, `/metrics`, OpenAPI, swagger).
+The mux route table (`apps/api/internal/httpapi/routes.go`) is the
+source of truth. `go run ./cmd/genroutes` (from `apps/api`) writes
+`openapi/openapi.yaml` and the browser identity-proxy allowlist
+`apps/web/src/lib/identity-proxy-allowlist.gen.ts`. Neither file is
+hand-edited. Inputs are `openapi/document.yaml` (info and servers
+only) and `openapi/components.yaml` (schemas, responses, parameters,
+and path item templates — not a route list). Every path is generated
+from the route table: ops collections are `$ref`s into
+`components.pathItems`, and other operations are stubs with no
+request or response examples. CI (`go run ./cmd/genroutes -check`)
+fails when the committed files differ from that render, including a
+hand edit of `openapi.yaml`. `x-flowforge-routes` records `auth`
+(`public`, `embed`, or `authenticated`) and `proxy` (`browser` or
+`none`). Examples stay free of secrets and DSNs.
+
+When a route changes, update the route table and regenerate in the
+same change as `docs/reference/backend-api-map.md`. Tests in
+`apps/api/internal/httpapi` derive the published path list from the
+route table (including `/health`, `/readiness`, `/metrics`, OpenAPI,
+and swagger).
 
 ## Versioning (`/api/v1`)
 
-All control-plane HTTP routes are under `/api/v1`. The OpenAPI
-`servers` entry is `url: /api/v1`, so paths in the document are
-`/health`, `/session`, `/embed/exchange`, and so on.
+Versioned control-plane routes are under `/api/v1`. The OpenAPI
+`servers` entry is `url: /api/v1`, so those paths in the document are
+`/health`, `/session`, `/embed/exchange`, and so on. SCIM 2.0 stays at
+`/scim/v2` (path-item `servers.url: /`), not under `/api/v1`.
 
 There is no `/api/v2` and no unversioned alias. Kubernetes probes use
 the versioned paths only:

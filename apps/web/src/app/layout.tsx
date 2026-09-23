@@ -4,6 +4,10 @@ import { QueryProvider } from "@/components/query/QueryProvider";
 import { WorkspaceShell } from "@/components/shell/WorkspaceShell";
 import { getPublicSwaggerUrl } from "@/lib/config";
 import {
+  DOCUMENT_DIR_COOKIE,
+  documentDirection,
+} from "@/lib/document-dir";
+import {
   EMBED_MOUNT_HEADER,
   EMBED_REJECTED_ASSERTION_HEADER,
   readConfiguredHostIssuers,
@@ -33,6 +37,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
+      dir={documentDirection(cookieStore.get(DOCUMENT_DIR_COOKIE)?.value)}
       className={`h-full ${FF_SHELL_ROOT_CLASS}`}
       data-ff-tokens={FF_SHELL_ROOT_VALUE}
     >
