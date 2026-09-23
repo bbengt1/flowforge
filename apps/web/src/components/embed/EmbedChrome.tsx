@@ -146,7 +146,7 @@ export function EmbedChrome({
           </p>
         )}
         <div
-          className="ml-auto flex flex-wrap items-center gap-2"
+          className="ms-auto flex flex-wrap items-center gap-2"
           data-rewrite-embed-tools={shellTools ? "search commands" : undefined}
         >
           {shellTools ? (

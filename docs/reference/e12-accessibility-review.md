@@ -98,6 +98,16 @@ G.3.3 rendered gate (Relates to #480 / Part of #412).
     Change-password). Source-text aria greps are retired where this
     job covers the same intent.
 
+G.3.8 RTL behavior (Relates to #495 / Part of #412).
+
+24. **`dir="rtl"`** — the `ff-dir` cookie sets `<html dir>`. Unknown
+    values fail closed to `ltr`. Playwright checks Field label
+    association, Dialog focus trap / Escape / focus return, and
+    ConfirmDestructive impact chrome on the same primary surfaces as
+    G.3.3. Serious inline-start, focus, and axe regressions fail CI.
+    Source-text RTL greps are not the gate. The workflow canvas keeps
+    its own coordinates.
+
 Contract tests: `apps/web/src/lib/e12-accessibility-contract.test.ts`
 and `apps/web/src/lib/rewrite-satellite-a11y.test.ts`
 (picked up by `pnpm --filter @flowforge/web test`).
