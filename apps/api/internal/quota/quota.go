@@ -182,7 +182,6 @@ func (l Limits) Bucket(class string) (capacity, refillPerSec float64, unlimited,
 	default:
 		return 0, 0, false, false
 	}
-	known = true
 	if perMinute < 0 || burst < 0 {
 		return 0, 0, true, true
 	}
