@@ -31,7 +31,7 @@ const DIALOG_SURFACES = [
   "src/components/workflows/EditorStartDialog.tsx",
   "src/components/credentials/CredentialWizardDialog.tsx",
   "src/components/credentials/CredentialTestDialog.tsx",
-  "src/components/credentials/DeleteImpactDialog.tsx",
+  "src/components/a11y/ConfirmDestructive.tsx",
   "src/components/shell/CommandPalette.tsx",
   "src/components/session/MfaStepUpHost.tsx",
 ] as const;

@@ -1,4 +1,13 @@
 import { useState } from "react";
+import {
+  ConfirmDestructive,
+  DestructiveUndoBar,
+  useDestructiveUndo,
+} from "@/components/a11y/ConfirmDestructive";
+import {
+  MEMBER_REMOVE_DESCRIPTION,
+  memberRemoveImpact,
+} from "@/lib/confirm-destructive";
 import type { Member, RoleCatalogEntry } from "@/lib/identity-types";
 
 type MembersPanelProps = {
@@ -31,6 +40,12 @@ export function MembersPanel({
   const [subject, setSubject] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [roleKeys, setRoleKeys] = useState<string[]>(["viewer"]);
+  const [removeId, setRemoveId] = useState<string | null>(null);
+  const memberUndo = useDestructiveUndo((userId) => {
+    void onRemove(userId);
+  });
+  const removing =
+    members.find((member) => member.user.id === removeId) ?? null;
 
   function toggleRole(key: string) {
     setRoleKeys((current) =>
@@ -117,7 +132,7 @@ export function MembersPanel({
                 </button>
                 <button
                   type="button"
-                  onClick={() => void onRemove(member.user.id)}
+                  onClick={() => setRemoveId(member.user.id)}
                   disabled={pending}
                   className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-sm text-red-900 hover:bg-red-100 disabled:opacity-60"
                 >
@@ -202,6 +217,39 @@ export function MembersPanel({
           Save member roles
         </button>
       </form>
+      {removing ? (
+        <ConfirmDestructive
+          open
+          title="Remove this member?"
+          description={MEMBER_REMOVE_DESCRIPTION}
+          reversibility="undoable"
+          confirmLabel="Remove member"
+          pending={pending}
+          pendingLabel="Removing…"
+          canConfirm={!pending}
+          impact={memberRemoveImpact({
+            displayName: removing.user.display_name ?? "",
+            subject: removing.user.external_subject,
+            roles: removing.roles,
+          })}
+          onClose={() => setRemoveId(null)}
+          onConfirm={() => {
+            const userId = removing.user.id;
+            setRemoveId(null);
+            memberUndo.arm(userId);
+          }}
+        />
+      ) : null}
+      <DestructiveUndoBar
+        ticket={memberUndo.ticket}
+        title="Member will be removed"
+        detail={
+          members.find((member) => member.user.id === memberUndo.ticket?.id)
+            ?.user.display_name
+        }
+        onUndo={memberUndo.undo}
+        onCommit={memberUndo.commit}
+      />
     </section>
   );
 }

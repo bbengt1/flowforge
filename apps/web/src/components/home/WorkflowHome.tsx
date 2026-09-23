@@ -1,6 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import {
+  ConfirmDestructive,
+  DestructiveUndoBar,
+  useDestructiveUndo,
+} from "@/components/a11y/ConfirmDestructive";
 import { Field } from "@/components/a11y/Field";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -318,6 +323,10 @@ import {
 } from "@/lib/workflow-folder-client";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 import { canCreateWorkflows, canSeeWorkflowsNav } from "@/lib/workspace-nav";
+import {
+  FOLDER_DELETE_DESCRIPTION,
+  folderDeleteImpact,
+} from "@/lib/confirm-destructive";
 import { pushNotification } from "@/lib/workspace-notifications";
 import {
   homeSatelliteOverlayTriggerId,
@@ -469,6 +478,7 @@ function WorkflowHomeSession() {
   );
   const [moveIntoOpen, setMoveIntoOpen] = useState(false);
   const [moveIntoWorkflowId, setMoveIntoWorkflowId] = useState("");
+  const [folderDeleteId, setFolderDeleteId] = useState<string | null>(null);
 
   const canView = ready && canSeeWorkflowsNav(permissions);
   const canMutateFolders =
@@ -1071,6 +1081,30 @@ function WorkflowHomeSession() {
     setPending(null);
   }
 
+  const folderUndo = useDestructiveUndo((folderId) => {
+    void removeFolder(folderId);
+  });
+
+  function askDeleteFolder(folderId: string) {
+    if (
+      !canMutateFolders ||
+      !folderAllowsRenameOrDelete({ kind: "folder", id: folderId })
+    ) {
+      return;
+    }
+    const blocked = folderDeleteBlocked({
+      childFolderCount: childFolderCount(folders, folderId),
+      workflowCount:
+        selection.kind === "folder" && selection.id === folderId
+          ? records.length
+          : null,
+    });
+    if (blocked) {
+      return;
+    }
+    setFolderDeleteId(folderId);
+  }
+
   function closeMoveDialog() {
     setMoveDialog(null);
     setMoveTarget({ kind: "unfiled" });
@@ -1666,6 +1700,25 @@ function WorkflowHomeSession() {
     );
   }
 
+  const folderPendingDelete = folderDeleteId
+    ? (folders.find((folder) => folder.id === folderDeleteId) ?? null)
+    : null;
+  const folderPendingChildren = folderPendingDelete
+    ? childFolderCount(folders, folderPendingDelete.id)
+    : 0;
+  const folderPendingWorkflowCount =
+    folderPendingDelete &&
+    selection.kind === "folder" &&
+    selection.id === folderPendingDelete.id
+      ? records.length
+      : null;
+  const folderPendingBlocked = folderPendingDelete
+    ? folderDeleteBlocked({
+        childFolderCount: folderPendingChildren,
+        workflowCount: folderPendingWorkflowCount,
+      })
+    : true;
+
   function toggleFolderExpanded(folderId: string) {
     setExpandedIds((current) => {
       const next = current.includes(folderId)
@@ -1779,7 +1832,7 @@ function WorkflowHomeSession() {
       return;
     }
     if (verb === "delete" && target.kind === "folder") {
-      void removeFolder(target.id);
+      askDeleteFolder(target.id);
       return;
     }
     if (verb === "expand" && target.kind === "folder") {
@@ -1987,6 +2040,39 @@ function WorkflowHomeSession() {
             </button>
           </div>
         </form>
+      ) : null}
+
+      <DestructiveUndoBar
+        ticket={folderUndo.ticket}
+        title="Folder will be deleted"
+        detail={
+          folders.find((folder) => folder.id === folderUndo.ticket?.id)?.name
+        }
+        onUndo={folderUndo.undo}
+        onCommit={folderUndo.commit}
+      />
+      {folderPendingDelete ? (
+        <ConfirmDestructive
+          open
+          title="Delete folder"
+          description={FOLDER_DELETE_DESCRIPTION}
+          reversibility="undoable"
+          confirmLabel={DELETE_FOLDER_LABEL}
+          pending={pending === "folder-delete"}
+          pendingLabel="Deleting…"
+          canConfirm={pending === null && !folderPendingBlocked}
+          impact={folderDeleteImpact({
+            name: folderPendingDelete.name,
+            childFolderCount: folderPendingChildren,
+            workflowCount: folderPendingWorkflowCount,
+          })}
+          onClose={() => setFolderDeleteId(null)}
+          onConfirm={() => {
+            const folderId = folderPendingDelete.id;
+            setFolderDeleteId(null);
+            folderUndo.arm(folderId);
+          }}
+        />
       ) : null}
 
       <section
@@ -2407,7 +2493,7 @@ function WorkflowHomeSession() {
             onMove={openMoveIntoFolder}
             onDelete={() => {
               if (selection.kind === "folder") {
-                void removeFolder(selection.id);
+                askDeleteFolder(selection.id);
               }
             }}
           />

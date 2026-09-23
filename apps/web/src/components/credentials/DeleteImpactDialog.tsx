@@ -1,7 +1,8 @@
 "use client";
 
-import { Dialog } from "@/components/a11y/Dialog";
+import { ConfirmDestructive } from "@/components/a11y/ConfirmDestructive";
 import { Field } from "@/components/a11y/Field";
+import { credentialDeleteImpactItems } from "@/lib/confirm-destructive";
 import { deletionConfirmationState, formatRef } from "@/lib/credential";
 import type { CredentialDeletionImpact } from "@/lib/credential-types";
 import {
@@ -41,110 +42,76 @@ export function DeleteImpactDialog({
   const confirmation = deletionConfirmationState(impact, typedName);
 
   return (
-    <Dialog
+    <ConfirmDestructive
+      open
       onClose={onClose}
-      labelledBy="credential-delete-heading"
-      className="fixed inset-0 z-20 flex items-center justify-center bg-black/60 p-4"
-    >
-      <div className={`max-h-[90vh] w-full max-w-xl overflow-auto ${FF_VAULT_PANEL_CLASS}`}>
-        <h2 id="credential-delete-heading" className={`text-lg ${FF_VAULT_TITLE_CLASS}`}>
-          Confirm deletion
-        </h2>
-        <p className={`mt-1 text-sm ${FF_VAULT_MUTED_CLASS}`}>
+      title="Confirm deletion"
+      reversibility="irreversible"
+      confirmLabel="Delete credential"
+      pending={pending}
+      pendingLabel="Deleting…"
+      canConfirm={confirmation.canProceed}
+      onConfirm={onConfirm}
+      backdropClassName="fixed inset-0 z-20 flex items-center justify-center bg-black/60 p-4"
+      panelClassName={`max-h-[90vh] w-full max-w-xl overflow-auto ${FF_VAULT_PANEL_CLASS}`}
+      titleClassName={FF_VAULT_TITLE_CLASS}
+      mutedClassName={FF_VAULT_MUTED_CLASS}
+      confirmClassName={`${FF_VAULT_DANGER_CLASS} rounded-lg border px-3 py-2 text-sm font-medium disabled:opacity-60`}
+      cancelClassName={FF_VAULT_GHOST_CLASS}
+      description={
+        <>
           Deletion-impact is already on the detail page from{" "}
           <code className="font-mono text-xs">GET .../deletion-impact</code>.
           Delete sends{" "}
           <code className="font-mono text-xs">{`{confirm:true}`}</code>. Active
           executions block delete. Secret values are never shown.
-        </p>
-
-        {!impact ? (
-          <button
-            type="button"
-            onClick={onLoadImpact}
-            disabled={pending}
-            className={`mt-4 ${FF_VAULT_GHOST_CLASS}`}
-          >
-            {pending ? "Loading impact…" : "Load deletion impact"}
-          </button>
-        ) : (
-          <div className="mt-4 space-y-4 text-sm">
-            <ImpactList
-              title="Affected drafts"
-              empty="No drafts reference this credential."
-              items={impact.drafts.map(formatRef)}
-            />
-            <ImpactList
-              title="Affected published versions"
-              empty="No published versions reference this credential."
-              items={impact.versions.map(formatRef)}
-            />
-            <ImpactList
-              title="Active executions"
-              empty="No active executions."
-              items={impact.activeExecutions.map(formatRef)}
-            />
-
-            <Field
-              id="credential-delete-confirm"
-              label={`Type ${impact.displayName} to confirm`}
-              error={confirmation.blockingReason || undefined}
-              errorClassName={FF_VAULT_DANGER_CLASS}
-              className="block"
-            >
-              <input
-                value={typedName}
-                onChange={(event) => onTypedName(event.target.value)}
-                autoComplete="off"
-                className={`mt-1 ${FF_VAULT_CONTROL_CLASS}`}
-              />
-            </Field>
-          </div>
-        )}
-
-        <div className="mt-5 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={pending || !confirmation.canProceed}
-            className={`${FF_VAULT_DANGER_CLASS} rounded-lg border px-3 py-2 text-sm font-medium disabled:opacity-60`}
-          >
-            {pending ? "Deleting…" : "Delete credential"}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className={FF_VAULT_GHOST_CLASS}
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </Dialog>
-  );
-}
-
-function ImpactList({
-  title,
-  empty,
-  items,
-}: {
-  title: string;
-  empty: string;
-  items: string[];
-}) {
-  return (
-    <section>
-      <h3 className="font-medium">{title}</h3>
-      {items.length === 0 ? (
-        <p className={`mt-1 ${FF_VAULT_MUTED_CLASS}`}>{empty}</p>
+        </>
+      }
+      impact={
+        impact
+          ? credentialDeleteImpactItems({
+              credentialId: impact.credentialId,
+              displayName: impact.displayName,
+              canDelete: impact.canDelete,
+              blockReason: impact.blockReason,
+              drafts: impact.drafts.map(formatRef),
+              versions: impact.versions.map(formatRef),
+              activeExecutions: impact.activeExecutions.map(formatRef),
+            })
+          : [
+              {
+                id: "unloaded",
+                label: "Deletion impact",
+                detail: "Not loaded yet. Load it before deleting.",
+              },
+            ]
+      }
+    >
+      {!impact ? (
+        <button
+          type="button"
+          onClick={onLoadImpact}
+          disabled={pending}
+          className={`mt-4 ${FF_VAULT_GHOST_CLASS}`}
+        >
+          {pending ? "Loading impact…" : "Load deletion impact"}
+        </button>
       ) : (
-        <ul className="mt-1 list-disc pl-5">
-          {items.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
+        <Field
+          id="credential-delete-confirm"
+          label={`Type ${impact.displayName} to confirm`}
+          error={confirmation.blockingReason || undefined}
+          errorClassName={FF_VAULT_DANGER_CLASS}
+          className="mt-4 block"
+        >
+          <input
+            value={typedName}
+            onChange={(event) => onTypedName(event.target.value)}
+            autoComplete="off"
+            className={`mt-1 ${FF_VAULT_CONTROL_CLASS}`}
+          />
+        </Field>
       )}
-    </section>
+    </ConfirmDestructive>
   );
 }

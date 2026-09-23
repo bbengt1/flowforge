@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState, useSyncExternalStore } from "react";
+import { ConfirmDestructive } from "@/components/a11y/ConfirmDestructive";
 import { ExecutionApprovalState } from "@/components/approvals/ExecutionApprovalState";
 import { ConfigPinList } from "@/components/config/ConfigPinList";
 import { ExecutionArtifacts } from "@/components/executions/ExecutionArtifacts";
@@ -91,6 +92,7 @@ import {
   scriptIndeterminateCopy,
   scriptRetryBlockedMessage,
 } from "@/lib/script-io-contract";
+import { emergencyStopImpact } from "@/lib/confirm-destructive";
 import { emergencyStopExecution } from "@/lib/script-ops-client";
 import {
   SCRIPT_EMERGENCY_STOP_CONFIRM_HELP,
@@ -179,7 +181,7 @@ export function ExecutionDetail({
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
   const [stopPending, setStopPending] = useState<string | null>(null);
   const [stopMessage, setStopMessage] = useState<string | null>(null);
-  const [stopConfirm, setStopConfirm] = useState<string | null>(null);
+  const [stopTarget, setStopTarget] = useState<string | null>(null);
   const [stoppedUncertain, setStoppedUncertain] = useState(false);
   const [downloadPending, setDownloadPending] = useState<string | null>(null);
   const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
@@ -272,13 +274,7 @@ export function ExecutionDetail({
     if (!canEmergencyStop || stopPending) {
       return;
     }
-    const confirmKey = stepId ?? "execution";
-    if (stopConfirm !== confirmKey) {
-      setStopConfirm(confirmKey);
-      setStopMessage(null);
-      return;
-    }
-    setStopPending(confirmKey);
+    setStopPending(stepId ?? "execution");
     reportProblem(null);
     setStopMessage(null);
     const status = stepId
@@ -291,7 +287,6 @@ export function ExecutionDetail({
     });
     noteRequestId(result.requestId);
     setStopPending(null);
-    setStopConfirm(null);
     if (!result.ok) {
       reportProblem(result.problem);
       if (result.forbidden) {
@@ -415,6 +410,12 @@ export function ExecutionDetail({
     }
     setDownloadMessage(result.message);
   }
+
+  const stopStepId =
+    stopTarget && stopTarget !== "execution" ? stopTarget : undefined;
+  const stopStatus = stopStepId
+    ? view?.steps.find((step) => step.id === stopStepId)?.status
+    : view?.header.status;
 
   return (
     <div data-ff-inbox={FF_INBOX_VALUE} className={`${FF_INBOX_ROOT_CLASS} space-y-6`}>
@@ -607,15 +608,11 @@ export function ExecutionDetail({
               {canEmergencyStop ? (
                 <button
                   type="button"
-                  onClick={() => void onEmergencyStop()}
+                  onClick={() => setStopTarget("execution")}
                   disabled={Boolean(stopPending) || pending || cancelPending}
                   className={`rounded-lg px-3 py-1.5 text-sm ${FF_LOUD_DANGER_CLASS}`}
                 >
-                  {stopPending === "execution"
-                    ? "Stopping…"
-                    : stopConfirm === "execution"
-                      ? "Confirm emergency stop"
-                      : "Emergency stop"}
+                  {stopPending === "execution" ? "Stopping…" : "Emergency stop"}
                 </button>
               ) : executionHasScriptRun(view.steps) &&
                 permissions != null &&
@@ -988,15 +985,11 @@ export function ExecutionDetail({
                     }) ? (
                       <button
                         type="button"
-                        onClick={() => void onEmergencyStop(step.id)}
+                        onClick={() => setStopTarget(step.id)}
                         disabled={Boolean(stopPending) || pending || cancelPending}
                         className={`mt-3 ml-2 rounded-lg px-3 py-1.5 text-sm ${FF_LOUD_DANGER_CLASS}`}
                       >
-                        {stopPending === step.id
-                          ? "Stopping…"
-                          : stopConfirm === step.id
-                            ? "Confirm emergency stop"
-                            : "Emergency stop step"}
+                        {stopPending === step.id ? "Stopping…" : "Emergency stop step"}
                       </button>
                     ) : null}
                     {isSshRunType(step.nodeType)
@@ -1176,6 +1169,30 @@ export function ExecutionDetail({
           </section>
         </>
       ) : null}
+      <ConfirmDestructive
+        open={stopTarget != null}
+        title={
+          stopStepId
+            ? "Emergency stop this step?"
+            : "Emergency stop this execution?"
+        }
+        description={SCRIPT_EMERGENCY_STOP_CONFIRM_HELP}
+        reversibility="irreversible"
+        confirmLabel="Emergency stop"
+        pending={Boolean(stopPending)}
+        pendingLabel="Stopping…"
+        impact={emergencyStopImpact({
+          executionId,
+          stepId: stopStepId,
+          status: stopStatus,
+        })}
+        onClose={() => setStopTarget(null)}
+        onConfirm={() => {
+          const stepId = stopStepId;
+          setStopTarget(null);
+          void onEmergencyStop(stepId);
+        }}
+      />
     </div>
   );
 }

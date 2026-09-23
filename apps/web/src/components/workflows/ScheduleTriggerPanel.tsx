@@ -2,6 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import {
+  ConfirmDestructive,
+  DestructiveUndoBar,
+  useDestructiveUndo,
+} from "@/components/a11y/ConfirmDestructive";
 import { Field, FieldError } from "@/components/a11y/Field";
 import { CollectionLoadMore } from "@/components/CollectionLoadMore";
 import { ProblemBanner } from "@/components/ProblemBanner";
@@ -62,6 +67,10 @@ import {
 import { fetchWorkflowCatalog, listWorkflowVersions } from "@/lib/workflow-client";
 import type { WorkflowCatalog, WorkflowVersion } from "@/lib/workflow-types";
 import { notifyEditorActivationChanged } from "@/lib/editor-activation";
+import {
+  SCHEDULE_DELETE_DESCRIPTION,
+  scheduleDeleteImpact,
+} from "@/lib/confirm-destructive";
 import { pushNotification } from "@/lib/workspace-notifications";
 
 type ScheduleTriggerPanelProps = {
@@ -96,6 +105,7 @@ export function ScheduleTriggerPanel({
   );
   const [editingId, setEditingId] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
   const [message, setMessage] = useState("");
   const [localErrors, setLocalErrors] = useState<string[]>([]);
@@ -307,6 +317,10 @@ export function ScheduleTriggerPanel({
     }
   }
 
+  const scheduleUndo = useDestructiveUndo((triggerId) => {
+    void onDelete(triggerId);
+  });
+
   async function onDispatch(scheduleId?: string) {
     setPending(scheduleId ? `dispatch:${scheduleId}` : "dispatch");
     setProblem(null);
@@ -342,6 +356,7 @@ export function ScheduleTriggerPanel({
     : !canManage
       ? SCHEDULE_FORBIDDEN_MESSAGE
       : scheduleTriggerAuthFailureMessage(problem);
+  const deleting = items.find((item) => item.id === deleteId) ?? null;
 
   return (
     <section
@@ -349,6 +364,15 @@ export function ScheduleTriggerPanel({
       aria-labelledby="schedule-triggers-heading"
       className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
     >
+      <DestructiveUndoBar
+        ticket={scheduleUndo.ticket}
+        title="Schedule will be deleted"
+        detail={
+          items.find((item) => item.id === scheduleUndo.ticket?.id)?.id
+        }
+        onUndo={scheduleUndo.undo}
+        onCommit={scheduleUndo.commit}
+      />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-sm font-medium tracking-wide text-teal-800 uppercase">
@@ -491,7 +515,7 @@ export function ScheduleTriggerPanel({
                           <button
                             type="button"
                             disabled={pending !== null}
-                            onClick={() => void onDelete(item.id)}
+                            onClick={() => setDeleteId(item.id)}
                             className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-sm text-rose-900 hover:bg-rose-50 disabled:opacity-60"
                           >
                             {pending === `delete:${item.id}`
@@ -793,6 +817,31 @@ export function ScheduleTriggerPanel({
       ) : (
         <p className="mt-4 text-sm text-zinc-600">{SCHEDULE_FORBIDDEN_MESSAGE}</p>
       )}
+      {deleting ? (
+        <ConfirmDestructive
+          open
+          title="Delete this schedule?"
+          description={SCHEDULE_DELETE_DESCRIPTION}
+          reversibility="undoable"
+          confirmLabel="Delete schedule"
+          pending={pending === `delete:${deleting.id}`}
+          pendingLabel="Deleting…"
+          canConfirm={pending === null}
+          impact={scheduleDeleteImpact({
+            id: deleting.id,
+            expression: scheduleExpressionLabel(deleting),
+            timezone: deleting.timezone,
+            status: deleting.status,
+            nextFireAt: deleting.nextFireAt,
+          })}
+          onClose={() => setDeleteId(null)}
+          onConfirm={() => {
+            const triggerId = deleting.id;
+            setDeleteId(null);
+            scheduleUndo.arm(triggerId);
+          }}
+        />
+      ) : null}
     </section>
   );
 }
