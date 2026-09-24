@@ -14,13 +14,13 @@ the deploy + configuration inventory. **Operator UI guide — E12.3.**
 
 Migrations are forward-only and recorded in `schema_migrations` (version, name, SHA-256 checksum). Re-running migrate is safe when those checksums match the files embedded in the binary. A drifted or missing applied file refuses boot (readiness stays 503; `cmd/migrate` exits 1). How to apply, verify, roll back, and recover: [schema migrations](operations/schema-migrations.md).
 
-Compose hardening (UID/GID **65532** except postgres and MinIO):
+Compose hardening (UID/GID **65532** except postgres):
 
 - **api** (`` / G.0.9): read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, `/tmp` tmpfs, CPU/memory/PID limits, and `HEALTHCHECK` on `GET /api/v1/health` (liveness; not PostgreSQL). Matches `deploy/k8s` probes for the health path.
 - **worker** (local/dev only): same image and least-privilege defaults as `api`, `command: ["/usr/local/bin/worker"]`. Disables the inherited image `HEALTHCHECK` (the worker does not listen on 8080). Not present in `deploy/k8s`. The image also contains `/usr/local/bin/runner`; compose does not start it.
 - **web** (``): the same least-privilege defaults via the `x-security` YAML anchor, plus tmpfs on `/tmp` and `/app/apps/web/.next/cache`, and `mem_limit` / `cpus` / `pids_limit` (same compose-native limits as `api`; do not also set `deploy.resources`, which conflicts with `pids_limit`). Compose builds `web` from the repository root so `pnpm-lock.yaml` is in the context.
 - **postgres**: `no-new-privileges` only. The official image starts as root then drops; `cap_drop: ALL` would break that.
-- **minio** (local/dev artifact store): `no-new-privileges` only, same reason as postgres. Volume `minio_data` keeps ciphertext across API restarts. Do not add this service to `deploy/k8s`. Production sets `ARTIFACT_S3_*` and opens allowlisted object-store egress.
+- **minio** (local/dev artifact store): built from the newest AGPL community tag in `deploy/local/minio` (no registry pull; Quay anonymous pull is 401 and AIStor denies S3 without a license). UID 65532, `cap_drop: ALL`, `no-new-privileges`. Volume `minio_data` keeps ciphertext across API restarts. Do not add this service to `deploy/k8s`. Production sets `ARTIFACT_S3_*` and opens allowlisted object-store egress.
 
 ## Deployment controls
 

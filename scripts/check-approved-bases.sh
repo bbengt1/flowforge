@@ -12,6 +12,7 @@ DOCKERFILES=(
   "$ROOT/apps/api/Dockerfile.script-runner"
   "$ROOT/apps/web/Dockerfile"
   "$ROOT/scripts/backup/Dockerfile"
+  "$ROOT/deploy/local/minio/Dockerfile"
 )
 
 if [[ ! -f "$ALLOW" ]]; then
