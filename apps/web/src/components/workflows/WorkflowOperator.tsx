@@ -43,6 +43,15 @@ import {
   editorCommandAppliesToRoute,
   editorWorkspaceSessionKey,
 } from "@/lib/editor-chrome";
+import {
+  WORKFLOW_NAME_NOT_READY,
+  WORKFLOW_NAME_YAML_FAILED,
+  editorWorkflowRenameAllowed,
+  workflowNameCommitDecision,
+  workflowNameSaveError,
+  writeYamlWorkflowName,
+  type WorkflowNameRenameResult,
+} from "@/lib/editor-workflow-name";
 import { editorHasPublishedVersion } from "@/lib/editor-working-memory";
 import { EDITOR_ACTIVATION_HASH } from "@/lib/editor-activation";
 import { canOfferEditorTestRun, testRunVersionHints } from "@/lib/editor-test-run";
@@ -406,6 +415,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   const skipDebounce = useRef(false);
   const yamlRef = useRef(yaml);
   yamlRef.current = yaml;
+  const saveInFlight = useRef(false);
   const historyRef = useRef(history);
   historyRef.current = history;
   const createdCredentialReturn = useRef<
@@ -1279,45 +1289,92 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     setProblem(latest.problem);
   }
 
-  async function saveDraft() {
-    if (!workflow || revision === null) {
-      return;
+  async function saveDraft(sourceYaml?: string): Promise<
+    { ok: true } | { ok: false; detail: string }
+  > {
+    if (saveInFlight.current) {
+      return { ok: false, detail: "" };
     }
+    if (!workflow || revision === null) {
+      return { ok: false, detail: WORKFLOW_NAME_NOT_READY };
+    }
+    saveInFlight.current = true;
     setDoherty(dohertyBegin("save"));
     setPending("save");
     setProblem(null);
     setConflictDraft(null);
     setConflictProblem(null);
+    const source = sourceYaml ?? yamlRef.current;
     const yamlToSave = writeCanvasLayoutYaml(
-      yaml,
-      layoutForYaml(yaml, historyRef.current.present.layout),
+      source,
+      layoutForYaml(source, historyRef.current.present.layout),
     );
-    const result = await saveCanonicalWorkflowDraft(
-      identity,
-      workflow.id,
-      yamlToSave,
-      revision,
-    );
-    setLastRequestId(result.requestId);
-    setPending(null);
-    setDoherty(dohertyFinish("save", result.ok));
-    if (!result.ok) {
-      if (result.conflict) {
-        await handleConflict(workflow.id, result.problem);
-        return;
+    let succeeded = false;
+    try {
+      const result = await saveCanonicalWorkflowDraft(
+        identity,
+        workflow.id,
+        yamlToSave,
+        revision,
+      );
+      setLastRequestId(result.requestId);
+      if (!result.ok) {
+        if (result.conflict) {
+          await handleConflict(workflow.id, result.problem);
+          return { ok: false, detail: result.problem.detail };
+        }
+        setStatus("invalid");
+        setErrors(result.errors);
+        if (result.errors.length > 0) {
+          clearGraph();
+        }
+        setProblem(result.problem);
+        return { ok: false, detail: result.problem.detail };
       }
-      setStatus("invalid");
-      setErrors(result.errors);
-      if (result.errors.length > 0) {
-        clearGraph();
+      if (result.workflow) {
+        setWorkflow(result.workflow);
       }
-      setProblem(result.problem);
-      return;
+      applyEditor({ ...result.applied, revision: result.applied.revision });
+      succeeded = true;
+      return { ok: true };
+    } finally {
+      setPending(null);
+      setDoherty(dohertyFinish("save", succeeded));
+      saveInFlight.current = false;
     }
-    if (result.workflow) {
-      setWorkflow(result.workflow);
+  }
+
+  async function renameWorkflowName(
+    nextName: string,
+  ): Promise<WorkflowNameRenameResult> {
+    const decision = workflowNameCommitDecision(nextName, workflow?.name ?? "");
+    if (decision.action === "keep") {
+      return { ok: true };
     }
-    applyEditor({ ...result.applied, revision: result.applied.revision });
+    if (decision.action === "invalid") {
+      return { ok: false, error: decision.error };
+    }
+    if (
+      !editorWorkflowRenameAllowed({
+        canCall,
+        hasWorkflow: Boolean(workflow),
+        revision,
+        pending,
+        canSave,
+        permissions,
+      })
+    ) {
+      return { ok: false, error: WORKFLOW_NAME_NOT_READY };
+    }
+    const written = writeYamlWorkflowName(yamlRef.current, decision.name);
+    if (!written) {
+      return { ok: false, error: WORKFLOW_NAME_YAML_FAILED };
+    }
+    const saved = await saveDraft(written);
+    if (!saved.ok) {
+      return { ok: false, error: workflowNameSaveError(saved.detail) };
+    }
+    return { ok: true };
   }
 
   function reloadConflictDraft() {
@@ -2084,6 +2141,15 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           canRedo={canRedoCanvasHistory(history)}
           onUndo={undoGraph}
           onRedo={redoGraph}
+          canRename={editorWorkflowRenameAllowed({
+            canCall,
+            hasWorkflow: Boolean(workflow),
+            revision,
+            pending,
+            canSave,
+            permissions,
+          })}
+          onRenameWorkflow={renameWorkflowName}
         />
       }
       banners={
