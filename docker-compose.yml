@@ -271,9 +271,12 @@ services:
   # keeps artifact ciphertext when the API container is recreated.
   # Root user/password are local-only — do not copy to deploy/k8s.
   minio:
-    # Last community image published to Quay. Later source tags are not
-    # published as images (MinIO source-only distribution).
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    # Public anonymous pulls use quay.io/minio/aistor/minio.
+    # quay.io/minio/minio anonymous pull is disabled (401).
+    # Pin a plain RELEASE tag — not latest or edge-daily.
+    # mc ready local stays fail-closed: without a license this
+    # server reports not-ready and denies S3. Do not switch to live.
+    image: quay.io/minio/aistor/minio:RELEASE.2026-09-19T17-05-25Z
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-flowforge}
