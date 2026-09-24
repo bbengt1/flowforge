@@ -59,6 +59,40 @@ function source(relative: string): string {
   return readFileSync(join(here, "..", "..", relative), "utf8");
 }
 
+/**
+ * True when `css` has `property: value` with optional whitespace after
+ * the colon and a declaration boundary after the value.
+ * Token text is matched literally so parentheses stay parentheses.
+ */
+function cssDeclares(css: string, property: string, value: string): boolean {
+  const marker = `${property}:`;
+  let from = 0;
+  while (from < css.length) {
+    const at = css.indexOf(marker, from);
+    if (at < 0) {
+      return false;
+    }
+    const rest = css.slice(at + marker.length).trimStart();
+    if (rest.startsWith(value)) {
+      const boundary = rest.charAt(value.length);
+      if (
+        boundary === "" ||
+        boundary === ";" ||
+        boundary === "}" ||
+        boundary === " " ||
+        boundary === "\t" ||
+        boundary === "\n" ||
+        boundary === "\r" ||
+        boundary === "\f"
+      ) {
+        return true;
+      }
+    }
+    from = at + marker.length;
+  }
+  return false;
+}
+
 describe("V.1 Token foundation", () => {
   it("keeps #357 open and cites epic #353 plus the signed north star", () => {
     assert.equal(V1_STORY, 357);
@@ -130,7 +164,7 @@ describe("V.1 Token foundation", () => {
     assert.equal(SHADCN_TOKEN_MAP.card, "var(--ff-surface)");
     assert.equal(SHADCN_TOKEN_MAP.radius, "var(--ff-radius)");
     for (const [alias, value] of Object.entries(SHADCN_TOKEN_MAP)) {
-      assert.match(tokens, new RegExp(`--${alias}:\\s*${value.replace(/[()]/g, "\\$&")}`));
+      assert.equal(cssDeclares(tokens, `--${alias}`, value), true, alias);
     }
     assert.equal(VISUAL_TOKENS.shadcnFriendlyMapping, true);
     assert.equal(VISUAL_TOKENS.notDefaultShadcnZincOrange, true);
@@ -145,10 +179,11 @@ describe("V.1 Token foundation", () => {
       assert.equal(secondThemeTreePresent(text), false, relative);
     }
     const tokens = source(V1_TOKEN_FILE);
+    const tokensLower = tokens.toLowerCase();
     const globals = source("src/app/globals.css");
     const embed = source("src/components/embed/EmbedChrome.tsx");
     for (const orange of N8N_ORANGE_TOKENS) {
-      assert.doesNotMatch(tokens, new RegExp(orange.replace(/[()]/g, "\\$&"), "i"));
+      assert.equal(tokensLower.includes(orange.toLowerCase()), false, orange);
     }
     for (const tree of FORBIDDEN_THEME_TREES) {
       assert.equal(tokens.includes(tree), false, tree);
