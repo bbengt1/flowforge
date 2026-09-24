@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import { useEmbedMode } from "@/components/embed/EmbedMode";
 import {
   EDITOR_WORKFLOWS_HREF,
@@ -34,12 +35,19 @@ import type { DevIdentity } from "@/lib/identity-headers";
 import type { WorkflowRecord } from "@/lib/workflow-types";
 import {
   FF_EDITOR_CONTROL_CLASS,
+  FF_EDITOR_DANGER_CLASS,
   FF_EDITOR_DIVIDER_CLASS,
   FF_EDITOR_GHOST_CLASS,
   FF_EDITOR_MUTED_CLASS,
   FF_EDITOR_PRIMARY_CLASS,
   FF_EDITOR_TOPBAR_CLASS,
 } from "@/lib/editor-visual";
+import {
+  WORKFLOW_NAME_NOT_READY,
+  WORKFLOW_NAME_SAVE_FAILED,
+  workflowNameCommitDecision,
+  type WorkflowNameRenameResult,
+} from "@/lib/editor-workflow-name";
 
 type EditorTopBarProps = {
   workflow: WorkflowRecord | null;
@@ -75,6 +83,8 @@ type EditorTopBarProps = {
   canRedo?: boolean;
   onUndo?: () => void;
   onRedo?: () => void;
+  canRename?: boolean;
+  onRenameWorkflow?: (name: string) => Promise<WorkflowNameRenameResult>;
 };
 
 const SATELLITE_CONTROL = `${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-sm`;
@@ -116,6 +126,8 @@ export function EditorTopBar({
   canRedo = false,
   onUndo,
   onRedo,
+  canRename = false,
+  onRenameWorkflow,
 }: EditorTopBarProps) {
   const embed = useEmbedMode();
   const backHref = embed ? embedDeepLink(EDITOR_WORKFLOWS_HREF) : EDITOR_WORKFLOWS_HREF;
@@ -145,7 +157,14 @@ export function EditorTopBar({
           {editorTopBarControlLabel("back")}
         </Link>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-base font-semibold tracking-tight">{context.heading}</h1>
+          <EditorWorkflowName
+            key={workflow?.id ?? "none"}
+            heading={context.heading}
+            seed={workflow?.name ?? ""}
+            canRename={canRename && context.loaded && Boolean(workflow)}
+            pending={pending}
+            onRenameWorkflow={onRenameWorkflow}
+          />
           {context.slug ? (
             <p className={`truncate font-mono text-xs ${FF_EDITOR_MUTED_CLASS}`}>{context.slug}</p>
           ) : (
@@ -347,5 +366,167 @@ export function EditorTopBar({
         </div>
       </div>
     </header>
+  );
+}
+
+function EditorWorkflowName({
+  heading,
+  seed,
+  canRename,
+  pending,
+  onRenameWorkflow,
+}: {
+  heading: string;
+  seed: string;
+  canRename: boolean;
+  pending: string | null;
+  onRenameWorkflow?: (name: string) => Promise<WorkflowNameRenameResult>;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const ignoreBlur = useRef(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState(seed);
+  const [error, setError] = useState<string | null>(null);
+  const busy = pending !== null;
+
+  useEffect(() => {
+    if (!renaming) {
+      return;
+    }
+    const el = inputRef.current;
+    if (!el) {
+      return;
+    }
+    el.focus();
+    el.select();
+  }, [renaming]);
+
+  function finishRename(nextError: string | null) {
+    ignoreBlur.current = true;
+    setRenaming(false);
+    setDraft(seed);
+    setError(nextError);
+  }
+
+  function startRename() {
+    if (!canRename || busy) {
+      return;
+    }
+    ignoreBlur.current = false;
+    setDraft(seed);
+    setError(null);
+    setRenaming(true);
+  }
+
+  async function commitRename(fromBlur: boolean) {
+    if (!renaming || ignoreBlur.current) {
+      return;
+    }
+    const decision = workflowNameCommitDecision(draft, seed);
+    if (decision.action === "keep") {
+      finishRename(null);
+      return;
+    }
+    if (decision.action === "invalid") {
+      if (fromBlur) {
+        finishRename(decision.error);
+        return;
+      }
+      setError(decision.error);
+      return;
+    }
+    if (!onRenameWorkflow) {
+      finishRename(WORKFLOW_NAME_NOT_READY);
+      return;
+    }
+    ignoreBlur.current = true;
+    setError(null);
+    let result: WorkflowNameRenameResult;
+    try {
+      result = await onRenameWorkflow(decision.name);
+    } catch {
+      result = { ok: false, error: WORKFLOW_NAME_SAVE_FAILED };
+    }
+    if (!result.ok) {
+      ignoreBlur.current = false;
+      setRenaming(true);
+      setDraft(decision.name);
+      setError(result.error);
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+      });
+      return;
+    }
+    finishRename(null);
+  }
+
+  return (
+    <>
+      {renaming ? (
+        <h1 className="min-w-0">
+          <input
+            ref={inputRef}
+            data-editor-workflow-name="rename"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                event.stopPropagation();
+                void commitRename(false);
+                return;
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                if (busy) {
+                  return;
+                }
+                finishRename(null);
+              }
+            }}
+            onBlur={() => {
+              if (busy) {
+                return;
+              }
+              void commitRename(true);
+            }}
+            disabled={busy}
+            aria-label="Workflow name"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? "editor-workflow-name-error" : undefined}
+            autoComplete="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            className={`w-full min-w-0 text-base font-semibold tracking-tight ${FF_EDITOR_CONTROL_CLASS}`}
+          />
+        </h1>
+      ) : canRename ? (
+        <h1 className="truncate text-base font-semibold tracking-tight">
+          <button
+            type="button"
+            data-editor-workflow-name="heading"
+            title="Rename workflow"
+            onClick={startRename}
+            className="block w-full truncate border-0 bg-transparent p-0 text-start text-base font-semibold tracking-tight text-inherit"
+          >
+            <span className="sr-only">Rename workflow: </span>
+            {heading}
+          </button>
+        </h1>
+      ) : (
+        <h1 className="truncate text-base font-semibold tracking-tight">{heading}</h1>
+      )}
+      {error ? (
+        <p
+          id="editor-workflow-name-error"
+          role="alert"
+          data-editor-workflow-name="error"
+          className={`text-xs ${FF_EDITOR_DANGER_CLASS}`}
+        >
+          {error}
+        </p>
+      ) : null}
+    </>
   );
 }

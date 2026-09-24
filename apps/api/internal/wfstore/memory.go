@@ -81,10 +81,7 @@ func (m *Memory) Create(_ context.Context, scope isolation.Scope, in CreateInput
 	if name == "" {
 		name = in.Summary.Name
 	}
-	slug := strings.TrimSpace(in.Slug)
-	if slug == "" {
-		slug = in.Summary.Name
-	}
+	slug := workflowSlug(in.Slug, in.Summary.Name)
 	wf := Workflow{
 		ID:            newID(),
 		Slug:          slug,

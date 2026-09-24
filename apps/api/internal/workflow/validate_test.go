@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -447,6 +448,53 @@ spec:
 		_, errs := Parse([]byte(src))
 		assertHasCode(t, errs, CodeInvalidEntrypoint)
 	})
+}
+
+func TestMetadataNameDisplayTitle(t *testing.T) {
+	const base = `
+apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: NAME
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: done
+      type: flow.stop
+      name: Stop
+  edges: []
+`
+	for _, name := range []string{"Deploy API", "O'Reilly (prod) #2", "restart-api-rollout"} {
+		src := strings.Replace(base, "name: NAME", "name: "+strconv.Quote(name), 1)
+		res, errs := ParseAndNormalize([]byte(src))
+		if len(errs) > 0 {
+			t.Fatalf("%q: %+v", name, errs)
+		}
+		if res.Summary.Name != name {
+			t.Fatalf("summary name = %q", res.Summary.Name)
+		}
+		again, againErrs := ParseAndNormalize([]byte(res.NormalizedYAML))
+		if len(againErrs) > 0 {
+			t.Fatalf("%q round trip: %+v\n%s", name, againErrs, res.NormalizedYAML)
+		}
+		if again.Summary.Name != name || again.Digest != res.Digest {
+			t.Fatalf("%q did not round-trip: %q\n%s", name, again.Summary.Name, res.NormalizedYAML)
+		}
+	}
+
+	rejects := []string{
+		`name: ""`,
+		`name: "   "`,
+		`name: "bad\nname"`,
+		"name: " + strconv.Quote(strings.Repeat("a", 201)),
+	}
+	for _, line := range rejects {
+		src := strings.Replace(base, "name: NAME", line, 1)
+		_, errs := Parse([]byte(src))
+		assertHasCode(t, errs, CodeInvalidName)
+	}
 }
 
 func nodeYAML(typ string) string {
