@@ -60,32 +60,63 @@ func RequestCookieSecure(sec Security, r *http.Request) bool {
 	return sec.RequireTLS || sec.ProductionLocked
 }
 
-// WriteCookie adds one Set-Cookie header.
+// WriteCookie adds one HttpOnly Set-Cookie header.
+//
+// Session and OIDC state cookies use this writer. The CSRF cookie uses
+// writeReadableCookie so it stays readable for double-submit. The two
+// writers do not share a Set-Cookie call.
 //
 // When secure is set, the cookie is passed to http.SetCookie with Secure
-// set to true. Non-production cleartext HTTP omits Secure and does not
-// call http.SetCookie. The serializer is Cookie.String, which SetCookie
-// uses, so the wire format matches. Local Login can still store the
-// cookie over HTTP. Embed (CHIPS) callers pass secure=true.
+// and HttpOnly set to true. Non-production cleartext HTTP omits Secure and
+// does not call http.SetCookie. The serializer is Cookie.String, which
+// SetCookie uses, so the wire format matches. Local Login can still store
+// the cookie over HTTP. Embed (CHIPS) callers pass secure=true.
 func WriteCookie(w http.ResponseWriter, c http.Cookie, secure bool) {
 	if secure {
 		secured := c
 		secured.Secure = true
+		secured.HttpOnly = true
 		http.SetCookie(w, &secured)
 		return
 	}
-	plain := http.Cookie{
+	emitCleartextCookie(w, http.Cookie{
 		Name:        c.Name,
 		Value:       c.Value,
 		Path:        c.Path,
 		Domain:      c.Domain,
 		Expires:     c.Expires,
 		MaxAge:      c.MaxAge,
-		HttpOnly:    c.HttpOnly,
+		HttpOnly:    true,
 		SameSite:    c.SameSite,
 		Partitioned: c.Partitioned,
+	})
+}
+
+// writeReadableCookie adds one Set-Cookie header that JavaScript can read.
+// ff_csrf is the only caller. HttpOnly stays false.
+func writeReadableCookie(w http.ResponseWriter, c http.Cookie, secure bool) {
+	if secure {
+		readable := c
+		readable.Secure = true
+		readable.HttpOnly = false
+		http.SetCookie(w, &readable)
+		return
 	}
-	if v := plain.String(); v != "" {
+	emitCleartextCookie(w, http.Cookie{
+		Name:        c.Name,
+		Value:       c.Value,
+		Path:        c.Path,
+		Domain:      c.Domain,
+		Expires:     c.Expires,
+		MaxAge:      c.MaxAge,
+		HttpOnly:    false,
+		SameSite:    c.SameSite,
+		Partitioned: c.Partitioned,
+	})
+}
+
+func emitCleartextCookie(w http.ResponseWriter, c http.Cookie) {
+	if v := c.String(); v != "" {
 		w.Header().Add("Set-Cookie", v)
 	}
 }
@@ -102,7 +133,7 @@ func writeSessionCookiePair(w http.ResponseWriter, token, csrf string, maxAge in
 		Partitioned: sessionFlags.Partitioned,
 		MaxAge:      maxAge,
 	}, sessionFlags.Secure)
-	WriteCookie(w, http.Cookie{
+	writeReadableCookie(w, http.Cookie{
 		Name:        session.CSRFCookieName,
 		Value:       csrf,
 		Path:        session.CookiePath,
