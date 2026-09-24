@@ -6,19 +6,20 @@
  * normalize + draft PUT. That PUT already refreshes `record.Name` from
  * Summary.Name. Slug stays put. No name PATCH and no new embed route.
  *
- * Empty and invalid names fail closed. Escape keeps the prior name.
- * Drafts never run.
+ * The title matches workflow create: trimmed, 1–200 characters and
+ * 1–200 bytes. Control characters fail closed. DNS shape is not required.
+ * Escape keeps the prior name. Drafts never run.
  */
 
 import { canCreateWorkflows } from "./workspace-nav.ts";
 
-/** Same rule as jonny's metadata.name: DNS label, 63 characters max. */
-export const WORKFLOW_DNS_NAME =
-  /^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$/;
+/** workflows.name is char_length 1–200; create also rejects len > 200 bytes. */
+export const WORKFLOW_NAME_MAX_CHARS = 200;
+export const WORKFLOW_NAME_MAX_BYTES = 200;
 
 export const WORKFLOW_NAME_EMPTY = "Enter a workflow name.";
 export const WORKFLOW_NAME_INVALID =
-  "Workflow name must be a DNS label: lowercase letters, numbers, and hyphens, starting with a letter (63 characters max).";
+  "Workflow name must be 1–200 characters and cannot include control characters.";
 export const WORKFLOW_NAME_YAML_FAILED =
   "Could not update the workflow name in YAML. The previous name is unchanged.";
 export const WORKFLOW_NAME_NOT_READY =
@@ -36,6 +37,7 @@ export const EDITOR_WORKFLOW_NAME = {
   enterCommits: true,
   escapeKeepsPriorName: true,
   emptyAndInvalidFailClosed: true,
+  displayNameNotDnsGated: true,
   sameChromeOnEmbed: true,
   noNewEmbedRoutes: true,
   vaultDisplayNameUuidOnly: true,
@@ -58,30 +60,40 @@ export type WorkflowNameRenameResult =
   | { ok: true }
   | { ok: false; error: string };
 
-export function isWorkflowDnsName(name: string): boolean {
-  return WORKFLOW_DNS_NAME.test(name);
-}
-
 /**
  * Enter and blur share one fail-closed decision. Unchanged text keeps
- * the prior name, including a display name that is not itself a DNS
- * label, so opening the field and leaving it does not rewrite YAML.
+ * the prior name. Empty and unsafe titles are not written.
  */
 export function workflowNameCommitDecision(
   draft: string,
   currentName: string,
 ): WorkflowNameDecision {
   const trimmed = draft.trim();
-  if (!trimmed) {
-    return { action: "invalid", error: WORKFLOW_NAME_EMPTY };
+  const error = workflowNameRuleError(trimmed);
+  if (error) {
+    return { action: "invalid", error };
   }
   if (trimmed === currentName.trim()) {
     return { action: "keep" };
   }
-  if (!isWorkflowDnsName(trimmed)) {
-    return { action: "invalid", error: WORKFLOW_NAME_INVALID };
-  }
   return { action: "commit", name: trimmed };
+}
+
+export function workflowNameRuleError(name: string): string | null {
+  if (!name.trim()) {
+    return WORKFLOW_NAME_EMPTY;
+  }
+  if (name !== name.trim()) {
+    return WORKFLOW_NAME_INVALID;
+  }
+  if (
+    workflowNameChars(name) > WORKFLOW_NAME_MAX_CHARS ||
+    utf8ByteLength(name) > WORKFLOW_NAME_MAX_BYTES ||
+    hasControlCharacter(name)
+  ) {
+    return WORKFLOW_NAME_INVALID;
+  }
+  return null;
 }
 
 export function workflowNameSaveError(
@@ -115,15 +127,16 @@ export function editorWorkflowRenameAllowed(input: {
 /**
  * Replace the workflow `metadata.name` scalar. Does not touch node
  * names, slug, or any other field. Returns null when the name is not
- * a DNS label or the metadata block cannot be updated safely.
+ * a display title or the metadata block cannot be updated safely.
  */
 export function writeYamlWorkflowName(
   yaml: string,
   name: string,
 ): string | null {
-  if (!isWorkflowDnsName(name)) {
+  if (workflowNameRuleError(name)) {
     return null;
   }
+  const scalar = yamlWorkflowNameScalar(name);
   const lines = yaml.split("\n");
   let metadataAt = -1;
   let specAt = -1;
@@ -148,7 +161,7 @@ export function writeYamlWorkflowName(
   }
   if (metadataAt < 0) {
     const insertAt = specAt >= 0 ? specAt : lines.length;
-    lines.splice(insertAt, 0, "metadata:", `  name: ${name}`);
+    lines.splice(insertAt, 0, "metadata:", `  name: ${scalar}`);
     return lines.join("\n");
   }
 
@@ -184,11 +197,11 @@ export function writeYamlWorkflowName(
   }
   if (nameAt >= 0) {
     const indent = " ".repeat(leadingSpaces(lines[nameAt] ?? ""));
-    lines[nameAt] = `${indent}name: ${name}`;
+    lines[nameAt] = `${indent}name: ${scalar}`;
     return lines.join("\n");
   }
   const pad = " ".repeat(childIndent > 0 ? childIndent : 2);
-  lines.splice(metadataAt + 1, 0, `${pad}name: ${name}`);
+  lines.splice(metadataAt + 1, 0, `${pad}name: ${scalar}`);
   return lines.join("\n");
 }
 
@@ -224,6 +237,34 @@ export function editorRenameUsesDraftSave(source: string): boolean {
     !fn.includes("PATCH") &&
     source.includes("saveCanonicalWorkflowDraft")
   );
+}
+
+function workflowNameChars(name: string): number {
+  return [...name].length;
+}
+
+function utf8ByteLength(name: string): number {
+  return new TextEncoder().encode(name).length;
+}
+
+function hasControlCharacter(name: string): boolean {
+  for (const char of name) {
+    const code = char.codePointAt(0) ?? 0;
+    if (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+const PLAIN_WORKFLOW_NAME = /^[A-Za-z][A-Za-z0-9_.+-]*$/;
+const YAML_RESERVED_NAME = /^(true|false|null|yes|no|on|off)$/i;
+
+function yamlWorkflowNameScalar(name: string): string {
+  if (PLAIN_WORKFLOW_NAME.test(name) && !YAML_RESERVED_NAME.test(name)) {
+    return name;
+  }
+  return JSON.stringify(name);
 }
 
 function metadataNameLine(trimmed: string): "name" | "unsafe" | "other" {

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
@@ -42,6 +44,21 @@ var forbiddenWithByType = map[string][]string{
 	"script.go":                {"env", "environment", "secrets", "credentials", "privateKey", "token", "password", "kubeconfig", "command", "shell"},
 }
 
+// validWorkflowDisplayName matches workflow create (1–200 bytes and
+// characters on workflows.name). Control characters are rejected so the
+// title stays one YAML scalar. DNS shape is not required.
+func validWorkflowDisplayName(s string) bool {
+	if s == "" || s != strings.TrimSpace(s) || len(s) > 200 || utf8.RuneCountInString(s) > 200 {
+		return false
+	}
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
+}
+
 func validate(doc *Document) ErrorList {
 	var errs ErrorList
 	if doc.APIVersion != APIVersionV1 {
@@ -50,8 +67,8 @@ func validate(doc *Document) ErrorList {
 	if doc.Kind != KindWorkflow {
 		errs = append(errs, fieldError("kind", doc.pos.root.Line, doc.pos.root.Column, CodeInvalidKind, "Unsupported kind. Expected Workflow."))
 	}
-	if !validDNSLabel(doc.Metadata.Name) {
-		errs = append(errs, fieldError("metadata.name", doc.pos.name.Line, doc.pos.metadata.Line, CodeInvalidName, "metadata.name must be a DNS label (lowercase letters, numbers, hyphens; start with a letter)."))
+	if !validWorkflowDisplayName(doc.Metadata.Name) {
+		errs = append(errs, fieldError("metadata.name", doc.pos.name.Line, doc.pos.metadata.Line, CodeInvalidName, "metadata.name must be 1-200 characters with no surrounding space and no control characters."))
 	}
 	for k := range doc.Metadata.Labels {
 		if !validLabelKey(k) {

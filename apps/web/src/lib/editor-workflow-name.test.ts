@@ -8,11 +8,11 @@ import {
   EDITOR_WORKFLOW_NAME,
   WORKFLOW_NAME_EMPTY,
   WORKFLOW_NAME_INVALID,
+  WORKFLOW_NAME_MAX_CHARS,
   WORKFLOW_NAME_SAVE_FAILED,
   editorHeadingRenamesInline,
   editorRenameUsesDraftSave,
   editorWorkflowRenameAllowed,
-  isWorkflowDnsName,
   workflowNameCommitDecision,
   workflowNameSaveError,
   writeYamlWorkflowName,
@@ -37,6 +37,7 @@ describe("editor workflow name", () => {
     assert.equal(EDITOR_WORKFLOW_NAME.enterCommits, true);
     assert.equal(EDITOR_WORKFLOW_NAME.escapeKeepsPriorName, true);
     assert.equal(EDITOR_WORKFLOW_NAME.emptyAndInvalidFailClosed, true);
+    assert.equal(EDITOR_WORKFLOW_NAME.displayNameNotDnsGated, true);
     assert.equal(EDITOR_WORKFLOW_NAME.sameChromeOnEmbed, true);
     assert.equal(EDITOR_WORKFLOW_NAME.noNewEmbedRoutes, true);
     assert.equal(EDITOR_WORKFLOW_NAME.jonnyNotRequired, true);
@@ -44,45 +45,50 @@ describe("editor workflow name", () => {
     assert.equal(EDITOR_WORKFLOW_NAME.noSecretsInBrowser, true);
   });
 
-  it("accepts DNS labels and rejects empty or display-name text", () => {
-    assert.equal(isWorkflowDnsName("a"), true);
-    assert.equal(isWorkflowDnsName("blank-draft"), true);
-    const max = `a${"b".repeat(61)}c`;
-    assert.equal(max.length, 63);
-    assert.equal(isWorkflowDnsName(max), true);
-    assert.equal(isWorkflowDnsName(`${max}d`), false);
-    assert.equal(isWorkflowDnsName(""), false);
-    assert.equal(isWorkflowDnsName("Blank draft"), false);
-    assert.equal(isWorkflowDnsName("blank draft"), false);
-    assert.equal(isWorkflowDnsName("-blank"), false);
-    assert.equal(isWorkflowDnsName("blank-"), false);
-    assert.equal(isWorkflowDnsName("9blank"), false);
-    assert.equal(isWorkflowDnsName("blank_draft"), false);
-  });
-
-  it("fail-closes empty and invalid commits and keeps an unchanged name", () => {
+  it("matches create display names and rejects empty, oversized, and control text", () => {
+    assert.equal(WORKFLOW_NAME_MAX_CHARS, 200);
     assert.deepEqual(workflowNameCommitDecision("  ", "Blank draft"), {
       action: "invalid",
       error: WORKFLOW_NAME_EMPTY,
     });
-    assert.deepEqual(workflowNameCommitDecision("My rollout", "blank-draft"), {
+    assert.deepEqual(workflowNameCommitDecision("\n\t", "Blank draft"), {
       action: "invalid",
-      error: WORKFLOW_NAME_INVALID,
+      error: WORKFLOW_NAME_EMPTY,
+    });
+    assert.deepEqual(workflowNameCommitDecision("My rollout", "blank-draft"), {
+      action: "commit",
+      name: "My rollout",
+    });
+    assert.deepEqual(workflowNameCommitDecision("  Deploy: API (prod) #2  ", "blank-draft"), {
+      action: "commit",
+      name: "Deploy: API (prod) #2",
+    });
+    assert.deepEqual(workflowNameCommitDecision("O'Reilly", "blank-draft"), {
+      action: "commit",
+      name: "O'Reilly",
     });
     assert.deepEqual(workflowNameCommitDecision("  Blank draft  ", "Blank draft"), {
       action: "keep",
     });
-    assert.deepEqual(workflowNameCommitDecision("  renamed-flow  ", "Blank draft"), {
+    assert.deepEqual(workflowNameCommitDecision("bad\nname", "Blank draft"), {
+      action: "invalid",
+      error: WORKFLOW_NAME_INVALID,
+    });
+    assert.deepEqual(workflowNameCommitDecision("a".repeat(201), "Blank draft"), {
+      action: "invalid",
+      error: WORKFLOW_NAME_INVALID,
+    });
+    assert.deepEqual(workflowNameCommitDecision("a".repeat(200), "Blank draft"), {
       action: "commit",
-      name: "renamed-flow",
+      name: "a".repeat(200),
     });
   });
 
   it("hides secret-shaped save details", () => {
     assert.equal(workflowNameSaveError(""), WORKFLOW_NAME_SAVE_FAILED);
     assert.equal(
-      workflowNameSaveError("metadata.name must be a DNS label"),
-      "metadata.name must be a DNS label",
+      workflowNameSaveError("metadata.name must be 1-200 characters"),
+      "metadata.name must be 1-200 characters",
     );
     assert.equal(
       workflowNameSaveError("refused token=abc"),
@@ -172,7 +178,12 @@ spec:
     assert.ok(inserted);
     assert.equal(readYamlWorkflowMeta(inserted).name, "added-name");
     assert.match(inserted, /description: kept/);
-    assert.equal(writeYamlWorkflowName(missing, "Not a label"), null);
+    const titled = writeYamlWorkflowName(missing, "Not a label");
+    assert.ok(titled);
+    assert.equal(readYamlWorkflowMeta(titled).name, "Not a label");
+    assert.match(titled, /name: "Not a label"/);
+    assert.equal(writeYamlWorkflowName(missing, " "), null);
+    assert.equal(writeYamlWorkflowName(missing, "bad\nname"), null);
     const folded = `metadata:\n  name: |\n    folded\nspec:\n  description: x\n`;
     assert.equal(writeYamlWorkflowName(folded, "safe-name"), null);
     const inline = `metadata: { name: old }\nspec:\n  description: x\n`;
