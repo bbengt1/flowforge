@@ -17,7 +17,8 @@
 #              Opt out: docker compose up --scale worker=0  or  LOCAL_WORKER=0
 #   postgres — local PostgreSQL. Password comes from .env only.
 #              Backup encryption + restore rehearsal: scripts/backup/.
-#   minio    — local S3-compatible artifact store (G.1.5). Volume
+#   minio    — local S3-compatible artifact store (G.1.5). Built from
+#              the newest AGPL community tag (deploy/local/minio). Volume
 #              minio_data keeps ciphertext across API restarts.
 #              Local-only root credentials. Do not copy them to deploy/k8s.
 #
@@ -266,14 +267,17 @@ services:
       - api
     restart: unless-stopped
 
-  # Local/dev S3 (G.1.5). Not merged into x-security: the image
-  # starts as root. no-new-privileges matches postgres. Data volume
+  # Local/dev S3 (G.1.5). Built from source, UID 65532. Data volume
   # keeps artifact ciphertext when the API container is recreated.
   # Root user/password are local-only — do not copy to deploy/k8s.
   minio:
-    # Last community image published to Quay. Later source tags are not
-    # published as images (MinIO source-only distribution).
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    <<: *security
+    # quay.io/minio/minio anonymous pull is 401. AIStor is licensed
+    # and denies S3 without a license. Local/CI builds AGPL
+    # RELEASE.2025-10-15T17-29-55Z from source. Not for deploy/k8s.
+    build: ./deploy/local/minio
+    pull_policy: build
+    user: "65532:65532"
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-flowforge}
@@ -283,14 +287,15 @@ services:
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio_data:/data
+    # No mc in the source image. wget exits non-zero unless
+    # /minio/health/ready is 200 (fail-closed while the server
+    # cannot serve).
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9000/minio/health/ready"]
       interval: 5s
       timeout: 5s
       retries: 12
       start_period: 5s
-    security_opt:
-      - no-new-privileges:true
     restart: unless-stopped
 
 volumes:
