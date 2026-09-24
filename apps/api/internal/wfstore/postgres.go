@@ -44,10 +44,7 @@ func (p *Postgres) Create(ctx context.Context, scope isolation.Scope, in CreateI
 	if name == "" {
 		name = in.Summary.Name
 	}
-	slug := strings.TrimSpace(in.Slug)
-	if slug == "" {
-		slug = in.Summary.Name
-	}
+	slug := workflowSlug(in.Slug, in.Summary.Name)
 	parsed, err := json.Marshal(in.Summary)
 	if err != nil {
 		return Workflow{}, Draft{}, ErrInvalid

@@ -379,6 +379,37 @@ func getWorkflowVersion(s *core.Server, w http.ResponseWriter, r *http.Request) 
 	core.WriteJSON(w, http.StatusOK, ver)
 }
 
+// workflowExportFilename builds a Content-Disposition filename from a display
+// title. Quotes, semicolons, slashes, and backslashes cannot break out of
+// filename="..." or suggest a path.
+func workflowExportFilename(name string, version int) string {
+	base := sanitizeExportBase(name)
+	if base == "" {
+		base = "workflow"
+	}
+	return base + ".v" + strconv.Itoa(version) + ".yaml"
+}
+
+func sanitizeExportBase(name string) string {
+	var b strings.Builder
+	for _, r := range strings.TrimSpace(name) {
+		switch r {
+		case '"', ';', '/', '\\':
+			b.WriteByte('-')
+		default:
+			if r < 32 || r == 127 {
+				continue
+			}
+			b.WriteRune(r)
+		}
+	}
+	out := strings.TrimSpace(b.String())
+	if strings.Trim(out, "-. ") == "" {
+		return ""
+	}
+	return out
+}
+
 func exportWorkflowVersion(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	if RejectReservedWorkflowPath(s, w, r) {
 		return
@@ -392,10 +423,7 @@ func exportWorkflowVersion(s *core.Server, w http.ResponseWriter, r *http.Reques
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
-	filename := ver.Summary.Name + ".v" + strconv.Itoa(ver.VersionNumber) + ".yaml"
-	if strings.TrimSpace(ver.Summary.Name) == "" {
-		filename = "workflow.v" + strconv.Itoa(ver.VersionNumber) + ".yaml"
-	}
+	filename := workflowExportFilename(ver.Summary.Name, ver.VersionNumber)
 	payload := ExportResponse{
 		WorkflowID:     ver.WorkflowID,
 		VersionID:      ver.ID,
