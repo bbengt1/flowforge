@@ -205,4 +205,10 @@ func assertRawFirstPartySetCookie(t *testing.T, rec *httptest.ResponseRecorder, 
 	if sessionCookie.Secure != secure || csrfCookie.Secure != secure {
 		t.Fatalf("Secure session=%v csrf=%v want %v", sessionCookie.Secure, csrfCookie.Secure, secure)
 	}
+	if !sessionCookie.HttpOnly {
+		t.Fatal("ff_session must stay HttpOnly")
+	}
+	if csrfCookie.HttpOnly {
+		t.Fatal("ff_csrf must stay readable")
+	}
 }
