@@ -199,4 +199,22 @@ spec:
     assert.match(topBar, /data-editor-workflow-name="error"/);
     assert.match(topBar, /WORKFLOW_NAME_EMPTY|workflowNameCommitDecision/);
   });
+
+  it("keeps the name column readable when secondary controls collapse", () => {
+    const topBar = source("src/components/workflows/EditorTopBar.tsx");
+    assert.match(topBar, /min-w-\[12rem\] grow basis-\[12rem\]/);
+    assert.match(topBar, /max-\[1680px\]:basis-full/);
+    assert.match(topBar, /max-\[1680px\]:sr-only/);
+    assert.match(topBar, /w-full min-w-\[12rem\]/);
+    assert.match(topBar, /title=\{heading\}/);
+    assert.match(topBar, /title=\{context\.slug\}/);
+    assert.doesNotMatch(topBar, /aria-haspopup="menu"/);
+    assert.doesNotMatch(topBar, /data-editor-topbar="overflow"/);
+    assert.doesNotMatch(topBar, /<details/);
+    const viewer = topBar.slice(topBar.lastIndexOf(") : ("));
+    assert.match(viewer, /title=\{heading\}/);
+    assert.match(viewer, /\{heading\}/);
+    assert.doesNotMatch(viewer, /<button/);
+    assert.doesNotMatch(viewer, /data-editor-workflow-name="heading"/);
+  });
 });
