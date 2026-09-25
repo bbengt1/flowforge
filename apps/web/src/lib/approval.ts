@@ -940,6 +940,20 @@ export function shouldBlockRun(options: {
   return false;
 }
 
+/** On a terminal run, a still-pending or closed approval reads as closed. */
+export function approvalStatusLabelForRun(
+  status: ApprovalStatus,
+  runStatus: string | undefined,
+): string {
+  if (
+    isTerminalRunStatus(runStatus) &&
+    (status === "pending" || status === "canceled")
+  ) {
+    return "Closed";
+  }
+  return approvalStatusLabel(status);
+}
+
 export function approvalStatusLabel(status: ApprovalStatus): string {
   switch (status) {
     case "pending":
