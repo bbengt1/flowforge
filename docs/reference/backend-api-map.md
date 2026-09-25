@@ -1191,7 +1191,7 @@ Kinds emitted by the API (safe fixtures in tests):
 
 Out of scope: SIEM integrations, provider engines, `apps/web` rewrite.
 
-RBAC: viewer can list/get/compare/export; editor can create/save/restore; publisher can publish; operator can start a pinned execution (not edit). `workflow.status` is `draft` until the first publish, then `published`. Slug defaults to `metadata.name` and stays stable; display `name` tracks the draft summary on save.
+RBAC: viewer can list/get/compare/export; editor can create/save/restore; publisher can publish; operator can start a pinned execution (not edit). `workflow.status` is `draft` until the first publish, then `published`. An omitted slug is slugified from the display name at create and stays stable on rename; display `name` tracks the draft summary on save.
 
 Every request receives `X-Request-ID`. A caller-supplied value is accepted only when it is 16–128 ASCII letters, digits, or hyphens; otherwise the API generates one. The same identifier is present on the response header, in `application/problem+json` as `request_id`, and in structured request logs so an API flow can be traced end to end.
 

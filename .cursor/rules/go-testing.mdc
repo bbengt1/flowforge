@@ -1,8 +1,6 @@
 ---
 description: Tests required for changed Flowforge API behavior
-globs:
-  - apps/api/**
-  - apps/api/**/*.go
+globs: "apps/api/**"
 alwaysApply: false
 ---
 

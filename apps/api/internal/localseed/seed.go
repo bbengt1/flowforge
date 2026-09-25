@@ -329,19 +329,32 @@ func ensureWorkspace(ctx context.Context, store identity.Store, tenant identity.
 	return identity.Workspace{}, false, err
 }
 
+// ensureAdminMember grants workspace admin through Store.SetMemberRoles,
+// the same membership write the API uses. A creator binding inserted
+// inside CreateWorkspace is not treated as enough: the seed always
+// rewrites the role through that path, then reads it back. A missing
+// grant fails the seed. The call is idempotent.
 func ensureAdminMember(ctx context.Context, store identity.Store, workspaceID string, user identity.User) (bool, error) {
 	roles, perms, err := store.EffectiveAccess(ctx, workspaceID, user.ID)
 	if err != nil && !errors.Is(err, identity.ErrNotFound) {
 		return false, err
 	}
-	if authz.Allows(perms, authz.PermWorkspaceAdminister) {
-		return false, nil
+	already := err == nil && authz.Allows(perms, authz.PermWorkspaceAdminister)
+	next := append([]string{}, roles...)
+	if !already {
+		next = append(next, authz.RoleAdmin)
 	}
-	next := append(append([]string{}, roles...), authz.RoleAdmin)
 	if err := store.SetMemberRoles(ctx, workspaceID, user.ID, next); err != nil {
 		return false, err
 	}
-	return true, nil
+	_, perms, err = store.EffectiveAccess(ctx, workspaceID, user.ID)
+	if err != nil {
+		return false, err
+	}
+	if !authz.Allows(perms, authz.PermWorkspaceAdminister) {
+		return false, fmt.Errorf("local seed: workspace admin membership was not stored for %s", user.ExternalSubject)
+	}
+	return !already, nil
 }
 
 func seedCredentials(ctx context.Context, in Input, tenant identity.Tenant, ws identity.Workspace, actor identity.User, res *Result) error {

@@ -67,6 +67,21 @@ func TestApplyPostgresIdempotent(t *testing.T) {
 	if second.CredentialCount != 3 {
 		t.Fatalf("credentials = %d", second.CredentialCount)
 	}
+	assertWorkspaceAdmin(t, ctx, store, first.Users[0].ID, first.Workspace.ID)
+
+	bootUser, err := ProvisionAdmin(ctx, store, BootstrapIssuer, BootstrapSubject, BootstrapDisplay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertWorkspaceAdmin(t, ctx, store, first.Users[0].ID, first.Workspace.ID)
+	assertWorkspaceAdmin(t, ctx, store, bootUser.ID, first.Workspace.ID)
+	memberships, err := store.ListWorkspacesForUser(ctx, first.Users[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(memberships) != 1 {
+		t.Fatalf("admin-1 memberships = %d, want 1", len(memberships))
+	}
 
 	scope, err := isolation.AuthorizeTenancy(second.Workspace.ID, second.Users[0].ID, second.Tenant.ID, second.Workspace.WorkbenchKey)
 	if err != nil {
@@ -87,4 +102,25 @@ func TestApplyPostgresIdempotent(t *testing.T) {
 	if !st.Complete || !st.Skipped || st.PublicBaseURL == "" {
 		t.Fatalf("postgres localseed must mark bootstrap skip: %+v", st)
 	}
+}
+
+func assertWorkspaceAdmin(t *testing.T, ctx context.Context, store identity.Store, userID, workspaceID string) {
+	t.Helper()
+	roles, perms, err := store.EffectiveAccess(ctx, workspaceID, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !authz.Allows(perms, authz.PermWorkspaceAdminister) {
+		t.Fatalf("user %s is not workspace admin, roles=%v", userID, roles)
+	}
+	memberships, err := store.ListWorkspacesForUser(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range memberships {
+		if m.Workspace.ID == workspaceID && authz.Allows(m.Permissions, authz.PermWorkspaceAdminister) {
+			return
+		}
+	}
+	t.Fatalf("user %s has no workspace admin membership: %+v", userID, memberships)
 }

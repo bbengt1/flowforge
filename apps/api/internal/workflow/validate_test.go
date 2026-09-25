@@ -497,6 +497,48 @@ spec:
 	}
 }
 
+func TestDisplayNameRejectsFormatAndSeparatorRunes(t *testing.T) {
+	const base = `
+apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: NAME
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: done
+      type: flow.stop
+      name: Stop
+  edges: []
+`
+	cases := []struct {
+		name string
+		r    rune
+	}{
+		{name: "zero-width space", r: '\u200B'},
+		{name: "right-to-left override", r: '\u202E'},
+		{name: "line separator", r: '\u2028'},
+		{name: "paragraph separator", r: '\u2029'},
+		{name: "byte order mark", r: '\uFEFF'},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			title := "Deploy" + string(tc.r) + "API"
+			if ValidDisplayName(title) {
+				t.Fatalf("ValidDisplayName(%q) = true", title)
+			}
+			src := strings.Replace(base, "name: NAME", "name: "+strconv.Quote(title), 1)
+			_, errs := Parse([]byte(src))
+			assertHasCode(t, errs, CodeInvalidName)
+			if len(errs) != 1 || errs[0].Path != "metadata.name" || errs[0].Message == "" {
+				t.Fatalf("errors = %+v", errs)
+			}
+		})
+	}
+}
+
 func nodeYAML(typ string) string {
 	return `
 apiVersion: flowforge/v1

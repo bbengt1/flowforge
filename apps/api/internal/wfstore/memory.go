@@ -894,7 +894,7 @@ func validateCreate(in CreateInput) error {
 		return ErrInvalid
 	}
 	name := strings.TrimSpace(in.Name)
-	if name != "" && (len(name) < 1 || len(name) > 200) {
+	if name != "" && !workflow.ValidDisplayName(name) {
 		return ErrInvalid
 	}
 	return nil
@@ -910,7 +910,7 @@ func validateNormalized(yamlDoc, digest string, summary workflow.Summary) error 
 	if workflow.Digest(yamlDoc) != digest {
 		return ErrInvalid
 	}
-	if strings.TrimSpace(summary.Name) == "" {
+	if !workflow.ValidDisplayName(summary.Name) {
 		return ErrInvalid
 	}
 	return nil

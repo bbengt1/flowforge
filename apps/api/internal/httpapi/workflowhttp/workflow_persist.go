@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
@@ -185,6 +186,10 @@ func CreateWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	res, errs := workflow.ParseAndNormalize([]byte(req.DefinitionYAML))
 	if len(errs) > 0 {
 		writeWorkflowErrors(w, r, errs)
+		return
+	}
+	if name := strings.TrimSpace(req.Name); name != "" && !workflow.ValidDisplayName(name) {
+		writeWorkflowErrors(w, r, workflow.ErrorList{workflow.InvalidDisplayName("name")})
 		return
 	}
 	folderID := ""
@@ -379,35 +384,79 @@ func getWorkflowVersion(s *core.Server, w http.ResponseWriter, r *http.Request) 
 	core.WriteJSON(w, http.StatusOK, ver)
 }
 
-// workflowExportFilename builds a Content-Disposition filename from a display
-// title. Quotes, semicolons, slashes, and backslashes cannot break out of
-// filename="..." or suggest a path.
-func workflowExportFilename(name string, version int) string {
-	base := sanitizeExportBase(name)
+// workflowExportFilename is the ASCII filename= fallback. Quotes,
+// backslashes, control characters, and path separators are stripped.
+// An empty result uses the workflow slug, then workflow.yaml.
+func workflowExportFilename(name, slug string, version int) string {
+	if base := exportNameBase(name, true); base != "" {
+		return base + ".v" + strconv.Itoa(version) + ".yaml"
+	}
+	if base := exportNameBase(slug, true); base != "" {
+		return base + ".v" + strconv.Itoa(version) + ".yaml"
+	}
+	return "workflow.yaml"
+}
+
+// preferredExportFilename keeps non-ASCII letters for filename* after
+// stripping quotes, backslashes, controls, and path separators.
+func preferredExportFilename(name string, version int) string {
+	base := exportNameBase(name, false)
 	if base == "" {
-		base = "workflow"
+		return ""
 	}
 	return base + ".v" + strconv.Itoa(version) + ".yaml"
 }
 
-func sanitizeExportBase(name string) string {
+func exportNameBase(name string, asciiOnly bool) string {
 	var b strings.Builder
 	for _, r := range strings.TrimSpace(name) {
-		switch r {
-		case '"', ';', '/', '\\':
-			b.WriteByte('-')
-		default:
-			if r < 32 || r == 127 {
-				continue
-			}
-			b.WriteRune(r)
+		if exportRuneStripped(r, asciiOnly) {
+			continue
 		}
+		b.WriteRune(r)
 	}
 	out := strings.TrimSpace(b.String())
 	if strings.Trim(out, "-. ") == "" {
 		return ""
 	}
 	return out
+}
+
+func exportRuneStripped(r rune, asciiOnly bool) bool {
+	if r < 0x20 || r == 0x7F || unicode.IsControl(r) {
+		return true
+	}
+	switch r {
+	case '"', '\\', '/', ';':
+		return true
+	}
+	return asciiOnly && r > 0x7E
+}
+
+// exportContentDisposition emits an ASCII filename fallback plus an
+// RFC 5987 filename* when the display name is not ASCII. Both parameters
+// come from mime.FormatMediaType.
+func exportContentDisposition(name, slug string, version int) string {
+	fallback := workflowExportFilename(name, slug, version)
+	header := mime.FormatMediaType("attachment", map[string]string{
+		"filename": fallback,
+	})
+	if header == "" {
+		header = mime.FormatMediaType("attachment", map[string]string{
+			"filename": "workflow.yaml",
+		})
+	}
+	preferred := preferredExportFilename(name, version)
+	if preferred == "" || preferred == fallback {
+		return header
+	}
+	encoded := mime.FormatMediaType("attachment", map[string]string{
+		"filename": preferred,
+	})
+	if i := strings.Index(encoded, "filename*="); i >= 0 {
+		return header + "; " + encoded[i:]
+	}
+	return header
 }
 
 func exportWorkflowVersion(s *core.Server, w http.ResponseWriter, r *http.Request) {
@@ -423,7 +472,15 @@ func exportWorkflowVersion(s *core.Server, w http.ResponseWriter, r *http.Reques
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
-	filename := workflowExportFilename(ver.Summary.Name, ver.VersionNumber)
+	slug := ""
+	if wf, gerr := s.Workflows.Get(r.Context(), scope, ver.WorkflowID); gerr == nil {
+		slug = wf.Slug
+	}
+	filename := preferredExportFilename(ver.Summary.Name, ver.VersionNumber)
+	if filename == "" {
+		filename = workflowExportFilename(ver.Summary.Name, slug, ver.VersionNumber)
+	}
+	disposition := exportContentDisposition(ver.Summary.Name, slug, ver.VersionNumber)
 	payload := ExportResponse{
 		WorkflowID:     ver.WorkflowID,
 		VersionID:      ver.ID,
@@ -434,13 +491,13 @@ func exportWorkflowVersion(s *core.Server, w http.ResponseWriter, r *http.Reques
 	}
 	if wantsYAML(r) {
 		w.Header().Set("Content-Type", "application/yaml")
-		w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+		w.Header().Set("Content-Disposition", disposition)
 		w.Header().Set("X-FlowForge-Digest", ver.Digest)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(ver.DefinitionYAML))
 		return
 	}
-	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.Header().Set("Content-Disposition", disposition)
 	core.WriteJSON(w, http.StatusOK, payload)
 }
 

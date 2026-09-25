@@ -246,13 +246,21 @@ self-asserted headers or let an embed session create tenants.
 | --- | --- |
 | Tenant slug / name | `local` / `Local demo` |
 | Workbench key / name | `default` / `Local workbench` |
-| Workspace admin | Each `PLATFORM_ADMINS` principal (compose default `https://idp.example\|admin-1`) |
+| Workspace admin | Each `PLATFORM_ADMINS` principal (compose default `https://idp.example\|admin-1`), granted through the same membership path other members use |
 | Public URL | `PUBLIC_BASE_URL` or `http://localhost:3000`; stored server-side; first-run wizard **skipped** |
 | Demo credentials | `Local demo token`, `Local demo webhook`, `Local demo provider` (tag `local-demo`) |
 
 Demo secret payloads are documented placeholders
 (`local-demo-token-not-a-secret` and siblings). They are **not**
 third-party credentials and must never be used outside local compose.
+
+The example-context principal (`https://idp.example`, subject
+`admin-1`) is one of those workspace admins. The seed writes that
+binding through the same membership grant other members use, and a
+second run does not add another binding. It does not insert the row
+as a superuser and it does not bypass row-level security. The one-time
+Login user (`admin`, issuer `local`) is a different workspace admin
+on the same workbench.
 
 The seed is idempotent. Restarting the API, or re-running against a
 volume that already has these rows, reuses the same tenant, workbench,

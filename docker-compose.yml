@@ -274,7 +274,8 @@ services:
     <<: *security
     # quay.io/minio/minio anonymous pull is 401. AIStor is licensed
     # and denies S3 without a license. Local/CI builds AGPL
-    # RELEASE.2025-10-15T17-29-55Z from source. Not for deploy/k8s.
+    # RELEASE.2025-10-15T17-29-55Z from source, pinned to commit
+    # 9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a. Not for deploy/k8s.
     build: ./deploy/local/minio
     pull_policy: build
     user: "65532:65532"

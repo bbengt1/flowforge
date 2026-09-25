@@ -44,15 +44,36 @@ var forbiddenWithByType = map[string][]string{
 	"script.go":                {"env", "environment", "secrets", "credentials", "privateKey", "token", "password", "kubeconfig", "command", "shell"},
 }
 
+// displayNameInvalidMessage is the client-facing metadata.name failure.
+// Format (Cf), line (Zl), and paragraph (Zp) separators are rejected
+// with control characters so the title stays one YAML scalar.
+const displayNameInvalidMessage = "metadata.name must be 1-200 characters with no surrounding space and no control, format, or line/paragraph separator characters."
+
+// ValidDisplayName reports whether s can be stored as a workflow display
+// name. DNS shape is not required. Create and save both use this check.
+func ValidDisplayName(s string) bool {
+	return validWorkflowDisplayName(s)
+}
+
+// InvalidDisplayName is the same invalid-name field error YAML validation
+// returns. path defaults to metadata.name.
+func InvalidDisplayName(path string) FieldError {
+	if strings.TrimSpace(path) == "" {
+		path = "metadata.name"
+	}
+	return fieldError(path, 0, 0, CodeInvalidName, displayNameInvalidMessage)
+}
+
 // validWorkflowDisplayName matches workflow create (1–200 bytes and
-// characters on workflows.name). Control characters are rejected so the
-// title stays one YAML scalar. DNS shape is not required.
+// characters on workflows.name). Control characters and Unicode format,
+// line, and paragraph separators are rejected so the title stays one
+// YAML scalar. DNS shape is not required.
 func validWorkflowDisplayName(s string) bool {
 	if s == "" || s != strings.TrimSpace(s) || len(s) > 200 || utf8.RuneCountInString(s) > 200 {
 		return false
 	}
 	for _, r := range s {
-		if unicode.IsControl(r) {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r) {
 			return false
 		}
 	}
@@ -68,7 +89,10 @@ func validate(doc *Document) ErrorList {
 		errs = append(errs, fieldError("kind", doc.pos.root.Line, doc.pos.root.Column, CodeInvalidKind, "Unsupported kind. Expected Workflow."))
 	}
 	if !validWorkflowDisplayName(doc.Metadata.Name) {
-		errs = append(errs, fieldError("metadata.name", doc.pos.name.Line, doc.pos.metadata.Line, CodeInvalidName, "metadata.name must be 1-200 characters with no surrounding space and no control characters."))
+		err := InvalidDisplayName("metadata.name")
+		err.Line = doc.pos.name.Line
+		err.Column = doc.pos.metadata.Line
+		errs = append(errs, err)
 	}
 	for k := range doc.Metadata.Labels {
 		if !validLabelKey(k) {

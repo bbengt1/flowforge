@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -206,6 +207,76 @@ func TestWorkflowRBACAndHostIdentity(t *testing.T) {
 	req = workspaceJSON(http.MethodPost, "/api/v1/workflows", []byte(`{"workspace_id":"11111111-1111-4111-8111-111111111111","definitionYaml":`+mustJSON(validWorkflowYAML)+`}`), admin, tenant, ws)
 	h.ServeHTTP(rec, req)
 	assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "caller-request-16")
+}
+
+func TestCreateAndSaveRejectSeparatorDisplayNames(t *testing.T) {
+	h, admin := seededWorkspace(t)
+	ws, tenant := currentWorkspace(t, h, admin)
+	const base = `
+apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: NAME
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: done
+      type: flow.stop
+      name: Stop
+  edges: []
+`
+	yamlFor := func(title string) string {
+		return strings.Replace(base, "name: NAME", "name: "+strconv.Quote(title), 1)
+	}
+	cases := []struct {
+		name  string
+		title string
+	}{
+		{name: "zero-width space", title: "Deploy\u200bAPI"},
+		{name: "right-to-left override", title: "Deploy\u202eAPI"},
+		{name: "line separator", title: "Deploy\u2028API"},
+		{name: "paragraph separator", title: "Deploy\u2029API"},
+		{name: "byte order mark", title: "\ufeffDeploy"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body, _ := json.Marshal(map[string]string{"definitionYaml": yamlFor(tc.title)})
+			rec := httptest.NewRecorder()
+			req := workspaceJSON(http.MethodPost, "/api/v1/workflows", body, admin, tenant, ws)
+			h.ServeHTTP(rec, req)
+			p := assertProblem(t, rec, http.StatusBadRequest, CodeInvalidWorkflow, "")
+			if len(p.Errors) != 1 || p.Errors[0].Code != "invalid-name" || p.Errors[0].Path != "metadata.name" {
+				t.Fatalf("yaml name errors = %+v", p.Errors)
+			}
+
+			body, _ = json.Marshal(map[string]string{
+				"definitionYaml": yamlFor("Deploy API"),
+				"name":           tc.title,
+			})
+			rec = httptest.NewRecorder()
+			req = workspaceJSON(http.MethodPost, "/api/v1/workflows", body, admin, tenant, ws)
+			h.ServeHTTP(rec, req)
+			p = assertProblem(t, rec, http.StatusBadRequest, CodeInvalidWorkflow, "")
+			if len(p.Errors) != 1 || p.Errors[0].Code != "invalid-name" || p.Errors[0].Path != "name" {
+				t.Fatalf("json name errors = %+v", p.Errors)
+			}
+		})
+	}
+
+	created := createWorkflow(t, h, admin, tenant, ws, yamlFor("Deploy API"))
+	body, _ := json.Marshal(map[string]any{
+		"revision":       created.Draft.Revision,
+		"definitionYaml": yamlFor("Rename\u2028Title"),
+	})
+	rec := httptest.NewRecorder()
+	req := workspaceJSON(http.MethodPut, "/api/v1/workflows/"+created.Workflow.ID+"/draft", body, admin, tenant, ws)
+	h.ServeHTTP(rec, req)
+	p := assertProblem(t, rec, http.StatusBadRequest, CodeInvalidWorkflow, "")
+	if len(p.Errors) != 1 || p.Errors[0].Code != "invalid-name" {
+		t.Fatalf("save errors = %+v", p.Errors)
+	}
 }
 
 func TestWorkflowMethodNotAllowedOnPersistRoutes(t *testing.T) {
