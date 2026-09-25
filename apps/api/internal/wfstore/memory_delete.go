@@ -93,7 +93,7 @@ func (m *Memory) stopExecutionLocked(scope isolation.Scope, now time.Time, execu
 	}
 	for i := range exec.steps {
 		switch exec.steps[i].Status {
-		case ExecutionQueued, ExecutionRunning, ExecutionWaiting:
+		case ExecutionPending, ExecutionQueued, ExecutionRunning, ExecutionWaiting:
 			exec.steps[i].Error = errBody
 			applyStepStatus(&exec.steps[i], ExecutionFailed, now)
 		}

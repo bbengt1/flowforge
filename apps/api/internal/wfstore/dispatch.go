@@ -288,7 +288,7 @@ func emergencyStopStepStatus(jobStatus string) string {
 
 func jobIsOpen(status string) bool {
 	switch status {
-	case JobQueued, JobClaimed, JobRunning, JobWaiting:
+	case JobQueued, JobClaimed, JobRunning, JobWaiting, JobBlocked:
 		return true
 	default:
 		return false
@@ -323,7 +323,7 @@ func rollupExecutionStatus(jobs []ExecutionJob) string {
 	if len(jobs) == 0 {
 		return ExecutionQueued
 	}
-	var sawIndet, sawFailed, sawCanceled, sawClaimed, sawQueued, sawWaiting, sawSuccess bool
+	var sawIndet, sawFailed, sawCanceled, sawClaimed, sawQueued, sawWaiting, sawSuccess, sawSkipped, sawBlocked bool
 	for _, job := range jobs {
 		switch job.Status {
 		case JobIndeterminate:
@@ -340,6 +340,10 @@ func rollupExecutionStatus(jobs []ExecutionJob) string {
 			sawQueued = true
 		case JobSucceeded:
 			sawSuccess = true
+		case JobSkipped:
+			sawSkipped = true
+		case JobBlocked:
+			sawBlocked = true
 		}
 	}
 	if sawIndet {
@@ -348,11 +352,13 @@ func rollupExecutionStatus(jobs []ExecutionJob) string {
 	if sawClaimed {
 		return ExecutionRunning
 	}
+	// A parked gate stays waiting while downstream jobs are still blocked.
 	if sawWaiting && !sawQueued {
 		return ExecutionWaiting
 	}
 	if sawQueued {
-		if sawSuccess || sawFailed || sawCanceled {
+		// Blocked downstream jobs do not promote a fresh start to running.
+		if sawSuccess || sawFailed || sawCanceled || sawSkipped {
 			return ExecutionRunning
 		}
 		return ExecutionQueued
@@ -363,7 +369,10 @@ func rollupExecutionStatus(jobs []ExecutionJob) string {
 	if sawCanceled {
 		return ExecutionCanceled
 	}
-	if sawSuccess {
+	if sawBlocked {
+		return ExecutionRunning
+	}
+	if sawSuccess || sawSkipped {
 		return ExecutionSucceeded
 	}
 	return ExecutionQueued
@@ -393,14 +402,21 @@ func applyStepStatus(step *ExecutionStep, status string, now time.Time) {
 		started := now
 		step.StartedAt = &started
 	}
-	if isTerminalExecution(status) && status != ExecutionPinned {
+	if stepIsFinished(status) {
 		finished := now
 		step.FinishedAt = &finished
 		return
 	}
-	if status == ExecutionQueued || status == ExecutionRunning || status == ExecutionWaiting {
+	if status == ExecutionQueued || status == ExecutionRunning || status == ExecutionWaiting || status == ExecutionPending {
 		step.FinishedAt = nil
 	}
+}
+
+func stepIsFinished(status string) bool {
+	if status == ExecutionSkipped {
+		return true
+	}
+	return isTerminalExecution(status) && status != ExecutionPinned
 }
 
 func buildBinding(scope isolation.Scope, exec Execution, step ExecutionStep, job ExecutionJob, expiresAt, leaseExpires time.Time) JobBinding {

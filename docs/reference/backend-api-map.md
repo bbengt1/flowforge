@@ -1068,7 +1068,13 @@ Suggested UI flow:
 6. Optional extra fetches: `GET /executions/{id}/steps`, `/jobs`, `/audit-events`, `/artifacts`. Workspace audit: `GET /audit-events?resourceType=execution&resourceId=`.
 7. Secret values are already `[redacted]` in JSON. Never persist `input` from the run form into `localStorage`.
 
-Statuses: `queued`, `pinned` (legacy stub), `running`, `waiting` (E10.3 durable `flow.approval`), `succeeded`, `failed`, `canceled`, `indeterminate`. New starts are `queued` with one step+job per published node (`attempt=1`). Workers claim jobs via `/jobs/*`; the UI cancels/retries via `/executions/{id}/cancel` and `/retry`. Do not claim jobs from the browser. Waiting jobs hold no lease — resume via `POST /approvals/{id}/decide`.
+Execution statuses: `queued`, `pinned` (legacy stub), `running`, `waiting` (durable `flow.approval` or `flow.delay`), `succeeded`, `failed`, `canceled`, `indeterminate`. A new run starts `queued`.
+
+Step statuses: `pending` (incoming edges have not all resolved), `queued`, `running`, `waiting`, `succeeded`, `failed`, `canceled`, `indeterminate`, `skipped`. `skipped` is finished and does not fail the run.
+
+Job statuses: `blocked` (the step is not eligible to run), `queued`, `claimed`, `running`, `waiting`, `succeeded`, `failed`, `canceled`, `indeterminate`, `skipped`.
+
+Only a node with no incoming edge starts `queued`. Every other step starts `pending` with its job `blocked`. An edge is satisfied only when the upstream step emits that port. The workflow schema wires ports at publish time and does not define a runtime join mode (`flow.join` is registry-disabled). An edge out of `flow.approval` is required: if it resolves unsatisfied, the downstream step is `skipped` even when its other inputs succeeded. For every other edge, once all incoming edges have resolved, the step is queued if at least one was satisfied and `skipped` if none were. A skip resolves that step's outgoing edges as unsatisfied. Workers claim a job only when its status is `queued`, it is not `blocked`, and the step's unresolved incoming count is 0. Cancel and retry use `/executions/{id}/cancel` and `/retry`. Do not claim jobs from the browser. Waiting jobs hold no lease. An approval resumes via `POST /approvals/{id}/decide`. A delay resumes when its timer is due.
 
 Retention: executions `retentionUntil` default 90 days; audit events 365 days. Monthly partitions apply to `audit_events` only.
 

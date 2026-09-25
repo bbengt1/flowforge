@@ -158,7 +158,7 @@ func stopExecutionWorkflowDeletedTx(ctx context.Context, tx pgx.Tx, scope isolat
 		UPDATE execution_jobs
 		SET status = 'failed', updated_at = $2
 		WHERE execution_id = $1::uuid
-		  AND status IN ('queued', 'claimed', 'running', 'waiting')
+		  AND status IN ('blocked', 'queued', 'claimed', 'running', 'waiting')
 	`, executionID, now); err != nil {
 		return mapDBErr(err)
 	}
@@ -169,7 +169,7 @@ func stopExecutionWorkflowDeletedTx(ctx context.Context, tx pgx.Tx, scope isolat
 		    finished_at = COALESCE(finished_at, $3),
 		    updated_at = $3
 		WHERE execution_id = $1::uuid
-		  AND status IN ('queued', 'running', 'waiting')
+		  AND status IN ('pending', 'queued', 'running', 'waiting')
 	`, executionID, errRaw, now); err != nil {
 		return mapDBErr(err)
 	}

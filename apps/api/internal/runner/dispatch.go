@@ -93,6 +93,8 @@ func (d *Dispatcher) Execute(ctx context.Context, scope isolation.Scope, perms [
 
 func decideCore(step wfstore.ExecutionStep) Decision {
 	if step.NodeType == "flow.delay" {
+		// The claim loop parks flow.delay before Execute. A direct call
+		// still fails closed so a delay is never an in-process sleep.
 		return fail(CodeUnsupported, "Production runner does not schedule durable flow.delay waits.")
 	}
 	res, errs := workflow.Evaluate(step.NodeType, step.Input, map[string]any{})

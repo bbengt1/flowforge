@@ -29,6 +29,7 @@ type memExecution struct {
 	fingerprint string
 	steps       []ExecutionStep
 	jobs        []ExecutionJob
+	edges       []execEdge
 }
 
 type memAudit struct {
@@ -450,15 +451,20 @@ func (m *Memory) StartExecution(ctx context.Context, scope isolation.Scope, work
 		UpdatedAt:         now,
 		RetentionUntil:    now.Add(DefaultExecutionRetention),
 	}
-	steps, jobs := materializePlan(exec.ID, planNodes(ver.DefinitionYAML, ver.Summary), now)
+	nodes, edges, err := planGraph(ver.DefinitionYAML, ver.Summary)
+	if err != nil {
+		return Execution{}, err
+	}
+	steps, jobs := materializePlan(exec.ID, nodes, edges, now)
 	stampJobs(ctx, jobs)
-	observability.NoteJobEnqueued(ctx, len(jobs))
+	observability.NoteJobEnqueued(ctx, countQueuedJobs(jobs))
 	m.executions[exec.ID] = memExecution{
 		workspaceID: scope.WorkspaceID(),
 		record:      exec,
 		fingerprint: prepared.fingerprint,
 		steps:       steps,
 		jobs:        jobs,
+		edges:       edges,
 	}
 	m.audits = append(m.audits, memAudit{
 		workspaceID: scope.WorkspaceID(),

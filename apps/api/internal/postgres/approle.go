@@ -60,6 +60,12 @@ BEGIN
     IF to_regclass('public.ops_pins') IS NOT NULL THEN
         REVOKE UPDATE, DELETE ON ops_pins FROM flowforge_app;
     END IF;
+    -- Global execution backfill is migration-only. GRANT EXECUTE ON ALL
+    -- FUNCTIONS above would otherwise hand it to the request role.
+    IF to_regprocedure('app.backfill_execution_dependencies()') IS NOT NULL THEN
+        REVOKE ALL ON FUNCTION app.backfill_execution_dependencies() FROM PUBLIC;
+        REVOKE ALL ON FUNCTION app.backfill_execution_dependencies() FROM flowforge_app;
+    END IF;
 END
 $$;
 `

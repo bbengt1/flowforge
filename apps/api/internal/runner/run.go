@@ -192,6 +192,21 @@ func (r *Runner) claimOne(ctx context.Context, ws Workspace) (bool, error) {
 		r.log.Info("production runner parked job", "job_id", job.Job.ID, "node_type", job.Step.NodeType)
 		return true, nil
 	}
+	if job.Step.NodeType == "flow.delay" {
+		until, decision := delayDeadline(job.Step, r.now())
+		if decision.Fail {
+			if err := r.queue.Fail(ctx, ws, *job, decision.Error); err != nil {
+				return true, err
+			}
+			r.log.Info("production runner failed job", "job_id", job.Job.ID, "node_type", job.Step.NodeType, "code", decision.Error["code"])
+			return true, nil
+		}
+		if err := r.queue.Park(ctx, ws, *job, until); err != nil {
+			return true, err
+		}
+		r.log.Info("production runner parked job", "job_id", job.Job.ID, "node_type", job.Step.NodeType)
+		return true, nil
+	}
 	if err := wfstore.AuthorizeJobBinding(job.Binding, ws.ID, job.Execution.WorkflowVersionID, job.Execution.WorkflowDigest, r.now()); err != nil {
 		decision := classifyBinding(job.Binding, err)
 		r.log.Warn("production runner rejected binding", "job_id", job.Job.ID, "node_type", job.Step.NodeType, "code", decision.Error["code"])
@@ -246,6 +261,24 @@ func approvalDeadline(step wfstore.ExecutionStep, now time.Time) (time.Time, Dec
 		return time.Time{}, fail(CodeUnsupported, "Production runner cannot park an approval without an expiry.")
 	}
 	return now.Add(time.Duration(secs) * time.Second), Decision{}
+}
+
+func delayDeadline(step wfstore.ExecutionStep, now time.Time) (time.Time, Decision) {
+	if step.NodeType != "flow.delay" {
+		return time.Time{}, Decision{}
+	}
+	res, errs := workflow.Evaluate(step.NodeType, step.Input, map[string]any{})
+	if len(errs) > 0 {
+		code := errs[0].Code
+		if code == "" {
+			code = "eval-failed"
+		}
+		return time.Time{}, fail(code, errs[0].Message)
+	}
+	if res == nil || res.Delay == nil || res.Delay.DurationSeconds <= 0 {
+		return time.Time{}, fail(CodeUnsupported, "Production runner cannot park a delay without a duration.")
+	}
+	return now.Add(time.Duration(res.Delay.DurationSeconds) * time.Second), Decision{}
 }
 
 func safeErr(err error) string {

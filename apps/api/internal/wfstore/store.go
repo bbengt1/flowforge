@@ -83,6 +83,8 @@ const (
 	ExecutionFailed        = "failed"
 	ExecutionCanceled      = "canceled"
 	ExecutionIndeterminate = "indeterminate"
+	ExecutionPending       = "pending"
+	ExecutionSkipped       = "skipped"
 
 	// ReasonWorkflowDeleted is the matchable end reason on a run that was
 	// waiting or about to resume when its workflow was soft-deleted.
@@ -100,6 +102,8 @@ const (
 	JobFailed        = "failed"
 	JobCanceled      = "canceled"
 	JobIndeterminate = "indeterminate"
+	JobBlocked       = "blocked"
+	JobSkipped       = "skipped"
 )
 
 const (
@@ -218,6 +222,9 @@ type ExecutionStep struct {
 	StartedAt       *time.Time     `json:"startedAt,omitempty"`
 	FinishedAt      *time.Time     `json:"finishedAt,omitempty"`
 	UpdatedAt       time.Time      `json:"updatedAt"`
+	// UnresolvedIncoming is the number of incoming edges that have not
+	// resolved yet. It is a claim backstop, not an API field.
+	UnresolvedIncoming int `json:"-"`
 }
 
 // Artifact is redacted, encrypted-at-rest execution output metadata.
