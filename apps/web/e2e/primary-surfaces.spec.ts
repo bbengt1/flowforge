@@ -143,7 +143,11 @@ test.describe("primary surfaces", () => {
     const shot = process.env.FF_STATUS_SCREENSHOT;
     if (shot) {
       mkdirSync(dirname(shot), { recursive: true });
-      await page.screenshot({ path: shot, fullPage: true });
+      // The shell scrolls inside #main-content, so a document full-page
+      // shot stops at the viewport. Grow the viewport to fit the run.
+      await page.setViewportSize({ width: 1280, height: 3600 });
+      await expect(page.getByRole("heading", { name: "Jobs", level: 2 })).toBeVisible();
+      await page.screenshot({ path: shot });
     }
   });
 
