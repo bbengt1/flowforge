@@ -263,6 +263,59 @@ describe("workflow delete error codes", () => {
       ),
       null,
     );
+    assert.equal(
+      workflowSlugReservedFromProblem(
+        {
+          status: 409,
+          code: "conflict",
+          detail: "The request conflicts with an existing record.",
+          errors: [
+            {
+              path: "slug",
+              code: "conflict",
+              message: "The request conflicts with an existing record.",
+            },
+          ],
+        },
+        { name: "Deploy" },
+      ),
+      null,
+    );
+    assert.equal(
+      workflowSlugReservedFromProblem(
+        {
+          status: 409,
+          code: "conflict",
+          detail: "A unique identity already exists.",
+        },
+        {},
+      ),
+      null,
+    );
+    for (const code of [
+      "execution_not_retryable",
+      "step_attempt_superseded",
+      "approval_closed",
+    ]) {
+      assert.equal(
+        workflowSlugReservedFromProblem(
+          {
+            status: 409,
+            code,
+            detail: "A workflow with this slug already exists.",
+            errors: [
+              {
+                path: "slug",
+                code,
+                message: "A workflow with this slug already exists.",
+              },
+            ],
+          },
+          { name: "Deploy" },
+        ),
+        null,
+      );
+    }
     assert.equal(workflowSlugReservedMessage("slug"), WORKFLOW_SLUG_RESERVED_SLUG_MESSAGE);
     assert.equal(workflowSlugReservedMessage("name"), WORKFLOW_SLUG_RESERVED_NAME_MESSAGE);
   });

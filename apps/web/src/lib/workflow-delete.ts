@@ -195,14 +195,17 @@ export function workflowDeleteNameMatches(
 
 /**
  * Create-time slug clash. Match the code, not which fields were sent.
- * workflow_slug_reserved and a slug conflict (including "slug already
- * exists") always land on the slug field. An unrelated 409 does not.
+ * workflow_slug_reserved, a live slug conflict ("slug already exists"),
+ * and an exhausted derived slug ("could not be allocated") land on the
+ * slug field. Other 409s — execution_not_retryable,
+ * step_attempt_superseded, approval_closed, and a generic unique
+ * violation — do not, even when an error path is slug.
  */
 export function workflowSlugReservedTarget(input: {
   statusCode: number;
   code: string;
   detail?: string;
-  errorPaths?: readonly string[];
+  errors?: readonly { path?: string; message?: string }[];
 }): WorkflowSlugField | null {
   if (input.statusCode !== 409) {
     return null;
@@ -210,23 +213,41 @@ export function workflowSlugReservedTarget(input: {
   if (input.code === WORKFLOW_SLUG_RESERVED_CODE) {
     return "slug";
   }
-  if (input.code === "conflict" && slugConflictDetail(input.detail, input.errorPaths)) {
+  if (input.code === "conflict" && slugConflictKind(input) !== null) {
     return "slug";
   }
   return null;
 }
 
-function slugConflictDetail(
-  detail: string | undefined,
-  errorPaths: readonly string[] | undefined,
-): boolean {
-  if (/slug already exists/i.test(detail ?? "")) {
-    return true;
+function slugConflictKind(input: {
+  detail?: string;
+  errors?: readonly { path?: string; message?: string }[];
+}): "live" | "exhausted" | null {
+  const fromDetail = slugConflictText(input.detail);
+  if (fromDetail) {
+    return fromDetail;
   }
-  if (/could not be allocated/i.test(detail ?? "")) {
-    return true;
+  for (const error of input.errors ?? []) {
+    if (error.path !== "slug") {
+      continue;
+    }
+    const fromError = slugConflictText(error.message);
+    if (fromError) {
+      return fromError;
+    }
   }
-  return (errorPaths ?? []).some((path) => path === "slug");
+  return null;
+}
+
+function slugConflictText(value: string | undefined): "live" | "exhausted" | null {
+  const text = value ?? "";
+  if (/slug already exists/i.test(text)) {
+    return "live";
+  }
+  if (/could not be allocated/i.test(text)) {
+    return "exhausted";
+  }
+  return null;
 }
 
 export function workflowSlugReservedMessage(field: WorkflowSlugField): string {
@@ -244,7 +265,7 @@ export function workflowSlugReservedFromProblem(
     statusCode: problem.status,
     code: problem.code,
     detail: problem.detail,
-    errorPaths: problem.errors?.map((error) => error.path),
+    errors: problem.errors,
   });
   if (!field) {
     return null;
@@ -256,12 +277,13 @@ export function workflowSlugReservedFromProblem(
 }
 
 function workflowSlugFieldMessage(
-  problem: Pick<ProblemDetails, "code"> & Partial<Pick<ProblemDetails, "detail">>,
+  problem: Pick<ProblemDetails, "code"> &
+    Partial<Pick<ProblemDetails, "detail" | "errors">>,
 ): string {
   if (problem.code === WORKFLOW_SLUG_RESERVED_CODE) {
     return WORKFLOW_SLUG_RESERVED_SLUG_MESSAGE;
   }
-  if (/could not be allocated/i.test(problem.detail ?? "")) {
+  if (slugConflictKind(problem) === "exhausted") {
     return WORKFLOW_SLUG_EXHAUSTED_MESSAGE;
   }
   return WORKFLOW_SLUG_CONFLICT_MESSAGE;
