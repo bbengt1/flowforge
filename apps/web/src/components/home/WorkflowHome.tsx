@@ -45,7 +45,16 @@ import { rememberPeakEndOverlay } from "@/lib/peak-end-operate-endings";
 import { workspaceLookupKey, type DevIdentity } from "@/lib/identity-headers";
 import type { ProblemDetails } from "@/lib/problem";
 import { createGenerationGate } from "@/lib/request-generation";
-import { optionalCreateFields, shortDigest } from "@/lib/workflow";
+import { shortDigest } from "@/lib/workflow";
+import { rememberCreatedWorkflow } from "@/lib/created-workflow";
+import {
+  WORKFLOW_SLUG_EXPLICIT_HINT,
+  WORKFLOW_SLUG_PREVIEW_HINT,
+  WORKFLOW_SLUG_PREVIEW_LABEL,
+  createdWorkflowSlugDetail,
+  previewCreateFormSlug,
+  workflowCreateRequestFields,
+} from "@/lib/workflow-slug";
 import {
   createWorkflow,
   deleteWorkflow,
@@ -463,6 +472,7 @@ function WorkflowHomeSession() {
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
   const [createName, setCreateName] = useState("");
   const [createSlug, setCreateSlug] = useState("");
+  const [slugEdited, setSlugEdited] = useState(false);
 
   const [inlineRenameId, setInlineRenameId] = useState<string | null>(null);
   const [inlineRenameOriginal, setInlineRenameOriginal] = useState("");
@@ -513,7 +523,12 @@ function WorkflowHomeSession() {
   const [createFieldError, setCreateFieldError] = useState<{
     field: "name" | "slug";
     message: string;
+    code?: string;
   } | null>(null);
+  const blankTemplateName = workflowTemplateById("blank")?.name ?? "";
+  const slugPreview = previewCreateFormSlug(createName, blankTemplateName);
+  const showSlugPreview = !slugEdited || createSlug.trim() === "";
+  const slugFieldValue = showSlugPreview ? slugPreview : createSlug;
 
   const canView = ready && canSeeWorkflowsNav(permissions);
   const canMutateFolders =
@@ -1490,7 +1505,7 @@ function WorkflowHomeSession() {
   ) {
     const reserved = workflowSlugReservedFromProblem(problemDetails, sent);
     if (reserved) {
-      setCreateFieldError(reserved);
+      setCreateFieldError({ ...reserved, code: problemDetails.code });
       setProblem(null);
       return;
     }
@@ -1499,11 +1514,15 @@ function WorkflowHomeSession() {
   }
 
   const createFromYaml = useCallback(
-    async (yaml: string, name?: string, slug?: string) => {
+    async (yaml: string, name?: string, explicitSlug?: string) => {
       if (!canCreate) {
         return;
       }
-      const sent = optionalCreateFields(slug ?? createSlug, name ?? createName);
+      const sent = workflowCreateRequestFields({
+        name: name ?? createName,
+        slug: explicitSlug ?? createSlug,
+        slugEdited: explicitSlug !== undefined || slugEdited,
+      });
       setPending("create");
       setProblem(null);
       setCreateFieldError(null);
@@ -1518,32 +1537,40 @@ function WorkflowHomeSession() {
         return;
       }
       const created = result.workflow;
+      if (created && result.draft) {
+        rememberCreatedWorkflow({ workflow: created, draft: result.draft });
+      }
       pushNotification({
         kind: "info",
         title: "Draft created",
-        detail: created?.name || "Editable draft ready",
+        detail: createdWorkflowSlugDetail(created),
         href: templateCreatedEditorHref(created?.id),
       });
       if (created) {
         router.push(templateCreatedEditorHref(created.id));
       }
     },
-    [canCreate, identity, createSlug, createName, router, selection],
+    [canCreate, identity, createSlug, createName, slugEdited, router, selection],
   );
+
+  const createBlankDraft = useCallback(() => {
+    const blank = workflowTemplateById("blank");
+    if (!blank) {
+      return;
+    }
+    void createFromYaml(blank.definitionYaml, createName.trim() || blank.name);
+  }, [createFromYaml, createName]);
 
   useEffect(() => {
     return subscribeWorkspaceCommands((name) => {
       if (name === "new-workflow") {
-        const blank = workflowTemplateById("blank");
-        if (blank) {
-          void createFromYaml(blank.definitionYaml, createName || blank.name, createSlug);
-        }
+        createBlankDraft();
       }
       if (name === "import-yaml") {
         importRef.current?.click();
       }
     });
-  }, [createFromYaml, createName, createSlug]);
+  }, [createBlankDraft]);
 
   useEffect(() => {
     if (consumedQuery.current) {
@@ -1569,14 +1596,7 @@ function WorkflowHomeSession() {
       }
       if (shouldCreate) {
         consumedQuery.current = true;
-        const blank = workflowTemplateById("blank");
-        if (blank) {
-          void createFromYaml(
-            blank.definitionYaml,
-            createName || blank.name,
-            createSlug,
-          );
-        }
+        createBlankDraft();
       }
       if (shouldImport) {
         consumedQuery.current = true;
@@ -1599,7 +1619,7 @@ function WorkflowHomeSession() {
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [searchParams, createFromYaml, createName, createSlug]);
+  }, [searchParams, createBlankDraft]);
 
   function openHomeOverlay(kind: HomeSatelliteOverlayId, workflowId: string) {
     lastHomeOverlay.current = { kind, id: workflowId };
@@ -1703,7 +1723,7 @@ function WorkflowHomeSession() {
   ]);
 
   async function createFromTemplate(template: WorkflowTemplate) {
-    await createFromYaml(template.definitionYaml, template.name, template.slugHint);
+    await createFromYaml(template.definitionYaml, template.name);
   }
 
   function importFile(file: File) {
@@ -1717,10 +1737,11 @@ function WorkflowHomeSession() {
         if (!canCreate) {
           return;
         }
-        const sent = optionalCreateFields(
-          createSlug,
-          createName || file.name.replace(/\.ya?ml$/i, ""),
-        );
+        const sent = workflowCreateRequestFields({
+          name: createName || file.name.replace(/\.ya?ml$/i, ""),
+          slug: createSlug,
+          slugEdited,
+        });
         setPending("import");
         setProblem(null);
         setCreateFieldError(null);
@@ -1734,10 +1755,13 @@ function WorkflowHomeSession() {
           return;
         }
         const created = result.workflow;
+        if (created && result.draft) {
+          rememberCreatedWorkflow({ workflow: created, draft: result.draft });
+        }
         pushNotification({
           kind: "info",
           title: "Draft imported",
-          detail: created?.name || "Validated YAML created a draft",
+          detail: createdWorkflowSlugDetail(created),
           href: templateCreatedEditorHref(created?.id),
         });
         if (created) {
@@ -2025,10 +2049,7 @@ function WorkflowHomeSession() {
       return;
     }
     if (verb === "create-workflow") {
-      const blank = workflowTemplateById("blank");
-      if (blank) {
-        void createFromYaml(blank.definitionYaml);
-      }
+      createBlankDraft();
       return;
     }
     if (verb === "import") {
@@ -2325,10 +2346,7 @@ function WorkflowHomeSession() {
                 data-o1="create"
                 disabled={pending !== null}
                 onClick={() => {
-                  const blank = workflowTemplateById("blank");
-                  if (blank) {
-                    void createFromYaml(blank.definitionYaml);
-                  }
+                  createBlankDraft();
                 }}
                 className={FF_OVERVIEW_CREATE_CLASS}
               >
@@ -2512,14 +2530,17 @@ function WorkflowHomeSession() {
         ) : null}
 
         {canCreate ? (
-          <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+          <div
+            className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+            data-workflow-create-form=""
+          >
             <FilterInput
+              id="home-create-name"
               label="Name (optional)"
               value={createName}
               error={
                 createFieldError?.field === "name" ? createFieldError.message : null
               }
-              errorKind="workflow_slug_reserved"
               onChange={(value) => {
                 setCreateName(value);
                 setCreateFieldError((current) =>
@@ -2528,13 +2549,20 @@ function WorkflowHomeSession() {
               }}
             />
             <FilterInput
-              label="Slug (optional)"
-              value={createSlug}
+              id="home-create-slug"
+              label={showSlugPreview ? WORKFLOW_SLUG_PREVIEW_LABEL : "Slug"}
+              value={slugFieldValue}
+              hint={showSlugPreview ? WORKFLOW_SLUG_PREVIEW_HINT : WORKFLOW_SLUG_EXPLICIT_HINT}
+              preview={showSlugPreview}
+              dir="ltr"
               error={
                 createFieldError?.field === "slug" ? createFieldError.message : null
               }
-              errorKind="workflow_slug_reserved"
+              errorKind={
+                createFieldError?.field === "slug" ? createFieldError.code : undefined
+              }
               onChange={(value) => {
+                setSlugEdited(true);
                 setCreateSlug(value);
                 setCreateFieldError((current) =>
                   current?.field === "slug" ? null : current,
@@ -2632,10 +2660,7 @@ function WorkflowHomeSession() {
             pending={pending !== null}
             unfiledEmpty={emptyKind === "unfiled"}
             onCreate={() => {
-              const blank = workflowTemplateById("blank");
-              if (blank) {
-                void createFromYaml(blank.definitionYaml);
-              }
+              createBlankDraft();
             }}
             onImport={() => importRef.current?.click()}
             onNewFolder={() => openCreateFolder()}
@@ -2734,10 +2759,7 @@ function WorkflowHomeSession() {
             deleteAllowed={folderEmptyDeleteAllowed}
             moveAvailable={moveIntoCandidates.length > 0}
             onCreate={() => {
-              const blank = workflowTemplateById("blank");
-              if (blank) {
-                void createFromYaml(blank.definitionYaml);
-              }
+              createBlankDraft();
             }}
             onImport={() => importRef.current?.click()}
             onMove={openMoveIntoFolder}
@@ -3483,22 +3505,32 @@ function ExplorerContextMenu({
 }
 
 function FilterInput({
+  id,
   label,
   value,
   onChange,
   error,
   errorKind,
+  hint,
+  preview,
+  dir,
 }: {
+  id?: string;
   label: string;
   value: string;
   onChange: (value: string) => void;
   error?: string | null;
   errorKind?: string;
+  hint?: string;
+  preview?: boolean;
+  dir?: "ltr" | "rtl" | "auto";
 }) {
   return (
     <Field
-      id={`home-filter-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+      id={id ?? `home-filter-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
       label={label}
+      hint={hint}
+      hintClassName={`mt-1 block text-xs ${FF_OVERVIEW_MUTED_CLASS}`}
       labelClassName={FF_OVERVIEW_MUTED_CLASS}
       error={error || undefined}
       errorClassName={FF_OVERVIEW_DANGER_CLASS}
@@ -3506,9 +3538,14 @@ function FilterInput({
     >
       <input
         value={value}
+        dir={dir}
         onChange={(event) => onChange(event.target.value)}
         className={`mt-1 ${FF_OVERVIEW_CONTROL_CLASS}`}
         autoComplete="off"
+        autoCapitalize={preview === undefined ? undefined : "off"}
+        autoCorrect={preview === undefined ? undefined : "off"}
+        spellCheck={preview === undefined ? undefined : false}
+        data-slug-preview={preview === undefined ? undefined : preview ? "true" : "false"}
         data-workflow-create-error={error ? errorKind : undefined}
       />
     </Field>

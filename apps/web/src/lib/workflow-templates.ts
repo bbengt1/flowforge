@@ -2,13 +2,13 @@
  * Static E6.1 starter templates. There is no template API on main.
  * Each card POSTs an editable draft via existing POST /workflows.
  * Definitions use core-phase nodes only so create/validate succeed.
+ * metadata.slug is omitted. Create derives the slug from the display name.
  */
 
 export type WorkflowTemplate = {
   id: string;
   title: string;
   description: string;
-  slugHint: string;
   name: string;
   definitionYaml: string;
 };
@@ -44,10 +44,9 @@ export const WORKFLOW_TEMPLATES: readonly WorkflowTemplate[] = [
     id: "blank",
     title: "Blank draft",
     description: "Minimal manual workflow with a seed value and stop node.",
-    slugHint: "blank-draft",
     name: "Blank draft",
     definitionYaml: starter(
-      "blank-draft",
+      "Blank draft",
       "Editable blank draft created from the workflow home.",
     ),
   },
@@ -56,10 +55,9 @@ export const WORKFLOW_TEMPLATES: readonly WorkflowTemplate[] = [
     title: "Kubernetes rollout",
     description:
       "Starter for a reviewed cluster rollout. Bind a published cluster target in the editor.",
-    slugHint: "k8s-rollout",
     name: "Kubernetes rollout",
     definitionYaml: starter(
-      "k8s-rollout",
+      "Kubernetes rollout",
       "Starter draft for a Kubernetes rollout. Configure the published cluster target in the editor.",
     ),
   },
@@ -68,10 +66,9 @@ export const WORKFLOW_TEMPLATES: readonly WorkflowTemplate[] = [
     title: "SSH maintenance",
     description:
       "Starter for allowlisted remote maintenance. Bind an SSH target and command profile before publish.",
-    slugHint: "ssh-maintenance",
     name: "SSH maintenance",
     definitionYaml: starter(
-      "ssh-maintenance",
+      "SSH maintenance",
       "Starter draft for SSH maintenance. Select a published target and command profile in the editor.",
     ),
   },
@@ -80,10 +77,9 @@ export const WORKFLOW_TEMPLATES: readonly WorkflowTemplate[] = [
     title: "Python automation",
     description:
       "Starter for isolated Python work. Add a script.python node from the action wizard. Draft save writes YAML; publish packages/scans/signs and pins the artifact.",
-    slugHint: "python-automation",
     name: "Python automation",
     definitionYaml: starter(
-      "python-automation",
+      "Python automation",
       "Starter draft for Python automation. Add script.python from the action wizard — publish is the artifact pin, not draft save.",
     ),
   },
@@ -92,10 +88,9 @@ export const WORKFLOW_TEMPLATES: readonly WorkflowTemplate[] = [
     title: "Go automation",
     description:
       "Starter for isolated Go work. Add a script.go node from the action wizard. Draft save writes YAML; publish packages/scans/signs and pins the artifact.",
-    slugHint: "go-automation",
     name: "Go automation",
     definitionYaml: starter(
-      "go-automation",
+      "Go automation",
       "Starter draft for Go automation. Add script.go from the action wizard — publish is the artifact pin, not draft save.",
     ),
   },
@@ -104,10 +99,9 @@ export const WORKFLOW_TEMPLATES: readonly WorkflowTemplate[] = [
     title: "Condition and delay",
     description:
       "Common core composition: set data, then stop. Add condition/delay nodes in the editor.",
-    slugHint: "condition-delay",
     name: "Condition and delay",
     definitionYaml: starter(
-      "condition-delay",
+      "Condition and delay",
       "Common composition starter. Add flow.condition and flow.delay from the core palette.",
     ),
   },

@@ -54,6 +54,12 @@ export const WORKFLOW_SLUG_RESERVED_NAME_MESSAGE =
 export const WORKFLOW_SLUG_RESERVED_SLUG_MESSAGE =
   "This slug is reserved by a deleted workflow. Choose a different slug.";
 
+export const WORKFLOW_SLUG_CONFLICT_MESSAGE =
+  "A workflow with this slug already exists.";
+
+export const WORKFLOW_SLUG_EXHAUSTED_MESSAGE =
+  "A unique slug could not be allocated.";
+
 export const WORKFLOW_DELETED_TOAST_TITLE = "Workflow deleted";
 
 export type WorkflowDeleteFailureKind =
@@ -188,25 +194,60 @@ export function workflowDeleteNameMatches(
 }
 
 /**
- * Reserved-slug create/rename conflict. Match the code, not the detail.
- * A submitted slug is the field; otherwise the name field carries it.
+ * Create-time slug clash. Match the code, not which fields were sent.
+ * workflow_slug_reserved, a live slug conflict ("slug already exists"),
+ * and an exhausted derived slug ("could not be allocated") land on the
+ * slug field. Other 409s — execution_not_retryable,
+ * step_attempt_superseded, approval_closed, and a generic unique
+ * violation — do not, even when an error path is slug.
  */
 export function workflowSlugReservedTarget(input: {
   statusCode: number;
   code: string;
-  slugSent: boolean;
-  nameSent: boolean;
+  detail?: string;
+  errors?: readonly { path?: string; message?: string }[];
 }): WorkflowSlugField | null {
-  if (input.code !== WORKFLOW_SLUG_RESERVED_CODE || input.statusCode !== 409) {
+  if (input.statusCode !== 409) {
     return null;
   }
-  if (input.slugSent) {
+  if (input.code === WORKFLOW_SLUG_RESERVED_CODE) {
     return "slug";
   }
-  if (input.nameSent) {
-    return "name";
+  if (input.code === "conflict" && slugConflictKind(input) !== null) {
+    return "slug";
   }
-  return "name";
+  return null;
+}
+
+function slugConflictKind(input: {
+  detail?: string;
+  errors?: readonly { path?: string; message?: string }[];
+}): "live" | "exhausted" | null {
+  const fromDetail = slugConflictText(input.detail);
+  if (fromDetail) {
+    return fromDetail;
+  }
+  for (const error of input.errors ?? []) {
+    if (error.path !== "slug") {
+      continue;
+    }
+    const fromError = slugConflictText(error.message);
+    if (fromError) {
+      return fromError;
+    }
+  }
+  return null;
+}
+
+function slugConflictText(value: string | undefined): "live" | "exhausted" | null {
+  const text = value ?? "";
+  if (/slug already exists/i.test(text)) {
+    return "live";
+  }
+  if (/could not be allocated/i.test(text)) {
+    return "exhausted";
+  }
+  return null;
 }
 
 export function workflowSlugReservedMessage(field: WorkflowSlugField): string {
@@ -216,19 +257,36 @@ export function workflowSlugReservedMessage(field: WorkflowSlugField): string {
 }
 
 export function workflowSlugReservedFromProblem(
-  problem: Pick<ProblemDetails, "status" | "code">,
+  problem: Pick<ProblemDetails, "status" | "code"> &
+    Partial<Pick<ProblemDetails, "detail" | "errors">>,
   sent: { slug?: string; name?: string },
 ): { field: WorkflowSlugField; message: string } | null {
   const field = workflowSlugReservedTarget({
     statusCode: problem.status,
     code: problem.code,
-    slugSent: Boolean(sent.slug?.trim()),
-    nameSent: Boolean(sent.name?.trim()),
+    detail: problem.detail,
+    errors: problem.errors,
   });
   if (!field) {
     return null;
   }
-  return { field, message: workflowSlugReservedMessage(field) };
+  // Callers pass `sent` so tests can show a name-only body and an
+  // explicit slug land on the same field.
+  void sent;
+  return { field, message: workflowSlugFieldMessage(problem) };
+}
+
+function workflowSlugFieldMessage(
+  problem: Pick<ProblemDetails, "code"> &
+    Partial<Pick<ProblemDetails, "detail" | "errors">>,
+): string {
+  if (problem.code === WORKFLOW_SLUG_RESERVED_CODE) {
+    return WORKFLOW_SLUG_RESERVED_SLUG_MESSAGE;
+  }
+  if (slugConflictKind(problem) === "exhausted") {
+    return WORKFLOW_SLUG_EXHAUSTED_MESSAGE;
+  }
+  return WORKFLOW_SLUG_CONFLICT_MESSAGE;
 }
 
 export function omitDeletedWorkflow<T extends { id: string }>(

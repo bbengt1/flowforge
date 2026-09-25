@@ -193,7 +193,9 @@ import type { OpsConfigPin } from "@/lib/ops-config-types";
 import type { ProblemDetails } from "@/lib/problem";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 import { loadDeveloperYaml } from "@/lib/editor-developer";
+import { takeCreatedWorkflow } from "@/lib/created-workflow";
 import {
+  applyDraftResponse,
   draftCompareRef,
   STARTER_WORKFLOW_YAML,
   VALIDATE_DEBOUNCE_MS,
@@ -1202,6 +1204,23 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     }
     openedRoute.current = workflowId;
     void (async () => {
+      const handed = takeCreatedWorkflow(workflowId);
+      if (handed) {
+        const applied = applyDraftResponse(handed.draft);
+        if (applied && handed.draft.workflowId === handed.workflow.id) {
+          setPending("open");
+          setProblem(null);
+          resetWorkflowScopedState();
+          setWorkflow(handed.workflow);
+          applyEditor({ ...applied, revision: applied.revision });
+          rememberWorkflowCollections(queryClient, tryQueryScope(identity), {
+            workflow: handed.workflow,
+          });
+          await refreshVersions(handed.workflow.id);
+          setPending(null);
+          return;
+        }
+      }
       const listed = await listWorkflows(identity);
       if (listed.ok) {
         rememberWorkflowCollections(queryClient, tryQueryScope(identity), {
