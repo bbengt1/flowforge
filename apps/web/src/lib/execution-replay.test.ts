@@ -24,12 +24,15 @@ import {
   projectPinnedVersionGraph,
   publishedRunVersions,
   replayNodeStateLabel,
+  replayStepViews,
   retryBlockedForIndeterminate,
+  waitingApprovalNodeIds,
   sideEffectWarnings,
   stepDurationMs,
   summaryFromPublishedYaml,
 } from "./execution-replay.ts";
 import { executionStatusPresentation } from "./execution.ts";
+import type { ApprovalRequest } from "./approval-types.ts";
 import type { ExecutionDetail, ExecutionRecord, ExecutionStep } from "./execution-types.ts";
 import { INVALID_WORKFLOW_YAML, STARTER_WORKFLOW_YAML } from "./workflow.ts";
 import {
@@ -517,5 +520,124 @@ describe("approval wait is durable in E10.3", () => {
     assert.equal(controls.resumeEnabled, false);
     assert.match(controls.waitHelp, /survives/);
     assert.match(controls.resumeHelp, /decide/);
+  });
+});
+
+function gateApproval(status: ApprovalRequest["status"]): ApprovalRequest {
+  return {
+    id: "77777777-7777-4777-8777-777777777777",
+    status,
+    binding: {
+      workflowVersionId: VERSION_ID,
+      workflowVersionDigest: "",
+      targetId: "",
+      targetKind: "",
+      targetName: "",
+      targetVersionId: "",
+      targetDigest: "",
+      policyResourceId: "",
+      policyRevisionId: "",
+      policyRevisionNumber: null,
+      policyDigest: "",
+      operation: "deploy",
+      nodeId: "seed",
+      nodeName: "Gate",
+      expiresAt: "",
+      bindingFingerprint: "",
+    },
+    validity: {
+      current: status === "pending",
+      reason: status === "pending" ? "pending" : "",
+      changedFields: [],
+      currentBinding: null,
+    },
+    requestedBy: "",
+    requestedAt: "",
+    decidedBy: "",
+    decidedAt: "",
+    note: "",
+    workflowId: WORKFLOW_ID,
+    workflowName: "Deploy",
+    executionId: EXECUTION_ID,
+    executionStatus: "",
+    approverRole: "approver",
+    permittedActions: ["approve", "reject"],
+  };
+}
+
+describe("terminal runs do not look like they are waiting on approval", () => {
+  it("keeps a canceled gate on its step status when an approval is still pending", () => {
+    const graph = projectPinnedVersionGraph({
+      yaml: STARTER_WORKFLOW_YAML,
+      catalog,
+    });
+    assert.ok(graph);
+    const steps = [sampleStep({ nodeId: "seed", status: "canceled", nodeType: "flow.approval" })];
+    const waiting = waitingApprovalNodeIds([gateApproval("pending")], "canceled");
+    assert.deepEqual(waiting, []);
+    const overlaid = overlayExecutionOnGraph(graph, steps, {
+      waitingApprovalNodeIds: ["seed"],
+      runStatus: "canceled",
+    });
+    assert.equal(overlaid.nodes.find((node) => node.id === "seed")?.state, "canceled");
+    assert.equal(
+      overlaid.nodes.find((node) => node.id === "seed")?.state === "approval-required",
+      false,
+    );
+    const views = replayStepViews(steps, {
+      waitingApprovalNodeIds: ["seed"],
+      runStatus: "canceled",
+    });
+    assert.equal(views[0]?.waiting, false);
+    assert.equal(views[0]?.presentation.label, "Canceled");
+    assert.equal(currentReplayNodeId([], ["seed"], "canceled"), null);
+    assert.equal(currentReplayNodeId([], ["seed"], "running"), "seed");
+  });
+
+  it("does the same for a failed run and a deleted workflow", () => {
+    const graph = projectPinnedVersionGraph({
+      yaml: STARTER_WORKFLOW_YAML,
+      catalog,
+    });
+    assert.ok(graph);
+    const steps = [
+      sampleStep({
+        nodeId: "seed",
+        status: "awaiting_approval",
+        nodeType: "flow.approval",
+      }),
+    ];
+    for (const runStatus of ["failed", "canceled"]) {
+      const overlaid = overlayExecutionOnGraph(graph, steps, {
+        waitingApprovalNodeIds: waitingApprovalNodeIds(
+          [gateApproval("pending")],
+          runStatus,
+        ),
+        runStatus,
+      });
+      const state = overlaid.nodes.find((node) => node.id === "seed")?.state;
+      assert.equal(state === "approval-required", false, runStatus);
+      const views = replayStepViews(steps, {
+        waitingApprovalNodeIds: ["seed"],
+        runStatus,
+      });
+      assert.equal(views[0]?.waiting, false, runStatus);
+    }
+    const deleted = overlayExecutionOnGraph(graph, steps, {
+      waitingApprovalNodeIds: ["seed"],
+      runStatus: "failed",
+    });
+    assert.equal(
+      deleted.nodes.find((node) => node.id === "seed")?.state === "approval-required",
+      false,
+    );
+  });
+
+  it("treats a closed approval as not waiting on a live run", () => {
+    assert.deepEqual(waitingApprovalNodeIds([gateApproval("canceled")], "running"), []);
+    assert.deepEqual(
+      waitingApprovalNodeIds([gateApproval("pending")], "running"),
+      ["seed"],
+    );
   });
 });

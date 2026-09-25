@@ -318,7 +318,7 @@ describe("execution detail query cache", () => {
     assert.doesNotMatch(chrome, /getExecutionStepLogs/);
     assert.doesNotMatch(chrome, /fetchWorkflowCatalog/);
     assert.match(chrome, /canCancelExecution/);
-    assert.match(chrome, /canRetryExecution\(/);
+    assert.match(chrome, /retryCapabilityAffordance/);
     assert.match(chrome, /downloadGrantFailureMessage/);
     assert.match(chrome, /canOfferScriptEmergencyStop/);
     assert.doesNotMatch(cache, /localStorage|sessionStorage|publishDraft|runPublished/);

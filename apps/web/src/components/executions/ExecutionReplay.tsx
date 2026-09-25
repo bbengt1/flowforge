@@ -67,7 +67,7 @@ export function ExecutionReplay({
   onSelect,
   logsText,
 }: ExecutionReplayProps) {
-  const waitingIds = waitingApprovalNodeIds(approvals);
+  const waitingIds = waitingApprovalNodeIds(approvals, detail.status);
   const base = projectPinnedVersionGraph({
     yaml: version?.definitionYaml,
     summary: version?.summary,
@@ -80,7 +80,11 @@ export function ExecutionReplay({
         jobs: detail.jobs,
       })
     : null;
-  const currentNodeId = currentReplayNodeId(detail.steps, waitingIds);
+  const currentNodeId = currentReplayNodeId(
+    detail.steps,
+    waitingIds,
+    detail.status,
+  );
   const views = replayStepViews(detail.steps, {
     waitingApprovalNodeIds: waitingIds,
     runStatus: detail.status,

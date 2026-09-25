@@ -646,12 +646,16 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       );
       if (approvals.ok) {
         setSelectedRunApprovals(approvals.items);
-        waitingIds = editorRunWaitingNodeIds(approvals.items);
+        waitingIds = editorRunWaitingNodeIds(
+          approvals.items,
+          result.execution.status,
+        );
       }
     }
     const currentId = editorRunCurrentNodeId(
       result.execution.steps,
       waitingIds,
+      result.execution.status,
     );
     if (currentId && yamlNodes.some((node) => node.id === currentId)) {
       const node = yamlNodes.find((item) => item.id === currentId);
@@ -789,7 +793,11 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
         void loadSelectedRunLogs(result.execution.id, result.execution.steps);
         const currentId = editorRunCurrentNodeId(
           result.execution.steps,
-          editorRunWaitingNodeIds(selectedRunApprovals),
+          editorRunWaitingNodeIds(
+            selectedRunApprovals,
+            result.execution.status,
+          ),
+          result.execution.status,
         );
         if (currentId && yamlNodes.some((node) => node.id === currentId)) {
           applySelection({ kind: "node", id: currentId });
@@ -866,7 +874,10 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     palette: library,
     warnings,
   });
-  const runWaitingIds = editorRunWaitingNodeIds(selectedRunApprovals);
+  const runWaitingIds = editorRunWaitingNodeIds(
+    selectedRunApprovals,
+    selectedRun?.status,
+  );
   const overlayActive = runIoSource === "overlay" && Boolean(selectedRun);
   const canvasGraph =
     graph && overlayActive && selectedRun
@@ -876,7 +887,11 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
         })
       : graph;
   const runCurrentNodeId = overlayActive && selectedRun
-    ? editorRunCurrentNodeId(selectedRun.steps, runWaitingIds) ?? undefined
+    ? editorRunCurrentNodeId(
+        selectedRun.steps,
+        runWaitingIds,
+        selectedRun.status,
+      ) ?? undefined
     : undefined;
   const canSave = canSaveWorkflowEditor({ status, errors, localErrors });
 

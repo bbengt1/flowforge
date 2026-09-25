@@ -28,6 +28,7 @@ import {
   executionStatusPresentation,
   executionStatusPresentationInRun,
   isIndeterminateStatus,
+  isTerminalRunStatus,
   isSecretFieldName,
   jobStatusesForStep,
   normalizeExecutionStatus,
@@ -318,7 +319,10 @@ export function overlayExecutionOnGraph(
   } = {},
 ): WorkflowGraph {
   const latest = latestStepsByNode(steps);
-  const waiting = new Set(options.waitingApprovalNodeIds ?? []);
+  const terminal = isTerminalRunStatus(options.runStatus);
+  const waiting = terminal
+    ? new Set<string>()
+    : new Set(options.waitingApprovalNodeIds ?? []);
   const jobs = options.jobs ?? [];
   return {
     ...graph,
@@ -338,6 +342,9 @@ export function overlayExecutionOnGraph(
         state = "not-reached";
       } else if (step) {
         state = canvasStateFromExecutionStatus(step.status);
+        if (terminal && state === "approval-required") {
+          state = canvasStateFromExecutionStatus(options.runStatus);
+        }
       }
       return { ...node, state };
     }),
@@ -347,8 +354,10 @@ export function overlayExecutionOnGraph(
 export function currentReplayNodeId(
   steps: readonly ExecutionStep[],
   waitingApprovalNodeIds: readonly string[] = [],
+  runStatus?: string,
 ): string | null {
   const latest = [...latestStepsByNode(steps).values()];
+  const terminal = isTerminalRunStatus(runStatus);
   const running = latest.find(
     (step) =>
       normalizeExecutionStatus(step.status) === "running" ||
@@ -357,12 +366,16 @@ export function currentReplayNodeId(
   if (running) {
     return running.nodeId;
   }
-  const waitingStep = latest.find((step) => isExecutionAwaitingApproval(step.status));
-  if (waitingStep) {
-    return waitingStep.nodeId;
-  }
-  if (waitingApprovalNodeIds[0]) {
-    return waitingApprovalNodeIds[0];
+  if (!terminal) {
+    const waitingStep = latest.find((step) =>
+      isExecutionAwaitingApproval(step.status),
+    );
+    if (waitingStep) {
+      return waitingStep.nodeId;
+    }
+    if (waitingApprovalNodeIds[0]) {
+      return waitingApprovalNodeIds[0];
+    }
   }
   const attention = latest.find(
     (step) =>
@@ -408,7 +421,11 @@ export function formatDuration(ms: number | null | undefined): string {
 
 export function waitingApprovalNodeIds(
   approvals: readonly ApprovalRequest[],
+  runStatus?: string,
 ): string[] {
+  if (isTerminalRunStatus(runStatus)) {
+    return [];
+  }
   return approvals
     .filter((item) => item.status === "pending")
     .map((item) => item.binding.nodeId)
@@ -423,8 +440,10 @@ export function replayStepViews(
     jobs?: readonly { executionStepId?: string; status?: string }[];
   } = {},
 ): ReplayStepView[] {
-  const current = currentReplayNodeId(steps, options.waitingApprovalNodeIds);
-  const waiting = new Set(options.waitingApprovalNodeIds ?? []);
+  const terminal = isTerminalRunStatus(options.runStatus);
+  const waitingIds = terminal ? [] : (options.waitingApprovalNodeIds ?? []);
+  const current = currentReplayNodeId(steps, waitingIds, options.runStatus);
+  const waiting = new Set(waitingIds);
   const jobs = options.jobs ?? [];
   return steps.map((step) => {
     const durationMs = stepDurationMs(step);
@@ -441,7 +460,8 @@ export function replayStepViews(
       durationLabel: formatDuration(durationMs),
       attempts: step.attempt,
       waiting:
-        waiting.has(step.nodeId) || isExecutionAwaitingApproval(step.status),
+        !terminal &&
+        (waiting.has(step.nodeId) || isExecutionAwaitingApproval(step.status)),
       current: step.nodeId === current,
       outputText: boundRedactedDisplay(step.output ?? step.error ?? step.input).text,
     };

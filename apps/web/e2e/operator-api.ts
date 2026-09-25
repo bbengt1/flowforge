@@ -13,12 +13,14 @@ const VERSION_ID = "44444444-4444-4444-8444-444444444444";
 const CREDENTIAL_ID = "55555555-5555-4555-8555-555555555555";
 const EXECUTION_ID = "66666666-6666-4666-8666-666666666666";
 const FAILED_EXECUTION_ID = "6a6a6a6a-6a6a-4a6a-8a6a-6a6a6a6a6a6a";
+const CANCELED_EXECUTION_ID = "6c6c6c6c-6c6c-4c6c-8c6c-6c6c6c6c6c6c";
 const APPROVAL_ID = "77777777-7777-4777-8777-777777777777";
 const USER_ID = "88888888-8888-4888-8888-888888888888";
 
 export const OPERATOR_WORKFLOW_ID = WORKFLOW_ID;
 export const OPERATOR_EXECUTION_ID = EXECUTION_ID;
 export const OPERATOR_FAILED_EXECUTION_ID = FAILED_EXECUTION_ID;
+export const OPERATOR_CANCELED_EXECUTION_ID = CANCELED_EXECUTION_ID;
 export const OPERATOR_FOLDER_NAME = "Runbooks";
 
 const FOLDER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -244,10 +246,13 @@ const executionDetail = {
   artifacts: [],
 };
 
+const retryAllowed = { retry: { allowed: true } };
+
 const failedExecutionDetail = {
   ...execution,
   id: FAILED_EXECUTION_ID,
   status: "failed",
+  capabilities: retryAllowed,
   finishedAt: "2026-09-01T12:00:06.000Z",
   steps: [
     {
@@ -258,6 +263,7 @@ const failedExecutionDetail = {
       status: "failed",
       startedAt: "2026-09-01T12:00:00.000Z",
       finishedAt: "2026-09-01T12:00:05.000Z",
+      capabilities: retryAllowed,
     },
     {
       id: STEP_NOTIFY,
@@ -304,6 +310,51 @@ const failedExecutionDetail = {
   artifacts: [],
 };
 
+const canceledDenial = {
+  retry: {
+    allowed: false,
+    code: "execution_not_retryable",
+    reason: "run_canceled",
+  },
+};
+
+const canceledExecutionDetail = {
+  ...execution,
+  id: CANCELED_EXECUTION_ID,
+  status: "canceled",
+  finishedAt: "2026-09-01T12:00:06.000Z",
+  capabilities: canceledDenial,
+  steps: [
+    {
+      id: STEP_GATE,
+      nodeId: "gate",
+      nodeType: "flow.approval",
+      attempt: 1,
+      status: "canceled",
+      startedAt: "2026-09-01T12:00:00.000Z",
+      finishedAt: "2026-09-01T12:00:04.000Z",
+      capabilities: canceledDenial,
+    },
+    {
+      id: STEP_NOTIFY,
+      nodeId: "notify",
+      nodeType: "data.set",
+      attempt: 1,
+      status: "pending",
+      capabilities: {
+        retry: {
+          allowed: false,
+          code: "execution_not_retryable",
+          reason: "step_not_started",
+        },
+      },
+    },
+  ],
+  jobs: [],
+  auditEvents: [],
+  artifacts: [],
+};
+
 const approval = {
   id: APPROVAL_ID,
   status: "pending",
@@ -317,6 +368,24 @@ const approval = {
   },
   validity: { current: true },
   permittedActions: ["view"],
+};
+
+const canceledGateApproval = {
+  id: "7c7c7c7c-7c7c-4c7c-8c7c-7c7c7c7c7c7c",
+  status: "pending",
+  workflowId: WORKFLOW_ID,
+  workflowName: "Deploy",
+  executionId: CANCELED_EXECUTION_ID,
+  executionStatus: "canceled",
+  requestedBy: "operator-ada",
+  requestedAt: "2026-09-01T12:00:00.000Z",
+  binding: {
+    workflowVersionId: VERSION_ID,
+    operation: "deploy",
+    nodeId: "gate",
+  },
+  validity: { current: true },
+  permittedActions: ["approve", "reject"],
 };
 
 const session = {
@@ -446,10 +515,20 @@ function bodyFor(
   if (path.startsWith(`/executions/${FAILED_EXECUTION_ID}/`)) {
     return ok({ items: [] });
   }
+  if (path === `/executions/${CANCELED_EXECUTION_ID}`) {
+    return ok(canceledExecutionDetail);
+  }
+  if (path.startsWith(`/executions/${CANCELED_EXECUTION_ID}/`)) {
+    return ok({ items: [] });
+  }
   if (path === "/approvals/catalog") {
     return ok({ waitResumeEnabled: true });
   }
   if (path === "/approvals" || path.startsWith("/approvals")) {
+    const executionId = new URL(requestUrl).searchParams.get("executionId");
+    if (executionId === CANCELED_EXECUTION_ID) {
+      return ok({ items: [canceledGateApproval] });
+    }
     return ok({ items: [approval] });
   }
   if (path === "/workflow-folders") {

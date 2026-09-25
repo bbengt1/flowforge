@@ -8,7 +8,7 @@
  * Runs overlay (D6). Reuse `POST /executions/{id}/cancel`,
  * `POST /executions/{id}/retry` (and the step twin), and
  * `POST /executions/{id}/emergency-stop`. Retry stays gated by
- * `result.retry.allowed`. Do not invent `/replay`, `/jobs/claim`,
+ * `capabilities.retry.allowed`. Do not invent `/replay`, `/jobs/claim`,
  * a second ExecutionReplay graph, SSE, or a compare API.
  * Drafts never run. Inherit Gracie R4 guardrails from
  * execution-inbox.ts.
@@ -36,11 +36,14 @@ import {
 } from "./execution-inbox.ts";
 import {
   canCancelExecution,
-  canRetryExecution,
   executionStatusPresentation,
   isIndeterminateStatus,
   normalizeExecutionStatus,
 } from "./execution.ts";
+import {
+  RETRY_CAPABILITY_UNAVAILABLE_MESSAGE,
+  retryCapabilityAffordance,
+} from "./execution-retry.ts";
 import { isIndeterminateUnmistakable } from "./execution-replay.ts";
 import type {
   ExecutionDetail,
@@ -50,7 +53,6 @@ import type {
 } from "./execution-types.ts";
 import {
   SCRIPT_IO_NO_BLIND_RETRY_HELP,
-  canOfferScriptRetry,
   executionHasScriptIndeterminate,
   executionHasScriptRun,
   isScriptIoActionType,
@@ -67,7 +69,6 @@ import {
 } from "./script-ops-contract.ts";
 import {
   SSH_NO_BLIND_RETRY_HELP,
-  canOfferSshRetry,
   executionHasSshIndeterminate,
   executionHasSshRun,
   parseSshRetryResult,
@@ -94,12 +95,12 @@ export const EXECUTION_OPERATE_DETAIL_STATUSES = [
 ] as const;
 
 export const EXECUTION_OPERATE_HELP =
-  "Cancel, retry, and emergency stop stay on this operate path. Cancel uses POST /executions/{id}/cancel. Retry uses POST /executions/{id}/retry and is shown only when result.retry.allowed is true. Stop uses POST /executions/{id}/emergency-stop for script runs. Indeterminate stays loud — never silent success. Drafts never run.";
+  "Cancel, retry, and emergency stop stay on this operate path. Cancel uses POST /executions/{id}/cancel. Retry uses POST /executions/{id}/retry and is shown only when capabilities.retry.allowed is true. Stop uses POST /executions/{id}/emergency-stop for script runs. Indeterminate stays loud — never silent success. Drafts never run.";
 
 export const EXECUTION_OPERATE_INDETERMINATE_HELP = INDETERMINATE_STATUS_HELP;
 
 export const EXECUTION_OPERATE_RETRY_GATE_HELP =
-  "Retry is shown only when GET /executions/{id} result.retry.allowed is true. Indeterminate without that flag is not retried.";
+  "Retry is shown only when capabilities.retry.allowed is true. A missing or malformed capability is not retried.";
 
 export type ExecutionOperateSurface = "inbox" | "overlay" | "detail";
 
@@ -144,6 +145,8 @@ export type ExecutionOperateInput = {
   steps?: readonly ExecutionStep[] | null;
   result?: unknown;
   stoppedUncertain?: boolean;
+  capabilities?: ExecutionDetail["capabilities"];
+  capabilitiesInvalid?: boolean;
 };
 
 export type ExecutionOperateAffordances = {
@@ -225,45 +228,10 @@ export function executionOperateRetryAllowed(
   if (!hasWorkflowExecute(input.permissions)) {
     return false;
   }
-  const steps = input.steps ?? [];
-  const ssh = steps.some((step) =>
-    canOfferSshRetry({
-      permissions: input.permissions,
-      nodeType: step.nodeType,
-      status: step.status,
-      output: step.output,
-      error: step.error,
-      input: step.input,
-    }),
-  );
-  const script = steps.some((step) =>
-    canOfferScriptRetry({
-      permissions: input.permissions,
-      nodeType: step.nodeType,
-      status: step.status,
-      output: step.output,
-      error: step.error,
-      input: step.input,
-    }),
-  );
-  if (ssh || script) {
-    return true;
-  }
-  const explicit = parseExecutionRetryAllowed({
-    result: input.result,
-    steps,
-  });
-  if (explicit === true) {
-    return true;
-  }
-  if (explicit === false) {
-    return false;
-  }
-  return canRetryExecution({
-    permissions: input.permissions,
-    status: input.status,
-    steps,
-  });
+  return retryCapabilityAffordance({
+    capabilities: input.capabilities,
+    capabilitiesInvalid: input.capabilitiesInvalid,
+  }).show;
 }
 
 export function executionOperateNeedsDetail(input: {
@@ -371,10 +339,23 @@ function executionOperateRetryBlockedReason(input: ExecutionOperateInput & {
   if (input.permissions != null && !hasWorkflowExecute(input.permissions)) {
     return RETRY_FORBIDDEN_MESSAGE;
   }
+  const affordance = retryCapabilityAffordance({
+    capabilities: input.capabilities,
+    capabilitiesInvalid: input.capabilitiesInvalid,
+  });
+  if (affordance.denial) {
+    return affordance.denial;
+  }
   if (isIndeterminateStatus(input.status) || input.retryAllowed === false) {
     return (
       executionOperateIndeterminateCopy(input) || EXECUTION_OPERATE_RETRY_GATE_HELP
     );
+  }
+  if (affordance.state === "missing" || affordance.state === "malformed") {
+    const folded = normalizeExecutionStatus(input.status);
+    if (folded === "failed" || folded === "canceled") {
+      return RETRY_CAPABILITY_UNAVAILABLE_MESSAGE;
+    }
   }
   const steps = input.steps ?? [];
   if (executionHasSshRun(steps)) {
@@ -423,7 +404,10 @@ export function executionOperateShouldLoadDetail(
 }
 
 export function executionOperateFromDetail(
-  detail: Pick<ExecutionDetail, "status" | "steps">,
+  detail: Pick<
+    ExecutionDetail,
+    "status" | "steps" | "capabilities" | "capabilitiesInvalid"
+  >,
   permissions?: readonly string[] | null,
   extra: { result?: unknown; stoppedUncertain?: boolean } = {},
 ): ExecutionOperateAffordances {
@@ -433,6 +417,8 @@ export function executionOperateFromDetail(
     steps: detail.steps,
     result: extra.result,
     stoppedUncertain: extra.stoppedUncertain,
+    capabilities: detail.capabilities,
+    capabilitiesInvalid: detail.capabilitiesInvalid,
   });
 }
 
