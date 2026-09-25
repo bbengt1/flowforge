@@ -5,6 +5,7 @@
  * fail closed.
  */
 
+import { RETRY_CONFLICT_MESSAGE } from "./execution-contract.ts";
 import type { ProblemDetails } from "./problem.ts";
 import {
   RETRY_CAPABILITY_CODES,
@@ -200,7 +201,7 @@ export function retryHiddenCopy(
   return RETRY_CAPABILITY_UNAVAILABLE_MESSAGE;
 }
 
-/** Human copy for a retry or approval 409. Null leaves the caller on its existing path. */
+/** Human copy for a known retry or approval 409. Null when the code is not one of those. */
 export function retryProblemMessage(
   problem: Pick<ProblemDetails, "code"> & { reason?: string },
 ): string | null {
@@ -221,4 +222,22 @@ export function retryProblemMessage(
 
 export function retryProblemShouldRefetch(problem: { code?: string }): boolean {
   return REFETCH_CODES.has(problem.code ?? "");
+}
+
+/**
+ * Sentence shown after a retry attempt. Known 409s use the capability
+ * reason. Any other 409, including a stale code, stays a plain sentence.
+ */
+export function retryFailureCopy(
+  problem: Pick<ProblemDetails, "code"> & { reason?: string },
+  statusCode: number,
+): string | null {
+  const mapped = retryProblemMessage(problem);
+  if (mapped) {
+    return mapped;
+  }
+  if (statusCode === 409) {
+    return RETRY_CONFLICT_MESSAGE;
+  }
+  return null;
 }

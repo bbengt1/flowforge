@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { RETRY_CONFLICT_MESSAGE } from "./execution-contract.ts";
 import { parseExecutionRecord, parseExecutionStep } from "./execution.ts";
 import {
   APPROVAL_CLOSED_MESSAGE,
@@ -10,11 +11,25 @@ import {
   parseAnnotatedCapabilities,
   readRecordCapabilities,
   retryCapabilityAffordance,
+  retryFailureCopy,
   retryHiddenCopy,
   retryProblemMessage,
   retryProblemShouldRefetch,
 } from "./execution-retry.ts";
 import { RETRY_CAPABILITY_REASONS } from "./execution-types.ts";
+import { DEFAULT_SCRIPT_NODE_ERRORS } from "./script-contract.ts";
+import {
+  DEFAULT_SCRIPT_IO_UI,
+  SCRIPT_IO_NO_BLIND_RETRY_HELP,
+  SCRIPT_IO_RETRY_DENIED_MESSAGE,
+} from "./script-io-contract.ts";
+import { SCRIPT_NO_BLIND_RETRY_AFTER_STOP_HELP } from "./script-ops-contract.ts";
+import {
+  DEFAULT_SSH_RETRY_ERRORS,
+  DEFAULT_SSH_RETRY_UI,
+  SSH_NO_BLIND_RETRY_HELP,
+  SSH_RETRY_DENIED_MESSAGE,
+} from "./ssh-retry-contract.ts";
 
 const EXECUTION_ID = "33333333-3333-4333-8333-333333333333";
 const WORKFLOW_ID = "11111111-1111-4111-8111-111111111111";
@@ -154,16 +169,34 @@ describe("retry capability", () => {
 
   it("maps retry and approval 409s and refetches those codes", () => {
     for (const reason of RETRY_CAPABILITY_REASONS) {
+      const sentence = RETRY_REASON_MESSAGE[reason];
       assert.equal(
         retryProblemMessage({
           code: "execution_not_retryable",
           reason,
         }),
-        RETRY_REASON_MESSAGE[reason],
+        sentence,
       );
+      assert.equal(
+        retryFailureCopy(
+          { code: "execution_not_retryable", reason },
+          409,
+        ),
+        sentence,
+      );
+      assert.doesNotMatch(sentence, /retry-denied/);
+      assert.doesNotMatch(sentence, /execution_not_retryable/);
     }
     assert.equal(
+      RETRY_REASON_MESSAGE.run_canceled,
+      "Canceled runs can't be retried.",
+    );
+    assert.equal(
       retryProblemMessage({ code: "execution_not_retryable" }),
+      EXECUTION_NOT_RETRYABLE_MESSAGE,
+    );
+    assert.equal(
+      retryFailureCopy({ code: "execution_not_retryable" }, 409),
       EXECUTION_NOT_RETRYABLE_MESSAGE,
     );
     assert.equal(
@@ -171,10 +204,24 @@ describe("retry capability", () => {
       STEP_ATTEMPT_SUPERSEDED_MESSAGE,
     );
     assert.equal(
+      retryFailureCopy({ code: "step_attempt_superseded" }, 409),
+      STEP_ATTEMPT_SUPERSEDED_MESSAGE,
+    );
+    assert.equal(
       retryProblemMessage({ code: "approval_closed" }),
       APPROVAL_CLOSED_MESSAGE,
     );
+    assert.equal(
+      retryFailureCopy({ code: "approval_closed" }, 409),
+      APPROVAL_CLOSED_MESSAGE,
+    );
     assert.equal(retryProblemMessage({ code: "retry-denied" }), null);
+    assert.equal(
+      retryFailureCopy({ code: "retry-denied" }, 409),
+      RETRY_CONFLICT_MESSAGE,
+    );
+    assert.equal(RETRY_CONFLICT_MESSAGE, EXECUTION_NOT_RETRYABLE_MESSAGE);
+    assert.equal(retryFailureCopy({ code: "retry-denied" }, 500), null);
     assert.equal(
       retryProblemShouldRefetch({ code: "execution_not_retryable" }),
       true,
@@ -185,5 +232,28 @@ describe("retry capability", () => {
     );
     assert.equal(retryProblemShouldRefetch({ code: "approval_closed" }), true);
     assert.equal(retryProblemShouldRefetch({ code: "retry-denied" }), false);
+  });
+
+  it("keeps retry explanations free of the stale retry-denied wording", () => {
+    const sentences = [
+      ...Object.values(RETRY_REASON_MESSAGE),
+      STEP_ATTEMPT_SUPERSEDED_MESSAGE,
+      APPROVAL_CLOSED_MESSAGE,
+      EXECUTION_NOT_RETRYABLE_MESSAGE,
+      RETRY_CAPABILITY_UNAVAILABLE_MESSAGE,
+      RETRY_CONFLICT_MESSAGE,
+      SSH_RETRY_DENIED_MESSAGE,
+      SSH_NO_BLIND_RETRY_HELP,
+      DEFAULT_SSH_RETRY_UI.hideRetryWhen,
+      SCRIPT_IO_RETRY_DENIED_MESSAGE,
+      SCRIPT_IO_NO_BLIND_RETRY_HELP,
+      DEFAULT_SCRIPT_IO_UI.hideRetryWhen,
+      SCRIPT_NO_BLIND_RETRY_AFTER_STOP_HELP,
+      ...DEFAULT_SSH_RETRY_ERRORS.map((item) => item.meaning),
+      ...DEFAULT_SCRIPT_NODE_ERRORS.map((item) => item.meaning),
+    ];
+    for (const sentence of sentences) {
+      assert.doesNotMatch(sentence, /retry-denied/);
+    }
   });
 });

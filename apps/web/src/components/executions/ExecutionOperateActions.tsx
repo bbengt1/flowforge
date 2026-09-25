@@ -7,12 +7,9 @@ import {
   cancelExecution,
   retryExecution,
 } from "@/lib/execution-client";
+import { RETRY_FORBIDDEN_MESSAGE } from "@/lib/execution-contract";
 import {
-  RETRY_CONFLICT_MESSAGE,
-  RETRY_FORBIDDEN_MESSAGE,
-} from "@/lib/execution-contract";
-import {
-  retryProblemMessage,
+  retryFailureCopy,
   retryProblemShouldRefetch,
 } from "@/lib/execution-retry";
 import {
@@ -32,7 +29,6 @@ import {
   SCRIPT_EMERGENCY_STOP_FORBIDDEN_MESSAGE,
   emergencyStopShouldMarkUncertain,
 } from "@/lib/script-ops-contract";
-import { SSH_RETRY_DENIED_MESSAGE } from "@/lib/ssh-retry-contract";
 import {
   FF_INBOX_DANGER_CLASS,
   FF_INBOX_GHOST_CLASS,
@@ -122,12 +118,9 @@ export function ExecutionOperateActions({
       if (result.forbidden) {
         setMessage(RETRY_FORBIDDEN_MESSAGE);
       } else if (result.statusCode === 409) {
-        const conflict = retryProblemMessage(result.problem);
         setMessage(
-          conflict ??
-            (result.problem.code === "retry-denied"
-              ? result.problem.detail || SSH_RETRY_DENIED_MESSAGE
-              : RETRY_CONFLICT_MESSAGE),
+          retryFailureCopy(result.problem, result.statusCode) ??
+            (result.problem.detail || result.problem.title),
         );
         if (retryProblemShouldRefetch(result.problem)) {
           onOperated?.();
