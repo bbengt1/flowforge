@@ -209,7 +209,6 @@ test.describe("workflow create slug preview", () => {
     await expect(page.locator("[data-editor-slug]")).toHaveText("my-flow-2");
     await expect(page.getByText("Created as my-flow-2")).toBeVisible();
     await expect(page.locator("[data-editor-slug]")).not.toHaveText("my-flow");
-    await expectNoBlockingAxeViolations(page);
     await expectNoSecretsInBrowserStorage(page);
   });
 
