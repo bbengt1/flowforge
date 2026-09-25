@@ -1,0 +1,40 @@
+---
+description: "React patterns for apps/web: where state lives, TanStack Query, list keys, and composition. Server data stays on the existing query client."
+globs: "apps/web/**"
+alwaysApply: false
+---
+
+Adapted from affaan-m/ECC (MIT)
+
+# React patterns
+
+`apps/web/AGENTS.md` wins on Next.js APIs. Follow the component and data-fetch style already in `apps/web/src`.
+
+## Data and presentation
+
+A data-owning component loads and holds state. A presentational component receives props and renders. Do not fetch inside a leaf that only displays a value.
+
+## Where state lives
+
+1. One component: `useState` there.
+2. A parent and its children: lift to the nearest common parent.
+3. Rare cross-tree reads (theme, locale): context. Do not put high-frequency updates in context.
+4. Server data: TanStack Query, which this app already uses. Do not add a second client cache, and do not add another global store.
+5. Do not `fetch` inside `useEffect` when the screen can use the existing query client.
+
+## Server and client
+
+Server Components are the default. A client file opts in with `"use client"` on line 1. Pass serializable props from server to client. A client component can receive a server component through `children`. Do not import a server-only module from a client file.
+
+Route loading and failure UI already uses App Router `loading.tsx`, `error.tsx`, and `not-found.tsx`. Extend those. Do not add a parallel class error boundary.
+
+## Forms
+
+Keep the existing controlled fields that post to the API. Use uncontrolled fields plus `FormData` only when the screen already does. Do not add a form library for one screen.
+
+## Lists, composition, refs
+
+- `key` is stable across renders and unique among siblings. Do not use the array index for a list that reorders, inserts, or deletes.
+- Prefer `children` and explicit props over subclassing a component.
+- On React 19, pass `ref` as a normal prop. Do not add `forwardRef` for new components.
+- Use `createPortal` for a layer that must escape `overflow` or stacking, into a node the app already mounts.

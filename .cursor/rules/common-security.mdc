@@ -1,0 +1,47 @@
+---
+description: "Security hard lines for every change: no secrets in the browser, logs, responses, YAML, URLs, or localStorage; fail closed on authz and config; drafts never run; embed chrome only from session.embed."
+alwaysApply: true
+---
+
+Adapted from affaan-m/ECC (MIT)
+
+# Security
+
+`SECURITY.md` and `CONTRIBUTING.md` win if this rule disagrees with them. Vulnerability reports go through `SECURITY.md`, not a public issue.
+
+## Hard lines
+
+- Fail closed on missing or malformed config, authorization, allowlists, and unknown fields.
+- No secrets in the browser, logs, responses, YAML, URLs, or `localStorage`. The vault shows a display-name and a UUID only. No KEK, PEM, password, or other secret material in chrome, search, or client storage.
+- Drafts never run. Publish, then start a published version.
+- The first-run wizard, Login, and change-password never mount on `/embed/v1`.
+- Embed chrome comes only from `GET /session` `session.embed` (ADV-021). Host query params are display-only. A missing bind is a visible alert, not a guessed shell.
+- Membership and isolation stay grant-gated (ADV-024). Isolation success is a denial.
+- Workspace-owned Postgres tables use `ENABLE` and `FORCE ROW LEVEL SECURITY` through `app.enable_workspace_isolation`. Policies allow a row only when `workspace_id` equals `app.current_workspace_id()` (session setting `app.workspace_id`). New workspace-owned tables must do the same in their migration. Do not add a `BYPASSRLS` role, disable RLS, or query outside that workspace scope. Identity tables stay unscoped on purpose.
+- YAML is the only persisted workflow definition.
+
+## Before committing
+
+- No hardcoded secrets (API keys, passwords, tokens, private keys).
+- User input is validated. Unknown fields fail closed.
+- Queries stay parameterized. Do not concatenate untrusted input into SQL, shell, or HTML.
+- State-changing browser calls keep the existing cookie session and CSRF checks. Do not relocate the session into `localStorage` or `sessionStorage`.
+- Authorization is enforced on the server. Hiding a control is not an authorization check.
+- Error text and logs do not echo secrets, session cookies, or vault material.
+
+## Secrets
+
+- Read secrets from the existing environment or secret manager. Do not commit them, and do not put them in a pull request body.
+- Missing required secrets fail closed at startup.
+- Values prefixed for the client bundle are public. Never put a secret in `NEXT_PUBLIC_*`.
+- If a secret may have been exposed, stop and rotate it. Then look for the same pattern elsewhere.
+
+## Cookie and session posture (repo override, intentional)
+
+The session cookie `ff_session` is always HttpOnly. On a first-party session, `Secure` is set only when the request is HTTPS, `REQUIRE_TLS` is on, or the process is production-locked. Local, dev, and test over cleartext HTTP omit `Secure` on purpose so Login can bootstrap without TLS. Do not add unconditional `Secure`.
+
+The CSRF cookie `ff_csrf` is deliberately readable from JavaScript (`HttpOnly` false) so the browser can double-submit it. Do not flip it to HttpOnly.
+
+First-party `SameSite` stays Lax on `ff_session` and Strict on `ff_csrf`. Embed uses CHIPS: `SameSite=None`, `Secure`, and `Partitioned` on both cookies. `SameSite=None` is never sent without `Partitioned`, and `Secure` is never dropped on the embed path. Do not tighten these.
+
+Generic checklists that demand `Secure` and HttpOnly on every cookie should report this posture as INFO, not as a finding. This repo's conventions override those checklist defaults.

@@ -1,0 +1,35 @@
+---
+description: "TypeScript and JavaScript style for apps/web: immutable object updates, explicit errors, validation that fails closed, and no debug logging of secrets."
+globs: "apps/web/**"
+alwaysApply: false
+---
+
+Adapted from affaan-m/ECC (MIT)
+
+# TypeScript coding style
+
+Applies to `apps/web` only. `apps/web/AGENTS.md` wins on Next.js APIs. The always-on security rule wins on secrets and embed behavior.
+
+## Updates
+
+Copy objects instead of mutating a value the caller still holds:
+
+```typescript
+function renameUser(user: User, name: string): User {
+  return { ...user, name };
+}
+```
+
+Do not spread untrusted JSON into state. Keep only known fields.
+
+## Errors
+
+Await async work and handle the failure. Do not log the raw error when it might contain a secret, token, or vault material. Surface the existing problem shape used in `apps/web/src/lib` instead of inventing a new error string.
+
+## Validation
+
+Validate input and reject unknown fields. Use the parsers already in `apps/web/src/lib`. Do not add a new validation dependency for a single change.
+
+## Logging
+
+Do not commit `console.log` in product paths. Never log secrets, session cookies, PEM, or vault material.

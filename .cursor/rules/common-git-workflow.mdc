@@ -1,0 +1,40 @@
+---
+description: "Git and pull request workflow. Target main, follow CONTRIBUTING.md, keep the PR draft until CI is green, squash-merge, never pass --no-verify, and never force-push shared branches."
+alwaysApply: true
+---
+
+Adapted from affaan-m/ECC (MIT)
+
+# Git workflow
+
+`CONTRIBUTING.md` wins if this rule disagrees with it.
+
+## Branches and pull requests
+
+- Target `main`.
+- Use `.github/PULL_REQUEST_TEMPLATE.md`.
+- Open the pull request as a draft. Leave it draft until CI is green for the surface you touched. Merge by squash.
+- Name the issue. Use a closing keyword only when the pull request fully satisfies that issue.
+- Do not put secrets in the pull request body.
+- Do not invent inboxes, team handles, or GitHub users.
+- If the change alters what actually runs on `main`, update `docs/architecture/implemented-vs-specified.md` in the same pull request.
+- Review the full branch diff (`git diff <base>...HEAD`), not only the latest commit.
+- Push a new branch with `-u`.
+
+## Commit messages
+
+```
+<type>: <description>
+
+<optional body>
+```
+
+Types: feat, fix, refactor, docs, test, chore, perf, ci.
+
+## Safety
+
+- Do not pass `--no-verify`.
+- Do not force-push shared branches, including `main`.
+- Keep the hard lines in `CONTRIBUTING.md`: fail closed; no secrets in logs; drafts never run; ADV-021; ADV-024; YAML is the only persisted workflow definition.
+
+Run the tests for the surface you touched before asking for review. Commands are in `CONTRIBUTING.md`.

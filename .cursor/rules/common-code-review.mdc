@@ -1,0 +1,52 @@
+---
+description: "Apply when reviewing a diff, preparing a pull request, or checking a change for security and regressions. Tests are required for changed behavior. There is no numeric coverage gate."
+alwaysApply: false
+---
+
+Adapted from affaan-m/ECC (MIT)
+
+# Code review
+
+`CONTRIBUTING.md` and the always-on security rule win if this rule disagrees with them.
+
+## When
+
+Review after modifying code, before committing to a shared branch, and before merge. Security-sensitive changes (auth, authorization, user input, tenancy, vault, embed) get the security checklist first.
+
+Before requesting review: CI for the touched surface is passing, conflicts are resolved, and the branch is up to date with `main`.
+
+## Checklist
+
+- Code is readable and names match the surrounding module.
+- Errors are handled explicitly. Fail closed on unknown fields and missing config.
+- No hardcoded secrets or credentials. Logs, responses, YAML, URLs, and `localStorage` stay free of secret material.
+- No debug logging of secrets, cookies, or vault material.
+- Tests cover the changed behavior. A bug fix has a regression test. There is no numeric coverage gate.
+- Embed, wizard, Login, and change-password behavior still matches the security rule.
+
+Size is a maintainability note, not a merge gate: flag a function that is hard to follow, or a source file past a soft 800-line ceiling, when the size is unexplained. Do not split a cohesive existing module only to satisfy that ceiling.
+
+## Severity
+
+| Level | Meaning | Action |
+| --- | --- | --- |
+| CRITICAL | Security vulnerability or data-loss risk | Block until fixed |
+| HIGH | Bug or a broken hard line | Fix before merge |
+| MEDIUM | Maintainability, including unexplained size | Consider fixing |
+| LOW | Style | Optional |
+
+## What to catch
+
+Security: hardcoded credentials, injection via concatenated queries or shell, unsanitized HTML, path traversal, missing CSRF on cookie-authenticated mutations, authorization that exists only in the UI.
+
+Quality: deep nesting (prefer early returns past four levels), missing error handling, TypeScript updates that mutate a shared object when the surrounding code copies it, missing tests for the new behavior.
+
+Performance: N+1 queries, missing pagination, unbounded queries. Do not add a cache that stores secrets or workflow definitions in the browser.
+
+## Approval
+
+- Approve when there is no CRITICAL or HIGH issue.
+- Do not approve a CRITICAL issue.
+- A HIGH issue should be fixed before merge.
+
+Related rules: `common-testing.mdc`, `common-security.mdc`, `common-git-workflow.mdc`.

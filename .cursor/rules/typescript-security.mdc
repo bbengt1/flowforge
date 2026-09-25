@@ -1,0 +1,25 @@
+---
+description: "TypeScript security for apps/web: no hardcoded secrets, and no secrets in NEXT_PUBLIC_ variables or the client bundle."
+globs: "apps/web/**"
+alwaysApply: false
+---
+
+Adapted from affaan-m/ECC (MIT)
+
+# TypeScript security
+
+The always-on security rule wins if this file disagrees with it.
+
+## Secrets
+
+```typescript
+// Never commit a literal secret.
+const apiKey = process.env.SOME_SERVER_SECRET;
+if (!apiKey) {
+  throw new Error("SOME_SERVER_SECRET is not configured");
+}
+```
+
+- `NEXT_PUBLIC_*` is copied into the browser bundle. Treat it as public. Never put a key, password, token, PEM, or KEK behind that prefix.
+- Do not read a server-only secret from a client component.
+- Missing required config fails closed. Do not substitute an empty string or a committed default outside the documented local compose path.

@@ -1,0 +1,80 @@
+---
+description: "React useState, useEffect, useMemo, useCallback, and useRef rules for apps/web. Call use* only at the top level. Do not store secrets in the browser."
+globs: "apps/web/**"
+alwaysApply: false
+---
+
+Adapted from affaan-m/ECC (MIT)
+
+# React state and effects
+
+`apps/web/AGENTS.md` wins on Next.js APIs. Lint comes from `apps/web/eslint.config.mjs` (`pnpm lint --max-warnings=0`). Do not disable a React lint rule without a comment that explains why.
+
+## Call order
+
+1. Call `useState`, `useEffect`, `useMemo`, `useCallback`, `useRef`, and other `use*` functions only at the top level of a function component or another function whose name starts with `use`.
+2. Do not call them in loops, conditions, nested functions, or after an early return.
+3. Call them in the same order on every render.
+
+```tsx
+function Foo({ enabled }: { enabled: boolean }) {
+  const [x, setX] = useState(0);
+  if (!enabled) return null;
+  return <span>{x}</span>;
+}
+```
+
+## When `useEffect` is the wrong tool
+
+`useEffect` synchronizes with an external system (a subscription, a browser API, a library). Do not use it to:
+
+- derive state that render can compute
+- transform data for rendering
+- reset state when a prop changes (use a `key`, or derive from props)
+- notify a parent (call the callback from the event handler)
+
+```tsx
+const fullName = `${first} ${last}`;
+```
+
+## Dependencies and cleanup
+
+- Include every reactive value the effect or callback reads.
+- If the dependency list is doing too much, split the effect.
+- Wrap a function in `useCallback` only when it is a dependency of another `use*` call or a prop to a memoized child.
+- Subscriptions, intervals, listeners, and in-flight requests must return a cleanup (`AbortController`, `clearInterval`, remove the listener).
+
+## `useMemo` and `useCallback`
+
+Do not memoize by default. Add `useMemo` or `useCallback` only when:
+
+1. The value is a prop of a memoized child and identity matters.
+2. The value is a dependency of another `use*` call.
+3. The computation is measurably expensive.
+
+## Extract a `use*` function when
+
+- The same state-plus-effect sequence appears in two or more components.
+- The logic has a clear name and can be tested from `src/lib` without rendering.
+
+Do not extract a one-caller wrapper, and do not rename `useState` for its own sake.
+
+Do not persist secrets, session cookies, workflow YAML, vault material, or the folder tree in `localStorage` or `sessionStorage`. Query cache stays in memory (`apps/web/src/lib/query-cache.ts`).
+
+## `useState` and `useRef`
+
+- Pass an initializer function to `useState` when the initial value is expensive.
+- Use the functional updater when the next value depends on the previous one (`setCount((c) => c + 1)`).
+- Split state that does not change together. Use `useReducer` when transitions depend on the previous state or several values always move as one.
+- Use `useRef` for DOM nodes and for mutable values that must not re-render (timer ids). Do not read or write `ref.current` during render.
+- On this React 19 app, a function component accepts `ref` as a normal prop. Do not add `forwardRef` for new components.
+
+## External stores and React 19
+
+Subscribe to a browser or third-party store with `useSyncExternalStore`.
+
+This app is on React 19. Prefer `use`, `useActionState`, `useOptimistic`, and `useTransition` when you are already on those paths. Do not rewrite an existing API form onto a server action just to use them. Forms keep posting to the control plane.
+
+## Stale values
+
+Async handlers and intervals close over the render that created them. Use a functional updater, put the changing value in the effect dependency list, or read a ref that render keeps current.

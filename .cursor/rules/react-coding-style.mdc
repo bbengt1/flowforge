@@ -1,0 +1,42 @@
+---
+description: "React coding style for apps/web: function components, file naming, props, and the server/client boundary. Read apps/web/AGENTS.md before using Next.js APIs."
+globs: "apps/web/**"
+alwaysApply: false
+---
+
+Adapted from affaan-m/ECC (MIT)
+
+# React coding style
+
+`apps/web/AGENTS.md` wins on Next.js APIs. This Next.js version differs from older training data; read the guide it points at under `node_modules/next/dist/docs/` before using a framework API. Match the surrounding file instead of restyling a directory.
+
+## Files and names
+
+- `.tsx` for JSX. `.ts` for logic and types that do not render.
+- Components use `PascalCase` for the symbol and the file, under `apps/web/src/components/<area>/`.
+- Logic that `pnpm test` must run lives in `apps/web/src/lib/*.test.ts`, not in a colocated `*.test.tsx` the unit script ignores.
+- Event handlers inside a component are `handleClick` / `handleSubmit`. The prop that receives one is `onClick` / `onSubmit`.
+- Do not add `index.ts` barrels, CSS modules, or a new component folder layout. The app uses the existing component files and Tailwind.
+
+## Components
+
+Prefer a closed `type Props` and destructure props in the parameter list. Use `interface` when the type is an extension point that already uses one.
+
+Self-close tags with no children. Use a fragment when no DOM node is needed. Keep multi-line conditions above the `return` instead of inside JSX.
+
+New class components are not allowed. When a change is already non-trivial, convert a class component you are editing to a function.
+
+## Server and client
+
+- `"use client"` goes on line 1, before imports, and only when the file uses state, effects, refs, browser APIs, or event handlers.
+- Keep the directive on a file that already has it unless you are sure the file no longer needs the client runtime.
+- Do not import server-only modules (secrets, database clients) from a client module.
+- Do not re-export server-only code through a client file.
+
+## Imports and state
+
+React imports first, then third-party packages, then project imports. Use `import type` for type-only bindings.
+
+Local state stays in the component that uses it. Lift it when a parent and child share it. Server data goes through TanStack Query, which this app already uses. Do not add another global store.
+
+Call `useState` and other `use*` functions unconditionally at the top of the component. The state-and-effects rule has the rest.
