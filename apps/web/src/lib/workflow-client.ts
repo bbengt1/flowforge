@@ -52,6 +52,7 @@ import { MANUAL_START_IDEMPOTENCY_HEADER } from "./manual-start-contract.ts";
 import { parseAuthorizedPins } from "./ops-config.ts";
 import { parseScriptVersionPins, type ScriptVersionPin } from "./script-contract.ts";
 import type { OpsConfigPin } from "./ops-config-types.ts";
+import { workflowRecordWithCapabilities } from "./workflow-delete.ts";
 import {
   listWorkflowsPath,
   workflowMoveBody,
@@ -158,6 +159,12 @@ export type WorkflowRecordSuccess = {
   statusCode: number;
   requestId: string;
   workflow: WorkflowRecord;
+};
+
+export type DeleteWorkflowSuccess = {
+  ok: true;
+  statusCode: 204;
+  requestId: string;
 };
 
 export type DraftClientSuccess = {
@@ -378,7 +385,9 @@ export async function listWorkflows(
     return failure(result, true);
   }
   const items = Array.isArray(result.data.items)
-    ? result.data.items.filter(isWorkflowRecord)
+    ? result.data.items
+        .filter(isWorkflowRecord)
+        .map(workflowRecordWithCapabilities)
     : [];
   const page = readCollectionPageFields(result.data);
   return {
@@ -422,7 +431,37 @@ export async function getWorkflow(
     ok: true,
     statusCode: result.statusCode,
     requestId: result.requestId,
-    workflow: result.data,
+    workflow: workflowRecordWithCapabilities(result.data),
+  };
+}
+
+/**
+ * Soft-delete. Success is 204 with an empty body. Does not send YAML
+ * and does not cancel executions.
+ */
+export async function deleteWorkflow(
+  identity: DevIdentity,
+  workflowId: string,
+): Promise<DeleteWorkflowSuccess | WorkflowClientFailure> {
+  const path = workflowPath(workflowId);
+  const result = await callIdentityProxy<undefined>(path, identity, {
+    method: "DELETE",
+  });
+  if (!result.ok) {
+    return failure(result);
+  }
+  if (result.statusCode !== 204) {
+    return malformed(
+      result.requestId,
+      result.statusCode,
+      path,
+      "Workflow delete did not return 204.",
+    );
+  }
+  return {
+    ok: true,
+    statusCode: 204,
+    requestId: result.requestId,
   };
 }
 
@@ -455,7 +494,7 @@ export async function moveWorkflowToFolder(
     ok: true,
     statusCode: result.statusCode,
     requestId: result.requestId,
-    workflow: result.data,
+    workflow: workflowRecordWithCapabilities(result.data),
   };
 }
 
@@ -775,7 +814,7 @@ function detailResult(
     statusCode: result.statusCode,
     requestId: result.requestId,
     workflow: isWorkflowRecord(result.data.workflow)
-      ? result.data.workflow
+      ? workflowRecordWithCapabilities(result.data.workflow)
       : undefined,
     draft: result.data.draft,
     applied,

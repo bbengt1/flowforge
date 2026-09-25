@@ -304,6 +304,47 @@ export function executionLogsQueryKey(
   return key;
 }
 
+export function workflowListQueryKey(
+  scope: string,
+): readonly ["flowforge", string, "workflows", "list"] | null {
+  const key = ["flowforge", scope, "workflows", "list"] as const;
+  if (queryKeyHasSecret(key)) {
+    return null;
+  }
+  return key;
+}
+
+export function workflowExplorerQueryKey(
+  scope: string,
+): readonly ["flowforge", string, "workflows", "explorer"] | null {
+  const key = ["flowforge", scope, "workflows", "explorer"] as const;
+  if (queryKeyHasSecret(key)) {
+    return null;
+  }
+  return key;
+}
+
+export function workflowSearchQueryKey(
+  scope: string,
+): readonly ["flowforge", string, "workflows", "search"] | null {
+  const key = ["flowforge", scope, "workflows", "search"] as const;
+  if (queryKeyHasSecret(key)) {
+    return null;
+  }
+  return key;
+}
+
+export function workflowRecordQueryKey(
+  scope: string,
+  workflowId: string,
+): readonly ["flowforge", string, "workflows", "record", string] | null {
+  const key = ["flowforge", scope, "workflows", "record", workflowId] as const;
+  if (queryKeyHasSecret(key)) {
+    return null;
+  }
+  return key;
+}
+
 /** Roots reserved for the remaining god-component splits. */
 export const REMAINING_GOD_COMPONENT_QUERY_ROOTS = {
   workflowHome: ["flowforge", "workflow-home"] as const,

@@ -283,6 +283,14 @@ export const CONFLICT_CODE = "conflict";
 
 export type WorkflowStatus = "draft" | "published" | "archived" | string;
 
+/**
+ * Caller-specific actions on a workflow response.
+ * Missing or non-boolean `delete` is false (fail closed).
+ */
+export type WorkflowCapabilities = {
+  delete: boolean;
+};
+
 export type WorkflowRecord = {
   id: string;
   slug: string;
@@ -299,6 +307,7 @@ export type WorkflowRecord = {
   updatedAt: string;
   /** Null / omitted = Unfiled. Not stored in YAML. */
   folderId?: string | null;
+  capabilities?: WorkflowCapabilities;
 };
 
 export type WorkflowList = {

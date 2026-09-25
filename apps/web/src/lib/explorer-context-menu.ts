@@ -7,8 +7,9 @@
  * Chloe UI only. Grant-gated Explorer menus on `/workflows` using
  * existing F/O verbs — no new APIs. Folder (tree or content-pane
  * folder row): New folder / Rename / Delete (disabled if
- * non-empty) / Expand. Workflow row: Open / Move… — Rename and
- * Delete stay omitted until an F/O client exists (none on main).
+ * non-empty) / Expand. Workflow row: Open / Move… and Delete when
+ * `capabilities.delete` is true (never on `/embed/v1`). Rename stays
+ * off this menu.
  * Empty pane: New folder / Create workflow / Import YAML (Import
  * already exists in home chrome). Paste is deferred. Viewers get
  * Open / Expand / select only — no mutate verbs (fail-closed).
@@ -55,6 +56,7 @@ import {
   X1_EPIC,
   X1_KEEP_EPIC_OPEN,
 } from "./explorer-shell.ts";
+import { DELETE_WORKFLOW_LABEL } from "./workflow-delete.ts";
 
 export const X2_STORY = 381;
 export const X2_EPIC = 379;
@@ -86,7 +88,8 @@ export const EXPLORER_CONTEXT_MENU = {
   folderMenuNewRenameDeleteExpand: true,
   workflowMenuOpenMove: true,
   workflowRenameOmittedNoApi: true,
-  workflowDeleteOmittedNoApi: true,
+  workflowDeleteOmittedNoApi: false,
+  workflowDeleteCapabilityGated: true,
   emptyPaneNewCreateImport: true,
   importOnlyIfHomeChromeHasIt: true,
   pasteDeferred: true,
@@ -151,7 +154,6 @@ export const EXPLORER_CONTEXT_DEFERRED_TOKENS = [
 
 export const EXPLORER_INVENTED_WORKFLOW_VERBS = [
   "renameWorkflow(",
-  "deleteWorkflow(",
   "archiveWorkflow(",
 ] as const;
 
@@ -311,15 +313,12 @@ export function explorerWorkflowMenuItems(
       },
       input.canMutate,
     ),
-    gateMutate(
-      {
-        id: "delete",
-        label: DELETE_FOLDER_LABEL,
-        mutate: true,
-        hidden: input.canDeleteWorkflow !== true,
-      },
-      input.canMutate,
-    ),
+    {
+      id: "delete",
+      label: DELETE_WORKFLOW_LABEL,
+      mutate: true,
+      hidden: input.canDeleteWorkflow !== true,
+    },
   ];
 }
 
@@ -414,6 +413,8 @@ export function explorerHomeWiresExistingVerbs(source: string): boolean {
     source.includes("openRenameFolder") &&
     source.includes("removeFolder") &&
     source.includes("openMoveDialog") &&
+    source.includes("askDeleteWorkflow") &&
+    source.includes("workflowDeleteActionVisible") &&
     source.includes("createFromYaml") &&
     source.includes("importRef") &&
     source.includes("moveWorkflowToFolder") &&

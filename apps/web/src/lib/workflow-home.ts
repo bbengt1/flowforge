@@ -98,6 +98,8 @@ export type WorkflowHomeItem = {
   lastRunIndeterminate: boolean;
   activation: HomeActivationColumn;
   folderId: string | null;
+  /** From `capabilities.delete`. Missing flag stays false. */
+  canDelete: boolean;
 };
 
 function readOwner(record: WorkflowRecord): string {
@@ -224,6 +226,7 @@ export function toWorkflowHomeItem(
         latestVersionNumber: record.latestVersionNumber,
         latestVersionId: record.latestVersionId,
       }),
+    canDelete: record.capabilities?.delete === true,
   };
 }
 

@@ -42,6 +42,7 @@ import {
   FF_EDITOR_PRIMARY_CLASS,
   FF_EDITOR_TOPBAR_CLASS,
 } from "@/lib/editor-visual";
+import { EditorWorkflowOverflow } from "@/components/workflows/EditorWorkflowOverflow";
 import {
   WORKFLOW_NAME_NOT_READY,
   WORKFLOW_NAME_SAVE_FAILED,
@@ -85,6 +86,8 @@ type EditorTopBarProps = {
   onRedo?: () => void;
   canRename?: boolean;
   onRenameWorkflow?: (name: string) => Promise<WorkflowNameRenameResult>;
+  canDelete?: boolean;
+  onDeleteWorkflow?: () => void;
 };
 
 const SATELLITE_CONTROL = `${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-sm`;
@@ -135,6 +138,8 @@ export function EditorTopBar({
   onRedo,
   canRename = false,
   onRenameWorkflow,
+  canDelete = false,
+  onDeleteWorkflow,
 }: EditorTopBarProps) {
   const embed = useEmbedMode();
   const backHref = embed ? embedDeepLink(EDITOR_WORKFLOWS_HREF) : EDITOR_WORKFLOWS_HREF;
@@ -351,6 +356,12 @@ export function EditorTopBar({
           </p>
         </div>
       </div>
+      {canDelete && onDeleteWorkflow ? (
+        <EditorWorkflowOverflow
+          disabled={pending !== null || !workflow}
+          onDelete={onDeleteWorkflow}
+        />
+      ) : null}
     </header>
   );
 }
