@@ -4,6 +4,7 @@ import {
   expectNoSecretsInBrowserStorage,
   installOperatorApi,
   installSignedOutApi,
+  OPERATOR_EXECUTION_ID,
   OPERATOR_FOLDER_NAME,
   OPERATOR_WORKFLOW_ID,
 } from "./operator-api";
@@ -196,6 +197,39 @@ test.describe("RTL primary surfaces", () => {
     await expectHugsInlineStart(page.getByRole("heading", { level: 1 }));
     await expectRtlShell(page);
     await expectNoBlockingAxeViolations(page);
+  });
+
+  test("run view keeps blocked, pending, and skipped under rtl", async ({
+    page,
+  }) => {
+    await installOperatorApi(page);
+    await page.goto(
+      `/executions/${OPERATOR_EXECUTION_ID}?workflowId=${OPERATOR_WORKFLOW_ID}`,
+    );
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Execution" }),
+    ).toBeVisible();
+    const rollback = page.locator("[data-canvas-node='rollback']");
+    await expect(rollback).toContainText("Skipped");
+    await expect(rollback).not.toContainText("Valid");
+    await expect(page.getByRole("status", { name: /Blocked/ })).toBeVisible();
+    await expect(page.getByRole("status", { name: /Pending/ }).first()).toBeVisible();
+    await expect(page.getByRole("status", { name: /Skipped/ }).first()).toBeVisible();
+    const blockedEdges = await page
+      .getByRole("status", { name: /Blocked/ })
+      .evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          inlineStart: style.borderInlineStartWidth,
+          inlineEnd: style.borderInlineEndWidth,
+        };
+      });
+    expect(blockedEdges.inlineStart).toBe("3px");
+    expect(blockedEdges.inlineEnd).toBe("1px");
+    await expectHugsInlineStart(page.getByRole("heading", { level: 1 }));
+    await expectRtlShell(page);
+    await expectNoBlockingAxeViolations(page);
+    await expectNoSecretsInBrowserStorage(page);
   });
 
   test("approvals list keeps rtl shell chrome", async ({ page }) => {

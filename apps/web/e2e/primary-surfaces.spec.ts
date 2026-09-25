@@ -1,9 +1,12 @@
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { expectNoBlockingAxeViolations } from "./axe";
 import {
   expectNoSecretsInBrowserStorage,
   installOperatorApi,
   installSignedOutApi,
+  OPERATOR_EXECUTION_ID,
   OPERATOR_FOLDER_NAME,
   OPERATOR_WORKFLOW_ID,
 } from "./operator-api";
@@ -24,6 +27,37 @@ async function selectLightTheme(page: Page): Promise<void> {
       sameSite: "Lax",
     },
   ]);
+}
+
+const BLOCKED_HELP = "Waiting for upstream steps to finish.";
+const PENDING_HELP = "Not started yet. Waiting on inputs.";
+const SKIPPED_HELP =
+  "Didn't run because an upstream approval was rejected or expired, or its branch wasn't taken. Not a failure.";
+
+async function expectDispatchStatusChips(page: Page): Promise<void> {
+  await expect(
+    page.getByRole("heading", { level: 2, name: "Graph replay" }),
+  ).toBeVisible();
+  const rollback = page.locator("[data-canvas-node='rollback']");
+  await expect(rollback).toContainText("Skipped");
+  await expect(rollback).not.toContainText("Valid");
+  await expect(rollback).not.toContainText("✓");
+  const downstream = page.locator("[data-canvas-node='downstream']");
+  await expect(downstream).toContainText("Pending");
+  await expect(downstream).not.toContainText("Valid");
+  await expect(page.getByRole("status", { name: /Blocked/ })).toHaveAttribute(
+    "title",
+    BLOCKED_HELP,
+  );
+  await expect(page.getByRole("status", { name: /Pending/ })).toHaveCount(2);
+  await expect(
+    page.getByRole("status", { name: /Pending/ }).first(),
+  ).toHaveAttribute("title", PENDING_HELP);
+  await expect(page.getByRole("status", { name: /Skipped/ })).toHaveCount(2);
+  await expect(
+    page.getByRole("status", { name: /Skipped/ }).first(),
+  ).toHaveAttribute("title", SKIPPED_HELP);
+  await expect(page.getByRole("status", { name: /Failed/ })).toHaveCount(0);
 }
 
 async function expectSkipLink(page: Page): Promise<void> {
@@ -93,6 +127,25 @@ test.describe("primary surfaces", () => {
     ).toBeVisible();
     await expectOneMain(page);
     await expectNoBlockingAxeViolations(page);
+  });
+
+  test("run view shows blocked, pending, and skipped", async ({ page }) => {
+    await installOperatorApi(page);
+    await page.goto(
+      `/executions/${OPERATOR_EXECUTION_ID}?workflowId=${OPERATOR_WORKFLOW_ID}`,
+    );
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Execution" }),
+    ).toBeVisible();
+    await expectDispatchStatusChips(page);
+    await expectOneMain(page);
+    await expectNoBlockingAxeViolations(page);
+    await expectNoSecretsInBrowserStorage(page);
+    const shot = process.env.FF_STATUS_SCREENSHOT;
+    if (shot) {
+      mkdirSync(dirname(shot), { recursive: true });
+      await page.screenshot({ path: shot, fullPage: true });
+    }
   });
 
   test("approvals list settles before axe", async ({ page }) => {

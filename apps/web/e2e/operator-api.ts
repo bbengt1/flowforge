@@ -16,6 +16,7 @@ const APPROVAL_ID = "77777777-7777-4777-8777-777777777777";
 const USER_ID = "88888888-8888-4888-8888-888888888888";
 
 export const OPERATOR_WORKFLOW_ID = WORKFLOW_ID;
+export const OPERATOR_EXECUTION_ID = EXECUTION_ID;
 export const OPERATOR_FOLDER_NAME = "Runbooks";
 
 const FOLDER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -134,6 +135,113 @@ const execution = {
   permittedActions: ["view"],
 };
 
+const STEP_GATE = "12121212-1212-4212-8212-121212121212";
+const STEP_NOTIFY = "13131313-1313-4313-8313-131313131313";
+const STEP_ROLLBACK = "14141414-1414-4414-8414-141414141414";
+const STEP_DOWNSTREAM = "15151515-1515-4515-8515-151515151515";
+
+const publishedYaml = [
+  "apiVersion: flowforge/v1",
+  "kind: Workflow",
+  "metadata:",
+  "  name: Deploy",
+  "spec:",
+  "  description: Branch statuses for replay.",
+  "  triggers:",
+  "    - id: manual",
+  "      type: manual",
+  "  nodes:",
+  "    - id: gate",
+  "      type: flow.approval",
+  "      name: Approval gate",
+  "    - id: notify",
+  "      type: data.set",
+  "      name: Notify",
+  "    - id: rollback",
+  "      type: data.set",
+  "      name: Rollback",
+  "    - id: downstream",
+  "      type: data.set",
+  "      name: Downstream",
+  "  edges:",
+  "    - from: gate.approved",
+  "      to: notify.input",
+  "    - from: gate.rejected",
+  "      to: rollback.input",
+  "    - from: notify.result",
+  "      to: downstream.input",
+  "",
+].join("\n");
+
+const publishedVersion = {
+  id: VERSION_ID,
+  workflowId: WORKFLOW_ID,
+  versionNumber: 1,
+  digest: "sha256:e2e-published",
+  definitionYaml: publishedYaml,
+  publishNote: "",
+  publishedAt: "2026-09-01T12:00:00.000Z",
+};
+
+const executionDetail = {
+  ...execution,
+  status: "running",
+  finishedAt: "",
+  steps: [
+    {
+      id: STEP_GATE,
+      nodeId: "gate",
+      nodeType: "flow.approval",
+      attempt: 1,
+      status: "succeeded",
+      startedAt: "2026-09-01T12:00:00.000Z",
+      finishedAt: "2026-09-01T12:00:05.000Z",
+    },
+    {
+      id: STEP_NOTIFY,
+      nodeId: "notify",
+      nodeType: "data.set",
+      attempt: 1,
+      status: "pending",
+    },
+    {
+      id: STEP_ROLLBACK,
+      nodeId: "rollback",
+      nodeType: "data.set",
+      attempt: 1,
+      status: "skipped",
+      finishedAt: "2026-09-01T12:00:05.000Z",
+    },
+    {
+      id: STEP_DOWNSTREAM,
+      nodeId: "downstream",
+      nodeType: "data.set",
+      attempt: 1,
+      status: "pending",
+    },
+  ],
+  jobs: [
+    {
+      id: "16161616-1616-4616-8616-161616161616",
+      executionStepId: STEP_DOWNSTREAM,
+      status: "blocked",
+    },
+    {
+      id: "17171717-1717-4717-8717-171717171717",
+      executionStepId: STEP_ROLLBACK,
+      status: "skipped",
+    },
+  ],
+  auditEvents: [
+    {
+      id: "19191919-1919-4919-8919-191919191919",
+      action: "execution.started",
+      outcome: "ok",
+    },
+  ],
+  artifacts: [],
+};
+
 const approval = {
   id: APPROVAL_ID,
   status: "pending",
@@ -247,6 +355,9 @@ function bodyFor(
   if (path === `/workflows/${WORKFLOW_ID}/versions`) {
     return ok({ items: [] });
   }
+  if (path === `/workflows/${WORKFLOW_ID}/versions/${VERSION_ID}`) {
+    return ok(publishedVersion);
+  }
   if (path === `/workflows/${WORKFLOW_ID}`) {
     return ok(workflow);
   }
@@ -258,8 +369,14 @@ function bodyFor(
       types: [{ type: "kubernetes", displayName: "Kubernetes" }],
     });
   }
-  if (path === "/executions" || path.startsWith("/executions")) {
+  if (path === "/executions" || path === "/executions/") {
     return ok({ items: [execution] });
+  }
+  if (path === `/executions/${EXECUTION_ID}`) {
+    return ok(executionDetail);
+  }
+  if (path.startsWith(`/executions/${EXECUTION_ID}/`)) {
+    return ok({ items: [] });
   }
   if (path === "/approvals/catalog") {
     return ok({ waitResumeEnabled: true });

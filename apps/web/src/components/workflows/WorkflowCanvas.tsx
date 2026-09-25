@@ -45,6 +45,7 @@ import {
 export type { EditorSelection };
 import {
   canConnectPorts,
+  canvasNodeStateDescription,
   canvasNodeStateIcon,
   canvasNodeStateLabel,
   formatPortRef,
@@ -800,6 +801,8 @@ function CanvasNode({
   const family = actionFamilyForType(node.type);
   const familyMark = editorNodeFamilyMark(family);
   const familyShape = editorNodeFamilyShapeClass(family);
+  const stateLabel = canvasNodeStateLabel(node.state);
+  const stateHelp = canvasNodeStateDescription(node.state);
   return (
     <div
       id={readOnly ? `replay-node-${node.id}` : undefined}
@@ -807,9 +810,9 @@ function CanvasNode({
       data-editor-node-family={family}
       role="group"
       aria-current={current ? "true" : undefined}
-      aria-label={`${node.name} ${node.type} ${canvasNodeStateLabel(node.state)}${
-        current ? " current node" : ""
-      }${selected ? " selected" : ""}`}
+      aria-label={`${node.name} ${node.type} ${stateLabel}${
+        stateHelp ? `. ${stateHelp}` : ""
+      }${current ? " current node" : ""}${selected ? " selected" : ""}`}
       tabIndex={0}
       onPointerDown={(event) => {
         event.stopPropagation();
@@ -869,10 +872,11 @@ function CanvasNode({
         </div>
         <p
           className="flex items-center gap-1 text-[11px] font-medium"
-          aria-label={`State ${canvasNodeStateLabel(node.state)}`}
+          aria-label={stateHelp ? `State ${stateLabel}. ${stateHelp}` : `State ${stateLabel}`}
+          title={stateHelp || undefined}
         >
           <span aria-hidden>{canvasNodeStateIcon(node.state)}</span>
-          <span>{canvasNodeStateLabel(node.state)}</span>
+          <span>{stateLabel}</span>
         </p>
       </div>
       <div className="mt-2 flex justify-between gap-2">

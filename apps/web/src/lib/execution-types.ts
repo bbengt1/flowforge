@@ -2,6 +2,10 @@
 
 import type { OpsConfigPin } from "./ops-config-types.ts";
 
+/**
+ * Run status values. Unchanged by upstream-edge holding: a run is not
+ * `blocked`, `pending`, or `skipped`. Those belong on steps and jobs.
+ */
 export const EXECUTION_STATUSES = [
   "queued",
   "pinned",
@@ -19,22 +23,67 @@ export const EXECUTION_CANCEL_PERMISSION = "execution.cancel";
 export const WORKFLOW_EXECUTE_PERMISSION = "workflow.execute";
 
 export const JOB_STATUSES = [
+  "blocked",
   "queued",
   "claimed",
   "running",
+  "waiting",
   "succeeded",
   "failed",
   "canceled",
   "indeterminate",
+  "skipped",
 ] as const;
 
 export type JobStatus = (typeof JOB_STATUSES)[number] | string;
+
+/**
+ * Step status values. `pending` waits on unresolved inputs.
+ * `skipped` has finished and does not fail the run.
+ * `blocked` is a job status, not a step status.
+ */
+export const STEP_STATUSES = [
+  "pending",
+  "queued",
+  "running",
+  "waiting",
+  "succeeded",
+  "failed",
+  "canceled",
+  "indeterminate",
+  "skipped",
+] as const;
+
+/**
+ * A step (or a skipped job) has finished. `skipped` is terminal and
+ * does not fail the run. `pending` and job `blocked` are not terminal.
+ */
+export const TERMINAL_STEP_STATUSES = [
+  "succeeded",
+  "failed",
+  "canceled",
+  "indeterminate",
+  "skipped",
+] as const;
 
 /** #53: Cancel when queued or running. Other terminals are 409. */
 export const CANCELABLE_STATUSES = ["queued", "running"] as const;
 
 /** #53: Retry only failed/canceled core data.* / flow.* steps — never indeterminate. */
 export const RETRYABLE_STATUSES = ["failed", "canceled"] as const;
+
+export const BLOCKED_STATUS_LABEL = "Blocked";
+export const PENDING_STATUS_LABEL = "Pending";
+export const SKIPPED_STATUS_LABEL = "Skipped";
+
+export const BLOCKED_STATUS_ICON = "‖";
+export const PENDING_STATUS_ICON = "…";
+export const SKIPPED_STATUS_ICON = "⊘";
+
+export const BLOCKED_STATUS_HELP = "Waiting for upstream steps to finish.";
+export const PENDING_STATUS_HELP = "Not started yet. Waiting on inputs.";
+export const SKIPPED_STATUS_HELP =
+  "Didn't run because an upstream approval was rejected or expired, or its branch wasn't taken. Not a failure.";
 
 export const REDACTED_MARKER = "[redacted]";
 
@@ -259,6 +308,9 @@ export type ExecutionStatusPresentation = {
     | "succeeded"
     | "queued"
     | "claimed"
+    | "blocked"
+    | "pending"
+    | "skipped"
     | "other";
 };
 

@@ -134,6 +134,8 @@ export function useExecutionDetailQuery({
   const detail = history?.forbidden ? null : (history?.detail ?? null);
   const display =
     detail && !denied ? executionDetailDisplay(detail) : null;
+  // Run poll only. Step `pending` and job `blocked` are not run statuses.
+  // `skipped` is terminal and does not keep the poll alive.
   const live =
     normalizeExecutionStatus(display?.header.status) === "queued" ||
     normalizeExecutionStatus(display?.header.status) === "running";

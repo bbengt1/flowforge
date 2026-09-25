@@ -120,6 +120,13 @@ describe("UXL.4 peak-end operate endings", () => {
     assert.equal(peakEndKind("running"), "running");
     assert.equal(peakEndKind("queued"), "queued");
     assert.equal(peakEndKind("canceled"), "canceled");
+    assert.equal(peakEndKind("blocked"), "blocked");
+    assert.equal(peakEndKind("pending"), "pending");
+    assert.equal(peakEndKind("skipped"), "skipped");
+    assert.notEqual(peakEndKind("skipped"), "running");
+    assert.notEqual(peakEndKind("skipped"), "failed");
+    assert.doesNotMatch(peakEndLabel("skipped"), /failed|running|in progress/i);
+    assert.match(peakEndLabel("skipped"), /not a failure/i);
     assert.equal(peakEndSuccessIsDistinctFromIndeterminate(), true);
     assert.equal(peakEndNeverSilentSuccessWhenUncertain("indeterminate"), true);
     assert.equal(peakEndNeverSilentSuccessWhenUncertain("succeeded"), true);

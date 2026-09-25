@@ -34,13 +34,23 @@ import {
 } from "./execution-contract.ts";
 import {
   ARTIFACT_LOCATOR_KEYS,
+  BLOCKED_STATUS_HELP,
+  BLOCKED_STATUS_ICON,
+  BLOCKED_STATUS_LABEL,
   CANCELABLE_STATUSES,
   EXECUTION_CANCEL_PERMISSION,
   EXECUTION_STATUSES,
   EXECUTION_VIEW_PERMISSION,
   MAX_LOG_CHARS,
   MAX_LOG_LINES,
+  PENDING_STATUS_HELP,
+  PENDING_STATUS_ICON,
+  PENDING_STATUS_LABEL,
   RETRYABLE_STATUSES,
+  SKIPPED_STATUS_HELP,
+  SKIPPED_STATUS_ICON,
+  SKIPPED_STATUS_LABEL,
+  TERMINAL_STEP_STATUSES,
   WORKFLOW_EXECUTE_PERMISSION,
   REDACTED_MARKER,
   type DownloadGrantView,
@@ -358,6 +368,17 @@ export function isIndeterminateStatus(status: string | undefined): boolean {
   return normalizeExecutionStatus(status) === "indeterminate";
 }
 
+/**
+ * `skipped` finishes the step and does not fail the run.
+ * `pending` and job `blocked` are still waiting. Unknown statuses
+ * are not treated as finished.
+ */
+export function isTerminalStepStatus(status: string | undefined): boolean {
+  return (TERMINAL_STEP_STATUSES as readonly string[]).includes(
+    normalizeExecutionStatus(status),
+  );
+}
+
 export function normalizeExecutionStatus(
   status: ExecutionStatus | undefined,
 ): string {
@@ -436,6 +457,24 @@ export function executionStatusPresentation(
       icon: "⏸",
       description: APPROVAL_RESUME_DISABLED_HELP,
       tone: "claimed",
+    },
+    blocked: {
+      label: BLOCKED_STATUS_LABEL,
+      icon: BLOCKED_STATUS_ICON,
+      description: BLOCKED_STATUS_HELP,
+      tone: "blocked",
+    },
+    pending: {
+      label: PENDING_STATUS_LABEL,
+      icon: PENDING_STATUS_ICON,
+      description: PENDING_STATUS_HELP,
+      tone: "pending",
+    },
+    skipped: {
+      label: SKIPPED_STATUS_LABEL,
+      icon: SKIPPED_STATUS_ICON,
+      description: SKIPPED_STATUS_HELP,
+      tone: "skipped",
     },
   };
   if ((EXECUTION_WAITING_STATUSES as readonly string[]).includes(folded)) {

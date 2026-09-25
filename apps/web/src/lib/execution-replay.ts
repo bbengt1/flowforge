@@ -262,6 +262,15 @@ export function canvasStateFromExecutionStatus(
   status: string | undefined,
 ): CanvasNodeState {
   const folded = normalizeExecutionStatus(status);
+  if (folded === "skipped") {
+    return "skipped";
+  }
+  if (folded === "pending") {
+    return "pending";
+  }
+  if (folded === "blocked") {
+    return "blocked";
+  }
   if (folded === "indeterminate") {
     return "indeterminate";
   }

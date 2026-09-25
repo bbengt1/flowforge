@@ -85,7 +85,10 @@ export type PeakEndKind =
   | "waiting"
   | "running"
   | "canceled"
-  | "queued";
+  | "queued"
+  | "blocked"
+  | "pending"
+  | "skipped";
 
 export type PeakEndHandoff = {
   workflowId: string;
@@ -102,6 +105,9 @@ export const PEAK_END_KINDS = [
   "running",
   "canceled",
   "queued",
+  "blocked",
+  "pending",
+  "skipped",
 ] as const satisfies readonly PeakEndKind[];
 
 export const PEAK_END_LABELS = {
@@ -112,6 +118,10 @@ export const PEAK_END_LABELS = {
   running: "Run is in progress on this canvas.",
   canceled: "Run canceled.",
   queued: "Run queued — watching on this canvas.",
+  blocked: "Blocked — waiting for upstream steps to finish.",
+  pending: "Pending — not started yet, waiting on inputs.",
+  skipped:
+    "Skipped — didn't run because an upstream approval was rejected or expired, or its branch wasn't taken. Not a failure.",
 } as const satisfies Record<PeakEndKind, string>;
 
 export const PEAK_END_INBOX_LABELS = {
@@ -122,6 +132,9 @@ export const PEAK_END_INBOX_LABELS = {
   running: "Running.",
   canceled: "Canceled.",
   queued: "Queued.",
+  blocked: "Blocked — waiting for upstream steps to finish.",
+  pending: "Pending — not started yet, waiting on inputs.",
+  skipped: "Skipped — didn't run. Not a failure.",
 } as const satisfies Record<PeakEndKind, string>;
 
 export const PEAK_END_NDV_LABELS = {
@@ -132,6 +145,9 @@ export const PEAK_END_NDV_LABELS = {
   running: "Last run is still in progress.",
   canceled: "Last run was canceled.",
   queued: "Last run is queued.",
+  blocked: "Blocked — waiting for upstream steps to finish.",
+  pending: "Pending — not started yet, waiting on inputs.",
+  skipped: "Skipped — didn't run. Not a failure.",
 } as const satisfies Record<PeakEndKind, string>;
 
 export const PEAK_END_HEADLINES = {
@@ -142,6 +158,9 @@ export const PEAK_END_HEADLINES = {
   running: "On this canvas",
   canceled: "Run canceled",
   queued: "On this canvas",
+  blocked: "Blocked",
+  pending: "Pending",
+  skipped: "Skipped",
 } as const satisfies Record<PeakEndKind, string>;
 
 export const PEAK_END_OPERATE = {
@@ -225,6 +244,15 @@ export function peakEndKind(
   if (folded === "queued" || folded === "pinned") {
     return "queued";
   }
+  if (folded === "blocked") {
+    return "blocked";
+  }
+  if (folded === "pending") {
+    return "pending";
+  }
+  if (folded === "skipped") {
+    return "skipped";
+  }
   return "running";
 }
 
@@ -257,6 +285,12 @@ export function peakEndSurfaceClassName(kind: PeakEndKind): string {
       return "ff-status-succeeded";
     case "canceled":
       return "ff-status-canceled";
+    case "blocked":
+      return "ff-status-blocked";
+    case "pending":
+      return "ff-status-pending";
+    case "skipped":
+      return "ff-status-skipped";
     default:
       return "ff-status-other";
   }

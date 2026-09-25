@@ -62,6 +62,7 @@ import {
   isIdempotencyConflict,
   isIdempotentCancel,
   isIndeterminateStatus,
+  isTerminalStepStatus,
   isSecretFieldName,
   jobDispatchView,
   artifactStateHasDurableUrl,
@@ -80,7 +81,16 @@ import {
   stripSecretFields,
   wipeDownloadGrant,
 } from "./execution.ts";
-import type { ExecutionDetail, ExecutionRecord } from "./execution-types.ts";
+import { executionInboxStatuses } from "./execution-inbox.ts";
+import {
+  CANCELABLE_STATUSES,
+  EXECUTION_STATUSES,
+  JOB_STATUSES,
+  RETRYABLE_STATUSES,
+  STEP_STATUSES,
+  type ExecutionDetail,
+  type ExecutionRecord,
+} from "./execution-types.ts";
 
 const EXECUTION_ID = "33333333-3333-4333-8333-333333333333";
 const WORKFLOW_ID = "11111111-1111-4111-8111-111111111111";
@@ -417,6 +427,143 @@ describe("execution redaction and list/detail rendering", () => {
     assert.match(rendered, /⚠/);
     assert.match(rendered, /Indeterminate/);
     assert.match(rendered, /indeterminate/);
+  });
+
+  it("presents blocked, pending, and skipped without the generic chip", () => {
+    const blocked = executionStatusPresentation("blocked");
+    const pending = executionStatusPresentation("pending");
+    const skipped = executionStatusPresentation("skipped");
+    assert.equal(blocked.label, "Blocked");
+    assert.equal(blocked.icon, "‖");
+    assert.equal(blocked.tone, "blocked");
+    assert.match(blocked.description, /upstream steps/);
+    assert.equal(pending.label, "Pending");
+    assert.equal(pending.icon, "…");
+    assert.equal(pending.tone, "pending");
+    assert.match(pending.description, /not started yet/i);
+    assert.equal(skipped.label, "Skipped");
+    assert.equal(skipped.icon, "⊘");
+    assert.equal(skipped.tone, "skipped");
+    assert.match(skipped.description, /not a failure/i);
+    for (const presentation of [blocked, pending, skipped]) {
+      assert.notEqual(presentation.label, presentation.status);
+      assert.notEqual(presentation.icon, "•");
+      assert.notEqual(presentation.icon, "✓");
+      assert.notEqual(presentation.icon, "▶");
+      assert.notEqual(presentation.icon, "✕");
+      assert.notEqual(presentation.description, "Status reported by the API.");
+      assert.notEqual(presentation.tone, "other");
+      assert.notEqual(presentation.tone, "failed");
+      assert.notEqual(presentation.tone, "running");
+      assert.notEqual(presentation.tone, "succeeded");
+      assert.equal(presentation.indeterminate, false);
+    }
+    assert.equal(isTerminalStepStatus("skipped"), true);
+    assert.equal(isTerminalStepStatus("pending"), false);
+    assert.equal(isTerminalStepStatus("blocked"), false);
+    assert.equal(isTerminalStepStatus("running"), false);
+    assert.equal(isTerminalStepStatus("succeeded"), true);
+    const steps = STEP_STATUSES as readonly string[];
+    const jobStatuses = JOB_STATUSES as readonly string[];
+    const runs = EXECUTION_STATUSES as readonly string[];
+    assert.ok(steps.includes("pending"));
+    assert.ok(steps.includes("skipped"));
+    assert.equal(steps.includes("blocked"), false);
+    assert.ok(jobStatuses.includes("blocked"));
+    assert.ok(jobStatuses.includes("skipped"));
+    assert.equal(jobStatuses.includes("pending"), false);
+    assert.equal(runs.includes("blocked"), false);
+    assert.equal(runs.includes("pending"), false);
+    assert.equal(runs.includes("skipped"), false);
+    assert.deepEqual([...CANCELABLE_STATUSES], ["queued", "running"]);
+    assert.deepEqual([...RETRYABLE_STATUSES], ["failed", "canceled"]);
+    assert.equal(executionInboxStatuses().includes("blocked"), false);
+    assert.equal(executionInboxStatuses().includes("pending"), false);
+    assert.equal(executionInboxStatuses().includes("skipped"), false);
+    assert.equal(
+      canCancelExecution({
+        status: "skipped",
+        permissions: ["execution.cancel"],
+      }),
+      false,
+    );
+    assert.equal(
+      canCancelExecution({
+        status: "blocked",
+        permissions: ["execution.cancel"],
+      }),
+      false,
+    );
+    assert.equal(
+      canCancelExecution({
+        status: "pending",
+        permissions: ["execution.cancel"],
+      }),
+      false,
+    );
+    assert.equal(
+      canRetryExecution({
+        status: "canceled",
+        permissions: ["workflow.execute"],
+        steps: [
+          { status: "canceled", nodeType: "data.set" },
+          { status: "skipped", nodeType: "data.set" },
+        ],
+      }),
+      true,
+    );
+    assert.equal(
+      canRetryExecution({
+        status: "skipped",
+        permissions: ["workflow.execute"],
+        steps: [{ status: "skipped", nodeType: "data.set" }],
+      }),
+      false,
+    );
+    assert.equal(
+      canRetryExecutionStep({
+        permissions: ["workflow.execute"],
+        executionStatus: "running",
+        stepStatus: "skipped",
+        nodeType: "data.set",
+      }),
+      false,
+    );
+    const detail = parseExecutionDetail({
+      id: EXECUTION_ID,
+      workflowId: WORKFLOW_ID,
+      workflowVersionId: VERSION_ID,
+      status: "running",
+      steps: [
+        {
+          id: "44444444-4444-4444-8444-444444444444",
+          nodeId: "wait",
+          nodeType: "data.set",
+          status: "pending",
+          attempt: 1,
+        },
+        {
+          id: "99999999-9999-4999-8999-999999999999",
+          nodeId: "skip",
+          nodeType: "data.set",
+          status: "skipped",
+          attempt: 1,
+        },
+      ],
+      jobs: [
+        {
+          id: "55555555-5555-4555-8555-555555555555",
+          executionStepId: "44444444-4444-4444-8444-444444444444",
+          status: "blocked",
+        },
+      ],
+    });
+    assert.ok(detail);
+    const text = executionDetailText(detail);
+    assert.match(text, /‖ Blocked/);
+    assert.equal(executionStatusLabel(detail.steps[0]?.status), "Pending");
+    assert.equal(executionStatusLabel(detail.steps[1]?.status), "Skipped");
+    assert.equal(text.includes("Status reported by the API."), false);
   });
 
   it("surfaces lease/claim/heartbeat metadata and gates retry to #53", () => {

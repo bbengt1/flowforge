@@ -141,6 +141,7 @@ export function editorRunCurrentNodeId(
   return currentReplayNodeId(steps, waitingApprovalIds);
 }
 
+/** Live run statuses only. Step `pending` and job `blocked` do not keep the poll alive. `skipped` is terminal. */
 export function editorRunShouldPoll(status: string | undefined): boolean {
   const folded = normalizeExecutionStatus(status);
   return (

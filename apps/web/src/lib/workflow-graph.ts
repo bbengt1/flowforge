@@ -4,6 +4,17 @@
  */
 
 import {
+  BLOCKED_STATUS_HELP,
+  BLOCKED_STATUS_ICON,
+  BLOCKED_STATUS_LABEL,
+  PENDING_STATUS_HELP,
+  PENDING_STATUS_ICON,
+  PENDING_STATUS_LABEL,
+  SKIPPED_STATUS_HELP,
+  SKIPPED_STATUS_ICON,
+  SKIPPED_STATUS_LABEL,
+} from "./execution-types.ts";
+import {
   catalogExcludesTriggerNodes,
   isCoreNeutralNodeType,
 } from "./workflow-core-nodes.ts";
@@ -45,7 +56,10 @@ export type CanvasNodeState =
   | "succeeded"
   | "failed"
   | "canceled"
-  | "indeterminate";
+  | "indeterminate"
+  | "blocked"
+  | "pending"
+  | "skipped";
 
 export type GraphNode = {
   id: string;
@@ -494,8 +508,27 @@ export function canvasNodeStateLabel(state: CanvasNodeState): string {
       return "Approval required";
     case "indeterminate":
       return "Indeterminate";
+    case "blocked":
+      return BLOCKED_STATUS_LABEL;
+    case "pending":
+      return PENDING_STATUS_LABEL;
+    case "skipped":
+      return SKIPPED_STATUS_LABEL;
     default:
       return state.replace(/^\w/, (letter) => letter.toUpperCase());
+  }
+}
+
+export function canvasNodeStateDescription(state: CanvasNodeState): string {
+  switch (state) {
+    case "blocked":
+      return BLOCKED_STATUS_HELP;
+    case "pending":
+      return PENDING_STATUS_HELP;
+    case "skipped":
+      return SKIPPED_STATUS_HELP;
+    default:
+      return "";
   }
 }
 
@@ -519,6 +552,12 @@ export function canvasNodeStateIcon(state: CanvasNodeState): string {
       return "■";
     case "indeterminate":
       return "?";
+    case "blocked":
+      return BLOCKED_STATUS_ICON;
+    case "pending":
+      return PENDING_STATUS_ICON;
+    case "skipped":
+      return SKIPPED_STATUS_ICON;
     default:
       return "○";
   }

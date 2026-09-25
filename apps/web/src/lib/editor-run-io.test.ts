@@ -233,6 +233,9 @@ describe("UX.11 editor last-run I/O overlay", () => {
     assert.equal(editorRunShouldPoll("queued"), true);
     assert.equal(editorRunShouldPoll("succeeded"), false);
     assert.equal(editorRunShouldPoll("indeterminate"), false);
+    assert.equal(editorRunShouldPoll("skipped"), false);
+    assert.equal(editorRunShouldPoll("pending"), false);
+    assert.equal(editorRunShouldPoll("blocked"), false);
     assert.equal(editorRunCurrentNodeId([step({ status: "running" })]), "apply");
   });
 });
