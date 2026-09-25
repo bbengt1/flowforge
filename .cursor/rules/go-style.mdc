@@ -1,8 +1,6 @@
 ---
 description: Go formatting, errors, and constructors for the Flowforge API
-globs:
-  - apps/api/**
-  - apps/api/**/*.go
+globs: "apps/api/**"
 alwaysApply: false
 ---
 

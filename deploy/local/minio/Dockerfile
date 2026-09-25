@@ -9,13 +9,18 @@
 
 FROM golang:1.26-alpine@sha256:8ac98ca534ac3f51e1f420a1dd2c15e74c75cfa0f23f3ad27eb5d7236c349a0c AS build
 
-# Newest AGPL tag on github.com/minio/minio (Security/CVE). Later
-# server images are AIStor and refuse unlicensed S3.
-ARG MINIO_REF=RELEASE.2025-10-15T17-29-55Z
+# AGPL tag RELEASE.2025-10-15T17-29-55Z is a label only. The build
+# checks out MINIO_SHA. A moved tag is not in this shallow clone, so
+# checkout of the pinned SHA fails the build. Later server images are
+# AIStor and refuse unlicensed S3.
+ARG MINIO_TAG=RELEASE.2025-10-15T17-29-55Z
+ARG MINIO_SHA=9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a
 
 RUN apk add --no-cache ca-certificates git
 WORKDIR /src
-RUN git clone --depth 1 --branch "${MINIO_REF}" https://github.com/minio/minio.git .
+RUN git clone --depth 1 --branch "${MINIO_TAG}" https://github.com/minio/minio.git . \
+	&& git checkout --detach "${MINIO_SHA}" \
+	&& test "$(git rev-parse HEAD)" = "${MINIO_SHA}"
 
 ENV CGO_ENABLED=0
 ENV GOTOOLCHAIN=local
