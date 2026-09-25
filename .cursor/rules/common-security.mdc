@@ -1,0 +1,36 @@
+---
+description: "Security hard lines for every change: no secrets in the browser, logs, responses, YAML, URLs, or localStorage; fail closed on authz and config; drafts never run; embed chrome only from session.embed."
+alwaysApply: true
+---
+
+Adapted from affaan-m/ECC (MIT)
+
+# Security
+
+`SECURITY.md` and `CONTRIBUTING.md` win if this rule disagrees with them. Vulnerability reports go through `SECURITY.md`, not a public issue.
+
+## Hard lines
+
+- Fail closed on missing or malformed config, authorization, allowlists, and unknown fields.
+- No secrets in the browser, logs, responses, YAML, URLs, or `localStorage`. The vault shows a display-name and a UUID only. No KEK, PEM, password, or other secret material in chrome, search, or client storage.
+- Drafts never run. Publish, then start a published version.
+- The first-run wizard, Login, and change-password never mount on `/embed/v1`.
+- Embed chrome comes only from `GET /session` `session.embed` (ADV-021). Host query params are display-only. A missing bind is a visible alert, not a guessed shell.
+- Membership and isolation stay grant-gated (ADV-024). Isolation success is a denial.
+- YAML is the only persisted workflow definition.
+
+## Before committing
+
+- No hardcoded secrets (API keys, passwords, tokens, private keys).
+- User input is validated. Unknown fields fail closed.
+- Queries stay parameterized. Do not concatenate untrusted input into SQL, shell, or HTML.
+- State-changing browser calls keep the existing cookie session and CSRF checks. Do not relocate the session into `localStorage` or `sessionStorage`.
+- Authorization is enforced on the server. Hiding a control is not an authorization check.
+- Error text and logs do not echo secrets, session cookies, or vault material.
+
+## Secrets
+
+- Read secrets from the existing environment or secret manager. Do not commit them, and do not put them in a pull request body.
+- Missing required secrets fail closed at startup.
+- Values prefixed for the client bundle are public. Never put a secret in `NEXT_PUBLIC_*`.
+- If a secret may have been exposed, stop and rotate it. Then look for the same pattern elsewhere.

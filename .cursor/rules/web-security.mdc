@@ -1,0 +1,31 @@
+---
+description: "Web security headers and browser rules for apps/web. Keep the existing CSP helper. Do not cargo-cult a global frame deny onto /embed/v1."
+globs: "apps/web/**"
+alwaysApply: false
+---
+
+Adapted from affaan-m/ECC (MIT)
+
+# Web security
+
+The always-on security rule wins if this file disagrees with it. Header policy already lives in `apps/web/src/lib/security-headers.ts` and is covered by `security-headers.test.ts`. Change that module instead of pasting a second policy.
+
+## Content Security Policy
+
+- Production scripts use the per-request nonce from `createScriptNonce`. Do not add `'unsafe-inline'` to `script-src` in production, and do not add a CDN origin.
+- `frame-ancestors` is path-specific. Standalone stays `'none'`. `/embed/v1` uses the shared host allowlist (`WEB_EMBED_FRAME_ANCESTORS`, `WEB_PORTAL_FRAME_ANCESTORS`, `PORTAL_FRAME_ANCESTORS`). An empty allowlist stays `'none'`.
+- `X-Frame-Options: DENY` applies only when `embedFramingAllowed` is false. Do not send `DENY` on an embed response that the allowlist permits to be framed.
+- `frame-src` comes from `frameSrcForPath`. Do not set a global `frame-src 'none'`.
+- HSTS is `max-age=31536000; includeSubDomains`, and only when the request is HTTPS (`shouldSendHsts`). Do not add `preload` unless that module already does.
+- Keep `X-Content-Type-Options: nosniff`, the existing `Referrer-Policy`, and `Permissions-Policy`.
+
+## XSS, scripts, and forms
+
+- Do not inject unsanitized HTML or assign user HTML to `innerHTML`.
+- Do not add a third-party script. Prefer the dependencies the app already ships.
+- State-changing forms keep the existing CSRF and cookie session. Validate on the server. The client check is not the security boundary.
+- Do not put secrets in the URL, the document, or `localStorage`.
+
+## Embed
+
+Wizard, Login, and change-password never mount on `/embed/v1`. Embed chrome comes only from `GET /session` `session.embed`.

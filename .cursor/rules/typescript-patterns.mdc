@@ -1,0 +1,19 @@
+---
+description: "TypeScript patterns for apps/web: keep API access in existing src/lib clients and do not invent a new response envelope."
+globs: "apps/web/**"
+alwaysApply: false
+---
+
+Adapted from affaan-m/ECC (MIT)
+
+# TypeScript patterns
+
+`apps/web/AGENTS.md` and the existing clients in `apps/web/src/lib` win over a generic pattern.
+
+## API access
+
+Keep HTTP and session calls in the existing `src/lib` modules. Do not add a generic repository interface, and do not invent a `success` / `data` / `error` envelope. Match the response shape the control plane already returns.
+
+## Shared client state
+
+Reusable client state belongs in a function whose name starts with `use`, covered by the React state rule. Do not persist secrets, session material, workflow YAML, or the folder tree in `localStorage` or `sessionStorage`.

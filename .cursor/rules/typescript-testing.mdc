@@ -1,0 +1,18 @@
+---
+description: "How to test TypeScript in apps/web. Unit tests run with node --test via pnpm test. Bug fixes need a regression test. There is no numeric coverage gate."
+globs: "apps/web/**"
+alwaysApply: false
+---
+
+Adapted from affaan-m/ECC (MIT)
+
+# TypeScript testing
+
+`CONTRIBUTING.md` wins if this rule disagrees with it.
+
+- Put unit tests in `apps/web/src/lib/*.test.ts` so `pnpm test` runs them. The script is `node --experimental-strip-types --test src/lib/*.test.ts`. Tests outside that glob do not run in the web unit job.
+- From the repo root: `pnpm test`. Use `pnpm lint --max-warnings=0` and `pnpm build` when UI or linted files change. `pnpm typecheck:tests` type-checks `*.test.ts`.
+- Tests are required for changed behavior. A bug fix includes a regression test.
+- There is no numeric coverage gate. Do not add one, and do not pass a coverage flag.
+- A browser end-to-end check uses the existing Playwright script `pnpm test:e2e`. It does not replace `pnpm test`.
+- Use `node:test` and `node:assert`. Do not add another unit-test runner.

@@ -1,0 +1,32 @@
+---
+description: "React security for apps/web: no unsanitized HTML, no unsafe URL schemes, no secrets in localStorage, and server-side authorization."
+globs: "apps/web/**"
+alwaysApply: false
+---
+
+Adapted from affaan-m/ECC (MIT)
+
+# React security
+
+The always-on security rule wins if this file disagrees with it.
+
+## HTML
+
+Do not render unsanitized HTML. Prefer text children. Treat `dangerouslySetInnerHTML` as a review stop. If a call site already exists, the input must be sanitized there with an allowlist, and the source of the HTML must be documented. Do not add a sanitizer dependency casually.
+
+## URLs
+
+Reject `javascript:` and unexpected `data:` URLs in `href` and `src`. Allow only the schemes the surrounding code already allows (typically `http`, `https`, and `mailto`). React's development warning does not block this at runtime.
+
+`<a target="_blank">` includes `rel="noopener noreferrer"`.
+
+## Browser storage and auth
+
+- Do not store the session, CSRF token, secrets, or vault material in `localStorage` or `sessionStorage`. The session stays on the httpOnly cookie the app already sets.
+- JSX that hides a control is not authorization. The API must allow or deny the action.
+- Do not spread untrusted JSON into state. Copy known fields only.
+- `NEXT_PUBLIC_*` is public. See the TypeScript security rule.
+
+## Embed and drafts
+
+Do not mount the first-run wizard, Login, or change-password on `/embed/v1`. Embed chrome still comes only from `GET /session` `session.embed`. Drafts never run.

@@ -1,0 +1,38 @@
+---
+description: "Apply when writing or changing tests, or when asked what must be tested. Tests are required for changed behavior, and a bug fix needs a regression test. There is no numeric coverage gate."
+alwaysApply: false
+---
+
+Adapted from affaan-m/ECC (MIT)
+
+# Testing
+
+`CONTRIBUTING.md` wins if this rule disagrees with it. There is no numeric coverage gate in either lane. Do not add one.
+
+## Required
+
+- Tests are required for changed behavior.
+- A bug fix includes a regression test.
+- Run the tests for the surface you touched. CI for that surface must stay green.
+
+## Web
+
+From the repo root, after `pnpm install`:
+
+```bash
+pnpm test
+pnpm lint --max-warnings=0
+pnpm build
+```
+
+`pnpm test` is `node --test` for `@flowforge/web` (`node --experimental-strip-types --test src/lib/*.test.ts`). `pnpm typecheck:tests` type-checks `*.test.ts`. `pnpm build` is the app type-check (`next build`). Do not use bare `tsc` for the app.
+
+## API
+
+When `apps/api` changes, run `go test ./...` from `apps/api`, plus `gofmt` and `go vet` as `CONTRIBUTING.md` describes. CI may publish a coverage artifact. That artifact is not a threshold.
+
+## Failures
+
+- Keep tests isolated.
+- Fix the implementation when the test describes the intended behavior. Change the test when the test itself is wrong.
+- Do not weaken a hard line to make a test pass.

@@ -1,0 +1,26 @@
+---
+description: "UI behavior tests for apps/web. Library behavior is covered from src/lib with node --test via pnpm test. Do not add a second test runner or a coverage gate."
+globs: "apps/web/**"
+alwaysApply: false
+---
+
+Adapted from affaan-m/ECC (MIT)
+
+# React testing
+
+`CONTRIBUTING.md` wins if this rule disagrees with it.
+
+## What CI runs
+
+Web unit tests are `pnpm test` from the repo root: `node --test` on `apps/web/src/lib/*.test.ts`. Assert the behavior from those modules (pure helpers, contracts, and source checks the suite already uses). A bug fix adds a regression test on that path when the behavior lives in `src/lib`.
+
+Do not add Jest, Vitest, a component-test renderer, or a numeric coverage gate. A `*.test.tsx` next to a component is not picked up by `pnpm test`.
+
+`pnpm test:e2e` (Playwright) is for a browser flow, layout, drag-and-drop, or the embed iframe. `@axe-core/playwright` is already available for accessibility checks in that suite. End-to-end does not replace `pnpm test`.
+
+## How to assert
+
+- Assert what the operator can observe or what the module returns.
+- Do not assert private state, render counts, or which `use*` function ran.
+- Do not snapshot whole component trees.
+- Changed UI still needs `pnpm lint --max-warnings=0` and, when the build can break, `pnpm build`.
