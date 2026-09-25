@@ -54,6 +54,12 @@ export const WORKFLOW_SLUG_RESERVED_NAME_MESSAGE =
 export const WORKFLOW_SLUG_RESERVED_SLUG_MESSAGE =
   "This slug is reserved by a deleted workflow. Choose a different slug.";
 
+export const WORKFLOW_SLUG_CONFLICT_MESSAGE =
+  "A workflow with this slug already exists.";
+
+export const WORKFLOW_SLUG_EXHAUSTED_MESSAGE =
+  "A unique slug could not be allocated.";
+
 export const WORKFLOW_DELETED_TOAST_TITLE = "Workflow deleted";
 
 export type WorkflowDeleteFailureKind =
@@ -188,25 +194,39 @@ export function workflowDeleteNameMatches(
 }
 
 /**
- * Reserved-slug create/rename conflict. Match the code, not the detail.
- * A submitted slug is the field; otherwise the name field carries it.
+ * Create-time slug clash. Match the code, not which fields were sent.
+ * workflow_slug_reserved and a slug conflict (including "slug already
+ * exists") always land on the slug field. An unrelated 409 does not.
  */
 export function workflowSlugReservedTarget(input: {
   statusCode: number;
   code: string;
-  slugSent: boolean;
-  nameSent: boolean;
+  detail?: string;
+  errorPaths?: readonly string[];
 }): WorkflowSlugField | null {
-  if (input.code !== WORKFLOW_SLUG_RESERVED_CODE || input.statusCode !== 409) {
+  if (input.statusCode !== 409) {
     return null;
   }
-  if (input.slugSent) {
+  if (input.code === WORKFLOW_SLUG_RESERVED_CODE) {
     return "slug";
   }
-  if (input.nameSent) {
-    return "name";
+  if (input.code === "conflict" && slugConflictDetail(input.detail, input.errorPaths)) {
+    return "slug";
   }
-  return "name";
+  return null;
+}
+
+function slugConflictDetail(
+  detail: string | undefined,
+  errorPaths: readonly string[] | undefined,
+): boolean {
+  if (/slug already exists/i.test(detail ?? "")) {
+    return true;
+  }
+  if (/could not be allocated/i.test(detail ?? "")) {
+    return true;
+  }
+  return (errorPaths ?? []).some((path) => path === "slug");
 }
 
 export function workflowSlugReservedMessage(field: WorkflowSlugField): string {
@@ -216,19 +236,35 @@ export function workflowSlugReservedMessage(field: WorkflowSlugField): string {
 }
 
 export function workflowSlugReservedFromProblem(
-  problem: Pick<ProblemDetails, "status" | "code">,
+  problem: Pick<ProblemDetails, "status" | "code"> &
+    Partial<Pick<ProblemDetails, "detail" | "errors">>,
   sent: { slug?: string; name?: string },
 ): { field: WorkflowSlugField; message: string } | null {
   const field = workflowSlugReservedTarget({
     statusCode: problem.status,
     code: problem.code,
-    slugSent: Boolean(sent.slug?.trim()),
-    nameSent: Boolean(sent.name?.trim()),
+    detail: problem.detail,
+    errorPaths: problem.errors?.map((error) => error.path),
   });
   if (!field) {
     return null;
   }
-  return { field, message: workflowSlugReservedMessage(field) };
+  // Callers pass `sent` so tests can show a name-only body and an
+  // explicit slug land on the same field.
+  void sent;
+  return { field, message: workflowSlugFieldMessage(problem) };
+}
+
+function workflowSlugFieldMessage(
+  problem: Pick<ProblemDetails, "code"> & Partial<Pick<ProblemDetails, "detail">>,
+): string {
+  if (problem.code === WORKFLOW_SLUG_RESERVED_CODE) {
+    return WORKFLOW_SLUG_RESERVED_SLUG_MESSAGE;
+  }
+  if (/could not be allocated/i.test(problem.detail ?? "")) {
+    return WORKFLOW_SLUG_EXHAUSTED_MESSAGE;
+  }
+  return WORKFLOW_SLUG_CONFLICT_MESSAGE;
 }
 
 export function omitDeletedWorkflow<T extends { id: string }>(

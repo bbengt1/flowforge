@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { TemplateGrid } from "@/components/home/WorkflowHome";
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
-import { optionalCreateFields } from "@/lib/workflow";
+import { workflowCreateRequestFields } from "@/lib/workflow-slug";
 import { createWorkflow } from "@/lib/workflow-client";
 import { templateCreatedEditorHref } from "@/lib/product-home";
 import { canCreateWorkflows } from "@/lib/workspace-nav";
@@ -19,7 +19,11 @@ export default function TemplatesPage() {
   async function onSelect(template: WorkflowTemplate) {
     const result = await createWorkflow(identity, {
       definitionYaml: template.definitionYaml,
-      ...optionalCreateFields(template.slugHint, template.name),
+      ...workflowCreateRequestFields({
+        name: template.name,
+        slug: "",
+        slugEdited: false,
+      }),
     });
     if (!result.ok) {
       return;
