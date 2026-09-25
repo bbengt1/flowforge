@@ -627,7 +627,7 @@ func (m *Memory) GetExecutionByID(_ context.Context, scope isolation.Scope, exec
 		return Execution{}, ErrNotFound
 	}
 	wf, ok := m.workflows[exec.record.WorkflowID]
-	if !ok || wf.workspaceID != scope.WorkspaceID() || wf.deletedAt != nil {
+	if !ok || wf.workspaceID != scope.WorkspaceID() {
 		return Execution{}, ErrNotFound
 	}
 	return cloneExecution(exec.record, wf.record), nil

@@ -110,7 +110,9 @@ func IntersectCapabilities(membership, assertion []string) []string {
 	seen := map[string]struct{}{}
 	for _, c := range membership {
 		c = strings.TrimSpace(c)
-		if authz.PlatformScopedPermission(c) {
+		// Platform-scoped keys and workflow.delete never survive onto an
+		// embed session, even if an older assertion listed them.
+		if authz.EmbedAssertionDenied(c) {
 			continue
 		}
 		if _, ok := allow[c]; !ok {

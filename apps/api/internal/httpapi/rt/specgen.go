@@ -260,7 +260,7 @@ func fillPathItem(dst *yaml.Node, routes []Route) error {
 }
 
 func stubOperation(rt Route) (*yaml.Node, error) {
-	if rt.Method == "DELETE" && rt.OpenAPIPath() == "/api/v1/workflows/{workflowId}" {
+	if rt.Method == "DELETE" && rt.Pattern == "/api/v1/workflows/{workflowId}" {
 		return workflowDeleteOperation(rt)
 	}
 	var b strings.Builder
@@ -298,7 +298,11 @@ func workflowDeleteOperation(rt Route) (*yaml.Node, error) {
 	b.WriteString("  A live slug conflict stays 409 conflict. YAML is not modified.\n")
 	b.WriteString("  workflow.delete is granted to editors and workspace admins. The workflow owner (createdBy) may also delete.\n")
 	b.WriteString("  Viewers who are not the owner receive 403. Callers with no workflow.view, including another tenant, receive 404.\n")
+	b.WriteString("  The delete handler refuses any embed session with 403 forbidden before it reads permissions, capabilities, or ownership. That includes a session minted earlier whose stored caps still list workflow.delete. capabilities.delete is false for every embed session. Ownership never adds a permission an embed session does not already hold.\n")
+	b.WriteString("  workflow.delete cannot be minted on an embed assertion (ErrCapability, the same rejection as platform.administer). It stays on the editor and admin workspace roles.\n")
+	b.WriteString("  The browser identity proxy refuses DELETE /workflows/{workflowId} for an embed session with 403. First-party browser DELETE stays allowlisted.\n")
 	b.WriteString("  Queued or running executions return 409 workflow_has_active_executions and are not canceled. Waiting and pinned executions do not block.\n")
+	b.WriteString("  A waiting run that later resumes, is retried, or is requeued after the workflow is deleted is failed with reason workflow_deleted. No further steps run. Approval decide on that run returns 409 workflow_deleted and does not record the decision when the pre-check wins.\n")
 	fmt.Fprintf(&b, "  Auth class: %s. Identity proxy: %s.\n", rt.Auth, rt.Proxy)
 	b.WriteString("  Responses never include secrets, credentials, tokens, private keys, or vault material.\n")
 	b.WriteString("responses:\n")
@@ -307,7 +311,7 @@ func workflowDeleteOperation(rt Route) (*yaml.Node, error) {
 	b.WriteString("  \"401\":\n")
 	b.WriteString("    $ref: \"#/components/responses/Unauthenticated\"\n")
 	b.WriteString("  \"403\":\n")
-	b.WriteString("    description: Caller can view the workflow but cannot delete it.\n")
+	b.WriteString("    description: Caller can view the workflow but cannot delete it, or the caller is an embed session. Embed delete is 403 forbidden regardless of caps or ownership.\n")
 	b.WriteString("  \"404\":\n")
 	b.WriteString("    description: No workflow.view, unknown id, already deleted, or another tenant. Same not-found problem as a missing workflow.\n")
 	b.WriteString("  \"409\":\n")

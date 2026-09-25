@@ -182,33 +182,36 @@ func TestWorkflowDeleteUnpublishesAndReservesSlug(t *testing.T) {
 	rec = httptest.NewRecorder()
 	req = workspaceRequest(http.MethodGet, "/api/v1/triggers/"+trig.ID, nil, admin, tenant, ws)
 	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("trigger get: %d %s", rec.Code, rec.Body.String())
-	}
-	var trigAfter struct {
-		Status string `json:"status"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &trigAfter); err != nil {
-		t.Fatal(err)
-	}
-	if trigAfter.Status != "disabled" {
-		t.Fatalf("trigger status = %s", trigAfter.Status)
-	}
+	assertProblem(t, rec, http.StatusNotFound, CodeNotFound, "")
+	rec = httptest.NewRecorder()
+	req = workspaceJSON(http.MethodPost, "/api/v1/triggers/"+trig.ID+"/enable", []byte(`{}`), admin, tenant, ws)
+	h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusNotFound, CodeNotFound, "")
+	rec = httptest.NewRecorder()
+	req = workspaceJSON(http.MethodPatch, "/api/v1/triggers/"+trig.ID, []byte(`{}`), admin, tenant, ws)
+	h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusNotFound, CodeNotFound, "")
 	rec = httptest.NewRecorder()
 	req = workspaceRequest(http.MethodGet, "/api/v1/schedules/"+sched.ID, nil, admin, tenant, ws)
 	h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusNotFound, CodeNotFound, "")
+	rec = httptest.NewRecorder()
+	req = workspaceRequest(http.MethodGet, "/api/v1/schedules", nil, admin, tenant, ws)
+	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("schedule get: %d %s", rec.Code, rec.Body.String())
+		t.Fatalf("schedule list: %d %s", rec.Code, rec.Body.String())
 	}
-	var schedAfter struct {
-		Status string `json:"status"`
+	if strings.Contains(rec.Body.String(), sched.ID) {
+		t.Fatalf("tombstoned schedule still listed: %s", rec.Body.String())
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &schedAfter); err != nil {
-		t.Fatal(err)
-	}
-	if schedAfter.Status != "disabled" {
-		t.Fatalf("schedule status = %s", schedAfter.Status)
-	}
+	rec = httptest.NewRecorder()
+	req = workspaceJSON(http.MethodPost, "/api/v1/schedules/"+sched.ID+"/enable", []byte(`{}`), admin, tenant, ws)
+	h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusNotFound, CodeNotFound, "")
+	rec = httptest.NewRecorder()
+	req = workspaceJSON(http.MethodPatch, "/api/v1/schedules/"+sched.ID, []byte(`{"interval":"PT30M"}`), admin, tenant, ws)
+	h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusNotFound, CodeNotFound, "")
 
 	rec = httptest.NewRecorder()
 	req = workspaceRequest(http.MethodGet, "/api/v1/workflows?q=e10-webhook", nil, admin, tenant, ws)

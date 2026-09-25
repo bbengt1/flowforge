@@ -3167,19 +3167,32 @@ paths:
           $ref: "#/components/responses/InternalError"
     delete:
       operationId: deleteWorkflowsWorkflowId
-      summary: DELETE /workflows/{workflowId}
+      summary: Soft-delete a workflow
       description: |
-        Generated from the route table (DELETE /api/v1/workflows/{workflowId}).
+        Soft-deletes one workflow. The same transaction unpublishes it, disables its triggers and schedules, and sets a tombstone.
+        A deleted workflow is not found on get, update, export, versions, or runs, and it disappears from list, search, and the folder tree.
+        Version history stays stored. There is no purge and no restore. The slug stays reserved (create returns 409 workflow_slug_reserved).
+        A live slug conflict stays 409 conflict. YAML is not modified.
+        workflow.delete is granted to editors and workspace admins. The workflow owner (createdBy) may also delete.
+        Viewers who are not the owner receive 403. Callers with no workflow.view, including another tenant, receive 404.
+        The delete handler refuses any embed session with 403 forbidden before it reads permissions, capabilities, or ownership. That includes a session minted earlier whose stored caps still list workflow.delete. capabilities.delete is false for every embed session. Ownership never adds a permission an embed session does not already hold.
+        workflow.delete cannot be minted on an embed assertion (ErrCapability, the same rejection as platform.administer). It stays on the editor and admin workspace roles.
+        The browser identity proxy refuses DELETE /workflows/{workflowId} for an embed session with 403. First-party browser DELETE stays allowlisted.
+        Queued or running executions return 409 workflow_has_active_executions and are not canceled. Waiting and pinned executions do not block.
+        A waiting run that later resumes, is retried, or is requeued after the workflow is deleted is failed with reason workflow_deleted. No further steps run. Approval decide on that run returns 409 workflow_deleted and does not record the decision when the pre-check wins.
         Auth class: authenticated. Identity proxy: browser.
         Responses never include secrets, credentials, tokens, private keys, or vault material.
-        Vault references are display name and UUID only.
       responses:
-        "200":
-          description: Success
+        "204":
+          description: Deleted. No body.
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          description: Caller can view the workflow but cannot delete it, or the caller is an embed session. Embed delete is 403 forbidden regardless of caps or ownership.
+        "404":
+          description: No workflow.view, unknown id, already deleted, or another tenant. Same not-found problem as a missing workflow.
+        "409":
+          description: workflow_has_active_executions when a queued or running execution exists.
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "500":
@@ -6707,6 +6720,7 @@ components:
             - mfa-required
             - workflow_has_active_executions
             - workflow_slug_reserved
+            - workflow_deleted
         request_id:
           type: string
         errors:
@@ -8160,11 +8174,12 @@ components:
           type: boolean
         statusReason:
           type: string
-          enum: [no-worker]
+          enum: [no-worker, workflow_deleted]
           description: >
-            Additive operator hint when status is still queued and no job has
-            been claimed after 15s. Does not change status or fencing.
-            Chloe can show “no worker is claiming jobs”.
+            Additive operator hint. no-worker when status is still queued and
+            no job has been claimed after 15s. workflow_deleted when a waiting
+            run was stopped because the workflow was deleted. Does not change
+            status or fencing. Chloe can show “no worker is claiming jobs”.
         pins:
           type: array
           items: {$ref: "#/components/schemas/OpsPin"}

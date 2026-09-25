@@ -219,13 +219,26 @@ func WriteExecutionDetail(s *core.Server, w http.ResponseWriter, r *http.Request
 	}
 	core.WriteJSON(w, status, ExecutionResponse{
 		Execution:    exec,
-		StatusReason: QueuedUnclaimedReason(exec, jobs, Now(s)),
+		StatusReason: ExecutionStatusReason(exec, steps, jobs, Now(s)),
 		Pins:         pins,
 		Steps:        wfstore.BoundSteps(steps),
 		Jobs:         jobs,
 		AuditEvents:  audits,
 		Artifacts:    publicArtifacts(arts),
 	})
+}
+
+// ExecutionStatusReason surfaces workflow_deleted on a failed run, then
+// the queued no-worker hint. Workflow-scoped execution routes stay 404.
+func ExecutionStatusReason(exec wfstore.Execution, steps []wfstore.ExecutionStep, jobs []wfstore.ExecutionJob, now time.Time) string {
+	if exec.Status == wfstore.ExecutionFailed {
+		for _, step := range steps {
+			if code, _ := step.Error["code"].(string); code == wfstore.ReasonWorkflowDeleted {
+				return wfstore.ReasonWorkflowDeleted
+			}
+		}
+	}
+	return QueuedUnclaimedReason(exec, jobs, now)
 }
 
 // QueuedUnclaimedReason is an operator-visible hint when a run is still

@@ -136,7 +136,7 @@ func Verify(m Material, token string, opt VerifyOptions) (Verified, error) {
 	if !authz.ValidWorkbenchKey(c.WorkbenchKey) {
 		return Verified{}, ErrWorkbench
 	}
-	if err := validateCapabilities(c.Capabilities); err != nil {
+	if err := validateAssertionCapabilities(c.Ctx, c.Capabilities); err != nil {
 		return Verified{}, err
 	}
 	if c.WorkspaceID != "" && !authz.ValidUUID(c.WorkspaceID) {

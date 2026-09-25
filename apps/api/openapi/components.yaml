@@ -1517,6 +1517,7 @@ components:
             - mfa-required
             - workflow_has_active_executions
             - workflow_slug_reserved
+            - workflow_deleted
         request_id:
           type: string
         errors:
@@ -2970,11 +2971,12 @@ components:
           type: boolean
         statusReason:
           type: string
-          enum: [no-worker]
+          enum: [no-worker, workflow_deleted]
           description: >
-            Additive operator hint when status is still queued and no job has
-            been claimed after 15s. Does not change status or fencing.
-            Chloe can show “no worker is claiming jobs”.
+            Additive operator hint. no-worker when status is still queued and
+            no job has been claimed after 15s. workflow_deleted when a waiting
+            run was stopped because the workflow was deleted. Does not change
+            status or fencing. Chloe can show “no worker is claiming jobs”.
         pins:
           type: array
           items: {$ref: "#/components/schemas/OpsPin"}

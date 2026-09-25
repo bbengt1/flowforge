@@ -2,6 +2,8 @@ package wfstore
 
 import (
 	"context"
+	"errors"
+	"sort"
 	"strings"
 	"time"
 
@@ -60,9 +62,9 @@ func (p *Postgres) ClaimJob(ctx context.Context, scope isolation.Scope, now time
 		return DispatchResult{}, err
 	}
 
-	var jobID string
+	var jobID, workflowID, executionID string
 	err = tx.QueryRow(ctx, `
-		SELECT j.id::text
+		SELECT j.id::text, e.workflow_id::text, e.id::text
 		FROM execution_jobs j
 		JOIN executions e ON e.workspace_id = j.workspace_id AND e.id = j.execution_id
 		WHERE j.status = 'queued'
@@ -75,9 +77,44 @@ func (p *Postgres) ClaimJob(ctx context.Context, scope isolation.Scope, now time
 			  AND active.status IN ('claimed', 'running')
 		  )
 		ORDER BY j.available_at, j.created_at
-		FOR UPDATE OF j SKIP LOCKED
 		LIMIT 1
-	`, now).Scan(&jobID)
+	`, now).Scan(&jobID, &workflowID, &executionID)
+	if err != nil {
+		if err == pgx.ErrNoRows || errorsIsNotFound(err) {
+			if commitErr := tx.Commit(ctx); commitErr != nil {
+				return DispatchResult{}, mapDBErr(commitErr)
+			}
+			observability.NoteLeaseClaim(ctx, "empty", 0)
+			return DispatchResult{Recovered: recovered}, ErrEmptyClaim
+		}
+		return DispatchResult{}, mapDBErr(err)
+	}
+	if err := guardLiveWorkflowTx(ctx, tx, scope, now, workflowID, executionID); err != nil {
+		if errors.Is(err, ErrWorkflowDeleted) {
+			if commitErr := tx.Commit(ctx); commitErr != nil {
+				return DispatchResult{}, mapDBErr(commitErr)
+			}
+			observability.NoteLeaseClaim(ctx, "empty", 0)
+			return DispatchResult{Recovered: recovered}, ErrEmptyClaim
+		}
+		return DispatchResult{}, err
+	}
+	err = tx.QueryRow(ctx, `
+		SELECT j.id::text
+		FROM execution_jobs j
+		JOIN executions e ON e.workspace_id = j.workspace_id AND e.id = j.execution_id
+		WHERE j.id = $1::uuid
+		  AND j.status = 'queued'
+		  AND j.available_at <= $2
+		  AND e.status IN ('queued', 'running', 'waiting')
+		  AND NOT EXISTS (
+			SELECT 1 FROM execution_jobs active
+			WHERE active.workspace_id = j.workspace_id
+			  AND active.execution_step_id = j.execution_step_id
+			  AND active.status IN ('claimed', 'running')
+		  )
+		FOR UPDATE OF j
+	`, jobID, now).Scan(&jobID)
 	if err != nil {
 		if err == pgx.ErrNoRows || errorsIsNotFound(err) {
 			if commitErr := tx.Commit(ctx); commitErr != nil {
@@ -483,6 +520,15 @@ func (p *Postgres) RetryStep(ctx context.Context, scope isolation.Scope, now tim
 	if err != nil {
 		return RetryResult{}, err
 	}
+	if err := guardLiveWorkflowTx(ctx, tx, scope, now, exec.WorkflowID, executionID); err != nil {
+		if errors.Is(err, ErrWorkflowDeleted) {
+			if commitErr := tx.Commit(ctx); commitErr != nil {
+				return RetryResult{}, mapDBErr(commitErr)
+			}
+			return RetryResult{}, ErrWorkflowDeleted
+		}
+		return RetryResult{}, err
+	}
 	if exec.Status == ExecutionIndeterminate && !allowsIndeterminateRetry(src.NodeType) {
 		return RetryResult{}, ErrRetryNotAllowed
 	}
@@ -662,6 +708,19 @@ func (p *Postgres) ResumeWait(ctx context.Context, scope isolation.Scope, now ti
 	if job.Status != JobWaiting {
 		return DispatchResult{}, ErrNotClaimable
 	}
+	exec, err := getExecutionTx(ctx, tx, job.ExecutionID)
+	if err != nil {
+		return DispatchResult{}, err
+	}
+	if err := guardLiveWorkflowTx(ctx, tx, scope, now, exec.WorkflowID, job.ExecutionID); err != nil {
+		if errors.Is(err, ErrWorkflowDeleted) {
+			if commitErr := tx.Commit(ctx); commitErr != nil {
+				return DispatchResult{}, mapDBErr(commitErr)
+			}
+			return DispatchResult{}, ErrWorkflowDeleted
+		}
+		return DispatchResult{}, err
+	}
 	payload, err := marshalObject(redactObject(waitOutput(port, in.Output)))
 	if err != nil {
 		return DispatchResult{}, ErrInvalid
@@ -692,7 +751,7 @@ func (p *Postgres) ResumeWait(ctx context.Context, scope isolation.Scope, now ti
 	}); err != nil {
 		return DispatchResult{}, err
 	}
-	exec, err := getExecutionTx(ctx, tx, job.ExecutionID)
+	exec, err = getExecutionTx(ctx, tx, job.ExecutionID)
 	if err != nil {
 		return DispatchResult{}, err
 	}
@@ -802,6 +861,15 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 	}
 	if nextStatus == JobQueued && opts.clearClaim {
 		leaseExp = nil
+		if err := guardLiveWorkflowTx(ctx, tx, scope, now, exec.WorkflowID, exec.ID); err != nil {
+			if errors.Is(err, ErrWorkflowDeleted) {
+				if commitErr := tx.Commit(ctx); commitErr != nil {
+					return DispatchResult{}, mapDBErr(commitErr)
+				}
+				return DispatchResult{}, ErrWorkflowDeleted
+			}
+			return DispatchResult{}, err
+		}
 	}
 	var hb any
 	if opts.running {
@@ -974,37 +1042,105 @@ func recoverExpiredTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now
 		observability.NoteExecutionOutcome(ctx, "indeterminate")
 	}
 
-	expired, err := tx.Query(ctx, `
-		UPDATE execution_jobs
-		SET status = 'succeeded', updated_at = $1
-		WHERE status = 'waiting' AND available_at <= $1
-		RETURNING execution_id::text, execution_step_id::text
+	stopped, resumed, err := resumeOrStopDueWaits(ctx, tx, scope, now)
+	if err != nil {
+		return 0, err
+	}
+	return n + stopped + resumed, nil
+}
+
+type dueWaitRow struct {
+	workflowID string
+	exec       string
+	step       string
+}
+
+// resumeOrStopDueWaits locks each parent workflow before a waiting timer
+// can succeed. A tombstone fails the run and does not write an expired port.
+// Workflow ids are locked in sorted order.
+func resumeOrStopDueWaits(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now time.Time) (stopped, resumed int, err error) {
+	rows, err := tx.Query(ctx, `
+		SELECT e.workflow_id::text, j.execution_id::text, j.execution_step_id::text
+		FROM execution_jobs j
+		JOIN executions e ON e.workspace_id = j.workspace_id AND e.id = j.execution_id
+		WHERE j.status = 'waiting' AND j.available_at <= $1
 	`, now)
 	if err != nil {
-		return 0, mapDBErr(err)
+		return 0, 0, mapDBErr(err)
 	}
-	expPairs, err := collectRecoverPairs(expired)
-	if err != nil {
-		return 0, err
+	defer rows.Close()
+	byWorkflow := map[string][]dueWaitRow{}
+	var order []string
+	for rows.Next() {
+		var row dueWaitRow
+		if err := rows.Scan(&row.workflowID, &row.exec, &row.step); err != nil {
+			return 0, 0, mapDBErr(err)
+		}
+		if _, ok := byWorkflow[row.workflowID]; !ok {
+			order = append(order, row.workflowID)
+		}
+		byWorkflow[row.workflowID] = append(byWorkflow[row.workflowID], row)
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, 0, mapDBErr(err)
+	}
+	rows.Close()
+	sort.Strings(order)
 	payload, err := marshalObject(waitOutput("expired", nil))
 	if err != nil {
-		return 0, ErrInvalid
+		return 0, 0, ErrInvalid
 	}
-	for _, p := range expPairs {
-		if _, err := tx.Exec(ctx, `
-			UPDATE execution_steps
-			SET status = 'succeeded', output_redacted = $2::jsonb, finished_at = COALESCE(finished_at, $1), updated_at = $1
-			WHERE id = $3::uuid
-		`, now, payload, p.step); err != nil {
-			return 0, mapDBErr(err)
+	for _, workflowID := range order {
+		err := lockLiveWorkflow(ctx, tx, workflowID)
+		if errors.Is(err, ErrNotFound) {
+			seen := map[string]struct{}{}
+			for _, row := range byWorkflow[workflowID] {
+				if _, ok := seen[row.exec]; ok {
+					continue
+				}
+				seen[row.exec] = struct{}{}
+				if stopErr := stopExecutionWorkflowDeletedTx(ctx, tx, scope, now, row.exec); stopErr != nil {
+					return 0, 0, stopErr
+				}
+				stopped++
+			}
+			continue
 		}
-		n++
+		if err != nil {
+			return 0, 0, err
+		}
+		expired, err := tx.Query(ctx, `
+			UPDATE execution_jobs j
+			SET status = 'succeeded', updated_at = $1
+			FROM executions e
+			WHERE e.workspace_id = j.workspace_id AND e.id = j.execution_id
+			  AND e.workflow_id = $2::uuid
+			  AND j.status = 'waiting' AND j.available_at <= $1
+			RETURNING j.execution_id::text, j.execution_step_id::text
+		`, now, workflowID)
+		if err != nil {
+			return 0, 0, mapDBErr(err)
+		}
+		expPairs, err := collectRecoverPairs(expired)
+		if err != nil {
+			return 0, 0, err
+		}
+		for _, pair := range expPairs {
+			if _, err := tx.Exec(ctx, `
+				UPDATE execution_steps
+				SET status = 'succeeded', output_redacted = $2::jsonb, finished_at = COALESCE(finished_at, $1), updated_at = $1
+				WHERE id = $3::uuid
+			`, now, payload, pair.step); err != nil {
+				return 0, 0, mapDBErr(err)
+			}
+			resumed++
+		}
+		if err := finishRecoverPairs(ctx, tx, scope, now, expPairs, "expired"); err != nil {
+			return 0, 0, err
+		}
 	}
-	if err := finishRecoverPairs(ctx, tx, scope, now, expPairs, "expired"); err != nil {
-		return 0, err
-	}
-	return n, nil
+	return stopped, resumed, nil
 }
 
 type recoverPair struct{ exec, step string }

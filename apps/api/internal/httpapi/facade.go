@@ -42,6 +42,7 @@ const (
 	CodeUnauthenticated             = core.CodeUnauthenticated
 	CodeWorkflowHasActiveExecutions = core.CodeWorkflowHasActiveExecutions
 	CodeWorkflowSlugReserved        = core.CodeWorkflowSlugReserved
+	CodeWorkflowDeleted             = core.CodeWorkflowDeleted
 	MaxRequestBody                  = core.MaxRequestBody
 	RequestIDHeader                 = core.RequestIDHeader
 	AuthPublic                      = rt.AuthPublic

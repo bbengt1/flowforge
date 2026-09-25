@@ -201,6 +201,9 @@ func getTrigger(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		writeWebhookStoreError(w, r, err)
 		return
 	}
+	if !requireLiveParent(s, w, r, scope, trig.WorkflowID) {
+		return
+	}
 	core.WriteJSON(w, http.StatusOK, redactWebhookTrigger(trig))
 }
 
@@ -224,6 +227,9 @@ func updateTrigger(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	current, err := s.Hooks.Get(r.Context(), scope, strings.TrimSpace(r.PathValue("triggerId")))
 	if err != nil {
 		writeWebhookStoreError(w, r, err)
+		return
+	}
+	if !requireLiveParent(s, w, r, scope, current.WorkflowID) {
 		return
 	}
 	if req.WorkflowVersionID != nil {
@@ -280,6 +286,9 @@ func rotateTrigger(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		writeWebhookStoreError(w, r, err)
 		return
 	}
+	if !requireLiveParent(s, w, r, scope, trig.WorkflowID) {
+		return
+	}
 	meta, err := s.Vault.Rotate(r.Context(), scope, trig.SecretCredentialID, vault.RotateInput{Secret: req.Secret})
 	if err != nil {
 		vaulthttp.WriteVaultError(w, r, err)
@@ -311,7 +320,16 @@ func setTriggerStatus(s *core.Server, w http.ResponseWriter, r *http.Request, st
 	if !ok || !requireHooks(s, w, r) {
 		return
 	}
-	trig, err := s.Hooks.SetStatus(r.Context(), scope, strings.TrimSpace(r.PathValue("triggerId")), status)
+	id := strings.TrimSpace(r.PathValue("triggerId"))
+	current, err := s.Hooks.Get(r.Context(), scope, id)
+	if err != nil {
+		writeWebhookStoreError(w, r, err)
+		return
+	}
+	if !requireLiveParent(s, w, r, scope, current.WorkflowID) {
+		return
+	}
+	trig, err := s.Hooks.SetStatus(r.Context(), scope, id, status)
 	if err != nil {
 		writeWebhookStoreError(w, r, err)
 		return
@@ -331,12 +349,23 @@ func deleteTrigger(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		writeWebhookStoreError(w, r, err)
 		return
 	}
+	if !requireLiveParent(s, w, r, scope, trig.WorkflowID) {
+		return
+	}
 	if err := s.Hooks.Delete(r.Context(), scope, trig.ID); err != nil {
 		writeWebhookStoreError(w, r, err)
 		return
 	}
 	writeTriggerAudit(s, r, scope, trig, "webhook.trigger.deleted", "deleted", nil)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func requireLiveParent(s *core.Server, w http.ResponseWriter, r *http.Request, scope isolation.Scope, workflowID string) bool {
+	if err := workflowhttp.LiveWorkflow(r.Context(), s.Workflows, scope, workflowID); err != nil {
+		workflowhttp.WriteWorkflowStoreError(w, r, err)
+		return false
+	}
+	return true
 }
 
 func requireWebhookSecret(s *core.Server, w http.ResponseWriter, r *http.Request, scope isolation.Scope, credentialID string) error {

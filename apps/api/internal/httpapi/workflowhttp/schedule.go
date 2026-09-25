@@ -120,6 +120,11 @@ func listSchedules(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		writeScheduleStoreError(w, r, err)
 		return
 	}
+	items, err = omitTombstonedSchedules(r.Context(), s, scope, items)
+	if err != nil {
+		WriteWorkflowStoreError(w, r, err)
+		return
+	}
 	core.WritePage(w, items, q, next)
 }
 
@@ -186,6 +191,10 @@ func getSchedule(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		writeScheduleStoreError(w, r, err)
 		return
 	}
+	if err := LiveWorkflow(r.Context(), s.Workflows, scope, rec.WorkflowID); err != nil {
+		WriteWorkflowStoreError(w, r, err)
+		return
+	}
 	core.WriteJSON(w, http.StatusOK, rec)
 }
 
@@ -205,6 +214,10 @@ func updateSchedule(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	current, err := s.Schedules.Get(r.Context(), scope, strings.TrimSpace(r.PathValue("scheduleId")))
 	if err != nil {
 		writeScheduleStoreError(w, r, err)
+		return
+	}
+	if err := LiveWorkflow(r.Context(), s.Workflows, scope, current.WorkflowID); err != nil {
+		WriteWorkflowStoreError(w, r, err)
 		return
 	}
 	in := schedule.UpdateInput{
@@ -249,7 +262,17 @@ func setScheduleStatus(s *core.Server, w http.ResponseWriter, r *http.Request, s
 	if !ok || !requireSchedules(s, w, r) {
 		return
 	}
-	rec, err := s.Schedules.SetStatus(r.Context(), scope, s.Clock().UTC(), strings.TrimSpace(r.PathValue("scheduleId")), status)
+	id := strings.TrimSpace(r.PathValue("scheduleId"))
+	current, err := s.Schedules.Get(r.Context(), scope, id)
+	if err != nil {
+		writeScheduleStoreError(w, r, err)
+		return
+	}
+	if err := LiveWorkflow(r.Context(), s.Workflows, scope, current.WorkflowID); err != nil {
+		WriteWorkflowStoreError(w, r, err)
+		return
+	}
+	rec, err := s.Schedules.SetStatus(r.Context(), scope, s.Clock().UTC(), id, status)
 	if err != nil {
 		writeScheduleStoreError(w, r, err)
 		return
@@ -333,6 +356,16 @@ func dispatchDue(s *core.Server, ctx context.Context, scope isolation.Scope, now
 func dispatchOneSchedule(s *core.Server, ctx context.Context, scope isolation.Scope, rec schedule.Record, now time.Time) []scheduleDispatchItem {
 	if ctx.Err() != nil {
 		return nil
+	}
+	// A tombstoned parent is not a transient miss. Disable the row and
+	// leave last_error alone so the next tick does not retry it.
+	if err := LiveWorkflow(ctx, s.Workflows, scope, rec.WorkflowID); errors.Is(err, wfstore.ErrNotFound) {
+		if _, stopErr := s.Schedules.SetStatus(ctx, scope, now, rec.ID, schedule.StatusDisabled); stopErr != nil {
+			return []scheduleDispatchItem{{ScheduleID: rec.ID, SkipReason: "workflow-deleted", Error: "workflow-deleted"}}
+		}
+		return []scheduleDispatchItem{{ScheduleID: rec.ID, SkipReason: "workflow-deleted"}}
+	} else if err != nil {
+		return []scheduleDispatchItem{{ScheduleID: rec.ID, SkipReason: "workflow-unavailable", Error: "workflow-unavailable"}}
 	}
 	if rec.Status != schedule.StatusEnabled {
 		next, _ := advanceSchedule(s, ctx, scope, rec, now, "disabled", "")
@@ -517,6 +550,42 @@ func advanceSchedule(s *core.Server, ctx context.Context, scope isolation.Scope,
 	_, err = s.Schedules.RecordFire(ctx, scope, now, rec.ID, schedule.FireUpdate{NextFireAt: next, LastError: lastErr})
 	writeScheduleAudit(s, ctx, scope, rec, "denied", map[string]any{"reason": reason})
 	return next, err
+}
+
+// LiveWorkflow reports whether workflowID is a live row. A tombstone is
+// wfstore.ErrNotFound, the same result as GET /workflows/{id} and the
+// ?workflowId= schedule filter.
+func LiveWorkflow(ctx context.Context, workflows wfstore.Store, scope isolation.Scope, workflowID string) error {
+	if workflows == nil {
+		return wfstore.ErrStoreUnavailable
+	}
+	_, err := workflows.Get(ctx, scope, strings.TrimSpace(workflowID))
+	return err
+}
+
+func omitTombstonedSchedules(ctx context.Context, s *core.Server, scope isolation.Scope, items []schedule.Record) ([]schedule.Record, error) {
+	live := map[string]bool{}
+	out := make([]schedule.Record, 0, len(items))
+	for _, item := range items {
+		ok, seen := live[item.WorkflowID]
+		if !seen {
+			err := LiveWorkflow(ctx, s.Workflows, scope, item.WorkflowID)
+			if errors.Is(err, wfstore.ErrNotFound) {
+				live[item.WorkflowID] = false
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			live[item.WorkflowID] = true
+			ok = true
+		}
+		if !ok {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out, nil
 }
 
 func applyScheduleYAMLDefaults(in *schedule.CreateInput, yamlDoc string) {

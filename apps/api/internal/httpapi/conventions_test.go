@@ -260,6 +260,7 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 		CodeArtifactMutable: true, CodeArtifactUnscanned: true,
 		CodeArtifactUnsigned: true, CodeArtifactScanFailed: true,
 		CodeWorkflowHasActiveExecutions: true, CodeWorkflowSlugReserved: true,
+		CodeWorkflowDeleted: true,
 	}
 	for _, v := range enums {
 		s, _ := v.(string)

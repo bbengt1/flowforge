@@ -17,6 +17,14 @@ func deleteWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// First authorization check. Any embed session is refused before
+	// grants, caps, or ownership are read. A session minted before
+	// workflow.delete left the assertion allowlist still carries that
+	// cap in storage; this check does not consult it.
+	if requestEmbedBound(r) {
+		core.WriteForbidden(w, r)
+		return
+	}
 	if !requireWorkflowStore(s, w, r) {
 		return
 	}
@@ -39,7 +47,7 @@ func deleteWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
-	if !canDeleteWorkflow(perms, scope.ActorID(), wf.CreatedBy) {
+	if !canDeleteWorkflow(perms, scope.ActorID(), wf.CreatedBy, requestEmbedBound(r)) {
 		core.WriteForbidden(w, r)
 		return
 	}

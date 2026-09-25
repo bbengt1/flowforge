@@ -54,6 +54,10 @@ var (
 	ErrActiveExecutions = errors.New("workflow has active executions")
 	// ErrSlugReserved is a tombstone holding the slug. A live slug is ErrConflict.
 	ErrSlugReserved = errors.New("workflow slug is reserved")
+	// ErrWorkflowDeleted means a resume, retry, requeue, or claim found
+	// deleted_at set. The run is failed with ReasonWorkflowDeleted and
+	// must not continue.
+	ErrWorkflowDeleted = errors.New("workflow was deleted")
 )
 
 // Validation states persisted with a draft.
@@ -79,6 +83,11 @@ const (
 	ExecutionFailed        = "failed"
 	ExecutionCanceled      = "canceled"
 	ExecutionIndeterminate = "indeterminate"
+
+	// ReasonWorkflowDeleted is the matchable end reason on a run that was
+	// waiting or about to resume when its workflow was soft-deleted.
+	// It is stored on the step error and on execution detail statusReason.
+	ReasonWorkflowDeleted = "workflow_deleted"
 )
 
 // Job statuses. claimed/running are reserved for E5.2 leases.
@@ -602,6 +611,11 @@ type Store interface {
 	RetryStep(ctx context.Context, scope isolation.Scope, now time.Time, executionID, stepID string, hint ...map[string]any) (RetryResult, error)
 	WaitJob(ctx context.Context, scope isolation.Scope, now time.Time, in WaitJobInput) (DispatchResult, error)
 	ResumeWait(ctx context.Context, scope isolation.Scope, now time.Time, in ResumeWaitInput) (DispatchResult, error)
+	// AbandonIfWorkflowDeleted locks the live workflow row. A tombstone
+	// fails the run with ReasonWorkflowDeleted and returns ErrWorkflowDeleted.
+	// A live row returns nil. Callers that already decided an approval still
+	// refuse the resume when ResumeWait returns ErrWorkflowDeleted.
+	AbandonIfWorkflowDeleted(ctx context.Context, scope isolation.Scope, now time.Time, executionID string) error
 	RecoverExpiredLeases(ctx context.Context, scope isolation.Scope, now time.Time) (int, error)
 	ListAuditEvents(ctx context.Context, scope isolation.Scope, filter AuditListFilter) ([]AuditEvent, error)
 	WriteAudit(ctx context.Context, scope isolation.Scope, in AuditWrite) (AuditEvent, error)

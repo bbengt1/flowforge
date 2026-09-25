@@ -839,7 +839,7 @@ Suggested UI flow:
 | `GET /api/v1/workflows` | List summaries (no YAML). Requires `workflow.view`. Each item includes `folderId` (`null` = Unfiled) and `capabilities.delete`. Additive query `folderId=<uuid>` or `folderId=unfiled`. Omit = today's full list. Tombstoned workflows are omitted. | `200` `{items}` | `401` `403` `404` (unknown / cross-workspace folder) |
 | `POST /api/v1/workflows` | Create workflow + draft revision 1. JSON `{definitionYaml, slug?, name?, folderId?}`. Missing / null `folderId` is Unfiled. Requires `workflow.edit`. Response `workflow.capabilities.delete` follows the caller. A live slug is `409` `conflict`. A slug held by a tombstone is `409` `workflow_slug_reserved`. Omitted slug is slugified at create and stays stable on rename. | `201` `{workflow,draft}` | `400` `invalid-workflow` / `401` `403` `404` (folder) `409` `conflict` or `workflow_slug_reserved` |
 | `GET /api/v1/workflows/{workflowId}` | Summary including `draftRevision`, `draftDigest`, `folderId`, latest version, and `capabilities.delete`. A tombstone is the same `404` `not-found` as a missing workflow. | `200` workflow | `401` `403` `404` |
-| `DELETE /api/v1/workflows/{workflowId}` | Soft-delete. One transaction unpublishes (`status` returns to `draft`), disables triggers and schedules, and sets the tombstone. YAML is not modified. Version history stays stored and becomes unreachable. No purge and no restore. Success is `204` with no body. `workflow.delete` is granted to editors and workspace admins (`workspace.administer`). The workflow owner (`createdBy`) may also delete. `capabilities.delete` is true for those callers and false for a viewer who is not the owner. A viewer who is not the owner gets `403` `forbidden`. No `workflow.view` (no membership, other tenant) gets `404` `not-found`, same as an unknown or already-deleted id. Queued or running executions return `409` `workflow_has_active_executions` and are not canceled. Waiting and pinned executions do not block. There is no delete route on `/embed/v1`. | `204` | `401` `403` `404` `409` `workflow_has_active_executions` |
+| `DELETE /api/v1/workflows/{workflowId}` | Soft-delete. One transaction unpublishes (`status` returns to `draft`), disables triggers and schedules, and sets the tombstone. YAML is not modified. Version history stays stored and becomes unreachable. No purge and no restore. Success is `204` with no body. `workflow.delete` is granted to editors and workspace admins (`workspace.administer`). The workflow owner (`createdBy`) may also delete. `capabilities.delete` is true for those callers and false for a viewer who is not the owner. A viewer who is not the owner gets `403` `forbidden`. The delete handler refuses any embed session with `403` `forbidden` before permission, capability, or ownership checks, including a session whose stored caps still list `workflow.delete`. `capabilities.delete` is false. Ownership does not add edit, publish, trigger, schedule, or other grants beyond the embed caps. `workflow.delete` cannot be minted (rejected, not dropped). The identity proxy refuses embed `DELETE` of this route with `403`; first-party browser `DELETE` stays allowlisted. No `workflow.view` (no membership, other tenant) gets `404` `not-found`, same as an unknown or already-deleted id. Queued or running executions return `409` `workflow_has_active_executions` and are not canceled. Waiting and pinned executions do not block. A later resume, retry, requeue, or claim of a waiting run fails the run (`failed`, reason `workflow_deleted`) and does not continue it. There is no delete route on `/embed/v1`. | `204` | `401` `403` `404` `409` `workflow_has_active_executions` |
 | `PATCH /api/v1/workflows/{workflowId}/folder` | **Move only.** JSON `{folderId}` (`null` / omitted = Unfiled). Does **not** bump `draftRevision` or change YAML. Requires `workflow.edit`. | `200` workflow | `400` host identity / `401` `403` `404` |
 | `GET /api/v1/workflows/{workflowId}/draft` | Current mutable draft. | `200` `{workflowId,revision,definitionYaml,digest,summary,warnings,validationState}` | `401` `403` `404` |
 | `PUT /api/v1/workflows/{workflowId}/draft` | Conflict-safe save. JSON `{revision,definitionYaml}` or YAML + `If-Match: <revision>`. Requires `workflow.edit`. | `200` `{workflow,draft}` (revision incremented) | `400` `invalid-workflow` / `409` revision mismatch / `401` `403` `404` |
@@ -907,13 +907,13 @@ Suggested admin flow:
 3. Create: `POST /workflows/{id}/triggers` `{type:"webhook",workflowVersionId,secretCredentialId?,fieldMapping?,contentType?,maxBodyBytes?,clockSkewSeconds?,replayRetentionSeconds?,rateLimitPerMinute?,workspaceRatePerMinute?,maxConcurrency?,workspaceMaxConcurrency?}`. Response includes `id`, opaque `publicId`, `ingressPath`, `secretCredentialId`, `status`, mapping, and limits — never `secret`.
 4. Copy `ingressPath` (`/api/v1/hooks/{publicId}`) and tell senders to sign `v1.{timestamp}.{rawBody}` with HMAC-SHA256. Headers: `X-FlowForge-Timestamp` (unix seconds) and `X-FlowForge-Signature: v1=<hex>`. Optional `Idempotency-Key`; otherwise the server derives `w` + 32 hex.
 5. Rotate: `POST /triggers/{id}/rotate` `{secret:{secret}}`. Same credential id; plaintext never returned. PATCH rejecting `secret` is intentional — rotate is the only write path.
-6. Disable/enable: `POST /triggers/{id}/disable` / `.../enable`. Disabled or unknown public IDs are `404` on ingress (do not leak existence vs disabled).
-7. List/get: `GET /workflows/{id}/triggers`, `GET /triggers/{id}` (UUID or `publicId`). Viewer (`workflow.view`) can list/get; create/update/rotate/disable/enable/delete require `workflow.edit`.
+6. Disable/enable: `POST /triggers/{id}/disable` / `.../enable`. Disabled or unknown public IDs are `404` on ingress (do not leak existence vs disabled). A trigger whose workflow is tombstoned is `404` on get, enable, and PATCH (the workflow-scoped list is already `404`).
+7. List/get: `GET /workflows/{id}/triggers`, `GET /triggers/{id}` (UUID or `publicId`). Viewer (`workflow.view`) can list/get; create/update/rotate/disable/enable/delete require `workflow.edit`. A tombstoned parent is `404`, the same as `?workflowId=` on a missing workflow.
 8. Credential usage/deletion-impact includes `triggers[]`. Delete of a referenced `webhook_secret` is `409`.
 
 Public ingress (`POST /api/v1/hooks/{publicId}`):
 
-1. Lookup opaque id → workspace (no session). Unknown/disabled/unpublished → `404`.
+1. Lookup opaque id → workspace (no session). Unknown/disabled/unpublished → `404`. A tombstoned parent workflow is `404` before the body is read and before any signature check, even if the trigger row was forced back to enabled.
 2. Read the **raw** body first (per-trigger `maxBodyBytes`, default 64 KiB, hard 256 KiB). Oversize → `413`.
 3. `Content-Type` must be `application/json` (MVP). Else `400`.
 4. Timestamp skew (default 300s) → `401`. Signature (`v1` HMAC over `v1.{timestamp}.{raw}`) is verified **before JSON parse**. Bad sig / missing secret → `401`.
@@ -966,8 +966,8 @@ Suggested schedule flow:
 
 1. Publish the workflow. Schedules must pin a published `workflowVersionId`. Drafts are `400`.
 2. Create: `POST /schedules` `{workflowId,workflowVersionId,timezone,cron|interval,overlapPolicy?,misfirePolicy?,catchUp?}`. YAML schedule `with` fields are copied when omitted. Response includes `nextFireAt`.
-3. List/get: `GET /schedules?workflowId=`, `GET /schedules/{scheduleId}`. Viewer (`workflow.view`) can list/get; create/update/enable/disable/delete require `workflow.edit`.
-4. Enable/disable: `POST /schedules/{id}/enable` / `.../disable`. Disabled schedules are not due.
+3. List/get: `GET /schedules?workflowId=`, `GET /schedules/{scheduleId}`. Viewer (`workflow.view`) can list/get; create/update/enable/disable/delete require `workflow.edit`. Schedules whose workflow is tombstoned are omitted from every list and are `404` on get. `?workflowId=` of a tombstone is already `404`.
+4. Enable/disable: `POST /schedules/{id}/enable` / `.../disable`. Disabled schedules are not due. Enable and PATCH of a tombstoned parent are `404` and do not re-enable the row. The scheduler disables a due schedule whose workflow is gone and does not rewrite `last_error` or advance `nextFireAt`, so later ticks do not retry it.
 5. Tick: `POST /schedules/dispatch` `{scheduleId?}`. Requires `workflow.execute`. Overlap skip/reject produces no fire while another run for that schedule is `queued`/`running`/`waiting`. Catch-up `0` fires only the current slot.
 
 Suggested approval wait flow:
@@ -975,7 +975,7 @@ Suggested approval wait flow:
 1. Start a published version that contains `flow.approval`. Evaluate lists wait requirements with `wait: true` and still allows start.
 2. Worker `POST /jobs/claim` parks the node: job/step/execution become `waiting` with **no lease**. Wait survives `POST /jobs/recover` and pod loss.
 3. A bound approval row is materialized with `executionId`. Fingerprint includes version, target, policy, operation, node, and execution.
-4. Approver decides: `POST /approvals/{id}/decide` `{decision}`. Fresh `approval.decide` + membership. Requester self-approval is `403`. Resume writes output port `approved` / `rejected`.
+4. Approver decides: `POST /approvals/{id}/decide` `{decision}`. Fresh `approval.decide` + membership. Requester self-approval is `403`. Resume writes output port `approved` / `rejected`. If the workflow was deleted while the run was waiting, decide returns `409` `workflow_deleted` and the run is `failed` with that reason. The pre-check does not record the decision (the approval stays `pending`). A race that decides first still returns `409` and stops the run on resume.
 5. Expiry (`availableAt`) or binding change (policy/target/version digest) resumes `expired` and never `approved`.
 
 | Field | Required | Notes |
@@ -1002,7 +1002,7 @@ Suggested approval wait flow:
 | `DELETE /api/v1/schedules/{scheduleId}` | Delete. Requires `workflow.edit` + CSRF. | `204` | `401` `403` `404` |
 | `POST /api/v1/schedules/dispatch` | Tick due schedules. Requires `workflow.execute` + CSRF. | `200` `{items}` | `401` `403` |
 | `GET /api/v1/approvals/catalog` | Now `waitResumeEnabled: true`. Resume via decide. | `200` catalog | `401` `403` |
-| `POST /api/v1/approvals/{approvalId}/decide` | Fresh-auth decide **and** resume wait. | `200` approval | `401` `403` `409` |
+| `POST /api/v1/approvals/{approvalId}/decide` | Fresh-auth decide **and** resume wait. A deleted workflow is `409` `workflow_deleted` (approval stays pending when the pre-check wins). | `200` approval | `401` `403` `409` `workflow_deleted` |
 
 Out of scope: `apps/web` rewrite. HTTP and notification action nodes are E10.4 below.
 
@@ -1064,7 +1064,7 @@ Suggested UI flow:
 2. Same `idempotencyKey` + same input/actor → `200` with the original `id` and `replayed: true`. Do not treat that as a second run.
 3. Same key + different `input` (or actor) → `409` `conflict`. Show a safe message; do not retry with a new key unless the operator intends a new run.
 4. Workspace history: `GET /executions?status=&workflowId=&limit=`. Per-workflow: `GET /workflows/{workflowId}/executions`.
-5. Detail: `GET /executions/{executionId}` (or the workflow-scoped twin). Render `status`, version/digest pin, redacted `input`, bounded `steps[]` (`outputTruncated`), `jobs[]`, `pins[]`, and `artifacts[]` metadata (E5.3). Additive `statusReason: "no-worker"` appears when status is still `queued` and no job has a `workerId` after 15s (compose without a worker). Status stays `queued`. can show “no worker is claiming jobs”.
+5. Detail: `GET /executions/{executionId}` (or the workflow-scoped twin). Render `status`, version/digest pin, redacted `input`, bounded `steps[]` (`outputTruncated`), `jobs[]`, `pins[]`, and `artifacts[]` metadata (E5.3). Additive `statusReason: "no-worker"` appears when status is still `queued` and no job has a `workerId` after 15s (compose without a worker). Status stays `queued`. can show “no worker is claiming jobs”. `statusReason: "workflow_deleted"` appears when status is `failed` because the workflow was deleted while the run was waiting. `steps[].error.code` is `workflow_deleted`. The workflow-scoped execution URL stays `404` once the workflow is tombstoned; workspace `GET /executions/{id}` still returns the stopped run.
 6. Optional extra fetches: `GET /executions/{id}/steps`, `/jobs`, `/audit-events`, `/artifacts`. Workspace audit: `GET /audit-events?resourceType=execution&resourceId=`.
 7. Secret values are already `[redacted]` in JSON. Never persist `input` from the run form into `localStorage`.
 
@@ -1208,6 +1208,7 @@ Errors use `application/problem+json` and include `type`, `title`, `status`, `de
 | `conflict` | 409 | Unique identity collision, last-admin protection, draft revision mismatch, duplicate published digest, idempotency fingerprint mismatch, fencing/lease mismatch, a live workflow slug, or a retry/cancel that is not allowed |
 | `workflow_has_active_executions` | 409 | Soft-delete refused because a queued or running execution exists. Waiting and pinned executions do not block. The run is not canceled. |
 | `workflow_slug_reserved` | 409 | Create used a slug still held by a soft-deleted workflow |
+| `workflow_deleted` | 409 | Resume, retry, or approval decide found the workflow tombstoned. The run is `failed` with reason `workflow_deleted` and does not continue. |
 | `retry-denied` | 409 | SSH/script retry rejected: default `maxAttempts=0`, not `retrySafe`, missing verification or idempotency key, or no attempts remain. Indeterminate non-retrySafe steps stay closed. |
 | `artifact-mutable` | 400 | Draft or unsigned script package cannot execute. Publish first. |
 | `artifact-unscanned` | 400 | Script artifact `scanStatus` is pending or missing. |

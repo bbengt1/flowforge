@@ -184,7 +184,7 @@ func claimDocs() []ClaimDoc {
 		{Name: "tenant_id", Required: true, JSON: "tenant_id", Note: "Workspace identity half. Verified on the assertion before any store lookup, then bound onto the session. Host tenant is never authorization by itself."},
 		{Name: "workbench_key", Required: true, JSON: "workbench_key", Note: "Workspace identity half with tenant_id. Verified before workspace lookup. Bound onto the session and required on later UI/API calls."},
 		{Name: "workspace_id", Required: false, JSON: "workspace_id", Note: "Optional binding. Confirmed against server resolution after verify. Never the lookup key."},
-		{Name: "capabilities", Required: true, JSON: "capabilities", Note: "FlowForge workspace permission keys. Mint requires a subset of the caller. platform.administer and embed.impersonate are never mintable."},
+		{Name: "capabilities", Required: true, JSON: "capabilities", Note: "FlowForge workspace permission keys. Mint requires a subset of the caller. platform.administer, embed.impersonate, and workflow.delete are never mintable (rejected, not dropped). workflow.delete stays on the editor and admin workspace roles."},
 		{Name: "sdk", Required: true, JSON: "sdk", Note: "embed.v1"},
 		{Name: "display_name", Required: false, JSON: "display_name", Note: "Display context until the API verifies the subject."},
 		{Name: "host", Required: false, JSON: "host", Note: "Minting host issuer. Mint always writes host=iss (the authenticated caller). Exchange requires host==iss when the claim is present (ADV-023). Not a second authorization subject."},

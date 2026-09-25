@@ -110,7 +110,7 @@ func Mint(m Material, in MintInput) (Minted, Claims, error) {
 	if !authz.ValidWorkbenchKey(strings.TrimSpace(in.WorkbenchKey)) {
 		return Minted{}, Claims{}, ErrWorkbench
 	}
-	if err := validateCapabilities(in.Capabilities); err != nil {
+	if err := validateAssertionCapabilities(ctx, in.Capabilities); err != nil {
 		return Minted{}, Claims{}, err
 	}
 	ws := strings.TrimSpace(in.WorkspaceID)
@@ -173,6 +173,25 @@ func validateCapabilities(caps []string) error {
 			return ErrCapability
 		}
 		seen[c] = struct{}{}
+	}
+	return nil
+}
+
+// validateAssertionCapabilities rejects platform-scoped keys on every
+// assertion. workflow.delete is rejected on embed assertions (and when
+// ctx is empty) and is allowed on a portal assertion, whose admin role
+// still includes that key. The delete handler refuses every bound session.
+func validateAssertionCapabilities(ctx string, caps []string) error {
+	if err := validateCapabilities(caps); err != nil {
+		return err
+	}
+	if ctx == HostContextPortal {
+		return nil
+	}
+	for _, c := range caps {
+		if authz.EmbedAssertionDenied(strings.TrimSpace(c)) {
+			return ErrCapability
+		}
 	}
 	return nil
 }

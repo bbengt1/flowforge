@@ -230,7 +230,9 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
  different subject requires `embed.impersonate` (same `PLATFORM_ADMINS`
  allowlist; empty is fail-closed). A different issuer is always `403`.
  Workspace `admin` cannot impersonate. `embed.impersonate` is
- platform-scoped and is never mintable. After exchange, the
+ platform-scoped and is never mintable. `workflow.delete` is also never
+ mintable on an embed assertion (rejected, not dropped) and stays on the
+ editor and admin workspace roles. The delete handler refuses any embed session (`403`) before permission, capability, or ownership checks, including a session whose stored caps still list `workflow.delete`. `capabilities.delete` is false. Ownership never adds a permission the embed caps do not already include. After exchange, the
  browser session is bound to `(tenant_id, workbench_key)`; that pair travels
  through API authorization, configuration lookups, jobs/workers, caches,
  realtime, history, and audit. The bound session cannot call tenant or
