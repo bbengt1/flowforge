@@ -45,14 +45,28 @@ func requestEmbedBound(r *http.Request) bool {
 	return pc != nil && pc.Session != nil && pc.Session.Binding.Bound()
 }
 
-// canDeleteWorkflow refuses every embed session before the owner bypass
-// and before workflow.delete. Embed denial is 403 forbidden.
+// canDeleteWorkflow is the only authorization check that compares the
+// caller to workflows.created_by. The owner grant is not added on an
+// embed session: embed caps are the ceiling, and delete is refused
+// before this function runs. Embed denial is 403 forbidden, and
+// capabilities.delete stays false even when a stored session still
+// lists workflow.delete.
 func canDeleteWorkflow(perms []string, actorID, createdBy string, embedSession bool) bool {
 	if embedSession {
 		return false
 	}
 	if authz.Allows(perms, authz.PermWorkflowDelete) {
 		return true
+	}
+	return ownerMayAdd(actorID, createdBy, embedSession)
+}
+
+// ownerMayAdd is the owner privilege after embed caps are applied.
+// An embed session never receives a permission from ownership. The
+// caller must already hold that permission in the intersected caps.
+func ownerMayAdd(actorID, createdBy string, embedSession bool) bool {
+	if embedSession {
+		return false
 	}
 	actorID = strings.TrimSpace(actorID)
 	createdBy = strings.TrimSpace(createdBy)
