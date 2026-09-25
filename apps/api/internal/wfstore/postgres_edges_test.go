@@ -129,6 +129,77 @@ spec:
       to: tail.input
 `
 
+const conditionJoinYAML = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: condition-join
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: seed
+      type: data.set
+      name: Seed
+      with:
+        value:
+          ready: true
+    - id: gate
+      type: flow.condition
+      name: Gate
+      with:
+        op: exists
+    - id: join
+      type: kubernetes.apply
+      name: Join
+      with:
+        clusterTargetId: 11111111-1111-4111-8111-111111111111
+        namespace: demo
+  edges:
+    - from: seed.result
+      to: gate.value
+    - from: gate.true
+      to: join.manifests
+    - from: gate.false
+      to: join.parameters
+`
+
+const conditionOrJoinYAML = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: condition-or-join
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: seed
+      type: data.set
+      name: Seed
+      with:
+        value:
+          ready: true
+    - id: gate
+      type: flow.condition
+      name: Gate
+      with:
+        op: exists
+    - id: join
+      type: kubernetes.apply
+      name: Join
+      join: any
+      with:
+        clusterTargetId: 11111111-1111-4111-8111-111111111111
+        namespace: demo
+  edges:
+    - from: seed.result
+      to: gate.value
+    - from: gate.true
+      to: join.manifests
+    - from: gate.false
+      to: join.parameters
+`
+
 const retryChainYAML = `apiVersion: flowforge/v1
 kind: Workflow
 metadata:
@@ -273,6 +344,34 @@ func TestPostgresUpstreamEdges(t *testing.T) {
 		}
 		assertNode(t, ctx, store, scope, exec.ID, "join", ExecutionSkipped, JobSkipped)
 		assertRun(t, ctx, store, scope, exec.ID, ExecutionSucceeded)
+	})
+
+	t.Run("default AND join after if else is skipped", func(t *testing.T) {
+		exec := startGraph(t, ctx, store, scope, conditionJoinYAML)
+		seedClaim := claimNode(t, ctx, store, scope, now(), "seed")
+		completeJob(t, ctx, store, scope, now(), seedClaim, map[string]any{"result": map[string]any{"ready": true}})
+		gateClaim := claimNode(t, ctx, store, scope, now(), "gate")
+		completeJob(t, ctx, store, scope, now(), gateClaim, map[string]any{"port": "true", "true": map[string]any{"ready": true}})
+		assertNode(t, ctx, store, scope, exec.ID, "join", ExecutionSkipped, JobSkipped)
+		if _, err := store.ClaimJob(ctx, scope, now(), ClaimInput{WorkerID: "edge-worker", Lease: time.Minute}); !errors.Is(err, ErrEmptyClaim) {
+			t.Fatalf("AND join was claimable: %v", err)
+		}
+		assertRun(t, ctx, store, scope, exec.ID, ExecutionSucceeded)
+	})
+
+	t.Run("explicit OR join after if else runs when one branch is satisfied", func(t *testing.T) {
+		exec := startGraph(t, ctx, store, scope, conditionOrJoinYAML)
+		seedClaim := claimNode(t, ctx, store, scope, now(), "seed")
+		completeJob(t, ctx, store, scope, now(), seedClaim, map[string]any{"result": map[string]any{"ready": true}})
+		gateClaim := claimNode(t, ctx, store, scope, now(), "gate")
+		completeJob(t, ctx, store, scope, now(), gateClaim, map[string]any{"port": "true", "true": map[string]any{"ready": true}})
+		joinClaim := claimNode(t, ctx, store, scope, now(), "join")
+		if joinClaim.Step.Status != ExecutionRunning && joinClaim.Step.Status != ExecutionQueued {
+			t.Fatalf("OR join step=%s", joinClaim.Step.Status)
+		}
+		if _, err := store.CancelExecution(ctx, scope, now(), exec.ID); err != nil {
+			t.Fatal(err)
+		}
 	})
 
 	t.Run("skip cascades", func(t *testing.T) {

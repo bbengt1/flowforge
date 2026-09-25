@@ -100,12 +100,11 @@ BEGIN
                 workspace_id, execution_id, from_node, from_port, to_node, to_port, required
             )
             SELECT run.workspace_id, run.execution_id, ed.from_node, ed.from_port, ed.to_node, ed.to_port,
-                   EXISTS (
-                       SELECT 1 FROM execution_steps s
-                       WHERE s.workspace_id = run.workspace_id
-                         AND s.execution_id = run.execution_id
-                         AND s.node_id = ed.from_node
-                         AND s.node_type = 'flow.approval'
+                   NOT EXISTS (
+                       SELECT 1
+                         FROM jsonb_array_elements(COALESCE(run.parsed_definition->'nodes', '[]'::jsonb)) n
+                        WHERE n->>'id' = ed.to_node
+                          AND n->>'join' = 'any'
                    )
             ON CONFLICT ON CONSTRAINT execution_edges_path_unique DO NOTHING;
         END LOOP;

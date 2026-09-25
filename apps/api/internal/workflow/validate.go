@@ -174,6 +174,7 @@ func validate(doc *Document) ErrorList {
 			errs = append(errs, validateEdgePorts(doc, e, from, to, path)...)
 		}
 	}
+	errs = append(errs, validateJoinModes(doc)...)
 
 	seenOutputs := map[string]int{}
 	for i, o := range doc.Spec.Outputs {
@@ -289,8 +290,39 @@ func validateSchedule(t Trigger, path string) ErrorList {
 	return errs
 }
 
+// validateJoinModes enforces the runtime join marker. Omitted and "all"
+// are AND. "any" is OR and is meaningful only when the node has at least
+// two incoming edges.
+func validateJoinModes(doc *Document) ErrorList {
+	if doc == nil {
+		return nil
+	}
+	incoming := map[string]int{}
+	for _, e := range doc.Spec.Edges {
+		to, ok := parsePortRef(e.To)
+		if !ok {
+			continue
+		}
+		incoming[to.NodeID]++
+	}
+	var errs ErrorList
+	for i, n := range doc.Spec.Nodes {
+		if n.Join != JoinAny || incoming[n.ID] >= 2 {
+			continue
+		}
+		path := fmt.Sprintf("spec.nodes[%d].join", i)
+		errs = append(errs, fieldError(path, n.pos.Line, n.pos.Column, CodeInvalidType, `join "any" requires at least two incoming edges.`))
+	}
+	return errs
+}
+
 func validateNode(n Node, path string) ErrorList {
 	var errs ErrorList
+	switch n.Join {
+	case "", JoinAll, JoinAny:
+	default:
+		errs = append(errs, fieldError(path+".join", n.pos.Line, n.pos.Column, CodeInvalidType, `join must be "all" or "any".`))
+	}
 	nt, ok := lookupNode(n.Type)
 	if !ok {
 		errs = append(errs, fieldError(path+".type", n.pos.Line, n.pos.Column, CodeUnknownNodeType, fmt.Sprintf("Unknown node type %q.", n.Type)))

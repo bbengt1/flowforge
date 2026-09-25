@@ -62,74 +62,96 @@ func (p *Postgres) ClaimJob(ctx context.Context, scope isolation.Scope, now time
 		return DispatchResult{}, err
 	}
 
-	var jobID, workflowID, executionID string
-	err = tx.QueryRow(ctx, `
-		SELECT j.id::text, e.workflow_id::text, e.id::text
-		FROM execution_jobs j
-		JOIN executions e ON e.workspace_id = j.workspace_id AND e.id = j.execution_id
-		JOIN execution_steps s ON s.workspace_id = j.workspace_id AND s.id = j.execution_step_id
-		WHERE j.status = 'queued'
-		  AND j.status <> 'blocked'
-		  AND s.unresolved_incoming = 0
-		  AND j.available_at <= $1
-		  AND e.status IN ('queued', 'running', 'waiting')
-		  AND NOT EXISTS (
-			SELECT 1 FROM execution_jobs active
-			WHERE active.workspace_id = j.workspace_id
-			  AND active.execution_step_id = j.execution_step_id
-			  AND active.status IN ('claimed', 'running')
-		  )
-		ORDER BY j.available_at, j.created_at
-		LIMIT 1
-	`, now).Scan(&jobID, &workflowID, &executionID)
-	if err != nil {
-		if err == pgx.ErrNoRows || errorsIsNotFound(err) {
-			if commitErr := tx.Commit(ctx); commitErr != nil {
-				return DispatchResult{}, mapDBErr(commitErr)
+	// The first read does not lock the job. Two claims can select the same
+	// row; after the live workflow lock, the loser re-reads the next queued
+	// job on that workflow instead of returning empty. A second workflow is
+	// not locked in this transaction.
+	var jobID, workflowID, executionID, lockedWorkflow string
+	picked := false
+	for attempt := 0; attempt < 8; attempt++ {
+		args := []any{now}
+		workflowClause := ""
+		if lockedWorkflow != "" {
+			workflowClause = " AND e.workflow_id = $2::uuid"
+			args = append(args, lockedWorkflow)
+		}
+		err = tx.QueryRow(ctx, `
+			SELECT j.id::text, e.workflow_id::text, e.id::text
+			FROM execution_jobs j
+			JOIN executions e ON e.workspace_id = j.workspace_id AND e.id = j.execution_id
+			JOIN execution_steps s ON s.workspace_id = j.workspace_id AND s.id = j.execution_step_id
+			WHERE j.status = 'queued'
+			  AND j.status <> 'blocked'
+			  AND s.unresolved_incoming = 0
+			  AND j.available_at <= $1
+			  AND e.status IN ('queued', 'running', 'waiting')
+			  AND NOT EXISTS (
+				SELECT 1 FROM execution_jobs active
+				WHERE active.workspace_id = j.workspace_id
+				  AND active.execution_step_id = j.execution_step_id
+				  AND active.status IN ('claimed', 'running')
+			  )`+workflowClause+`
+			ORDER BY j.available_at, j.created_at
+			LIMIT 1
+		`, args...).Scan(&jobID, &workflowID, &executionID)
+		if err != nil {
+			if err == pgx.ErrNoRows || errorsIsNotFound(err) {
+				if commitErr := tx.Commit(ctx); commitErr != nil {
+					return DispatchResult{}, mapDBErr(commitErr)
+				}
+				observability.NoteLeaseClaim(ctx, "empty", 0)
+				return DispatchResult{Recovered: recovered}, ErrEmptyClaim
 			}
-			observability.NoteLeaseClaim(ctx, "empty", 0)
-			return DispatchResult{Recovered: recovered}, ErrEmptyClaim
+			return DispatchResult{}, mapDBErr(err)
+		}
+		if lockedWorkflow == "" {
+			if err := guardLiveWorkflowTx(ctx, tx, scope, now, workflowID, executionID); err != nil {
+				if errors.Is(err, ErrWorkflowDeleted) {
+					if commitErr := tx.Commit(ctx); commitErr != nil {
+						return DispatchResult{}, mapDBErr(commitErr)
+					}
+					observability.NoteLeaseClaim(ctx, "empty", 0)
+					return DispatchResult{Recovered: recovered}, ErrEmptyClaim
+				}
+				return DispatchResult{}, err
+			}
+			lockedWorkflow = workflowID
+		}
+		err = tx.QueryRow(ctx, `
+			SELECT j.id::text
+			FROM execution_jobs j
+			JOIN executions e ON e.workspace_id = j.workspace_id AND e.id = j.execution_id
+			JOIN execution_steps s ON s.workspace_id = j.workspace_id AND s.id = j.execution_step_id
+			WHERE j.id = $1::uuid
+			  AND j.status = 'queued'
+			  AND j.status <> 'blocked'
+			  AND s.unresolved_incoming = 0
+			  AND j.available_at <= $2
+			  AND e.status IN ('queued', 'running', 'waiting')
+			  AND e.workflow_id = $3::uuid
+			  AND NOT EXISTS (
+				SELECT 1 FROM execution_jobs active
+				WHERE active.workspace_id = j.workspace_id
+				  AND active.execution_step_id = j.execution_step_id
+				  AND active.status IN ('claimed', 'running')
+			  )
+			FOR UPDATE OF j
+		`, jobID, now, lockedWorkflow).Scan(&jobID)
+		if err == nil {
+			picked = true
+			break
+		}
+		if err == pgx.ErrNoRows || errorsIsNotFound(err) {
+			continue
 		}
 		return DispatchResult{}, mapDBErr(err)
 	}
-	if err := guardLiveWorkflowTx(ctx, tx, scope, now, workflowID, executionID); err != nil {
-		if errors.Is(err, ErrWorkflowDeleted) {
-			if commitErr := tx.Commit(ctx); commitErr != nil {
-				return DispatchResult{}, mapDBErr(commitErr)
-			}
-			observability.NoteLeaseClaim(ctx, "empty", 0)
-			return DispatchResult{Recovered: recovered}, ErrEmptyClaim
+	if !picked {
+		if commitErr := tx.Commit(ctx); commitErr != nil {
+			return DispatchResult{}, mapDBErr(commitErr)
 		}
-		return DispatchResult{}, err
-	}
-	err = tx.QueryRow(ctx, `
-		SELECT j.id::text
-		FROM execution_jobs j
-		JOIN executions e ON e.workspace_id = j.workspace_id AND e.id = j.execution_id
-		JOIN execution_steps s ON s.workspace_id = j.workspace_id AND s.id = j.execution_step_id
-		WHERE j.id = $1::uuid
-		  AND j.status = 'queued'
-		  AND j.status <> 'blocked'
-		  AND s.unresolved_incoming = 0
-		  AND j.available_at <= $2
-		  AND e.status IN ('queued', 'running', 'waiting')
-		  AND NOT EXISTS (
-			SELECT 1 FROM execution_jobs active
-			WHERE active.workspace_id = j.workspace_id
-			  AND active.execution_step_id = j.execution_step_id
-			  AND active.status IN ('claimed', 'running')
-		  )
-		FOR UPDATE OF j
-	`, jobID, now).Scan(&jobID)
-	if err != nil {
-		if err == pgx.ErrNoRows || errorsIsNotFound(err) {
-			if commitErr := tx.Commit(ctx); commitErr != nil {
-				return DispatchResult{}, mapDBErr(commitErr)
-			}
-			observability.NoteLeaseClaim(ctx, "empty", 0)
-			return DispatchResult{Recovered: recovered}, ErrEmptyClaim
-		}
-		return DispatchResult{}, mapDBErr(err)
+		observability.NoteLeaseClaim(ctx, "empty", 0)
+		return DispatchResult{Recovered: recovered}, ErrEmptyClaim
 	}
 
 	leaseExp := now.Add(lease)

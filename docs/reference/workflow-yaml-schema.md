@@ -138,9 +138,12 @@ All nodes share this envelope:
 id: unique-node-id
 type: provider.action
 name: Human-readable label
+join: all                 # optional; all (default) or any
 with: {}                  # node-specific, policy-validated configuration
 inputs: {}                # optional defaults or literal typed inputs
 ```
+
+`join` selects how a node's incoming edges combine. Omitted and `all` are AND: the step runs only when every incoming edge has resolved satisfied. If any incoming edge resolves unsatisfied, the step is skipped, and that skip resolves the step's outgoing edges as unsatisfied. `any` is OR: once every incoming edge has resolved, the step runs if at least one was satisfied and is skipped if none were. `any` is valid only on a node with at least two incoming edges. Any other value fails validation. `flow.join` stays registry-disabled; there is no separate merge node.
 
 An edge expresses object composition, not an implementation-specific callback:
 

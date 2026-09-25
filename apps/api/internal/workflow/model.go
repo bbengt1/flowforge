@@ -264,11 +264,20 @@ type Trigger struct {
 	pos  loc
 }
 
+// Join modes for a node with incoming edges. Empty and JoinAll wait until
+// every incoming edge is satisfied. JoinAny queues once every incoming
+// edge has resolved and at least one is satisfied.
+const (
+	JoinAll = "all"
+	JoinAny = "any"
+)
+
 // Node is a typed action with ports.
 type Node struct {
 	ID     string
 	Type   string
 	Name   string
+	Join   string
 	With   map[string]any
 	Inputs map[string]any
 	pos    loc
@@ -329,6 +338,7 @@ type NodeSummary struct {
 	ID   string `json:"id"`
 	Type string `json:"type"`
 	Name string `json:"name"`
+	Join string `json:"join,omitempty"`
 }
 
 // EdgeSummary is the catalog-facing edge projection.
@@ -378,7 +388,7 @@ func (d *Document) Summary() Summary {
 		s.Triggers = append(s.Triggers, TriggerSummary{ID: t.ID, Type: t.Type})
 	}
 	for _, n := range d.Spec.Nodes {
-		s.Nodes = append(s.Nodes, NodeSummary{ID: n.ID, Type: n.Type, Name: n.Name})
+		s.Nodes = append(s.Nodes, NodeSummary{ID: n.ID, Type: n.Type, Name: n.Name, Join: n.Join})
 	}
 	for _, e := range d.Spec.Edges {
 		s.Edges = append(s.Edges, EdgeSummary{From: e.From, To: e.To})
@@ -433,6 +443,7 @@ func (d *Document) ExecutionGraph() ExecutionGraph {
 			ID:     n.ID,
 			Type:   n.Type,
 			Name:   n.Name,
+			Join:   n.Join,
 			With:   cloneAnyMap(n.With),
 			Inputs: cloneAnyMap(n.Inputs),
 		}

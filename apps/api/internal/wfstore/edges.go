@@ -9,11 +9,10 @@ import (
 )
 
 // execEdge is one published port connection pinned to a run.
-// The workflow schema wires ports at publish time and does not define a
-// runtime join mode (flow.join is registry-disabled). Required is true
-// for every edge that leaves a flow.approval node: that edge must be
-// satisfied or the target is skipped. Every other edge uses the
-// satisfied-any rule once all incoming edges have resolved.
+// Required is true for the default AND join: every incoming edge must be
+// satisfied. It is false when the target node sets join: any, which queues
+// once every incoming edge has resolved and at least one is satisfied.
+// flow.join stays registry-disabled; join is a marker on the target node.
 type execEdge struct {
 	ID        string
 	FromNode  string
@@ -45,9 +44,9 @@ func splitPort(ref string) (portRef, bool) {
 // fails closed so a node cannot start early.
 func planGraph(yamlDoc string, summary workflow.Summary) ([]plannedNode, []execEdge, error) {
 	nodes := planNodes(yamlDoc, summary)
-	types := make(map[string]string, len(nodes))
-	for _, n := range nodes {
-		types[n.ID] = n.Type
+	joins := map[string]string{}
+	for _, n := range summary.Nodes {
+		joins[n.ID] = n.Join
 	}
 	raw := summary.Edges
 	res, errs := workflow.ParseAndNormalize([]byte(yamlDoc))
@@ -55,6 +54,10 @@ func planGraph(yamlDoc string, summary workflow.Summary) ([]plannedNode, []execE
 		raw = make([]workflow.EdgeSummary, 0, len(res.Document.Spec.Edges))
 		for _, e := range res.Document.Spec.Edges {
 			raw = append(raw, workflow.EdgeSummary{From: e.From, To: e.To})
+		}
+		joins = map[string]string{}
+		for _, n := range res.Document.Spec.Nodes {
+			joins[n.ID] = n.Join
 		}
 	}
 	edges := make([]execEdge, 0, len(raw))
@@ -67,12 +70,16 @@ func planGraph(yamlDoc string, summary workflow.Summary) ([]plannedNode, []execE
 		if !ok {
 			return nil, nil, ErrInvalid
 		}
+		mode := strings.TrimSpace(joins[to.NodeID])
+		if mode != "" && mode != workflow.JoinAll && mode != workflow.JoinAny {
+			return nil, nil, ErrInvalid
+		}
 		edges = append(edges, execEdge{
 			FromNode: from.NodeID,
 			FromPort: from.Port,
 			ToNode:   to.NodeID,
 			ToPort:   to.Port,
-			Required: types[from.NodeID] == "flow.approval",
+			Required: mode != workflow.JoinAny,
 		})
 	}
 	return nodes, edges, nil
@@ -118,10 +125,12 @@ func countQueuedJobs(jobs []ExecutionJob) int {
 
 // releaseFrom resolves every still-open edge that leaves nodeID.
 // An edge is satisfied only when ports contains its from-port.
-// A required edge that resolves unsatisfied skips the target immediately.
-// Otherwise the target waits until every incoming edge has resolved, then
-// queues if at least one was satisfied and skips if none were. A skip
-// resolves the skipped node's outgoing edges as unsatisfied.
+// AND (required edges) skips the target as soon as any incoming edge
+// resolves unsatisfied, and queues only when every incoming edge is
+// satisfied. OR (join: any, required false) waits until every incoming
+// edge has resolved, then queues if at least one was satisfied and skips
+// if none were. A skip resolves the skipped node's outgoing edges as
+// unsatisfied.
 func releaseFrom(steps []ExecutionStep, jobs []ExecutionJob, edges []execEdge, nodeID string, ports map[string]struct{}, now time.Time) {
 	type item struct {
 		node  string

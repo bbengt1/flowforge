@@ -561,6 +561,70 @@ func displayNameErrorMessage(field string) string {
 	return field + " must be 1-200 characters with no surrounding space and no control, format, or line/paragraph separator characters."
 }
 
+func TestJoinMarker(t *testing.T) {
+	base := `
+apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: join-marker
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: seed
+      type: data.set
+      name: Seed
+      with:
+        value:
+          ready: true
+    - id: gate
+      type: flow.condition
+      name: Gate
+      with:
+        op: exists
+    - id: join
+      type: kubernetes.apply
+      name: Join
+      join: any
+      with:
+        clusterTargetId: 11111111-1111-4111-8111-111111111111
+        namespace: demo
+  edges:
+    - from: seed.result
+      to: gate.value
+    - from: gate.true
+      to: join.manifests
+    - from: gate.false
+      to: join.parameters
+`
+	res, errs := ParseAndNormalize([]byte(base))
+	if len(errs) > 0 {
+		t.Fatalf("join any: %+v", errs)
+	}
+	if !strings.Contains(res.NormalizedYAML, "join: any") {
+		t.Fatalf("normalized YAML dropped join:\n%s", res.NormalizedYAML)
+	}
+	if res.Summary.Nodes == nil {
+		t.Fatal("missing summary nodes")
+	}
+	var saw bool
+	for _, n := range res.Summary.Nodes {
+		if n.ID == "join" {
+			saw = n.Join == JoinAny
+		}
+	}
+	if !saw {
+		t.Fatalf("summary join = %+v", res.Summary.Nodes)
+	}
+
+	_, bad := Parse([]byte(strings.Replace(base, "join: any", "join: or", 1)))
+	assertHasCode(t, bad, CodeInvalidType)
+
+	_, one := Parse([]byte(strings.Replace(base, "    - from: gate.false\n      to: join.parameters\n", "", 1)))
+	assertHasCode(t, one, CodeInvalidType)
+}
+
 func nodeYAML(typ string) string {
 	return `
 apiVersion: flowforge/v1

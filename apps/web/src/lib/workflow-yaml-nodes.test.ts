@@ -257,4 +257,20 @@ describe("config serialization", () => {
     assert.match(block, /type: object/);
     assert.match(block, /additionalProperties: true/);
   });
+
+  it("keeps join any when a node is rewritten", () => {
+    const yaml = STARTER_WORKFLOW_YAML.replace(
+      "    - id: done\n      type: flow.stop\n      name: Stop\n",
+      "    - id: done\n      type: flow.stop\n      name: Stop\n      join: any\n",
+    );
+    const updated = updateYamlNode(yaml, {
+      id: "done",
+      type: "flow.stop",
+      name: "Stop",
+      with: { status: "success" },
+    });
+    assert.match(updated ?? "", /join: any/);
+    const done = listYamlNodes(updated ?? "").find((node) => node.id === "done");
+    assert.equal(done?.join, "any");
+  });
 });

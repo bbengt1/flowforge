@@ -18,8 +18,8 @@ func TestReleaseSkipsWhenRequiredGateIsUnsatisfied(t *testing.T) {
 	}
 	edges := []execEdge{
 		{FromNode: "gate", FromPort: "approved", ToNode: "join", ToPort: "parameters", Required: true},
-		{FromNode: "side", FromPort: "true", ToNode: "join", ToPort: "manifests"},
-		{FromNode: "join", FromPort: "result", ToNode: "tail", ToPort: "input"},
+		{FromNode: "side", FromPort: "true", ToNode: "join", ToPort: "manifests", Required: true},
+		{FromNode: "join", FromPort: "result", ToNode: "tail", ToPort: "input", Required: true},
 	}
 	// The non-gate input already succeeded.
 	edges[1].Resolved = true
@@ -44,7 +44,7 @@ func TestReleaseQueuesOnce(t *testing.T) {
 		{ID: "j-next", ExecutionStepID: "next", Status: JobBlocked},
 	}
 	edges := []execEdge{
-		{FromNode: "seed", FromPort: "result", ToNode: "next", ToPort: "input"},
+		{FromNode: "seed", FromPort: "result", ToNode: "next", ToPort: "input", Required: true},
 	}
 	ports := map[string]struct{}{"result": {}}
 	releaseFrom(steps, jobs, edges, "seed", ports, now)
@@ -54,5 +54,44 @@ func TestReleaseQueuesOnce(t *testing.T) {
 	}
 	if !edges[0].Resolved || !edges[0].Satisfied {
 		t.Fatalf("edge=%+v", edges[0])
+	}
+}
+
+func TestReleaseAndJoinSkipsWhenOneBranchIsUnsatisfied(t *testing.T) {
+	now := time.Now().UTC()
+	steps := []ExecutionStep{
+		{ID: "join", NodeID: "join", Attempt: 1, Status: ExecutionPending, UnresolvedIncoming: 2},
+	}
+	jobs := []ExecutionJob{
+		{ID: "j-join", ExecutionStepID: "join", Status: JobBlocked},
+	}
+	edges := []execEdge{
+		{FromNode: "gate", FromPort: "true", ToNode: "join", ToPort: "manifests", Required: true},
+		{FromNode: "gate", FromPort: "false", ToNode: "join", ToPort: "parameters", Required: true},
+	}
+	releaseFrom(steps, jobs, edges, "gate", map[string]struct{}{"true": {}}, now)
+	if steps[0].Status != ExecutionSkipped || jobs[0].Status != JobSkipped {
+		t.Fatalf("step=%s job=%s", steps[0].Status, jobs[0].Status)
+	}
+}
+
+func TestReleaseOrJoinQueuesWhenOneBranchIsSatisfied(t *testing.T) {
+	now := time.Now().UTC()
+	steps := []ExecutionStep{
+		{ID: "join", NodeID: "join", Attempt: 1, Status: ExecutionPending, UnresolvedIncoming: 2},
+	}
+	jobs := []ExecutionJob{
+		{ID: "j-join", ExecutionStepID: "join", Status: JobBlocked},
+	}
+	edges := []execEdge{
+		{FromNode: "gate", FromPort: "true", ToNode: "join", ToPort: "manifests"},
+		{FromNode: "gate", FromPort: "false", ToNode: "join", ToPort: "parameters"},
+	}
+	releaseFrom(steps, jobs, edges, "gate", map[string]struct{}{"true": {}}, now)
+	if steps[0].Status != ExecutionQueued || jobs[0].Status != JobQueued {
+		t.Fatalf("step=%s job=%s", steps[0].Status, jobs[0].Status)
+	}
+	if steps[0].UnresolvedIncoming != 0 {
+		t.Fatalf("unresolved=%d", steps[0].UnresolvedIncoming)
 	}
 }

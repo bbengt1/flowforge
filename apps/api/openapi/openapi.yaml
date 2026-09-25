@@ -7707,6 +7707,10 @@ components:
                 type: string
               name:
                 type: string
+              join:
+                type: string
+                enum: [all, any]
+                description: "Omitted and all are AND. any is OR and requires at least two incoming edges."
         edges:
           type: array
           items:
@@ -8348,7 +8352,7 @@ components:
         attempt: {type: integer}
         status:
           type: string
-          description: "pending: incoming edges have not all resolved. queued: eligible for a worker. running: a worker holds the step. waiting: parked on an approval or delay. succeeded: the step finished and emitted its ports. failed: the step failed and did not release downstream edges. canceled: the run or step was canceled. indeterminate: the lease was lost after work may have started. skipped: a required approval-gate edge resolved unsatisfied, or every incoming edge resolved unsatisfied. skipped is finished and does not fail the run."
+          description: "pending: incoming edges have not all resolved. queued: eligible for a worker. running: a worker holds the step. waiting: parked on an approval or delay. succeeded: the step finished and emitted its ports. failed: the step failed and did not release downstream edges. canceled: the run or step was canceled. indeterminate: the lease was lost after work may have started. skipped: an incoming edge resolved unsatisfied under the default AND join, or every incoming edge resolved unsatisfied under join any. skipped is finished and does not fail the run."
           enum: [pending, queued, running, waiting, succeeded, failed, canceled, indeterminate, skipped]
         leaseId: {type: string}
         fencingToken: {type: integer}
