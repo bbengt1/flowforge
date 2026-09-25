@@ -2228,7 +2228,7 @@ function WorkflowHomeSession() {
           {workflowDeleteNotice}
         </p>
       ) : null}
-      {workflowDelete ? (
+      {!embed && workflowDelete ? (
         <DeleteWorkflowDialog
           open
           name={workflowDelete.name}
@@ -3897,6 +3897,7 @@ function WorkflowHomeCards({
     event: { clientX: number; clientY: number; preventDefault(): void; stopPropagation(): void },
   ) => void;
 }) {
+  const embedSurface = useEmbedMode();
   const listRef = useRef<HTMLUListElement>(null);
 
   function focusPaneList() {
@@ -4095,9 +4096,10 @@ function WorkflowHomeCards({
                       onDuplicate={onDuplicate}
                       onExport={onExport}
                       onMove={onMove}
-                      showDelete={
-                        workflowDeleteEnabled && item.canDelete === true
-                      }
+                      showDelete={workflowDeleteActionVisible({
+                        embed: embedSurface || !workflowDeleteEnabled,
+                        canDelete: item.canDelete === true,
+                      })}
                       onDelete={onDeleteWorkflow}
                     />
                   </div>

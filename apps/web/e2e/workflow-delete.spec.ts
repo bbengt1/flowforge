@@ -261,15 +261,68 @@ test.describe("delete workflow", () => {
 
   test("embed never shows delete, even when the flag is true", async ({ page }) => {
     await installDeleteApi(page, { canDelete: true, embed: true });
+    const listed = page.waitForResponse((response) => {
+      if (response.request().method() !== "GET" || !response.ok()) {
+        return false;
+      }
+      const path = new URL(response.url()).pathname.replace(
+        /^\/api\/(?:v1|control-plane)/,
+        "",
+      );
+      return path === "/workflows" || path === "/workflows/";
+    });
     await page.goto("/embed/v1/workflows");
+    const listBody = (await (await listed).json()) as {
+      items?: { capabilities?: { delete?: boolean } }[];
+    };
+    expect(listBody.items?.[0]?.capabilities?.delete).toBe(true);
     await expect(workflowCard(page)).toBeVisible();
     await expect(page.locator("[data-workflow-delete]")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Delete workflow" })).toHaveCount(0);
+    await expect(page.getByRole("menuitem", { name: "Delete workflow" })).toHaveCount(0);
     await workflowCard(page).click({ button: "right" });
     await expect(page.getByRole("menuitem", { name: "Delete workflow" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    const actions = page.locator('[data-o1="kebab"] summary');
+    await expect(actions).toHaveAttribute("aria-label", "Workflow actions");
+    await actions.click();
+    await expect(page.locator('[data-workflow-delete="list"]')).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Delete workflow" })).toHaveCount(0);
+
+    const flagged = page.waitForResponse(async (response) => {
+      if (response.request().method() !== "GET" || !response.ok()) {
+        return false;
+      }
+      const path = new URL(response.url()).pathname.replace(
+        /^\/api\/(?:v1|control-plane)/,
+        "",
+      );
+      if (
+        path !== `/workflows/${OPERATOR_WORKFLOW_ID}` &&
+        path !== "/workflows" &&
+        path !== "/workflows/"
+      ) {
+        return false;
+      }
+      const body = (await response.json()) as {
+        capabilities?: { delete?: boolean };
+        items?: { id?: string; capabilities?: { delete?: boolean } }[];
+      };
+      if (path === `/workflows/${OPERATOR_WORKFLOW_ID}`) {
+        return body.capabilities?.delete === true;
+      }
+      return (
+        body.items?.some(
+          (item) =>
+            item.id === OPERATOR_WORKFLOW_ID && item.capabilities?.delete === true,
+        ) === true
+      );
+    });
     await page.goto(`/embed/v1/workflows/${OPERATOR_WORKFLOW_ID}`);
+    expect(await flagged).toBeTruthy();
     await expect(page.getByRole("button", { name: "More actions" })).toHaveCount(0);
     await expect(page.locator("[data-workflow-delete]")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Delete workflow" })).toHaveCount(0);
   });
 
   test("a deep link to a deleted workflow uses the not-found boundary", async ({

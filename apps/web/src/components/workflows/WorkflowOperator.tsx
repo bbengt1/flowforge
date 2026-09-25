@@ -2576,7 +2576,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
         </>
       }
     />
-    {workflow && workflowDeleteOpen ? (
+    {!embed && workflow && workflowDeleteOpen ? (
       <DeleteWorkflowDialog
         open
         name={workflow.name}

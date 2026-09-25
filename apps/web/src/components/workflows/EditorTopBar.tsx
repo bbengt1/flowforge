@@ -356,7 +356,7 @@ export function EditorTopBar({
           </p>
         </div>
       </div>
-      {canDelete && onDeleteWorkflow ? (
+      {!embed && canDelete && onDeleteWorkflow ? (
         <EditorWorkflowOverflow
           disabled={pending !== null || !workflow}
           onDelete={onDeleteWorkflow}
