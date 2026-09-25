@@ -91,7 +91,12 @@ const SATELLITE_CONTROL = `${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-sm`;
 const HISTORY_CONTROL = `${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-sm disabled:opacity-60`;
 const GROUP = "flex shrink-0 items-center gap-1.5";
 const GROUP_DIVIDER = `${GROUP} ${FF_EDITOR_DIVIDER_CLASS} ps-3`;
-/** Secondary labels yield before the workflow name. Save and Publish stay labeled. */
+/**
+ * `max-[1680px]` applies strictly below 1680px.
+ * Below 1680px these labels are icon-only so the workflow name keeps its width.
+ * At 1680px the labels show and the name shares the row.
+ * Save and Publish stay labeled.
+ */
 const NARROW_SECONDARY_LABEL = "max-[1680px]:sr-only";
 
 export function EditorTopBar({
@@ -148,9 +153,15 @@ export function EditorTopBar({
       data-editor-context="sticky"
       className={`sticky top-0 z-10 flex w-full min-w-0 shrink-0 flex-wrap items-center gap-3 px-3 py-2 ${FF_EDITOR_TOPBAR_CLASS}`}
     >
+      {/*
+        Below 1680px the identity block takes its own row. At 1680px and
+        wider a long heading can still wrap later groups under that row.
+        The rename field's intrinsic width is much smaller, so while it is
+        open the block keeps basis-full and the field uses the full row.
+      */}
       <div
         data-editor-topbar="identity"
-        className="flex max-w-full min-w-[12rem] grow items-center gap-3 max-[1680px]:basis-full"
+        className="flex max-w-full min-w-[12rem] grow items-center gap-3 max-[1680px]:basis-full has-[[data-editor-workflow-name=rename]]:basis-full"
       >
         <Link
           href={backHref}
