@@ -122,6 +122,22 @@ test.describe("editor top bar", () => {
       }
       await expectControlInViewport(page, /library/i);
       await expectControlInViewport(page, /undo/i);
+      if (width === 1760) {
+        await name.click();
+        const rename = page.locator('[data-editor-workflow-name="rename"]');
+        await expect(rename).toBeVisible();
+        const inputBox = await rename.boundingBox();
+        const barBox = await page.locator('[data-editor-context="sticky"]').boundingBox();
+        const authoringBox = await page.locator('[data-editor-topbar="authoring"]').boundingBox();
+        expect(inputBox, "rename input at 1760px").not.toBeNull();
+        expect(barBox).not.toBeNull();
+        expect(authoringBox).not.toBeNull();
+        expect(inputBox!.y + inputBox!.height).toBeLessThanOrEqual(authoringBox!.y + 1);
+        expect(inputBox!.width).toBeGreaterThan(barBox!.width * 0.6);
+        await expectNoTopBarOverflow(page);
+        await page.keyboard.press("Escape");
+        await expect(name).toBeVisible();
+      }
     }
 
     await page.setViewportSize({ width: 1280, height: 800 });

@@ -203,7 +203,13 @@ spec:
   it("keeps the name column readable when secondary controls collapse", () => {
     const topBar = source("src/components/workflows/EditorTopBar.tsx");
     assert.match(topBar, /min-w-\[12rem\] grow basis-\[12rem\]/);
+    assert.match(topBar, /below 1680px/);
+    assert.doesNotMatch(topBar, /through 1680/);
     assert.match(topBar, /max-\[1680px\]:basis-full/);
+    assert.match(
+      topBar,
+      /has-\[\[data-editor-workflow-name=rename\]\]:basis-full/,
+    );
     assert.match(topBar, /max-\[1680px\]:sr-only/);
     assert.match(topBar, /w-full min-w-\[12rem\]/);
     assert.match(topBar, /title=\{heading\}/);
