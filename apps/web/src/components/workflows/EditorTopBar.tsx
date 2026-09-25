@@ -91,6 +91,8 @@ const SATELLITE_CONTROL = `${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-sm`;
 const HISTORY_CONTROL = `${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-sm disabled:opacity-60`;
 const GROUP = "flex shrink-0 items-center gap-1.5";
 const GROUP_DIVIDER = `${GROUP} ${FF_EDITOR_DIVIDER_CLASS} ps-3`;
+/** Secondary labels yield before the workflow name. Save and Publish stay labeled. */
+const NARROW_SECONDARY_LABEL = "max-[1680px]:sr-only";
 
 export function EditorTopBar({
   workflow,
@@ -144,19 +146,19 @@ export function EditorTopBar({
   return (
     <header
       data-editor-context="sticky"
-      className={`sticky top-0 z-10 flex shrink-0 flex-wrap items-center gap-3 px-3 py-2 ${FF_EDITOR_TOPBAR_CLASS}`}
+      className={`sticky top-0 z-10 flex w-full min-w-0 shrink-0 flex-wrap items-center gap-3 px-3 py-2 ${FF_EDITOR_TOPBAR_CLASS}`}
     >
       <div
         data-editor-topbar="identity"
-        className="flex min-w-0 flex-1 items-center gap-3"
+        className="flex max-w-full min-w-[12rem] grow items-center gap-3 max-[1680px]:basis-full"
       >
         <Link
           href={backHref}
-          className={`${FF_EDITOR_GHOST_CLASS} px-2 py-1 text-sm`}
+          className={`${FF_EDITOR_GHOST_CLASS} shrink-0 px-2 py-1 text-sm`}
         >
           {editorTopBarControlLabel("back")}
         </Link>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-[12rem] grow basis-[12rem] overflow-hidden">
           <EditorWorkflowName
             key={workflow?.id ?? "none"}
             heading={context.heading}
@@ -166,7 +168,12 @@ export function EditorTopBar({
             onRenameWorkflow={onRenameWorkflow}
           />
           {context.slug ? (
-            <p className={`truncate font-mono text-xs ${FF_EDITOR_MUTED_CLASS}`}>{context.slug}</p>
+            <p
+              className={`truncate font-mono text-xs ${FF_EDITOR_MUTED_CLASS}`}
+              title={context.slug}
+            >
+              {context.slug}
+            </p>
           ) : (
             <p className={`text-xs ${FF_EDITOR_MUTED_CLASS}`}>
               {context.loaded
@@ -241,23 +248,27 @@ export function EditorTopBar({
           type="button"
           data-editor-history="undo"
           title={EDITOR_CANVAS_UNDO_LABEL}
+          aria-label={editorTopBarControlLabel("undo")}
           aria-keyshortcuts="Control+Z Meta+Z"
           onClick={onUndo}
           disabled={!onUndo || !canUndo}
-          className={HISTORY_CONTROL}
+          className={`${HISTORY_CONTROL} inline-flex items-center gap-1.5`}
         >
-          {editorTopBarControlLabel("undo")}
+          <TopBarMark kind="undo" />
+          <span className={NARROW_SECONDARY_LABEL}>{editorTopBarControlLabel("undo")}</span>
         </button>
         <button
           type="button"
           data-editor-history="redo"
           title={EDITOR_CANVAS_REDO_LABEL}
+          aria-label={editorTopBarControlLabel("redo")}
           aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z"
           onClick={onRedo}
           disabled={!onRedo || !canRedo}
-          className={HISTORY_CONTROL}
+          className={`${HISTORY_CONTROL} inline-flex items-center gap-1.5`}
         >
-          {editorTopBarControlLabel("redo")}
+          <TopBarMark kind="redo" />
+          <span className={NARROW_SECONDARY_LABEL}>{editorTopBarControlLabel("redo")}</span>
         </button>
       </div>
       <div
@@ -266,51 +277,15 @@ export function EditorTopBar({
         data-editor-topbar="satellites"
         className={GROUP_DIVIDER}
       >
-        <button
-          type="button"
-          id={editorDrawerTriggerId("library")}
-          onClick={onToggleLibrary}
-          aria-pressed={libraryOpen}
-          aria-expanded={libraryOpen}
-          aria-controls={EDITOR_DRAWER_PANEL_IDS.library}
-          className={SATELLITE_CONTROL}
-        >
-          {editorTopBarControlLabel("library", libraryOpen)}
-        </button>
-        <button
-          type="button"
-          id={editorDrawerTriggerId("inspector")}
-          onClick={onToggleInspector}
-          aria-pressed={inspectorOpen}
-          aria-expanded={inspectorOpen}
-          aria-controls={EDITOR_DRAWER_PANEL_IDS.inspector}
-          className={SATELLITE_CONTROL}
-        >
-          {editorTopBarControlLabel("inspector", inspectorOpen)}
-        </button>
-        <button
-          type="button"
-          id={editorDrawerTriggerId("yaml")}
-          onClick={onToggleYaml}
-          aria-pressed={yamlOpen}
-          aria-expanded={yamlOpen}
-          aria-controls={EDITOR_DRAWER_PANEL_IDS.yaml}
-          className={SATELLITE_CONTROL}
-        >
-          {editorTopBarControlLabel("yaml", yamlOpen)}
-        </button>
-        <button
-          type="button"
-          id={editorDrawerTriggerId("runs")}
-          onClick={onToggleRuns}
+        <SatelliteToggle id="library" open={libraryOpen} onClick={onToggleLibrary} />
+        <SatelliteToggle id="inspector" open={inspectorOpen} onClick={onToggleInspector} />
+        <SatelliteToggle id="yaml" open={yamlOpen} onClick={onToggleYaml} />
+        <SatelliteToggle
+          id="runs"
+          open={runsOpen}
           disabled={!workflow}
-          aria-pressed={runsOpen}
-          aria-expanded={runsOpen}
-          aria-controls={EDITOR_DRAWER_PANEL_IDS.runs}
-          className={`${SATELLITE_CONTROL} disabled:opacity-60`}
-        >
-          {editorTopBarControlLabel("runs", runsOpen)}
-        </button>
+          onClick={onToggleRuns}
+        />
       </div>
       <div data-editor-topbar="activation" className={`shrink-0 ${FF_EDITOR_DIVIDER_CLASS} ps-3`}>
         <EditorActivationChrome
@@ -357,7 +332,7 @@ export function EditorTopBar({
           </div>
           <p
             data-editor-working-memory="test-run"
-            className={`max-w-[16rem] ${TYPE_CAPTION_CLASS} ${FF_EDITOR_MUTED_CLASS} leading-snug`}
+            className={`max-w-[16rem] max-[1680px]:max-w-[12rem] ${TYPE_CAPTION_CLASS} ${FF_EDITOR_MUTED_CLASS} leading-snug`}
           >
             {memory.testRunCopy}
             {memory.canTestRun ? null : ` ${memory.testRunHelp}`}
@@ -463,7 +438,7 @@ function EditorWorkflowName({
   return (
     <>
       {renaming ? (
-        <h1 className="min-w-0">
+        <h1 className="min-w-[12rem]">
           <input
             ref={inputRef}
             data-editor-workflow-name="rename"
@@ -498,7 +473,7 @@ function EditorWorkflowName({
             autoComplete="off"
             autoCapitalize="off"
             spellCheck={false}
-            className={`w-full min-w-0 text-base font-semibold tracking-tight ${FF_EDITOR_CONTROL_CLASS}`}
+            className={`w-full min-w-[12rem] text-base font-semibold tracking-tight ${FF_EDITOR_CONTROL_CLASS}`}
           />
         </h1>
       ) : canRename ? (
@@ -506,16 +481,18 @@ function EditorWorkflowName({
           <button
             type="button"
             data-editor-workflow-name="heading"
-            title="Rename workflow"
+            title={heading}
             onClick={startRename}
-            className="block w-full truncate border-0 bg-transparent p-0 text-start text-base font-semibold tracking-tight text-inherit"
+            className="block w-full min-w-0 truncate border-0 bg-transparent p-0 text-start text-base font-semibold tracking-tight text-inherit"
           >
             <span className="sr-only">Rename workflow: </span>
             {heading}
           </button>
         </h1>
       ) : (
-        <h1 className="truncate text-base font-semibold tracking-tight">{heading}</h1>
+        <h1 className="truncate text-base font-semibold tracking-tight" title={heading}>
+          {heading}
+        </h1>
       )}
       {error ? (
         <p
@@ -530,3 +507,67 @@ function EditorWorkflowName({
     </>
   );
 }
+
+type SatelliteId = "library" | "inspector" | "yaml" | "runs";
+type TopBarMarkKind = SatelliteId | "undo" | "redo";
+
+function SatelliteToggle({
+  id,
+  open,
+  disabled = false,
+  onClick,
+}: {
+  id: SatelliteId;
+  open: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  const label = editorTopBarControlLabel(id, open);
+  return (
+    <button
+      type="button"
+      id={editorDrawerTriggerId(id)}
+      onClick={onClick}
+      disabled={disabled}
+      aria-pressed={open}
+      aria-expanded={open}
+      aria-controls={EDITOR_DRAWER_PANEL_IDS[id]}
+      aria-label={label}
+      title={label}
+      className={`${SATELLITE_CONTROL} inline-flex items-center gap-1.5 disabled:opacity-60`}
+    >
+      <TopBarMark kind={id} />
+      <span className={NARROW_SECONDARY_LABEL}>{label}</span>
+    </button>
+  );
+}
+
+function TopBarMark({ kind }: { kind: TopBarMarkKind }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="16"
+      height="16"
+      aria-hidden="true"
+      className="shrink-0"
+    >
+      <path
+        d={TOP_BAR_MARK_PATHS[kind]}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+const TOP_BAR_MARK_PATHS: Record<TopBarMarkKind, string> = {
+  undo: "M6.2 3.5 3 6.7l3.2 3.2M3.4 6.7h6.2a3 3 0 1 1 0 6H8",
+  redo: "M9.8 3.5 13 6.7l-3.2 3.2M12.6 6.7H6.4a3 3 0 1 0 0 6H8",
+  library: "M3 3.2h3.1v9.6H3zM6.6 3.2H9.7v9.6H6.6zM10.2 4.2H13v8.6h-2.8z",
+  inspector: "M3 4.5h10M3 8h10M3 11.5h10M6 3.2v2.6M10 6.7v2.6M7.5 10.2v2.6",
+  yaml: "M4.2 4.5 2.2 8l2 3.5M11.8 4.5 13.8 8l-2 3.5M9.2 3.8 6.8 12.2",
+  runs: "M3.2 3.5h9.6v2.2H3.2zM3.2 6.9h9.6v2.2H3.2zM3.2 10.3h9.6v2.2H3.2z",
+};

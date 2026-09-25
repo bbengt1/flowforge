@@ -205,12 +205,16 @@ function apiPath(url: string): string {
   return stripped.startsWith("/") ? stripped : `/${stripped}`;
 }
 
-function bodyFor(requestUrl: string): {
+function bodyFor(
+  requestUrl: string,
+  permissions: readonly string[] = PERMISSIONS,
+): {
   status: number;
   contentType: string;
   body: unknown;
 } {
   const path = apiPath(requestUrl);
+  const granted = [...permissions];
   const folderId = new URL(requestUrl).searchParams.get("folderId")?.trim() ?? "";
   if (path === "/session") {
     return ok(session);
@@ -219,10 +223,10 @@ function bodyFor(requestUrl: string): {
     return ok(bootstrapComplete);
   }
   if (path === "/workspaces") {
-    return ok({ items: [membership] });
+    return ok({ items: [{ ...membership, permissions: granted }] });
   }
   if (path === "/workspace") {
-    return ok(currentWorkspace);
+    return ok({ ...currentWorkspace, permissions: granted });
   }
   if (path === "/workflows" || path === "/workflows/") {
     if (folderId && folderId !== "unfiled") {
@@ -272,9 +276,24 @@ function bodyFor(requestUrl: string): {
   return ok({ items: [] });
 }
 
-async function fulfill(route: Route): Promise<void> {
+async function fulfill(
+  route: Route,
+  permissions: readonly string[],
+): Promise<void> {
+  const path = apiPath(route.request().url());
+  if (route.request().method() === "POST" && path === "/workflows/validate") {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        valid: true,
+        summary: draftSummary,
+        warnings: [],
+      }),
+    });
+    return;
+  }
   if (route.request().method() !== "GET") {
-    const path = apiPath(route.request().url());
     const denied = problem(path, 405, "invalid-request", "Method not allowed");
     await route.fulfill({
       status: denied.status,
@@ -283,7 +302,7 @@ async function fulfill(route: Route): Promise<void> {
     });
     return;
   }
-  const payload = bodyFor(route.request().url());
+  const payload = bodyFor(route.request().url(), permissions);
   await route.fulfill({
     status: payload.status,
     contentType: payload.contentType,
@@ -292,8 +311,14 @@ async function fulfill(route: Route): Promise<void> {
 }
 
 /** Signed-in operator. Bootstrap is complete, so the wizard does not mount. */
-export async function installOperatorApi(page: Page): Promise<void> {
-  await page.route(/\/api\/(?:v1|control-plane)\//, fulfill);
+export async function installOperatorApi(
+  page: Page,
+  options?: { permissions?: readonly string[] },
+): Promise<void> {
+  const permissions = options?.permissions ?? PERMISSIONS;
+  await page.route(/\/api\/(?:v1|control-plane)\//, (route) =>
+    fulfill(route, permissions),
+  );
 }
 
 /** No cookie session. Standalone routes fall through to Login. */
