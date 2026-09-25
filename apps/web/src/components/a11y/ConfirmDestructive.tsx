@@ -46,6 +46,8 @@ export type ConfirmDestructiveProps = {
   onClose: () => void;
   children?: ReactNode;
   returnFocusTo?: string | null;
+  /** `target` restores `returnFocusTo` instead of the opener. */
+  restoreFocus?: "opener" | "target";
   backdropClassName?: string;
   panelClassName?: string;
   titleClassName?: string;
@@ -68,6 +70,7 @@ export function ConfirmDestructive({
   onClose,
   children,
   returnFocusTo = null,
+  restoreFocus = "opener",
   backdropClassName = DEFAULT_BACKDROP,
   panelClassName = DEFAULT_PANEL,
   titleClassName = FF_OVERVIEW_TITLE_CLASS,
@@ -85,6 +88,7 @@ export function ConfirmDestructive({
       onClose={onClose}
       labelledBy={headingId}
       returnFocusTo={returnFocusTo}
+      restoreFocus={restoreFocus}
       className={backdropClassName}
     >
       <div
