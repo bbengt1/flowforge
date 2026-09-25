@@ -8,6 +8,7 @@ import {
 } from "@/components/a11y/ConfirmDestructive";
 import { Field } from "@/components/a11y/Field";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useCallback,
   useEffect,
@@ -47,14 +48,29 @@ import { createGenerationGate } from "@/lib/request-generation";
 import { optionalCreateFields, shortDigest } from "@/lib/workflow";
 import {
   createWorkflow,
+  deleteWorkflow,
   exportWorkflowVersion,
   getWorkflowDraft,
   importValidatedWorkflow,
   listWorkflows,
   moveWorkflowToFolder,
 } from "@/lib/workflow-client";
+import { tryQueryScope } from "@/lib/query-cache";
+import {
+  DELETE_WORKFLOW_LABEL,
+  WORKFLOW_DELETED_TOAST_TITLE,
+  classifyWorkflowDeleteFailure,
+  invalidateDeletedWorkflowCache,
+  omitDeletedWorkflow,
+  rememberWorkflowCollections,
+  workflowDeleteActionVisible,
+  workflowDeleteDialogStaysOpen,
+  workflowDeleteFailureMessage,
+  workflowSlugReservedFromProblem,
+} from "@/lib/workflow-delete";
 import type { WorkflowDraft, WorkflowRecord } from "@/lib/workflow-types";
 import { subscribeWorkspaceCommands } from "@/lib/workspace-commands";
+import { DeleteWorkflowDialog } from "@/components/workflows/DeleteWorkflowDialog";
 import { HomeActivationStatus } from "@/components/home/HomeActivationStatus";
 import { HomeLastRunStatus } from "@/components/home/HomeLastRunStatus";
 import {
@@ -395,6 +411,7 @@ function WorkflowHomeSession() {
   const searchParams = useSearchParams();
   const { identity, ready, permissions, environment } = useWorkspace();
   const embed = useEmbedMode();
+  const queryClient = useQueryClient();
   const session = useSyncExternalStore(
     subscribeSession,
     getSessionSnapshot,
@@ -479,6 +496,24 @@ function WorkflowHomeSession() {
   const [moveIntoOpen, setMoveIntoOpen] = useState(false);
   const [moveIntoWorkflowId, setMoveIntoWorkflowId] = useState("");
   const [folderDeleteId, setFolderDeleteId] = useState<string | null>(null);
+  const [workflowDelete, setWorkflowDelete] = useState<{
+    id: string;
+    name: string;
+    status: string;
+    returnFocusTo: string;
+  } | null>(null);
+  const [workflowDeleteTyped, setWorkflowDeleteTyped] = useState("");
+  const [workflowDeleteError, setWorkflowDeleteError] = useState<{
+    kind: string;
+    message: string;
+  } | null>(null);
+  const [workflowDeleteNotice, setWorkflowDeleteNotice] = useState<string | null>(
+    null,
+  );
+  const [createFieldError, setCreateFieldError] = useState<{
+    field: "name" | "slug";
+    message: string;
+  } | null>(null);
 
   const canView = ready && canSeeWorkflowsNav(permissions);
   const canMutateFolders =
@@ -844,6 +879,14 @@ function WorkflowHomeSession() {
         target: "search",
       };
     }
+    rememberWorkflowCollections(queryClient, tryQueryScope(identity), {
+      list: list.items,
+      explorer: {
+        folders: folderList.ok ? folderList.items : [],
+        workflows: list.items,
+      },
+      search: searchItems,
+    });
     extrasGate.current.begin();
     const metadataRecords = homeListMetadataRecords(
       list.items,
@@ -881,6 +924,7 @@ function WorkflowHomeSession() {
     canView,
     canViewActivation,
     identity,
+    queryClient,
     debouncedQuery,
     intendedSelection,
     permissions,
@@ -1103,6 +1147,97 @@ function WorkflowHomeSession() {
       return;
     }
     setFolderDeleteId(folderId);
+  }
+
+  function workflowById(workflowId: string): WorkflowRecord | undefined {
+    return (
+      records.find((item) => item.id === workflowId) ??
+      workspaceWorkflows?.find((item) => item.id === workflowId) ??
+      serverSearchItems?.find((item) => item.id === workflowId)
+    );
+  }
+
+  function askDeleteWorkflow(workflowId: string, returnFocusTo: string) {
+    const record = workflowById(workflowId);
+    const item = items.find((row) => row.id === workflowId);
+    const canDelete = workflowDeleteActionVisible({
+      embed,
+      canDelete:
+        record?.capabilities?.delete === true || item?.canDelete === true,
+    });
+    const name = record?.name || item?.name || "";
+    if (!canDelete || !name.trim()) {
+      return;
+    }
+    setWorkflowDeleteTyped("");
+    setWorkflowDeleteError(null);
+    setWorkflowDeleteNotice(null);
+    setWorkflowDelete({
+      id: workflowId,
+      name,
+      status: record?.status || item?.status || "",
+      returnFocusTo,
+    });
+  }
+
+  function dropWorkflowFromLists(workflowId: string) {
+    setRecords((current) => omitDeletedWorkflow(current, workflowId) ?? []);
+    setWorkspaceWorkflows((current) => omitDeletedWorkflow(current, workflowId));
+    setServerSearchItems((current) => omitDeletedWorkflow(current, workflowId));
+    setPaneSelection((current) =>
+      current?.kind === "workflow" && current.id === workflowId ? null : current,
+    );
+  }
+
+  async function confirmDeleteWorkflow() {
+    if (!workflowDelete) {
+      return;
+    }
+    const target = workflowDelete;
+    setPending("workflow-delete");
+    setWorkflowDeleteError(null);
+    const result = await deleteWorkflow(identity, target.id);
+    if (!result.ok) {
+      setPending(null);
+      const kind = classifyWorkflowDeleteFailure({
+        statusCode: result.statusCode,
+        code: result.problem.code,
+      });
+      if (workflowDeleteDialogStaysOpen(kind)) {
+        setWorkflowDeleteError({
+          kind,
+          message: workflowDeleteFailureMessage(kind),
+        });
+        return;
+      }
+      setWorkflowDelete(null);
+      setWorkflowDeleteTyped("");
+      dropWorkflowFromLists(target.id);
+      setWorkflowDeleteNotice(workflowDeleteFailureMessage(kind));
+      await invalidateDeletedWorkflowCache(
+        queryClient,
+        tryQueryScope(identity),
+        target.id,
+      );
+      await refresh();
+      return;
+    }
+    dropWorkflowFromLists(target.id);
+    setWorkflowDelete(null);
+    setWorkflowDeleteTyped("");
+    setPending(null);
+    pushNotification({
+      kind: "info",
+      title: WORKFLOW_DELETED_TOAST_TITLE,
+      detail: target.name,
+      href: "/workflows",
+    });
+    await invalidateDeletedWorkflowCache(
+      queryClient,
+      tryQueryScope(identity),
+      target.id,
+    );
+    await refresh();
   }
 
   function closeMoveDialog() {
@@ -1349,21 +1484,37 @@ function WorkflowHomeSession() {
     };
   }, [refresh]);
 
+  function noteCreateFailure(
+    problemDetails: ProblemDetails,
+    sent: { slug?: string; name?: string },
+  ) {
+    const reserved = workflowSlugReservedFromProblem(problemDetails, sent);
+    if (reserved) {
+      setCreateFieldError(reserved);
+      setProblem(null);
+      return;
+    }
+    setCreateFieldError(null);
+    setProblem(problemDetails);
+  }
+
   const createFromYaml = useCallback(
     async (yaml: string, name?: string, slug?: string) => {
       if (!canCreate) {
         return;
       }
+      const sent = optionalCreateFields(slug ?? createSlug, name ?? createName);
       setPending("create");
       setProblem(null);
+      setCreateFieldError(null);
       const result = await createWorkflow(identity, {
         definitionYaml: yaml,
-        ...optionalCreateFields(slug ?? createSlug, name ?? createName),
+        ...sent,
         ...(selection.kind === "folder" ? { folderId: selection.id } : {}),
       });
       setPending(null);
       if (!result.ok) {
-        setProblem(result.problem);
+        noteCreateFailure(result.problem, sent);
         return;
       }
       const created = result.workflow;
@@ -1566,15 +1717,20 @@ function WorkflowHomeSession() {
         if (!canCreate) {
           return;
         }
+        const sent = optionalCreateFields(
+          createSlug,
+          createName || file.name.replace(/\.ya?ml$/i, ""),
+        );
         setPending("import");
         setProblem(null);
+        setCreateFieldError(null);
         const result = await importValidatedWorkflow(identity, text, {
-          ...optionalCreateFields(createSlug, createName || file.name.replace(/\.ya?ml$/i, "")),
+          ...sent,
           ...(selection.kind === "folder" ? { folderId: selection.id } : {}),
         });
         setPending(null);
         if (!result.ok) {
-          setProblem(result.problem);
+          noteCreateFailure(result.problem, sent);
           return;
         }
         const created = result.workflow;
@@ -1765,7 +1921,16 @@ function WorkflowHomeSession() {
       return folderMenuInput(target.id);
     }
     if (target.kind === "workflow") {
-      return explorerWorkflowMenuItems({ canMutate: canMutateFolders });
+      const record = workflowById(target.id);
+      const item = items.find((row) => row.id === target.id);
+      return explorerWorkflowMenuItems({
+        canMutate: canMutateFolders,
+        canDeleteWorkflow: workflowDeleteActionVisible({
+          embed,
+          canDelete:
+            record?.capabilities?.delete === true || item?.canDelete === true,
+        }),
+      });
     }
     return explorerEmptyPaneMenuItems({
       canMutateFolders,
@@ -1833,6 +1998,13 @@ function WorkflowHomeSession() {
     }
     if (verb === "delete" && target.kind === "folder") {
       askDeleteFolder(target.id);
+      return;
+    }
+    if (verb === "delete" && target.kind === "workflow") {
+      askDeleteWorkflow(
+        target.id,
+        `explorer-row-${explorerPaneRowKey({ kind: "workflow", id: target.id })}`,
+      );
       return;
     }
     if (verb === "expand" && target.kind === "folder") {
@@ -2051,6 +2223,33 @@ function WorkflowHomeSession() {
         onUndo={folderUndo.undo}
         onCommit={folderUndo.commit}
       />
+      {workflowDeleteNotice ? (
+        <p role="status" data-workflow-delete="notice" className={`text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>
+          {workflowDeleteNotice}
+        </p>
+      ) : null}
+      {!embed && workflowDelete ? (
+        <DeleteWorkflowDialog
+          open
+          name={workflowDelete.name}
+          status={workflowDelete.status}
+          typedName={workflowDeleteTyped}
+          pending={pending === "workflow-delete"}
+          errorMessage={workflowDeleteError?.message}
+          errorKind={workflowDeleteError?.kind}
+          returnFocusTo={workflowDelete.returnFocusTo}
+          onTypedName={setWorkflowDeleteTyped}
+          onConfirm={() => void confirmDeleteWorkflow()}
+          onClose={() => {
+            if (pending === "workflow-delete") {
+              return;
+            }
+            setWorkflowDelete(null);
+            setWorkflowDeleteTyped("");
+            setWorkflowDeleteError(null);
+          }}
+        />
+      ) : null}
       {folderPendingDelete ? (
         <ConfirmDestructive
           open
@@ -2317,12 +2516,30 @@ function WorkflowHomeSession() {
             <FilterInput
               label="Name (optional)"
               value={createName}
-              onChange={setCreateName}
+              error={
+                createFieldError?.field === "name" ? createFieldError.message : null
+              }
+              errorKind="workflow_slug_reserved"
+              onChange={(value) => {
+                setCreateName(value);
+                setCreateFieldError((current) =>
+                  current?.field === "name" ? null : current,
+                );
+              }}
             />
             <FilterInput
               label="Slug (optional)"
               value={createSlug}
-              onChange={setCreateSlug}
+              error={
+                createFieldError?.field === "slug" ? createFieldError.message : null
+              }
+              errorKind="workflow_slug_reserved"
+              onChange={(value) => {
+                setCreateSlug(value);
+                setCreateFieldError((current) =>
+                  current?.field === "slug" ? null : current,
+                );
+              }}
             />
             <div className="flex items-end">
               <Field
@@ -2437,6 +2654,34 @@ function WorkflowHomeSession() {
           />
         </ExplorerEmptySurface>
       ) : paneHasRows ? (
+        <>
+        {paneSelection?.kind === "workflow" &&
+        workflowDeleteActionVisible({
+          embed,
+          canDelete:
+            workflowById(paneSelection.id)?.capabilities?.delete === true ||
+            items.find((row) => row.id === paneSelection.id)?.canDelete === true,
+        }) ? (
+          <div
+            role="toolbar"
+            aria-label="Selected workflow"
+            data-explorer-selection="actions"
+            className="mb-2 flex flex-wrap items-center gap-2"
+          >
+            <button
+              type="button"
+              id="workflow-selection-delete"
+              data-workflow-delete="selection"
+              disabled={pending !== null}
+              onClick={() =>
+                askDeleteWorkflow(paneSelection.id, "workflow-selection-delete")
+              }
+              className={FF_OVERVIEW_GHOST_CLASS}
+            >
+              {DELETE_WORKFLOW_LABEL}
+            </button>
+          </div>
+        ) : null}
         <WorkflowHomeCards
           items={visible}
           folderRows={paneFolders}
@@ -2466,6 +2711,10 @@ function WorkflowHomeSession() {
           onOpenRow={openPaneRow}
           onDragStart={setDragging}
           onDragEnd={() => setDragging(null)}
+          workflowDeleteEnabled={!embed}
+          onDeleteWorkflow={(item) =>
+            askDeleteWorkflow(item.id, `workflow-list-delete-${item.id}`)
+          }
           onWorkflowContextMenu={(item, event) => {
             selectPaneRow({ kind: "workflow", id: item.id });
             openExplorerMenu({ kind: "workflow", id: item.id }, event);
@@ -2475,6 +2724,7 @@ function WorkflowHomeSession() {
             openExplorerMenu({ kind: "folder", id: folder.id }, event);
           }}
         />
+        </>
       ) : emptyKind === "folder" ? (
         <ExplorerEmptySurface kind="folder">
           <FolderEmpty
@@ -2537,6 +2787,10 @@ function WorkflowHomeSession() {
           onOpenRow={openPaneRow}
           onDragStart={setDragging}
           onDragEnd={() => setDragging(null)}
+          workflowDeleteEnabled={!embed}
+          onDeleteWorkflow={(item) =>
+            askDeleteWorkflow(item.id, `workflow-list-delete-${item.id}`)
+          }
           onWorkflowContextMenu={(item, event) => {
             selectPaneRow({ kind: "workflow", id: item.id });
             openExplorerMenu({ kind: "workflow", id: item.id }, event);
@@ -3131,6 +3385,7 @@ function ExplorerContextMenu({
         { width: window.innerWidth, height: window.innerHeight },
       ),
     );
+    el.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus();
   }, [x, y, visible.length]);
 
   useEffect(() => {
@@ -3173,6 +3428,31 @@ function ExplorerContextMenu({
         event.preventDefault();
         event.stopPropagation();
       }}
+      onKeyDown={(event) => {
+        const items = [
+          ...(menuRef.current?.querySelectorAll<HTMLButtonElement>(
+            '[role="menuitem"]:not(:disabled)',
+          ) ?? []),
+        ];
+        if (items.length === 0) {
+          return;
+        }
+        const index = items.indexOf(document.activeElement as HTMLButtonElement);
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          const step = event.key === "ArrowDown" ? 1 : -1;
+          const next = items[(index + step + items.length) % items.length];
+          next?.focus();
+        }
+        if (event.key === "Home") {
+          event.preventDefault();
+          items[0]?.focus();
+        }
+        if (event.key === "End") {
+          event.preventDefault();
+          items[items.length - 1]?.focus();
+        }
+      }}
     >
       {visible.map((item) => (
         <button
@@ -3180,6 +3460,9 @@ function ExplorerContextMenu({
           type="button"
           role="menuitem"
           data-x2-verb={item.id}
+          data-workflow-delete={
+            item.label === DELETE_WORKFLOW_LABEL ? "context" : undefined
+          }
           data-x2-mutate={item.mutate ? "true" : undefined}
           data-home-folder-verb={explorerMenuFolderVerb(item.id)}
           disabled={item.disabled}
@@ -3203,22 +3486,30 @@ function FilterInput({
   label,
   value,
   onChange,
+  error,
+  errorKind,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  error?: string | null;
+  errorKind?: string;
 }) {
   return (
     <Field
       id={`home-filter-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
       label={label}
       labelClassName={FF_OVERVIEW_MUTED_CLASS}
+      error={error || undefined}
+      errorClassName={FF_OVERVIEW_DANGER_CLASS}
+      invalid={Boolean(error)}
     >
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className={`mt-1 ${FF_OVERVIEW_CONTROL_CLASS}`}
         autoComplete="off"
+        data-workflow-create-error={error ? errorKind : undefined}
       />
     </Field>
   );
@@ -3322,6 +3613,8 @@ function WorkflowActions({
   onDuplicate,
   onExport,
   onMove,
+  showDelete = false,
+  onDelete,
 }: {
   item: WorkflowHomeItem;
   pending: boolean;
@@ -3339,6 +3632,8 @@ function WorkflowActions({
   onDuplicate: (item: WorkflowHomeItem) => void;
   onExport: (item: WorkflowHomeItem) => void;
   onMove: (item: WorkflowHomeItem) => void;
+  showDelete?: boolean;
+  onDelete?: (item: WorkflowHomeItem) => void;
 }) {
   const showTestRun = canPublish && canExecute;
   return (
@@ -3449,6 +3744,18 @@ function WorkflowActions({
           Export
         </button>
       ) : null}
+      {showDelete && onDelete ? (
+        <button
+          type="button"
+          id={`workflow-list-delete-${item.id}`}
+          data-workflow-delete="list"
+          disabled={pending}
+          onClick={() => onDelete(item)}
+          className={`text-sm ${FF_OVERVIEW_DANGER_CLASS} disabled:opacity-60`}
+        >
+          {DELETE_WORKFLOW_LABEL}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -3546,6 +3853,8 @@ function WorkflowHomeCards({
   onOpenRow,
   onDragStart,
   onDragEnd,
+  workflowDeleteEnabled = false,
+  onDeleteWorkflow,
   onWorkflowContextMenu,
   onFolderContextMenu,
 }: {
@@ -3577,6 +3886,8 @@ function WorkflowHomeCards({
   onOpenRow: (row: ExplorerPaneRow) => void;
   onDragStart: (payload: WorkflowMoveDragPayload) => void;
   onDragEnd: () => void;
+  workflowDeleteEnabled?: boolean;
+  onDeleteWorkflow?: (item: WorkflowHomeItem) => void;
   onWorkflowContextMenu: (
     item: WorkflowHomeItem,
     event: { clientX: number; clientY: number; preventDefault(): void; stopPropagation(): void },
@@ -3586,6 +3897,7 @@ function WorkflowHomeCards({
     event: { clientX: number; clientY: number; preventDefault(): void; stopPropagation(): void },
   ) => void;
 }) {
+  const embedSurface = useEmbedMode();
   const listRef = useRef<HTMLUListElement>(null);
 
   function focusPaneList() {
@@ -3692,6 +4004,7 @@ function WorkflowHomeCards({
               data-x3-kind="workflow"
               data-x3-selected={selected ? "true" : undefined}
               data-home-row-scan="card"
+              tabIndex={-1}
               onClick={(event) => {
                 event.stopPropagation();
                 onSelectRow(row);
@@ -3783,6 +4096,11 @@ function WorkflowHomeCards({
                       onDuplicate={onDuplicate}
                       onExport={onExport}
                       onMove={onMove}
+                      showDelete={workflowDeleteActionVisible({
+                        embed: embedSurface || !workflowDeleteEnabled,
+                        canDelete: item.canDelete === true,
+                      })}
+                      onDelete={onDeleteWorkflow}
                     />
                   </div>
                 </details>

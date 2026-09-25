@@ -222,7 +222,8 @@ describe("X.2 Explorer context menus", () => {
       canDeleteWorkflow: true,
     });
     assert.equal(EXPLORER_CONTEXT_MENU.workflowRenameOmittedNoApi, true);
-    assert.equal(EXPLORER_CONTEXT_MENU.workflowDeleteOmittedNoApi, true);
+    assert.equal(EXPLORER_CONTEXT_MENU.workflowDeleteOmittedNoApi, false);
+    assert.equal(EXPLORER_CONTEXT_MENU.workflowDeleteCapabilityGated, true);
     assert.equal(
       visibleExplorerMenuItems(
         explorerWorkflowMenuItems({ canMutate: true }),
@@ -232,6 +233,30 @@ describe("X.2 Explorer context menus", () => {
     assert.equal(
       invented.some((item) => item.id === "rename" && !item.hidden),
       true,
+    );
+    const deletable = visibleExplorerMenuItems(invented);
+    assert.equal(
+      deletable.some((item) => item.id === "delete" && item.label === "Delete workflow"),
+      true,
+    );
+    const ownerViewer = visibleExplorerMenuItems(
+      explorerWorkflowMenuItems({
+        canMutate: false,
+        canDeleteWorkflow: true,
+      }),
+    );
+    assert.deepEqual(
+      ownerViewer.map((item) => item.id),
+      ["open", "delete"],
+    );
+    assert.equal(
+      visibleExplorerMenuItems(
+        explorerWorkflowMenuItems({
+          canMutate: true,
+          canDeleteWorkflow: false,
+        }),
+      ).some((item) => item.id === "delete"),
+      false,
     );
 
     const empty = visibleExplorerMenuItems(

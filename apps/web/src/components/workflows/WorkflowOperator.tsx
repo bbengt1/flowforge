@@ -1,5 +1,7 @@
 "use client";
 
+import { notFound, useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ProblemBanner } from "@/components/ProblemBanner";
@@ -19,6 +21,9 @@ import { EditorChrome } from "@/components/workflows/EditorChrome";
 import { EditorInspector } from "@/components/workflows/EditorInspector";
 import { EditorStartDialog } from "@/components/workflows/EditorStartDialog";
 import { EditorRunsDrawer } from "@/components/workflows/EditorRunsDrawer";
+import { DeleteWorkflowDialog } from "@/components/workflows/DeleteWorkflowDialog";
+import { EDITOR_WORKFLOW_OVERFLOW_ID } from "@/components/workflows/EditorWorkflowOverflow";
+import { useEmbedMode } from "@/components/embed/EmbedMode";
 import { EditorTopBar } from "@/components/workflows/EditorTopBar";
 import { EditorYamlDrawer } from "@/components/workflows/EditorYamlDrawer";
 import { EditorYamlTools } from "@/components/workflows/EditorYamlTools";
@@ -211,6 +216,7 @@ import {
   compareWorkflow,
   exportWorkflowVersion,
   fetchWorkflowCatalog,
+  deleteWorkflow,
   getWorkflow,
   getWorkflowDraft,
   getWorkflowExecution,
@@ -236,6 +242,17 @@ import type {
 } from "@/lib/workflow-types";
 import { useWorkspace } from "@/components/shell/WorkspaceProvider";
 import { subscribeWorkspaceCommands } from "@/lib/workspace-commands";
+import { tryQueryScope } from "@/lib/query-cache";
+import {
+  WORKFLOW_DELETED_TOAST_TITLE,
+  classifyWorkflowDeleteFailure,
+  invalidateDeletedWorkflowCache,
+  rememberWorkflowCollections,
+  workflowDeleteActionVisible,
+  workflowDeleteDialogStaysOpen,
+  workflowDeleteFailureMessage,
+  workflowDeleteIsNotFound,
+} from "@/lib/workflow-delete";
 import { pushNotification } from "@/lib/workspace-notifications";
 import type { WizardFeedback } from "@/lib/workflow-action-wizard";
 
@@ -258,6 +275,9 @@ export function WorkflowOperator({ workflowId }: WorkflowOperatorProps = {}) {
 }
 
 function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const embed = useEmbedMode();
   const identity = useSyncExternalStore(
     subscribeDevIdentity,
     loadDevIdentity,
@@ -309,6 +329,13 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   const [lastRequestId, setLastRequestId] = useState<string | null>(null);
 
   const [workflow, setWorkflow] = useState<WorkflowRecord | null>(null);
+  const [missingWorkflow, setMissingWorkflow] = useState(false);
+  const [workflowDeleteOpen, setWorkflowDeleteOpen] = useState(false);
+  const [workflowDeleteTyped, setWorkflowDeleteTyped] = useState("");
+  const [workflowDeleteError, setWorkflowDeleteError] = useState<{
+    kind: string;
+    message: string;
+  } | null>(null);
   const [revision, setRevision] = useState<number | null>(null);
   const [publishNote, setPublishNote] = useState("");
   const libraryOpen = useSyncExternalStore(
@@ -1174,15 +1201,31 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     void (async () => {
       const listed = await listWorkflows(identity);
       if (listed.ok) {
+        rememberWorkflowCollections(queryClient, tryQueryScope(identity), {
+          list: listed.items,
+        });
         const match = listed.items.find((item) => item.id === workflowId);
         if (match) {
+          rememberWorkflowCollections(queryClient, tryQueryScope(identity), {
+            workflow: match,
+          });
           await openWorkflow(match);
           return;
         }
       }
       const summary = await getWorkflow(identity, workflowId);
       if (summary.ok) {
+        rememberWorkflowCollections(queryClient, tryQueryScope(identity), {
+          workflow: summary.workflow,
+        });
         await openWorkflow(summary.workflow);
+      } else if (
+        workflowDeleteIsNotFound({
+          statusCode: summary.statusCode,
+          code: summary.problem.code,
+        })
+      ) {
+        setMissingWorkflow(true);
       } else {
         setProblem(summary.problem);
       }
@@ -2092,7 +2135,67 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     />
   ) : null;
 
+  const canDeleteWorkflow = workflowDeleteActionVisible({
+    embed,
+    canDelete: workflow?.capabilities?.delete === true,
+  });
+
+  function askDeleteWorkflow() {
+    if (!canDeleteWorkflow || !workflow?.name.trim()) {
+      return;
+    }
+    setWorkflowDeleteTyped("");
+    setWorkflowDeleteError(null);
+    setWorkflowDeleteOpen(true);
+  }
+
+  async function confirmDeleteWorkflow() {
+    if (!workflow) {
+      return;
+    }
+    const target = workflow;
+    setPending("workflow-delete");
+    setWorkflowDeleteError(null);
+    const result = await deleteWorkflow(identity, target.id);
+    if (!result.ok) {
+      setPending(null);
+      const kind = classifyWorkflowDeleteFailure({
+        statusCode: result.statusCode,
+        code: result.problem.code,
+      });
+      if (!workflowDeleteDialogStaysOpen(kind)) {
+        setWorkflowDeleteOpen(false);
+        setMissingWorkflow(true);
+        return;
+      }
+      setWorkflowDeleteError({
+        kind,
+        message: workflowDeleteFailureMessage(kind),
+      });
+      return;
+    }
+    await invalidateDeletedWorkflowCache(
+      queryClient,
+      tryQueryScope(identity),
+      target.id,
+    );
+    setPending(null);
+    setWorkflowDeleteOpen(false);
+    pushNotification({
+      kind: "info",
+      title: WORKFLOW_DELETED_TOAST_TITLE,
+      detail: target.name,
+      href: "/workflows",
+    });
+    router.push("/workflows");
+  }
+
+  if (missingWorkflow) {
+    notFound();
+  }
+
   return (
+    <>
     <EditorChrome
       identityGate={
         !canCall ? (
@@ -2150,6 +2253,8 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
             permissions,
           })}
           onRenameWorkflow={renameWorkflowName}
+          canDelete={canDeleteWorkflow}
+          onDeleteWorkflow={askDeleteWorkflow}
         />
       }
       banners={
@@ -2471,6 +2576,29 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
         </>
       }
     />
+    {!embed && workflow && workflowDeleteOpen ? (
+      <DeleteWorkflowDialog
+        open
+        name={workflow.name}
+        status={workflow.status}
+        typedName={workflowDeleteTyped}
+        pending={pending === "workflow-delete"}
+        errorMessage={workflowDeleteError?.message}
+        errorKind={workflowDeleteError?.kind}
+        returnFocusTo={EDITOR_WORKFLOW_OVERFLOW_ID}
+        onTypedName={setWorkflowDeleteTyped}
+        onConfirm={() => void confirmDeleteWorkflow()}
+        onClose={() => {
+          if (pending === "workflow-delete") {
+            return;
+          }
+          setWorkflowDeleteOpen(false);
+          setWorkflowDeleteTyped("");
+          setWorkflowDeleteError(null);
+        }}
+      />
+    ) : null}
+    </>
   );
 }
 

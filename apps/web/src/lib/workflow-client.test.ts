@@ -9,6 +9,7 @@ import type { DevIdentity } from "./identity-headers.ts";
 import { INVALID_WORKFLOW_YAML, STARTER_WORKFLOW_YAML } from "./workflow.ts";
 import {
   createWorkflow,
+  deleteWorkflow,
   fetchWorkflowCatalog,
   IF_MATCH_HEADER,
   listWorkflows,
@@ -653,5 +654,75 @@ describe("workflow client", () => {
       assert.equal(missing.statusCode, 403);
     }
     assert.equal(fetched, false);
+  });
+
+  it("DELETEs a workflow as 204 with no YAML body and keeps capabilities", async () => {
+    withSession();
+    const id = "11111111-1111-4111-8111-111111111111";
+    const record = {
+      id,
+      slug: "deploy",
+      name: "Deploy",
+      status: "published",
+      draftRevision: 2,
+      capabilities: { delete: true },
+    };
+    const seen: Array<{ url?: string; method?: string; body?: string; csrf?: string | null }> =
+      [];
+    globalThis.fetch = (async (input, init) => {
+      const method = init?.method ?? "GET";
+      seen.push({
+        url: String(input),
+        method,
+        body: typeof init?.body === "string" ? init.body : "",
+        csrf: new Headers(init?.headers).get(CSRF_HEADER),
+      });
+      if (method === "DELETE") {
+        return new Response(null, { status: 204 });
+      }
+      return new Response(JSON.stringify({ items: [record] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const listed = await listWorkflows(identity);
+    assert.equal(listed.ok, true);
+    if (listed.ok) {
+      assert.equal(listed.items[0]?.capabilities?.delete, true);
+    }
+
+    const deleted = await deleteWorkflow(identity, id);
+    assert.equal(deleted.ok, true);
+    if (deleted.ok) {
+      assert.equal(deleted.statusCode, 204);
+    }
+    assert.equal(seen[1]?.url, `/api/v1/workflows/${id}`);
+    assert.equal(seen[1]?.method, "DELETE");
+    assert.equal(seen[1]?.body, "");
+    assert.equal(seen[1]?.csrf, "csrf-ok");
+
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          type: "about:blank",
+          title: "Conflict",
+          status: 409,
+          detail: "do not match this sentence",
+          instance: `/workflows/${id}`,
+          code: "workflow_has_active_executions",
+          request_id: "req-delete",
+        }),
+        {
+          status: 409,
+          headers: { "Content-Type": "application/problem+json" },
+        },
+      )) as typeof fetch;
+    const blocked = await deleteWorkflow(identity, id);
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) {
+      assert.equal(blocked.statusCode, 409);
+      assert.equal(blocked.problem.code, "workflow_has_active_executions");
+    }
   });
 });
