@@ -39,7 +39,7 @@ func deleteWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
-	if !canDeleteWorkflow(perms, scope.ActorID(), wf.CreatedBy) {
+	if !canDeleteWorkflow(perms, scope.ActorID(), wf.CreatedBy, requestEmbedBound(r)) {
 		core.WriteForbidden(w, r)
 		return
 	}

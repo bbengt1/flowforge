@@ -3,6 +3,7 @@ package wfstore
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
@@ -112,6 +113,110 @@ func (p *Postgres) Delete(ctx context.Context, scope isolation.Scope, id string)
 // lockLiveWorkflow takes the workflow row lock used by run start.
 // A missing or tombstoned row is ErrNotFound. The hook runs only after the
 // live row is locked and before the caller mutates.
+func workflowDeletedStepError() map[string]any {
+	return map[string]any{
+		"code":    ReasonWorkflowDeleted,
+		"message": "Workflow was deleted.",
+	}
+}
+
+// guardLiveWorkflowTx locks the live workflow row. A tombstone fails the
+// execution in this transaction and returns ErrWorkflowDeleted. The caller
+// must commit that stop; a rollback would undo it. The hook runs only when
+// the live row is locked.
+func guardLiveWorkflowTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now time.Time, workflowID, executionID string) error {
+	err := lockLiveWorkflow(ctx, tx, workflowID)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return err
+	}
+	if executionID != "" {
+		if stopErr := stopExecutionWorkflowDeletedTx(ctx, tx, scope, now, executionID); stopErr != nil {
+			return stopErr
+		}
+	}
+	return ErrWorkflowDeleted
+}
+
+// stopExecutionWorkflowDeletedTx fails every open job and step. An already
+// terminal run (other than pinned) is left as it is.
+func stopExecutionWorkflowDeletedTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now time.Time, executionID string) error {
+	exec, err := getExecutionTx(ctx, tx, executionID)
+	if err != nil {
+		return err
+	}
+	if isTerminalExecution(exec.Status) && exec.Status != ExecutionPinned {
+		return nil
+	}
+	errRaw, err := marshalObject(workflowDeletedStepError())
+	if err != nil {
+		return ErrInvalid
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE execution_jobs
+		SET status = 'failed', updated_at = $2
+		WHERE execution_id = $1::uuid
+		  AND status IN ('queued', 'claimed', 'running', 'waiting')
+	`, executionID, now); err != nil {
+		return mapDBErr(err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE execution_steps
+		SET status = 'failed',
+		    error_redacted = $2::jsonb,
+		    finished_at = COALESCE(finished_at, $3),
+		    updated_at = $3
+		WHERE execution_id = $1::uuid
+		  AND status IN ('queued', 'running', 'waiting')
+	`, executionID, errRaw, now); err != nil {
+		return mapDBErr(err)
+	}
+	if err := applyExecutionStatusTx(ctx, tx, executionID, ExecutionFailed, now); err != nil {
+		return err
+	}
+	_, err = insertAuditTx(ctx, tx, scope, AuditWrite{
+		Action:       "execution.stop",
+		ResourceType: "execution",
+		ResourceID:   executionID,
+		Outcome:      ReasonWorkflowDeleted,
+		Details:      map[string]any{"reason": ReasonWorkflowDeleted},
+	})
+	return err
+}
+
+func (p *Postgres) AbandonIfWorkflowDeleted(ctx context.Context, scope isolation.Scope, now time.Time, executionID string) error {
+	if scope.Zero() {
+		return ErrNoScope
+	}
+	if !authz.ValidUUID(executionID) {
+		return ErrNotFound
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
+	if err != nil {
+		return mapDBErr(err)
+	}
+	defer tx.Rollback(ctx)
+	exec, err := getExecutionTx(ctx, tx, executionID)
+	if err != nil {
+		return err
+	}
+	if err := guardLiveWorkflowTx(ctx, tx, scope, now, exec.WorkflowID, executionID); err != nil {
+		if errors.Is(err, ErrWorkflowDeleted) {
+			if commitErr := tx.Commit(ctx); commitErr != nil {
+				return mapDBErr(commitErr)
+			}
+			return ErrWorkflowDeleted
+		}
+		return err
+	}
+	return nil
+}
+
 func lockLiveWorkflow(ctx context.Context, tx pgx.Tx, workflowID string) error {
 	var id string
 	err := tx.QueryRow(ctx, `

@@ -173,3 +173,108 @@ func TestPostgresDeleteAndStartCloseTheRowLockRace(t *testing.T) {
 		t.Fatalf("delete = %v", err)
 	}
 }
+
+func TestPostgresResumeWaitAfterDelete(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	defer cancel()
+	dsn := testDatabaseURL(t)
+	admin, err := postgres.OpenAdmin(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	app, err := postgres.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+	store := NewPostgres(app)
+	wsA, _, userID := seedWorkflowWorkspaces(t, ctx, admin)
+	scope, err := isolation.Authorize(wsA, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalized := mustNormalize(t, fixtureYAML)
+	wf, draft, err := store.Create(ctx, scope, CreateInput{
+		NormalizedYAML: normalized.NormalizedYAML,
+		Digest:         normalized.Digest,
+		Summary:        normalized.Summary,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ver, err := store.Publish(ctx, scope, wf.ID, PublishInput{ExpectedRevision: draft.Revision})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	exec, err := store.StartExecution(ctx, scope, wf.ID, StartInput{VersionID: ver.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := store.ClaimJob(ctx, scope, now, ClaimInput{WorkerID: "pg-resume", Lease: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parked, err := store.WaitJob(ctx, scope, now, WaitJobInput{JobID: claimed.Job.ID, AvailableAt: now.Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Delete(ctx, scope, wf.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ResumeWait(ctx, scope, now, ResumeWaitInput{JobID: parked.Job.ID, Port: "approved"}); !errors.Is(err, ErrWorkflowDeleted) {
+		t.Fatalf("resume = %v", err)
+	}
+	got, err := store.GetExecutionByID(ctx, scope, exec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != ExecutionFailed {
+		t.Fatalf("status = %s", got.Status)
+	}
+	steps, err := store.ListSteps(ctx, scope, exec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(steps) == 0 || steps[0].Error["code"] != ReasonWorkflowDeleted {
+		t.Fatalf("steps = %+v", steps)
+	}
+	if port, _ := steps[0].Output["port"].(string); port == "approved" {
+		t.Fatal("approved port")
+	}
+
+	wf2, draft2, err := store.Create(ctx, scope, CreateInput{
+		Slug:           "pg-resume-live",
+		NormalizedYAML: normalized.NormalizedYAML,
+		Digest:         normalized.Digest,
+		Summary:        normalized.Summary,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ver2, err := store.Publish(ctx, scope, wf2.ID, PublishInput{ExpectedRevision: draft2.Revision})
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, err := store.StartExecution(ctx, scope, wf2.ID, StartInput{VersionID: ver2.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err = store.ClaimJob(ctx, scope, now, ClaimInput{WorkerID: "pg-live", Lease: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parked, err = store.WaitJob(ctx, scope, now, WaitJobInput{JobID: claimed.Job.ID, AvailableAt: now.Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := store.ResumeWait(ctx, scope, now, ResumeWaitInput{JobID: parked.Job.ID, Port: "approved"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed.Execution.Status != ExecutionSucceeded {
+		t.Fatalf("live resume = %s", resumed.Execution.Status)
+	}
+	_ = live
+}

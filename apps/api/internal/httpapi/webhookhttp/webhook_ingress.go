@@ -39,6 +39,16 @@ func deliverWebhook(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		writeWebhookIngressError(w, r, webhook.ErrNotFound)
 		return
 	}
+	// Tombstoned parents stay 404 before the body is read and before any
+	// signature check, even if the trigger row was forced back to enabled.
+	if err := workflowhttp.LiveWorkflow(r.Context(), s.Workflows, scope, trig.WorkflowID); err != nil {
+		if errors.Is(err, wfstore.ErrNotFound) {
+			writeWebhookIngressError(w, r, webhook.ErrNotFound)
+			return
+		}
+		core.WriteProblem(w, r, http.StatusServiceUnavailable, core.CodeDependencyUnavailable, "Dependency Unavailable", "Workflow store is not available.")
+		return
+	}
 	now := s.ClockNow()
 	limit := int64(trig.MaxBodyBytes)
 	if r.ContentLength > limit && r.ContentLength > 0 {

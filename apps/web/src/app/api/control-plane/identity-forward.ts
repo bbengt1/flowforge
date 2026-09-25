@@ -8,6 +8,7 @@ import {
   fetchIdentityControlPlane,
   fetchIdentityControlPlaneStream,
   isArtifactDownloadStreamTarget,
+  requestIsEmbedSession,
   resolveIdentityProxyTarget,
   sanitizeContentDisposition,
   withRequestSearch,
@@ -26,7 +27,9 @@ export async function forwardIdentityControlPlane(
   segments: string[],
 ): Promise<NextResponse> {
   const requestId = resolveRequestId(request.headers.get(REQUEST_ID_HEADER));
-  const target = resolveIdentityProxyTarget(request.method, segments);
+  const target = resolveIdentityProxyTarget(request.method, segments, {
+    embedSession: requestIsEmbedSession(request.headers),
+  });
 
   if ("status" in target) {
     const problem = target.problem(

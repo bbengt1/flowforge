@@ -45,6 +45,9 @@ const (
 	// Soft-delete conflicts. Underscores match the workflow contract.
 	CodeWorkflowHasActiveExecutions = "workflow_has_active_executions"
 	CodeWorkflowSlugReserved        = "workflow_slug_reserved"
+	// CodeWorkflowDeleted is the approval-decide and retry refusal when
+	// the workflow tombstone is set. The run is failed, not continued.
+	CodeWorkflowDeleted = "workflow_deleted"
 )
 
 // FieldError is a YAML-path validation failure returned on invalid-workflow.

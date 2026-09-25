@@ -15,6 +15,7 @@ import {
   notFoundProblem,
   pickConditionalHeaders,
   pickSessionCredentialHeaders,
+  requestIsEmbedSession,
   resolveIdentityProxyTarget,
   sanitizeContentDisposition,
   withRequestSearch,
@@ -56,6 +57,58 @@ describe("generated identity-proxy allowlist", () => {
 });
 
 describe("resolveIdentityProxyTarget", () => {
+  it("refuses embed DELETE of a workflow and still forwards first-party DELETE", () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    const denied = resolveIdentityProxyTarget("DELETE", ["workflows", id], {
+      embedSession: true,
+    });
+    assert.equal("status" in denied, true);
+    if ("status" in denied) {
+      assert.equal(denied.status, 403);
+      const problem = denied.problem(
+        `/api/control-plane/workflows/${id}`,
+        "req-embed-delete",
+      );
+      assert.equal(problem.status, 403);
+      assert.equal(problem.code, "forbidden");
+      assert.equal(problem.detail, "Embed sessions cannot delete workflows.");
+    }
+    const forwarded = resolveIdentityProxyTarget("DELETE", ["workflows", id]);
+    assert.equal("apiPath" in forwarded && forwarded.apiPath, `/api/v1/workflows/${id}`);
+    const getEmbed = resolveIdentityProxyTarget("GET", ["workflows", id], {
+      embedSession: true,
+    });
+    assert.equal("apiPath" in getEmbed && getEmbed.apiPath, `/api/v1/workflows/${id}`);
+    const triggerDelete = resolveIdentityProxyTarget(
+      "DELETE",
+      ["triggers", id],
+      { embedSession: true },
+    );
+    assert.equal(
+      "apiPath" in triggerDelete && triggerDelete.apiPath,
+      `/api/v1/triggers/${id}`,
+    );
+    assert.equal(
+      requestIsEmbedSession(
+        new Headers({ referer: "https://app.example/embed/v1/workflows" }),
+      ),
+      true,
+    );
+    assert.equal(
+      requestIsEmbedSession(
+        new Headers({ referer: "https://app.example/embed/v1" }),
+      ),
+      true,
+    );
+    assert.equal(
+      requestIsEmbedSession(
+        new Headers({ referer: "https://app.example/workflows" }),
+      ),
+      false,
+    );
+    assert.equal(requestIsEmbedSession(new Headers()), false);
+  });
+
   it("maps the documented E2.1, E2.2, E2.3, E3.1, and E3.2 routes onto /api/v1", () => {
     const cases: Array<[string, string[], string]> = [
       ["GET", ["permission-matrix"], "/api/v1/permission-matrix"],

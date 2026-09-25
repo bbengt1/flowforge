@@ -2,6 +2,7 @@ package wfstore
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -43,7 +44,7 @@ func (m *Memory) ClaimJob(ctx context.Context, scope isolation.Scope, now time.T
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	recovered := m.recoverExpiredLocked(scope, now)
+	recovered := m.recoverExpiredLocked(ctx, scope, now)
 
 	var chosen *memExecution
 	jobIdx := -1
@@ -78,6 +79,21 @@ func (m *Memory) ClaimJob(ctx context.Context, scope isolation.Scope, now time.T
 			return DispatchResult{Recovered: recovered}, ErrEmptyClaim
 		}
 		return DispatchResult{}, ErrEmptyClaim
+	}
+	pickedJobID := chosen.jobs[jobIdx].ID
+	if err := m.guardLiveLocked(ctx, scope, now, chosen.record.WorkflowID, chosen.record.ID); err != nil {
+		if errors.Is(err, ErrWorkflowDeleted) {
+			observability.NoteLeaseClaim(ctx, "empty", 0)
+			return DispatchResult{Recovered: recovered}, ErrEmptyClaim
+		}
+		return DispatchResult{}, err
+	}
+	chosenRow := m.executions[chosen.record.ID]
+	chosen = &chosenRow
+	jobIdx = indexJob(chosen.jobs, pickedJobID)
+	if jobIdx < 0 || chosen.jobs[jobIdx].Status != JobQueued {
+		observability.NoteLeaseClaim(ctx, "empty", 0)
+		return DispatchResult{Recovered: recovered}, ErrEmptyClaim
 	}
 
 	leaseExp := now.Add(lease)
@@ -147,7 +163,7 @@ func (m *Memory) HeartbeatJob(_ context.Context, scope isolation.Scope, now time
 	}, "job.heartbeat", "heartbeat")
 }
 
-func (m *Memory) ReleaseJob(_ context.Context, scope isolation.Scope, now time.Time, in JobActionInput) (DispatchResult, error) {
+func (m *Memory) ReleaseJob(ctx context.Context, scope isolation.Scope, now time.Time, in JobActionInput) (DispatchResult, error) {
 	return m.mutateJob(scope, now, in, func(exec *memExecution, job *ExecutionJob, step *ExecutionStep) error {
 		if err := matchFence(*job, in); err != nil {
 			return err
@@ -161,6 +177,9 @@ func (m *Memory) ReleaseJob(_ context.Context, scope isolation.Scope, now time.T
 			job.UpdatedAt = now
 			applyStepStatus(step, ExecutionIndeterminate, now)
 			return nil
+		}
+		if err := m.guardLiveLocked(ctx, scope, now, exec.record.WorkflowID, exec.record.ID); err != nil {
+			return err
 		}
 		job.Status = JobQueued
 		job.WorkerID = ""
@@ -400,6 +419,15 @@ func (m *Memory) RetryStep(ctx context.Context, scope isolation.Scope, now time.
 		return RetryResult{}, ErrNotFound
 	}
 	src := exec.steps[stepIdx]
+	if err := m.guardLiveLocked(ctx, scope, now, exec.record.WorkflowID, executionID); err != nil {
+		return RetryResult{}, err
+	}
+	exec = m.executions[executionID]
+	stepIdx = indexStep(exec.steps, stepID)
+	if stepIdx < 0 {
+		return RetryResult{}, ErrNotFound
+	}
+	src = exec.steps[stepIdx]
 	// SSH retry-safe + verification may still queue a verify-first attempt.
 	if exec.record.Status == ExecutionIndeterminate && !allowsIndeterminateRetry(src.NodeType) {
 		return RetryResult{}, ErrRetryNotAllowed
@@ -456,7 +484,7 @@ func (m *Memory) RetryStep(ctx context.Context, scope isolation.Scope, now time.
 	}, nil
 }
 
-func (m *Memory) RecoverExpiredLeases(_ context.Context, scope isolation.Scope, now time.Time) (int, error) {
+func (m *Memory) RecoverExpiredLeases(ctx context.Context, scope isolation.Scope, now time.Time) (int, error) {
 	if scope.Zero() {
 		return 0, ErrNoScope
 	}
@@ -465,7 +493,7 @@ func (m *Memory) RecoverExpiredLeases(_ context.Context, scope isolation.Scope, 
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.recoverExpiredLocked(scope, now), nil
+	return m.recoverExpiredLocked(ctx, scope, now), nil
 }
 
 func (m *Memory) WaitJob(_ context.Context, scope isolation.Scope, now time.Time, in WaitJobInput) (DispatchResult, error) {
@@ -496,7 +524,7 @@ func (m *Memory) WaitJob(_ context.Context, scope isolation.Scope, now time.Time
 	}, "job.wait", "waiting")
 }
 
-func (m *Memory) ResumeWait(_ context.Context, scope isolation.Scope, now time.Time, in ResumeWaitInput) (DispatchResult, error) {
+func (m *Memory) ResumeWait(ctx context.Context, scope isolation.Scope, now time.Time, in ResumeWaitInput) (DispatchResult, error) {
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
@@ -510,6 +538,9 @@ func (m *Memory) ResumeWait(_ context.Context, scope isolation.Scope, now time.T
 		}
 		if job.Status != JobWaiting {
 			return ErrNotClaimable
+		}
+		if err := m.guardLiveLocked(ctx, scope, now, exec.record.WorkflowID, exec.record.ID); err != nil {
+			return err
 		}
 		job.Status = JobSucceeded
 		job.UpdatedAt = now
@@ -627,12 +658,32 @@ func (m *Memory) mutateJob(scope isolation.Scope, now time.Time, in JobActionInp
 	}, nil
 }
 
-func (m *Memory) recoverExpiredLocked(scope isolation.Scope, now time.Time) int {
+func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope, now time.Time) int {
 	n := 0
 	expiredLeases := 0
+	hooked := map[string]struct{}{}
 	for id, exec := range m.executions {
 		if exec.workspaceID != scope.WorkspaceID() {
 			continue
+		}
+		due := false
+		for _, job := range exec.jobs {
+			if job.Status == JobWaiting && !job.AvailableAt.After(now) {
+				due = true
+				break
+			}
+		}
+		if due {
+			if _, live := m.liveLocked(scope, exec.record.WorkflowID); !live {
+				if err := m.stopExecutionLocked(scope, now, exec.record.ID); err == nil {
+					n++
+				}
+				continue
+			}
+			if _, ok := hooked[exec.record.WorkflowID]; !ok {
+				runWorkflowRowLockHook(ctx)
+				hooked[exec.record.WorkflowID] = struct{}{}
+			}
 		}
 		changed := false
 		outcome := "indeterminate"

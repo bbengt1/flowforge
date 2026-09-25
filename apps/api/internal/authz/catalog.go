@@ -197,6 +197,15 @@ func PlatformScopedPermission(key string) bool {
 	return key == PermPlatformAdminister || key == PermEmbedImpersonate || key == PermOpsMetricsRead
 }
 
+// EmbedAssertionDenied reports permissions an embed assertion must not
+// grant. Platform-scoped keys are rejected the same way. workflow.delete
+// stays on the editor and admin workspace roles and on portal assertions;
+// an embed assertion (or an empty ctx) is refused. Mint returns
+// ErrCapability rather than dropping the key.
+func EmbedAssertionDenied(key string) bool {
+	return PlatformScopedPermission(key) || key == PermWorkflowDelete
+}
+
 // WorkspacePermissionKeys is every catalog permission except platform-scoped ones.
 func WorkspacePermissionKeys() []string {
 	all := Permissions()

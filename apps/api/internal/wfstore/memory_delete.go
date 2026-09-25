@@ -59,3 +59,72 @@ func (m *Memory) Delete(ctx context.Context, scope isolation.Scope, id string) (
 	})
 	return DeleteResult{ID: id, Name: row.record.Name, Published: published}, nil
 }
+
+// guardLiveLocked reports ErrWorkflowDeleted after failing the run when the
+// workflow is missing or tombstoned. The caller holds m.mu. A live row runs
+// the row-lock hook and returns nil.
+func (m *Memory) guardLiveLocked(ctx context.Context, scope isolation.Scope, now time.Time, workflowID, executionID string) error {
+	if _, ok := m.liveLocked(scope, workflowID); ok {
+		runWorkflowRowLockHook(ctx)
+		return nil
+	}
+	if executionID != "" {
+		if err := m.stopExecutionLocked(scope, now, executionID); err != nil {
+			return err
+		}
+	}
+	return ErrWorkflowDeleted
+}
+
+func (m *Memory) stopExecutionLocked(scope isolation.Scope, now time.Time, executionID string) error {
+	exec, ok := m.executions[executionID]
+	if !ok || exec.workspaceID != scope.WorkspaceID() {
+		return ErrNotFound
+	}
+	if isTerminalExecution(exec.record.Status) && exec.record.Status != ExecutionPinned {
+		return nil
+	}
+	errBody := workflowDeletedStepError()
+	for i := range exec.jobs {
+		if jobIsOpen(exec.jobs[i].Status) {
+			exec.jobs[i].Status = JobFailed
+			exec.jobs[i].UpdatedAt = now
+		}
+	}
+	for i := range exec.steps {
+		switch exec.steps[i].Status {
+		case ExecutionQueued, ExecutionRunning, ExecutionWaiting:
+			exec.steps[i].Error = errBody
+			applyStepStatus(&exec.steps[i], ExecutionFailed, now)
+		}
+	}
+	applyExecutionStatus(&exec.record, ExecutionFailed, now)
+	m.executions[executionID] = exec
+	m.appendAuditLocked(scope, AuditWrite{
+		Action:       "execution.stop",
+		ResourceType: "execution",
+		ResourceID:   executionID,
+		Outcome:      ReasonWorkflowDeleted,
+		Details:      map[string]any{"reason": ReasonWorkflowDeleted},
+	}, now)
+	return nil
+}
+
+func (m *Memory) AbandonIfWorkflowDeleted(ctx context.Context, scope isolation.Scope, now time.Time, executionID string) error {
+	if scope.Zero() {
+		return ErrNoScope
+	}
+	if !authz.ValidUUID(executionID) {
+		return ErrNotFound
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	exec, ok := m.executions[executionID]
+	if !ok || exec.workspaceID != scope.WorkspaceID() {
+		return ErrNotFound
+	}
+	return m.guardLiveLocked(ctx, scope, now, exec.record.WorkflowID, executionID)
+}

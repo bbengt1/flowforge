@@ -40,7 +40,7 @@ Compact JWS (`typ: JWT`). Required claims fail closed when missing.
 | `tenant_id` | yes | Context; never authorization by itself. Bound onto the session |
 | `workbench_key` | yes | With `tenant_id` is the workspace identity. Bound onto the session |
 | `workspace_id` | no | Binding only. Must match server resolution. Never the lookup key |
-| `capabilities` | yes | FlowForge workspace permission keys; mint requires a subset of the caller. Caps the embed session. `platform.administer` and `embed.impersonate` are never mintable |
+| `capabilities` | yes | FlowForge workspace permission keys; mint requires a subset of the caller. Caps the embed session. `platform.administer`, `embed.impersonate`, and `workflow.delete` are never mintable (rejected, not dropped). `workflow.delete` stays on the editor and admin workspace roles |
 | `sdk` | yes | `embed.v1` |
 | `display_name` | no | Display context until the API verifies the subject |
 | `host` | no | Minting host issuer. Mint always writes `host=iss`. Exchange requires `host==iss` when the claim is present (ADV-023). Not a second authorization subject |

@@ -199,6 +199,18 @@ func TestEmbedMintRejectsPlatformAdministerCapability(t *testing.T) {
 	}
 }
 
+func TestEmbedMintRejectsWorkflowDeleteCapability(t *testing.T) {
+	env := newEmbedEnv(t)
+	rec := env.mint(t, `{"capabilities":["workflow.delete"]}`)
+	if rec.Code != http.StatusForbidden && rec.Code != http.StatusBadRequest {
+		t.Fatalf("mint workflow.delete: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = env.mint(t, `{"capabilities":["workflow.view","workflow.delete"]}`)
+	if rec.Code != http.StatusForbidden && rec.Code != http.StatusBadRequest {
+		t.Fatalf("mint view+delete: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestEmbedMintRejectsEmbedImpersonateCapability(t *testing.T) {
 	env := newEmbedEnv(t)
 	rec := env.mint(t, `{"capabilities":["embed.impersonate"]}`)

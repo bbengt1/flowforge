@@ -223,7 +223,7 @@ func patchWorkflowFolder(s *core.Server, w http.ResponseWriter, r *http.Request)
 		"fromFolderId": before.FolderID,
 		"toFolderId":   wf.FolderID,
 	})
-	core.WriteJSON(w, http.StatusOK, presentWorkflow(perms, scope.ActorID(), wf))
+	core.WriteJSON(w, http.StatusOK, presentWorkflow(perms, scope.ActorID(), wf, requestEmbedBound(r)))
 }
 
 func writeFolderAudit(s *core.Server, r *http.Request, scope isolation.Scope, action, resourceID, outcome string, details map[string]any) {

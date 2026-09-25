@@ -138,6 +138,16 @@ func TestMintRejectsWrongAudienceAndBadTTL(t *testing.T) {
 	if _, _, err := Mint(m, in); err != ErrCapability {
 		t.Fatalf("embed.impersonate: %v", err)
 	}
+	in = testMintInput(time.Now().UTC())
+	in.Capabilities = []string{authz.PermWorkflowDelete}
+	if _, _, err := Mint(m, in); err != ErrCapability {
+		t.Fatalf("workflow.delete: %v", err)
+	}
+	in = testMintInput(time.Now().UTC())
+	in.Capabilities = []string{authz.PermWorkflowView, authz.PermWorkflowDelete}
+	if _, _, err := Mint(m, in); err != ErrCapability {
+		t.Fatalf("workflow.delete with view: %v", err)
+	}
 }
 
 func TestVerifyMissingClaims(t *testing.T) {

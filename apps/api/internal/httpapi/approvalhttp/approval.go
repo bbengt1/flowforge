@@ -225,6 +225,20 @@ func decideApproval(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		core.WriteForbidden(w, r)
 		return
 	}
+	if strings.TrimSpace(rec.ExecutionID) != "" && s.Workflows != nil {
+		if err := s.Workflows.AbandonIfWorkflowDeleted(r.Context(), scope, s.Clock().UTC(), rec.ExecutionID); err != nil {
+			if errors.Is(err, wfstore.ErrWorkflowDeleted) {
+				core.WriteProblem(w, r, http.StatusConflict, core.CodeWorkflowDeleted, "Conflict", "This workflow was deleted. The run will not continue.")
+				return
+			}
+			if errors.Is(err, wfstore.ErrNotFound) {
+				core.WriteProblem(w, r, http.StatusNotFound, core.CodeNotFound, "Not Found", "The requested resource was not found.")
+				return
+			}
+			core.WriteProblem(w, r, http.StatusInternalServerError, core.CodeInternalError, "Internal Server Error", "An unexpected error occurred.")
+			return
+		}
+	}
 	heads := headsFor(s, r.Context(), scope, rec)
 	out, err := s.Approvals.Decide(r.Context(), scope, rec.ID, approval.DecideInput{
 		Decision: req.Decision,
@@ -236,7 +250,10 @@ func decideApproval(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		WriteApprovalError(w, r, err)
 		return
 	}
-	resumeApprovalWait(s, r.Context(), scope, out, out.Status)
+	if err := resumeApprovalWait(s, r.Context(), scope, out, out.Status); errors.Is(err, wfstore.ErrWorkflowDeleted) {
+		core.WriteProblem(w, r, http.StatusConflict, core.CodeWorkflowDeleted, "Conflict", "This workflow was deleted. The run will not continue.")
+		return
+	}
 	core.WriteJSON(w, http.StatusOK, out)
 }
 
@@ -372,7 +389,7 @@ func refreshRecord(s *core.Server, ctx context.Context, scope isolation.Scope, r
 	}
 	if rec.ExecutionID != "" && rec.Status == approval.StatusPending &&
 		(out.Status == approval.StatusExpired || out.Status == approval.StatusInvalidated) {
-		resumeApprovalWait(s, ctx, scope, out, "expired")
+		_ = resumeApprovalWait(s, ctx, scope, out, "expired")
 	}
 	return out
 }
@@ -420,7 +437,7 @@ func InvalidateApprovalsForResource(s *core.Server, ctx context.Context, scope i
 			continue
 		}
 		if rec.TargetID == resourceID || rec.PolicyResourceID == resourceID {
-			resumeApprovalWait(s, ctx, scope, rec, "expired")
+			_ = resumeApprovalWait(s, ctx, scope, rec, "expired")
 		}
 	}
 }
@@ -504,17 +521,17 @@ func SyncWaitingApprovals(s *core.Server, ctx context.Context, scope isolation.S
 	}
 }
 
-func resumeApprovalWait(s *core.Server, ctx context.Context, scope isolation.Scope, rec approval.Record, port string) {
+func resumeApprovalWait(s *core.Server, ctx context.Context, scope isolation.Scope, rec approval.Record, port string) error {
 	if s.Workflows == nil || strings.TrimSpace(rec.ExecutionID) == "" {
-		return
+		return nil
 	}
 	jobs, err := s.Workflows.ListJobs(ctx, scope, rec.ExecutionID)
 	if err != nil {
-		return
+		return err
 	}
 	steps, err := s.Workflows.ListSteps(ctx, scope, rec.ExecutionID)
 	if err != nil {
-		return
+		return err
 	}
 	stepByID := map[string]wfstore.ExecutionStep{}
 	for _, step := range steps {
@@ -528,7 +545,7 @@ func resumeApprovalWait(s *core.Server, ctx context.Context, scope isolation.Sco
 		if job.Status != wfstore.JobWaiting && job.Status != wfstore.JobSucceeded {
 			continue
 		}
-		_, _ = s.Workflows.ResumeWait(ctx, scope, s.Clock().UTC(), wfstore.ResumeWaitInput{
+		_, err = s.Workflows.ResumeWait(ctx, scope, s.Clock().UTC(), wfstore.ResumeWaitInput{
 			JobID: job.ID,
 			Port:  port,
 			Output: map[string]any{
@@ -536,8 +553,9 @@ func resumeApprovalWait(s *core.Server, ctx context.Context, scope isolation.Sco
 				"status":     rec.Status,
 			},
 		})
-		return
+		return err
 	}
+	return nil
 }
 
 func gateRequirements(reqs []policy.Requirement) []policy.Requirement {

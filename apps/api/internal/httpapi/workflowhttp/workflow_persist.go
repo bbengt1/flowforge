@@ -148,7 +148,7 @@ func listWorkflows(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
-	core.WritePage(w, presentWorkflows(perms, scope.ActorID(), items), q, next)
+	core.WritePage(w, presentWorkflows(perms, scope.ActorID(), items, requestEmbedBound(r)), q, next)
 }
 
 func parseWorkflowListFolderQuery(w http.ResponseWriter, r *http.Request) (wfstore.WorkflowListFilter, bool) {
@@ -208,7 +208,7 @@ func CreateWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
-	core.WriteJSON(w, http.StatusCreated, WorkflowDetailResponse{Workflow: presentWorkflow(perms, scope.ActorID(), wf), Draft: draft})
+	core.WriteJSON(w, http.StatusCreated, WorkflowDetailResponse{Workflow: presentWorkflow(perms, scope.ActorID(), wf, requestEmbedBound(r)), Draft: draft})
 }
 
 func reservedWorkflowCollection(id string) bool {
@@ -248,7 +248,7 @@ func getWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
-	core.WriteJSON(w, http.StatusOK, presentWorkflow(perms, scope.ActorID(), wf))
+	core.WriteJSON(w, http.StatusOK, presentWorkflow(perms, scope.ActorID(), wf, requestEmbedBound(r)))
 }
 
 func getWorkflowDraft(s *core.Server, w http.ResponseWriter, r *http.Request) {
@@ -294,7 +294,7 @@ func putWorkflowDraft(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
-	core.WriteJSON(w, http.StatusOK, WorkflowDetailResponse{Workflow: presentWorkflow(perms, scope.ActorID(), wf), Draft: draft})
+	core.WriteJSON(w, http.StatusOK, WorkflowDetailResponse{Workflow: presentWorkflow(perms, scope.ActorID(), wf, requestEmbedBound(r)), Draft: draft})
 }
 
 func PublishWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
@@ -342,7 +342,7 @@ func PublishWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	core.WriteJSON(w, http.StatusCreated, PublishResponse{Workflow: presentWorkflow(perms, scope.ActorID(), wf), Version: ver, Pins: pins, ScriptArtifacts: scriptPins})
+	core.WriteJSON(w, http.StatusCreated, PublishResponse{Workflow: presentWorkflow(perms, scope.ActorID(), wf, requestEmbedBound(r)), Version: ver, Pins: pins, ScriptArtifacts: scriptPins})
 }
 
 func listWorkflowVersions(s *core.Server, w http.ResponseWriter, r *http.Request) {
@@ -555,7 +555,7 @@ func restoreWorkflowVersion(s *core.Server, w http.ResponseWriter, r *http.Reque
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
-	core.WriteJSON(w, http.StatusOK, WorkflowDetailResponse{Workflow: presentWorkflow(perms, scope.ActorID(), wf), Draft: draft})
+	core.WriteJSON(w, http.StatusOK, WorkflowDetailResponse{Workflow: presentWorkflow(perms, scope.ActorID(), wf, requestEmbedBound(r)), Draft: draft})
 }
 
 func startWorkflowExecution(s *core.Server, w http.ResponseWriter, r *http.Request) {
@@ -913,6 +913,8 @@ func WriteWorkflowStoreError(w http.ResponseWriter, r *http.Request, err error) 
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeWorkflowHasActiveExecutions, "Conflict", "This workflow has a queued or running execution.")
 	case errors.Is(err, wfstore.ErrSlugReserved):
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeWorkflowSlugReserved, "Conflict", "This slug is reserved by a deleted workflow.")
+	case errors.Is(err, wfstore.ErrWorkflowDeleted):
+		core.WriteProblem(w, r, http.StatusConflict, core.CodeWorkflowDeleted, "Conflict", "This workflow was deleted. The run will not continue.")
 	case errors.Is(err, wfstore.ErrConflict):
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeConflict, "Conflict", "A workflow with this slug already exists.")
 	case errors.Is(err, wfstore.ErrImmutable):

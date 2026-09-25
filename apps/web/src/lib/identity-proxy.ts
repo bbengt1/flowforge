@@ -124,13 +124,43 @@ export type IdentityProxyTarget = {
 };
 
 export type IdentityProxyDenial = {
-  status: 404 | 405;
+  status: 403 | 404 | 405;
   problem: (instance: string, requestId: string) => ProblemDetails;
 };
+
+export type IdentityProxyContext = {
+  embedSession?: boolean;
+};
+
+const EMBED_UI_PREFIX = "/embed/v1";
+
+// requestIsEmbedSession is true when the browser Referer is the embed UI.
+// The session cookie itself is opaque here. A missing Referer is not treated
+// as embed; the API still refuses embed delete.
+export function requestIsEmbedSession(headers: Headers): boolean {
+  const referer = headers.get("referer") ?? headers.get("referrer") ?? "";
+  if (!referer) {
+    return false;
+  }
+  let path = "";
+  try {
+    path = new URL(referer).pathname;
+  } catch {
+    return false;
+  }
+  return path === EMBED_UI_PREFIX || path.startsWith(`${EMBED_UI_PREFIX}/`);
+}
+
+function embedWorkflowDelete(method: string, segments: string[]): boolean {
+  return (
+    method === "DELETE" && segments.length === 2 && segments[0] === "workflows"
+  );
+}
 
 export function resolveIdentityProxyTarget(
   method: string,
   segments: string[],
+  context?: IdentityProxyContext,
 ): IdentityProxyTarget | IdentityProxyDenial {
   const known = ALLOWED_ROUTES.filter((route) => route.match(segments));
   const instance = `${PROXY_PREFIX}/${segments.join("/")}`;
@@ -151,6 +181,14 @@ export function resolveIdentityProxyTarget(
       status: 405,
       problem: (inst, requestId) =>
         methodNotAllowedProblem(inst, requestId, method, allow),
+    };
+  }
+
+  if (context?.embedSession && embedWorkflowDelete(method, segments)) {
+    return {
+      status: 403,
+      problem: (inst, requestId) =>
+        embedDeleteForbiddenProblem(inst, requestId),
     };
   }
 
@@ -193,6 +231,21 @@ export function notFoundProblem(
     detail: "The requested path does not exist.",
     instance,
     code: "not-found",
+    request_id: requestId,
+  };
+}
+
+export function embedDeleteForbiddenProblem(
+  instance: string,
+  requestId: string,
+): ProblemDetails {
+  return {
+    type: "urn:flowforge:problem:forbidden",
+    title: "Forbidden",
+    status: 403,
+    detail: "Embed sessions cannot delete workflows.",
+    instance,
+    code: "forbidden",
     request_id: requestId,
   };
 }

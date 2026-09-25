@@ -121,7 +121,7 @@ func (p *Postgres) GetExecutionByID(ctx context.Context, scope isolation.Scope, 
 		SELECT `+executionColumns+`
 		FROM executions e
 		JOIN workflows w ON w.workspace_id = e.workspace_id AND w.id = e.workflow_id
-		WHERE e.id = $1::uuid AND w.deleted_at IS NULL
+		WHERE e.id = $1::uuid
 	`, executionID))
 	if err != nil {
 		return Execution{}, err
