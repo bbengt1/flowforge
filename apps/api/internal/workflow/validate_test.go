@@ -642,3 +642,43 @@ spec:
   edges: []
 `
 }
+
+func TestMetadataSlugRoundTripAndReserved(t *testing.T) {
+	const base = `
+apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: Deploy API
+  slug: SLUG
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: done
+      type: flow.stop
+      name: Stop
+  edges: []
+`
+	res, errs := ParseAndNormalize([]byte(strings.Replace(base, "slug: SLUG", "slug: deploy-api", 1)))
+	if len(errs) > 0 {
+		t.Fatalf("%+v", errs)
+	}
+	if res.Document == nil || res.Document.Metadata.Slug != "deploy-api" {
+		t.Fatalf("slug = %+v", res.Document)
+	}
+	if !strings.Contains(res.NormalizedYAML, "slug: deploy-api") {
+		t.Fatalf("normalized yaml missing slug:\n%s", res.NormalizedYAML)
+	}
+	again, againErrs := ParseAndNormalize([]byte(res.NormalizedYAML))
+	if len(againErrs) > 0 || again.Digest != res.Digest || again.Document.Metadata.Slug != "deploy-api" {
+		t.Fatalf("round trip %+v digest %s vs %s", againErrs, again.Digest, res.Digest)
+	}
+
+	for _, slug := range []string{"catalog", "validate", "normalize", "Not-A-Slug", "9lives"} {
+		_, bad := Parse([]byte(strings.Replace(base, "slug: SLUG", "slug: "+slug, 1)))
+		if len(bad) != 1 || bad[0].Path != "metadata.slug" || bad[0].Code != CodeInvalidName {
+			t.Fatalf("slug %q errors = %+v", slug, bad)
+		}
+	}
+}

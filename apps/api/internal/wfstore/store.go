@@ -491,9 +491,41 @@ func (e FolderNotEmptyError) Error() string { return ErrFolderNotEmpty.Error() }
 
 func (e FolderNotEmptyError) Unwrap() error { return ErrFolderNotEmpty }
 
+// SlugConflict is a create-time slug clash. Reserved means a soft-deleted
+// workflow still holds the slug. Exhausted means every derived suffix was
+// rejected. A live clash leaves both flags false. Unwrap reports
+// ErrSlugReserved or ErrConflict.
+type SlugConflict struct {
+	Reserved  bool
+	Exhausted bool
+}
+
+func (e SlugConflict) Error() string {
+	switch {
+	case e.Reserved:
+		return ErrSlugReserved.Error()
+	case e.Exhausted:
+		return "unique workflow slug could not be allocated"
+	default:
+		return "workflow slug already exists"
+	}
+}
+
+func (e SlugConflict) Unwrap() error {
+	if e.Reserved {
+		return ErrSlugReserved
+	}
+	return ErrConflict
+}
+
 // CreateInput creates a workflow and its first draft from normalized YAML.
+// SlugDerived is set when Slug was derived from the display name. Only that
+// slug gains a numeric suffix when the unique index rejects it. An explicit
+// slug, from the request body or metadata.slug, is never rewritten. When
+// Slug is empty and SlugDerived is false, Create resolves the slug itself.
 type CreateInput struct {
 	Slug           string
+	SlugDerived    bool
 	Name           string
 	NormalizedYAML string
 	Digest         string

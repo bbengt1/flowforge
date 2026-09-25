@@ -188,8 +188,23 @@ func CreateWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		writeWorkflowErrors(w, r, errs)
 		return
 	}
-	if name := strings.TrimSpace(req.Name); name != "" && !workflow.ValidDisplayName(name) {
+	nameOverride := strings.TrimSpace(req.Name)
+	if nameOverride != "" && !workflow.ValidDisplayName(nameOverride) {
 		writeWorkflowErrors(w, r, workflow.ErrorList{workflow.InvalidDisplayName("name")})
+		return
+	}
+	deriveFrom := nameOverride
+	if deriveFrom == "" {
+		deriveFrom = res.Summary.Name
+	}
+	yamlSlug := ""
+	if res.Document != nil {
+		yamlSlug = res.Document.Metadata.Slug
+	}
+	// Precedence: JSON slug, then metadata.slug, then a slug derived from name.
+	choice, err := wfstore.ChooseCreateSlug(strings.TrimSpace(req.Slug), yamlSlug, deriveFrom)
+	if err != nil {
+		writeSlugInvalid(w, r)
 		return
 	}
 	folderID := ""
@@ -197,8 +212,9 @@ func CreateWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		folderID = strings.TrimSpace(*req.FolderID)
 	}
 	wf, draft, err := s.Workflows.Create(r.Context(), scope, wfstore.CreateInput{
-		Slug:           strings.TrimSpace(req.Slug),
-		Name:           strings.TrimSpace(req.Name),
+		Slug:           choice.Slug,
+		SlugDerived:    choice.Derived,
+		Name:           nameOverride,
 		NormalizedYAML: res.NormalizedYAML,
 		Digest:         res.Digest,
 		Summary:        res.Summary,
@@ -901,7 +917,38 @@ func resourceTypeForStart(executionID string) string {
 	return "workflow"
 }
 
+func writeSlugInvalid(w http.ResponseWriter, r *http.Request) {
+	detail := workflow.WorkflowSlugInvalidMessage("slug")
+	core.WriteProblemErrors(w, r, http.StatusBadRequest, core.CodeInvalidRequest, "Invalid Request", detail, []core.FieldError{{
+		Path:    "slug",
+		Code:    core.CodeInvalidRequest,
+		Message: detail,
+	}})
+}
+
+func writeSlugConflict(w http.ResponseWriter, r *http.Request, conflict wfstore.SlugConflict) {
+	code := core.CodeConflict
+	detail := "A workflow with this slug already exists."
+	switch {
+	case conflict.Reserved:
+		code = core.CodeWorkflowSlugReserved
+		detail = "This slug is reserved by a deleted workflow."
+	case conflict.Exhausted:
+		detail = "A unique slug could not be allocated."
+	}
+	core.WriteProblemErrors(w, r, http.StatusConflict, code, "Conflict", detail, []core.FieldError{{
+		Path:    "slug",
+		Code:    code,
+		Message: detail,
+	}})
+}
+
 func WriteWorkflowStoreError(w http.ResponseWriter, r *http.Request, err error) {
+	var slugConflict wfstore.SlugConflict
+	if errors.As(err, &slugConflict) {
+		writeSlugConflict(w, r, slugConflict)
+		return
+	}
 	var refused *wfstore.NotRetryableError
 	if errors.As(err, &refused) {
 		core.WriteProblemReason(w, r, http.StatusConflict, core.CodeExecutionNotRetryable, "Conflict", "This execution cannot be retried.", refused.Reason)

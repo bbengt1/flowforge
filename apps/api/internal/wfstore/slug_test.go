@@ -2,12 +2,14 @@ package wfstore
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestSlugifyWorkflowName(t *testing.T) {
@@ -37,8 +39,55 @@ func TestSlugifyWorkflowName(t *testing.T) {
 	if !validDerivedWorkflowSlug(got) || len(got) > 63 || strings.HasSuffix(got, "-") {
 		t.Fatalf("long title slug = %q", got)
 	}
-	if workflowSlug("Keep-Me", "Deploy API") != "Keep-Me" {
-		t.Fatal("explicit slug was rewritten")
+	choice, err := ChooseCreateSlug("keep-me", "yaml-slug", "Deploy API")
+	if err != nil || choice.Derived || choice.Slug != "keep-me" {
+		t.Fatalf("body slug = %+v %v", choice, err)
+	}
+	choice, err = ChooseCreateSlug("", "yaml-slug", "Deploy API")
+	if err != nil || choice.Derived || choice.Slug != "yaml-slug" {
+		t.Fatalf("yaml slug = %+v %v", choice, err)
+	}
+	choice, err = ChooseCreateSlug("", "", "Deploy API")
+	if err != nil || !choice.Derived || choice.Slug != "deploy-api" {
+		t.Fatalf("derived slug = %+v %v", choice, err)
+	}
+	choice, err = ChooseCreateSlug("", "", "🎉")
+	if err != nil || !choice.Derived || choice.Slug != "workflow" {
+		t.Fatalf("emoji slug = %+v %v", choice, err)
+	}
+	choice, err = ChooseCreateSlug("", "", "Catalog")
+	if err != nil || !choice.Derived || choice.Slug != "catalog" {
+		t.Fatalf("reserved base = %+v %v", choice, err)
+	}
+	if _, err := ChooseCreateSlug("catalog", "", "Deploy API"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("explicit reserved = %v", err)
+	}
+	cands, err := slugCandidates(SlugChoice{Slug: "catalog", Derived: true})
+	if err != nil || len(cands) == 0 || cands[0] != "catalog-2" {
+		t.Fatalf("reserved candidates = %v %v", cands, err)
+	}
+	long, ok := workflowSlugCandidate(strings.Repeat("a", 63), 2)
+	if !ok || long != strings.Repeat("a", 61)+"-2" || len(long) > 63 || !validDerivedWorkflowSlug(long) {
+		t.Fatalf("capped suffix = %q", long)
+	}
+	cut := strings.Repeat("b", 60) + "-cd"
+	got, ok = workflowSlugCandidate(cut, 2)
+	if !ok || got != strings.Repeat("b", 60)+"-2" || strings.Contains(got, "--") || !validDerivedWorkflowSlug(got) {
+		t.Fatalf("hyphen cut suffix = %q", got)
+	}
+}
+
+func TestWorkflowSlugUniqueMatchesConstraintName(t *testing.T) {
+	slugErr := &pgconn.PgError{Code: "23505", ConstraintName: "workflows_slug_unique"}
+	if !workflowSlugUnique(slugErr) {
+		t.Fatal("workflows_slug_unique was not detected")
+	}
+	other := &pgconn.PgError{Code: "23505", ConstraintName: "execution_steps_attempt_unique"}
+	if workflowSlugUnique(other) {
+		t.Fatal("another unique constraint was treated as a slug clash")
+	}
+	if workflowSlugUnique(ErrConstraint) || workflowSlugUnique(ErrConflict) {
+		t.Fatal("mapped unique errors were treated as a slug clash")
 	}
 }
 

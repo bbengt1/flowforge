@@ -238,21 +238,23 @@ func lockLiveWorkflow(ctx context.Context, tx pgx.Tx, workflowID string) error {
 	return nil
 }
 
-func slugClaim(ctx context.Context, tx pgx.Tx, slug string) error {
+// classifySlugViolation explains a workflows_slug_unique failure. It runs
+// only after the insert was rejected, so create does not check then insert.
+func classifySlugViolation(ctx context.Context, tx pgx.Tx, slug string) error {
 	var deleted bool
 	err := tx.QueryRow(ctx, `
 		SELECT deleted_at IS NOT NULL FROM workflows WHERE slug = $1
 	`, slug).Scan(&deleted)
 	if err != nil {
 		if errors.Is(mapDBErr(err), ErrNotFound) {
-			return nil
+			return SlugConflict{}
 		}
 		return mapDBErr(err)
 	}
 	if deleted {
-		return ErrSlugReserved
+		return SlugConflict{Reserved: true}
 	}
-	return ErrConflict
+	return SlugConflict{}
 }
 
 func workflowSlugUnique(err error) bool {

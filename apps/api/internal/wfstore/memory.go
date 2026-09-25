@@ -78,38 +78,23 @@ func (m *Memory) Create(_ context.Context, scope isolation.Scope, in CreateInput
 	if err := validateCreate(in); err != nil {
 		return Workflow{}, Draft{}, err
 	}
+	choice, err := resolveCreateSlug(in)
+	if err != nil {
+		return Workflow{}, Draft{}, err
+	}
+	candidates, err := slugCandidates(choice)
+	if err != nil {
+		return Workflow{}, Draft{}, err
+	}
 	now := time.Now().UTC()
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
 		name = in.Summary.Name
 	}
-	slug := workflowSlug(in.Slug, in.Summary.Name)
-	wf := Workflow{
-		ID:            newID(),
-		Slug:          slug,
-		Name:          name,
-		Status:        StatusDraft,
-		DraftRevision: 1,
-		DraftDigest:   in.Digest,
-		CreatedBy:     scope.ActorID(),
-		UpdatedBy:     scope.ActorID(),
-		CreatedAt:     now,
-		UpdatedAt:     now,
-	}
-	draft := Draft{
-		WorkflowID:      wf.ID,
-		Revision:        1,
-		DefinitionYAML:  in.NormalizedYAML,
-		Digest:          in.Digest,
-		Summary:         in.Summary,
-		Warnings:        []workflow.FieldError{},
-		ValidationState: ValidationValid,
-		UpdatedBy:       scope.ActorID(),
-		UpdatedAt:       now,
-	}
 	folderID := strings.TrimSpace(in.FolderID)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	var folder *string
 	if folderID != "" {
 		if !authz.ValidUUID(folderID) {
 			return Workflow{}, Draft{}, ErrNotFound
@@ -117,18 +102,69 @@ func (m *Memory) Create(_ context.Context, scope isolation.Scope, in CreateInput
 		if _, ok := m.lookupFolderLocked(scope, folderID); !ok {
 			return Workflow{}, Draft{}, ErrNotFound
 		}
-		wf.FolderID = optionalID(folderID)
+		folder = optionalID(folderID)
 	}
-	for _, existing := range m.workflows {
-		if existing.workspaceID == scope.WorkspaceID() && existing.record.Slug == slug {
-			if existing.deletedAt != nil {
-				return Workflow{}, Draft{}, ErrSlugReserved
-			}
-			return Workflow{}, Draft{}, ErrConflict
+	// The map stands in for workflows_slug_unique. Postgres inserts first
+	// and retries a derived slug only after that unique index rejects it.
+	var last error
+	sawConflict := false
+	for _, slug := range candidates {
+		yamlDoc, digest, summary, stampErr := stampWorkflowSlug(in.NormalizedYAML, slug)
+		if stampErr != nil {
+			return Workflow{}, Draft{}, stampErr
 		}
+		if conflict, taken := m.slugTakenLocked(scope, slug); taken {
+			last = conflict
+			sawConflict = true
+			if !choice.Derived {
+				return Workflow{}, Draft{}, conflict
+			}
+			continue
+		}
+		wf := Workflow{
+			ID:            newID(),
+			Slug:          slug,
+			Name:          name,
+			Status:        StatusDraft,
+			DraftRevision: 1,
+			DraftDigest:   digest,
+			CreatedBy:     scope.ActorID(),
+			UpdatedBy:     scope.ActorID(),
+			CreatedAt:     now,
+			UpdatedAt:     now,
+			FolderID:      folder,
+		}
+		draft := Draft{
+			WorkflowID:      wf.ID,
+			Revision:        1,
+			DefinitionYAML:  yamlDoc,
+			Digest:          digest,
+			Summary:         summary,
+			Warnings:        []workflow.FieldError{},
+			ValidationState: ValidationValid,
+			UpdatedBy:       scope.ActorID(),
+			UpdatedAt:       now,
+		}
+		m.workflows[wf.ID] = memWorkflow{workspaceID: scope.WorkspaceID(), record: wf, draft: draft}
+		return wf, draft, nil
 	}
-	m.workflows[wf.ID] = memWorkflow{workspaceID: scope.WorkspaceID(), record: wf, draft: draft}
-	return wf, draft, nil
+	if sawConflict && !choice.Derived {
+		return Workflow{}, Draft{}, last
+	}
+	return Workflow{}, Draft{}, SlugConflict{Exhausted: true}
+}
+
+func (m *Memory) slugTakenLocked(scope isolation.Scope, slug string) (SlugConflict, bool) {
+	for _, existing := range m.workflows {
+		if existing.workspaceID != scope.WorkspaceID() || existing.record.Slug != slug {
+			continue
+		}
+		if existing.deletedAt != nil {
+			return SlugConflict{Reserved: true}, true
+		}
+		return SlugConflict{}, true
+	}
+	return SlugConflict{}, false
 }
 
 func (m *Memory) List(_ context.Context, scope isolation.Scope, filter WorkflowListFilter) ([]Workflow, error) {
@@ -915,8 +951,14 @@ func validateCreate(in CreateInput) error {
 		return err
 	}
 	slug := strings.TrimSpace(in.Slug)
-	if slug != "" && !authz.ValidTenantSlug(slug) {
-		return ErrInvalid
+	if slug != "" {
+		if in.SlugDerived {
+			if !authz.ValidTenantSlug(slug) {
+				return ErrInvalid
+			}
+		} else if !workflow.ValidWorkflowSlug(slug) {
+			return ErrInvalid
+		}
 	}
 	name := strings.TrimSpace(in.Name)
 	if name != "" && !workflow.ValidDisplayName(name) {

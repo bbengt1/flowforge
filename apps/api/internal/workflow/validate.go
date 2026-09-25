@@ -8,6 +8,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 )
@@ -61,6 +62,32 @@ func ValidDisplayName(s string) bool {
 	return validWorkflowDisplayName(s)
 }
 
+// ReservedWorkflowSlug reports path words a typed workflow slug cannot use.
+// Create treats a derived slug of one of these as a clash and suffixes it.
+func ReservedWorkflowSlug(s string) bool {
+	switch s {
+	case "catalog", "validate", "normalize":
+		return true
+	default:
+		return false
+	}
+}
+
+// ValidWorkflowSlug reports whether s matches a typed workflow slug: the
+// stored DNS-label format, and not a reserved word.
+func ValidWorkflowSlug(s string) bool {
+	return authz.ValidTenantSlug(s) && !ReservedWorkflowSlug(s)
+}
+
+// WorkflowSlugInvalidMessage is the invalid-name text for a workflow slug.
+// field is the name the client sent ("slug" or "metadata.slug").
+func WorkflowSlugInvalidMessage(field string) string {
+	if strings.TrimSpace(field) == "" {
+		field = "metadata.slug"
+	}
+	return field + " must be 1-63 characters, start with a lowercase letter, contain only lowercase letters, digits, or hyphens, and must not be reserved."
+}
+
 // InvalidDisplayName is the invalid-name field error for a workflow display
 // name. path is the field the client sent ("name" or "metadata.name").
 // An empty path fails closed to metadata.name. The message uses that same field.
@@ -100,6 +127,9 @@ func validate(doc *Document) ErrorList {
 		err.Line = doc.pos.name.Line
 		err.Column = doc.pos.metadata.Line
 		errs = append(errs, err)
+	}
+	if doc.Metadata.Slug != "" && !ValidWorkflowSlug(doc.Metadata.Slug) {
+		errs = append(errs, fieldError("metadata.slug", doc.pos.metadata.Line, 0, CodeInvalidName, WorkflowSlugInvalidMessage("metadata.slug")))
 	}
 	for k := range doc.Metadata.Labels {
 		if !validLabelKey(k) {

@@ -44,10 +44,13 @@ func (p *Postgres) Create(ctx context.Context, scope isolation.Scope, in CreateI
 	if name == "" {
 		name = in.Summary.Name
 	}
-	slug := workflowSlug(in.Slug, in.Summary.Name)
-	parsed, err := json.Marshal(in.Summary)
+	choice, err := resolveCreateSlug(in)
 	if err != nil {
-		return Workflow{}, Draft{}, ErrInvalid
+		return Workflow{}, Draft{}, err
+	}
+	candidates, err := slugCandidates(choice)
+	if err != nil {
+		return Workflow{}, Draft{}, err
 	}
 
 	folderID := strings.TrimSpace(in.FolderID)
@@ -70,46 +73,74 @@ func (p *Postgres) Create(ctx context.Context, scope isolation.Scope, in CreateI
 			return Workflow{}, Draft{}, err
 		}
 	}
-	if err := slugClaim(ctx, tx, slug); err != nil {
-		return Workflow{}, Draft{}, err
-	}
-	if _, err := tx.Exec(ctx, "SAVEPOINT workflow_slug"); err != nil {
-		return Workflow{}, Draft{}, mapDBErr(err)
-	}
 
-	var wf Workflow
-	err = tx.QueryRow(ctx, `
-		INSERT INTO workflows (workspace_id, slug, name, status, draft_revision, created_by, updated_by, folder_id)
-		VALUES ($1::uuid, $2, $3, 'draft', 1, $4::uuid, $4::uuid, $5::uuid)
-		RETURNING id::text, slug, name, status, draft_revision,
-		          COALESCE(created_by::text, ''), COALESCE(updated_by::text, ''), created_at, updated_at
-	`, scope.WorkspaceID(), slug, name, actorArg(scope), folderArg).Scan(
-		&wf.ID, &wf.Slug, &wf.Name, &wf.Status, &wf.DraftRevision,
-		&wf.CreatedBy, &wf.UpdatedBy, &wf.CreatedAt, &wf.UpdatedAt,
-	)
-	if err != nil {
-		if workflowSlugUnique(err) {
-			if _, rbErr := tx.Exec(ctx, "ROLLBACK TO SAVEPOINT workflow_slug"); rbErr != nil {
-				return Workflow{}, Draft{}, mapDBErr(rbErr)
-			}
-			return Workflow{}, Draft{}, slugClaim(ctx, tx, slug)
+	// Uniqueness comes from workflows_slug_unique. Do not look the slug up
+	// before the insert. A derived slug retries after a unique violation.
+	// An explicit slug is classified only after that violation.
+	var last error
+	sawConflict := false
+	for attempt, slug := range candidates {
+		yamlDoc, digest, summary, stampErr := stampWorkflowSlug(in.NormalizedYAML, slug)
+		if stampErr != nil {
+			return Workflow{}, Draft{}, stampErr
 		}
-		return Workflow{}, Draft{}, mapDBErr(err)
+		parsed, marshalErr := json.Marshal(summary)
+		if marshalErr != nil {
+			return Workflow{}, Draft{}, ErrInvalid
+		}
+		if _, err := tx.Exec(ctx, "SAVEPOINT workflow_slug"); err != nil {
+			return Workflow{}, Draft{}, mapDBErr(err)
+		}
+		runSlugInsertHook(ctx, attempt+1, slug)
+		var wf Workflow
+		err = tx.QueryRow(ctx, `
+			INSERT INTO workflows (workspace_id, slug, name, status, draft_revision, created_by, updated_by, folder_id)
+			VALUES ($1::uuid, $2, $3, 'draft', 1, $4::uuid, $4::uuid, $5::uuid)
+			RETURNING id::text, slug, name, status, draft_revision,
+			          COALESCE(created_by::text, ''), COALESCE(updated_by::text, ''), created_at, updated_at
+		`, scope.WorkspaceID(), slug, name, actorArg(scope), folderArg).Scan(
+			&wf.ID, &wf.Slug, &wf.Name, &wf.Status, &wf.DraftRevision,
+			&wf.CreatedBy, &wf.UpdatedBy, &wf.CreatedAt, &wf.UpdatedAt,
+		)
+		if err != nil {
+			// Retry only workflows_slug_unique, matched by constraint name.
+			// mapDBErr turns that constraint into ErrConflict, shared with
+			// other unique indexes, and every other unique violation into
+			// ErrConstraint. Neither of those is the retry signal.
+			if workflowSlugUnique(err) {
+				if _, rbErr := tx.Exec(ctx, "ROLLBACK TO SAVEPOINT workflow_slug"); rbErr != nil {
+					return Workflow{}, Draft{}, mapDBErr(rbErr)
+				}
+				if _, rbErr := tx.Exec(ctx, "RELEASE SAVEPOINT workflow_slug"); rbErr != nil {
+					return Workflow{}, Draft{}, mapDBErr(rbErr)
+				}
+				if !choice.Derived {
+					return Workflow{}, Draft{}, classifySlugViolation(ctx, tx, slug)
+				}
+				last = SlugConflict{}
+				sawConflict = true
+				continue
+			}
+			return Workflow{}, Draft{}, mapDBErr(err)
+		}
+		if _, err := tx.Exec(ctx, "RELEASE SAVEPOINT workflow_slug"); err != nil {
+			return Workflow{}, Draft{}, mapDBErr(err)
+		}
+		draft, err := insertDraft(ctx, tx, scope, wf.ID, 1, yamlDoc, digest, parsed, summary)
+		if err != nil {
+			return Workflow{}, Draft{}, err
+		}
+		wf.DraftDigest = draft.Digest
+		wf.FolderID = optionalID(folderID)
+		if err := tx.Commit(ctx); err != nil {
+			return Workflow{}, Draft{}, mapDBErr(err)
+		}
+		return wf, draft, nil
 	}
-	if _, err := tx.Exec(ctx, "RELEASE SAVEPOINT workflow_slug"); err != nil {
-		return Workflow{}, Draft{}, mapDBErr(err)
+	if sawConflict && !choice.Derived {
+		return Workflow{}, Draft{}, last
 	}
-
-	draft, err := insertDraft(ctx, tx, scope, wf.ID, 1, in.NormalizedYAML, in.Digest, parsed, in.Summary)
-	if err != nil {
-		return Workflow{}, Draft{}, err
-	}
-	wf.DraftDigest = draft.Digest
-	wf.FolderID = optionalID(folderID)
-	if err := tx.Commit(ctx); err != nil {
-		return Workflow{}, Draft{}, mapDBErr(err)
-	}
-	return wf, draft, nil
+	return Workflow{}, Draft{}, SlugConflict{Exhausted: true}
 }
 
 func (p *Postgres) List(ctx context.Context, scope isolation.Scope, filter WorkflowListFilter) ([]Workflow, error) {

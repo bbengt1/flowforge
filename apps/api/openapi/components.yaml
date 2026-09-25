@@ -1532,7 +1532,7 @@ components:
           description: Machine-readable cause. Set on execution_not_retryable (run_canceled, run_not_failed, step_not_started, step_not_failed, incoming_unresolved, retry_not_allowed, workflow_deleted).
         errors:
           type: array
-          description: Field-level workflow validation errors (invalid-workflow only).
+          description: Field-level errors. invalid-workflow lists YAML paths. Create slug conflicts and an invalid explicit slug use path slug.
           items:
             $ref: "#/components/schemas/WorkflowFieldError"
     Tenant:
@@ -2719,8 +2719,28 @@ components:
       properties:
         slug:
           type: string
+          description: >
+            Optional on create. Precedence is this field, then metadata.slug
+            in definitionYaml, then a slug derived from name (or from
+            metadata.name when name is omitted). Derivation lowercases the
+            name, replaces each run of characters that are not letters or
+            digits with one hyphen, trims hyphens, prefixes a leading digit
+            with w-, and caps the length at 63, dropping a trailing hyphen
+            after the cap. An empty result becomes workflow. A derived slug
+            that is reserved (catalog, validate, normalize) or already taken,
+            including by a soft-deleted workflow, gains a numeric suffix
+            (-2, -3, and so on, at most 20 attempts) chosen by retrying the
+            unique index. An explicit slug is never rewritten. A live clash
+            is 409 conflict and a tombstone clash is 409
+            workflow_slug_reserved. Both set errors[].path to slug. The
+            chosen slug is written back to metadata.slug in the stored YAML
+            and stays stable on later renames.
         name:
           type: string
+          description: >
+            Optional display name. When set, it is stored on the workflow
+            row and is the name a derived slug is taken from. metadata.name
+            in the YAML is left as submitted.
         definitionYaml:
           type: string
         folderId:
