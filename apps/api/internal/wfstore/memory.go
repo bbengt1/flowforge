@@ -20,6 +20,7 @@ type memWorkflow struct {
 	workspaceID string
 	record      Workflow
 	draft       Draft
+	deletedAt   *time.Time
 }
 
 type memExecution struct {
@@ -119,6 +120,9 @@ func (m *Memory) Create(_ context.Context, scope isolation.Scope, in CreateInput
 	}
 	for _, existing := range m.workflows {
 		if existing.workspaceID == scope.WorkspaceID() && existing.record.Slug == slug {
+			if existing.deletedAt != nil {
+				return Workflow{}, Draft{}, ErrSlugReserved
+			}
 			return Workflow{}, Draft{}, ErrConflict
 		}
 	}
@@ -134,7 +138,7 @@ func (m *Memory) List(_ context.Context, scope isolation.Scope, filter WorkflowL
 	defer m.mu.Unlock()
 	var out []Workflow
 	for _, row := range m.workflows {
-		if row.workspaceID != scope.WorkspaceID() {
+		if row.workspaceID != scope.WorkspaceID() || row.deletedAt != nil {
 			continue
 		}
 		wf := publicWorkflow(row)
@@ -195,8 +199,8 @@ func (m *Memory) SaveDraft(_ context.Context, scope isolation.Scope, workflowID 
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	row, ok := m.workflows[workflowID]
-	if !ok || row.workspaceID != scope.WorkspaceID() {
+	row, ok := m.liveLocked(scope, workflowID)
+	if !ok {
 		return Workflow{}, Draft{}, ErrNotFound
 	}
 	if row.draft.Revision != in.ExpectedRevision {
@@ -229,8 +233,8 @@ func (m *Memory) Publish(_ context.Context, scope isolation.Scope, workflowID st
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	row, ok := m.workflows[workflowID]
-	if !ok || row.workspaceID != scope.WorkspaceID() {
+	row, ok := m.liveLocked(scope, workflowID)
+	if !ok {
 		return Workflow{}, Version{}, ErrNotFound
 	}
 	if in.ExpectedRevision > 0 && row.draft.Revision != in.ExpectedRevision {
@@ -332,8 +336,8 @@ func (m *Memory) Restore(_ context.Context, scope isolation.Scope, workflowID st
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	row, ok := m.workflows[workflowID]
-	if !ok || row.workspaceID != scope.WorkspaceID() {
+	row, ok := m.liveLocked(scope, workflowID)
+	if !ok {
 		return Workflow{}, Draft{}, ErrNotFound
 	}
 	if in.ExpectedRevision > 0 && row.draft.Revision != in.ExpectedRevision {
@@ -374,12 +378,13 @@ func (m *Memory) StartExecution(ctx context.Context, scope isolation.Scope, work
 	if err != nil {
 		return Execution{}, err
 	}
-	row, err := m.lookup(scope, workflowID)
-	if err != nil {
-		return Execution{}, err
-	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	row, ok := m.liveLocked(scope, workflowID)
+	if !ok {
+		return Execution{}, ErrNotFound
+	}
+	runWorkflowRowLockHook(ctx)
 	var ver Version
 	found := false
 	for _, candidate := range m.versions[workflowID] {
@@ -542,7 +547,7 @@ func (m *Memory) FindCredentialRefs(_ context.Context, scope isolation.Scope, cr
 	defer m.mu.Unlock()
 	var out []CredentialRef
 	for _, row := range m.workflows {
-		if row.workspaceID != scope.WorkspaceID() {
+		if row.workspaceID != scope.WorkspaceID() || row.deletedAt != nil {
 			continue
 		}
 		if strings.Contains(row.draft.DefinitionYAML, credentialID) {
@@ -621,7 +626,10 @@ func (m *Memory) GetExecutionByID(_ context.Context, scope isolation.Scope, exec
 	if !ok || exec.workspaceID != scope.WorkspaceID() {
 		return Execution{}, ErrNotFound
 	}
-	wf := m.workflows[exec.record.WorkflowID]
+	wf, ok := m.workflows[exec.record.WorkflowID]
+	if !ok || wf.workspaceID != scope.WorkspaceID() || wf.deletedAt != nil {
+		return Execution{}, ErrNotFound
+	}
 	return cloneExecution(exec.record, wf.record), nil
 }
 
@@ -647,7 +655,10 @@ func (m *Memory) ListExecutions(_ context.Context, scope isolation.Scope, filter
 		if filter.Status != "" && exec.record.Status != filter.Status {
 			continue
 		}
-		wf := m.workflows[exec.record.WorkflowID]
+		wf, ok := m.workflows[exec.record.WorkflowID]
+		if !ok || wf.deletedAt != nil {
+			continue
+		}
 		out = append(out, cloneExecution(exec.record, wf.record))
 	}
 	if filter.Page.Bound {
@@ -863,11 +874,19 @@ func (m *Memory) lookup(scope isolation.Scope, id string) (memWorkflow, error) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	row, ok := m.workflows[id]
-	if !ok || row.workspaceID != scope.WorkspaceID() {
+	row, ok := m.liveLocked(scope, id)
+	if !ok {
 		return memWorkflow{}, ErrNotFound
 	}
 	return row, nil
+}
+
+func (m *Memory) liveLocked(scope isolation.Scope, id string) (memWorkflow, bool) {
+	row, ok := m.workflows[id]
+	if !ok || row.workspaceID != scope.WorkspaceID() || row.deletedAt != nil {
+		return memWorkflow{}, false
+	}
+	return row, true
 }
 
 func publicWorkflow(row memWorkflow) Workflow {

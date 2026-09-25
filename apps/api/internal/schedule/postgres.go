@@ -441,6 +441,34 @@ func actorArg(scope isolation.Scope) any {
 	return scope.ActorID()
 }
 
+func (p *Postgres) DisableForWorkflow(ctx context.Context, scope isolation.Scope, now time.Time, workflowID string) error {
+	if scope.Zero() {
+		return ErrNoScope
+	}
+	if !authz.ValidUUID(workflowID) {
+		return nil
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
+	if err != nil {
+		return mapDBErr(err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `
+		UPDATE workflow_schedules
+		SET status = 'disabled', updated_by = $3::uuid, updated_at = $2
+		WHERE workflow_id = $1::uuid AND status <> 'disabled'
+	`, workflowID, now, actorArg(scope)); err != nil {
+		return mapDBErr(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return mapDBErr(err)
+	}
+	return nil
+}
+
 func mapDBErr(err error) error {
 	if err == nil {
 		return nil

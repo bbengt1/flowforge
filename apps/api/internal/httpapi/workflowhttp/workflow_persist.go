@@ -80,12 +80,12 @@ type startExecutionRequest struct {
 }
 
 type WorkflowDetailResponse struct {
-	Workflow wfstore.Workflow `json:"workflow"`
-	Draft    wfstore.Draft    `json:"draft"`
+	Workflow WorkflowView  `json:"workflow"`
+	Draft    wfstore.Draft `json:"draft"`
 }
 
 type PublishResponse struct {
-	Workflow        wfstore.Workflow     `json:"workflow"`
+	Workflow        WorkflowView         `json:"workflow"`
 	Version         wfstore.Version      `json:"version"`
 	Pins            []opsconfig.Pin      `json:"pins"`
 	ScriptArtifacts []scripts.VersionPin `json:"scriptArtifacts"`
@@ -119,7 +119,7 @@ func requireWorkflowStore(s *core.Server, w http.ResponseWriter, r *http.Request
 }
 
 func listWorkflows(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	scope, ok := WorkflowScope(s, w, r, authz.PermWorkflowView)
+	scope, perms, ok := WorkflowScopeGrants(s, w, r, authz.PermWorkflowView)
 	if !ok {
 		return
 	}
@@ -148,7 +148,7 @@ func listWorkflows(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
-	core.WritePage(w, items, q, next)
+	core.WritePage(w, presentWorkflows(perms, scope.ActorID(), items), q, next)
 }
 
 func parseWorkflowListFolderQuery(w http.ResponseWriter, r *http.Request) (wfstore.WorkflowListFilter, bool) {
@@ -167,7 +167,7 @@ func parseWorkflowListFolderQuery(w http.ResponseWriter, r *http.Request) (wfsto
 }
 
 func CreateWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	scope, ok := WorkflowScope(s, w, r, authz.PermWorkflowEdit)
+	scope, perms, ok := WorkflowScopeGrants(s, w, r, authz.PermWorkflowEdit)
 	if !ok {
 		return
 	}
@@ -208,7 +208,7 @@ func CreateWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
-	core.WriteJSON(w, http.StatusCreated, WorkflowDetailResponse{Workflow: wf, Draft: draft})
+	core.WriteJSON(w, http.StatusCreated, WorkflowDetailResponse{Workflow: presentWorkflow(perms, scope.ActorID(), wf), Draft: draft})
 }
 
 func reservedWorkflowCollection(id string) bool {
@@ -238,7 +238,7 @@ func getWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	if RejectReservedWorkflowPath(s, w, r) {
 		return
 	}
-	scope, ok := WorkflowScope(s, w, r, authz.PermWorkflowView)
+	scope, perms, ok := WorkflowScopeGrants(s, w, r, authz.PermWorkflowView)
 	if !ok {
 		return
 	}
@@ -248,7 +248,7 @@ func getWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
-	core.WriteJSON(w, http.StatusOK, wf)
+	core.WriteJSON(w, http.StatusOK, presentWorkflow(perms, scope.ActorID(), wf))
 }
 
 func getWorkflowDraft(s *core.Server, w http.ResponseWriter, r *http.Request) {
@@ -271,7 +271,7 @@ func putWorkflowDraft(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	if RejectReservedWorkflowPath(s, w, r) {
 		return
 	}
-	scope, ok := WorkflowScope(s, w, r, authz.PermWorkflowEdit)
+	scope, perms, ok := WorkflowScopeGrants(s, w, r, authz.PermWorkflowEdit)
 	if !ok {
 		return
 	}
@@ -294,14 +294,14 @@ func putWorkflowDraft(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
-	core.WriteJSON(w, http.StatusOK, WorkflowDetailResponse{Workflow: wf, Draft: draft})
+	core.WriteJSON(w, http.StatusOK, WorkflowDetailResponse{Workflow: presentWorkflow(perms, scope.ActorID(), wf), Draft: draft})
 }
 
 func PublishWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	if RejectReservedWorkflowPath(s, w, r) {
 		return
 	}
-	scope, ok := WorkflowScope(s, w, r, authz.PermWorkflowPublish)
+	scope, perms, ok := WorkflowScopeGrants(s, w, r, authz.PermWorkflowPublish)
 	if !ok {
 		return
 	}
@@ -342,7 +342,7 @@ func PublishWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	core.WriteJSON(w, http.StatusCreated, PublishResponse{Workflow: wf, Version: ver, Pins: pins, ScriptArtifacts: scriptPins})
+	core.WriteJSON(w, http.StatusCreated, PublishResponse{Workflow: presentWorkflow(perms, scope.ActorID(), wf), Version: ver, Pins: pins, ScriptArtifacts: scriptPins})
 }
 
 func listWorkflowVersions(s *core.Server, w http.ResponseWriter, r *http.Request) {
@@ -533,7 +533,7 @@ func restoreWorkflowVersion(s *core.Server, w http.ResponseWriter, r *http.Reque
 	if RejectReservedWorkflowPath(s, w, r) {
 		return
 	}
-	scope, ok := WorkflowScope(s, w, r, authz.PermWorkflowEdit)
+	scope, perms, ok := WorkflowScopeGrants(s, w, r, authz.PermWorkflowEdit)
 	if !ok {
 		return
 	}
@@ -555,7 +555,7 @@ func restoreWorkflowVersion(s *core.Server, w http.ResponseWriter, r *http.Reque
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
-	core.WriteJSON(w, http.StatusOK, WorkflowDetailResponse{Workflow: wf, Draft: draft})
+	core.WriteJSON(w, http.StatusOK, WorkflowDetailResponse{Workflow: presentWorkflow(perms, scope.ActorID(), wf), Draft: draft})
 }
 
 func startWorkflowExecution(s *core.Server, w http.ResponseWriter, r *http.Request) {
@@ -765,14 +765,19 @@ func getWorkflowExecution(s *core.Server, w http.ResponseWriter, r *http.Request
 }
 
 func WorkflowScope(s *core.Server, w http.ResponseWriter, r *http.Request, perm string) (isolation.Scope, bool) {
+	scope, _, ok := WorkflowScopeGrants(s, w, r, perm)
+	return scope, ok
+}
+
+func WorkflowScopeGrants(s *core.Server, w http.ResponseWriter, r *http.Request, perm string) (isolation.Scope, []string, bool) {
 	user, ok := s.RequirePrincipal(w, r)
 	if !ok {
-		return isolation.Scope{}, false
+		return isolation.Scope{}, nil, false
 	}
 	if !requireWorkflowStore(s, w, r) {
-		return isolation.Scope{}, false
+		return isolation.Scope{}, nil, false
 	}
-	return s.RequireScope(w, r, user, perm)
+	return s.RequireScopeGrants(w, r, user, perm)
 }
 
 func readDraftSave(w http.ResponseWriter, r *http.Request) ([]byte, int64, bool) {
@@ -904,6 +909,10 @@ func WriteWorkflowStoreError(w http.ResponseWriter, r *http.Request, err error) 
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeConflict, "Conflict", "Draft revision does not match the current saved revision.")
 	case errors.Is(err, wfstore.ErrDuplicateVersion):
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeConflict, "Conflict", "This normalized definition is already published.")
+	case errors.Is(err, wfstore.ErrActiveExecutions):
+		core.WriteProblem(w, r, http.StatusConflict, core.CodeWorkflowHasActiveExecutions, "Conflict", "This workflow has a queued or running execution.")
+	case errors.Is(err, wfstore.ErrSlugReserved):
+		core.WriteProblem(w, r, http.StatusConflict, core.CodeWorkflowSlugReserved, "Conflict", "This slug is reserved by a deleted workflow.")
 	case errors.Is(err, wfstore.ErrConflict):
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeConflict, "Conflict", "A workflow with this slug already exists.")
 	case errors.Is(err, wfstore.ErrImmutable):

@@ -100,7 +100,7 @@ func TestMembershipAuthorizationDenyByDefault(t *testing.T) {
 		t.Fatalf("viewer missing view: %v", viewer.Permissions)
 	}
 	for _, action := range []string{
-		authz.PermWorkflowEdit, authz.PermWorkflowPublish, authz.PermWorkflowExecute,
+		authz.PermWorkflowEdit, authz.PermWorkflowDelete, authz.PermWorkflowPublish, authz.PermWorkflowExecute,
 		authz.PermCredentialManage, authz.PermApprovalDecide, authz.PermWorkspaceAdminister,
 		authz.PermPlatformAdminister, authz.PermEmbedImpersonate,
 	} {

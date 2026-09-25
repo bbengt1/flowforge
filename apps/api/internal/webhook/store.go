@@ -140,6 +140,7 @@ type Store interface {
 	Update(ctx context.Context, scope isolation.Scope, id string, in UpdateInput) (Trigger, error)
 	SetStatus(ctx context.Context, scope isolation.Scope, id, status string) (Trigger, error)
 	Delete(ctx context.Context, scope isolation.Scope, id string) error
+	DisableForWorkflow(ctx context.Context, scope isolation.Scope, workflowID string) error
 	LookupPublic(ctx context.Context, publicID string) (workspaceID string, trigger Trigger, err error)
 	AcquireDelivery(ctx context.Context, scope isolation.Scope, triggerID string, now time.Time, limits DeliveryLimits) error
 	ReleaseDelivery(ctx context.Context, scope isolation.Scope, triggerID string, now time.Time)

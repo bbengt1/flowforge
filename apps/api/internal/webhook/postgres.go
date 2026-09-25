@@ -455,6 +455,31 @@ func scanTrigger(row scanner) (Trigger, error) {
 	return trig, nil
 }
 
+func (p *Postgres) DisableForWorkflow(ctx context.Context, scope isolation.Scope, workflowID string) error {
+	if scope.Zero() {
+		return ErrNoScope
+	}
+	if !authz.ValidUUID(workflowID) {
+		return nil
+	}
+	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
+	if err != nil {
+		return mapDBErr(err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `
+		UPDATE workflow_triggers
+		SET status = 'disabled', updated_by = NULLIF($2, '')::uuid, updated_at = now()
+		WHERE workflow_id = $1::uuid AND status <> 'disabled'
+	`, workflowID, scope.ActorID()); err != nil {
+		return mapDBErr(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return mapDBErr(err)
+	}
+	return nil
+}
+
 func mapDBErr(err error) error {
 	if err == nil {
 		return nil

@@ -1515,6 +1515,8 @@ components:
             - artifact-unsigned
             - artifact-scan-failed
             - mfa-required
+            - workflow_has_active_executions
+            - workflow_slug_reserved
         request_id:
           type: string
         errors:
@@ -2551,7 +2553,7 @@ components:
             $ref: "#/components/schemas/WorkflowFieldError"
     WorkflowRecord:
       type: object
-      required: [id, slug, name, status, draftRevision, draftDigest, latestVersionNumber, createdAt, updatedAt, folderId]
+      required: [id, slug, name, status, draftRevision, draftDigest, latestVersionNumber, createdAt, updatedAt, folderId, capabilities]
       properties:
         id:
           type: string
@@ -2590,6 +2592,13 @@ components:
           format: uuid
           nullable: true
           description: Null means Unfiled. Not stored in YAML.
+        capabilities:
+          type: object
+          required: [delete]
+          description: Caller-specific actions. delete is true for editors, the workflow owner, and workspace admins, and false for viewers who do not own the workflow.
+          properties:
+            delete:
+              type: boolean
     WorkflowList:
       type: object
       required: [items]

@@ -260,6 +260,9 @@ func fillPathItem(dst *yaml.Node, routes []Route) error {
 }
 
 func stubOperation(rt Route) (*yaml.Node, error) {
+	if rt.Method == "DELETE" && rt.OpenAPIPath() == "/api/v1/workflows/{workflowId}" {
+		return workflowDeleteOperation(rt)
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "operationId: %s\n", operationID(rt.Method, rt.OpenAPIPath()))
 	fmt.Fprintf(&b, "summary: %s %s\n", rt.Method, rt.OpenAPIPath())
@@ -277,6 +280,38 @@ func stubOperation(rt Route) (*yaml.Node, error) {
 		b.WriteString("  \"403\":\n")
 		b.WriteString("    $ref: \"#/components/responses/Forbidden\"\n")
 	}
+	b.WriteString("  \"405\":\n")
+	b.WriteString("    $ref: \"#/components/responses/MethodNotAllowed\"\n")
+	b.WriteString("  \"500\":\n")
+	b.WriteString("    $ref: \"#/components/responses/InternalError\"\n")
+	return unmarshalNode(b.String())
+}
+
+func workflowDeleteOperation(rt Route) (*yaml.Node, error) {
+	var b strings.Builder
+	fmt.Fprintf(&b, "operationId: %s\n", operationID(rt.Method, rt.OpenAPIPath()))
+	b.WriteString("summary: Soft-delete a workflow\n")
+	b.WriteString("description: |\n")
+	b.WriteString("  Soft-deletes one workflow. The same transaction unpublishes it, disables its triggers and schedules, and sets a tombstone.\n")
+	b.WriteString("  A deleted workflow is not found on get, update, export, versions, or runs, and it disappears from list, search, and the folder tree.\n")
+	b.WriteString("  Version history stays stored. There is no purge and no restore. The slug stays reserved (create returns 409 workflow_slug_reserved).\n")
+	b.WriteString("  A live slug conflict stays 409 conflict. YAML is not modified.\n")
+	b.WriteString("  workflow.delete is granted to editors and workspace admins. The workflow owner (createdBy) may also delete.\n")
+	b.WriteString("  Viewers who are not the owner receive 403. Callers with no workflow.view, including another tenant, receive 404.\n")
+	b.WriteString("  Queued or running executions return 409 workflow_has_active_executions and are not canceled. Waiting and pinned executions do not block.\n")
+	fmt.Fprintf(&b, "  Auth class: %s. Identity proxy: %s.\n", rt.Auth, rt.Proxy)
+	b.WriteString("  Responses never include secrets, credentials, tokens, private keys, or vault material.\n")
+	b.WriteString("responses:\n")
+	b.WriteString("  \"204\":\n")
+	b.WriteString("    description: Deleted. No body.\n")
+	b.WriteString("  \"401\":\n")
+	b.WriteString("    $ref: \"#/components/responses/Unauthenticated\"\n")
+	b.WriteString("  \"403\":\n")
+	b.WriteString("    description: Caller can view the workflow but cannot delete it.\n")
+	b.WriteString("  \"404\":\n")
+	b.WriteString("    description: No workflow.view, unknown id, already deleted, or another tenant. Same not-found problem as a missing workflow.\n")
+	b.WriteString("  \"409\":\n")
+	b.WriteString("    description: workflow_has_active_executions when a queued or running execution exists.\n")
 	b.WriteString("  \"405\":\n")
 	b.WriteString("    $ref: \"#/components/responses/MethodNotAllowed\"\n")
 	b.WriteString("  \"500\":\n")

@@ -81,7 +81,16 @@ func listWorkflowTriggers(s *core.Server, w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	items, next, err := s.Hooks.ListPage(r.Context(), scope, strings.TrimSpace(r.PathValue("workflowId")), q)
+	workflowID := strings.TrimSpace(r.PathValue("workflowId"))
+	if s.Workflows == nil {
+		core.WriteProblem(w, r, http.StatusServiceUnavailable, core.CodeDependencyUnavailable, "Dependency Unavailable", "Workflow store is not available.")
+		return
+	}
+	if _, err := s.Workflows.Get(r.Context(), scope, workflowID); err != nil {
+		workflowhttp.WriteWorkflowStoreError(w, r, err)
+		return
+	}
+	items, next, err := s.Hooks.ListPage(r.Context(), scope, workflowID, q)
 	if core.RejectPageErr(w, r, err) {
 		return
 	}
