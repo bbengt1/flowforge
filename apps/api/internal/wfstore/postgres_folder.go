@@ -258,7 +258,7 @@ func (p *Postgres) DeleteFolder(ctx context.Context, scope isolation.Scope, fold
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM workflow_folders WHERE parent_id = $1::uuid`, folderID).Scan(&childFolders); err != nil {
 		return mapDBErr(err)
 	}
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM workflows WHERE folder_id = $1::uuid`, folderID).Scan(&workflows); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM workflows WHERE folder_id = $1::uuid AND deleted_at IS NULL`, folderID).Scan(&workflows); err != nil {
 		return mapDBErr(err)
 	}
 	if childFolders > 0 || workflows > 0 {
@@ -397,11 +397,11 @@ func scanFolder(row rowScanner) (Folder, error) {
 func listWorkflowFolderClause(filter WorkflowListFilter) string {
 	switch {
 	case filter.Unfiled:
-		return ` WHERE w.folder_id IS NULL ORDER BY w.updated_at DESC, w.slug`
+		return ` WHERE w.deleted_at IS NULL AND w.folder_id IS NULL ORDER BY w.updated_at DESC, w.slug`
 	case strings.TrimSpace(filter.FolderID) != "":
-		return ` WHERE w.folder_id = $1::uuid ORDER BY w.updated_at DESC, w.slug`
+		return ` WHERE w.deleted_at IS NULL AND w.folder_id = $1::uuid ORDER BY w.updated_at DESC, w.slug`
 	default:
-		return ` ORDER BY w.updated_at DESC, w.slug`
+		return ` WHERE w.deleted_at IS NULL ORDER BY w.updated_at DESC, w.slug`
 	}
 }
 

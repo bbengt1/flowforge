@@ -17,6 +17,13 @@ func QuotaUnshared(store quota.Taker) bool {
 	}
 }
 
+// ChargeWorkspace consumes one workspace token for the matched route.
+// Use it when authorization was peeked and the caller is allowed to attempt
+// the mutation. False means the response was already written.
+func (s *Server) ChargeWorkspace(w http.ResponseWriter, r *http.Request, workspaceID string) bool {
+	return s.chargeQuota(w, r, workspaceID)
+}
+
 // chargeQuota consumes one workspace token for the matched route.
 // Auth doors are not charged. A store error is 503. A deny is 429.
 // One request is charged once even when authorization runs twice.

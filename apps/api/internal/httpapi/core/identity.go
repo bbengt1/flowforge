@@ -83,16 +83,59 @@ func (s *Server) RequireScopedStore(w http.ResponseWriter, r *http.Request) bool
 }
 
 func (s *Server) RequireScope(w http.ResponseWriter, r *http.Request, user identity.User, action string) (isolation.Scope, bool) {
-	ws, tenant, _, _, ok := s.RequireAccess(w, r, user, action)
+	scope, _, ok := s.RequireScopeGrants(w, r, user, action)
+	return scope, ok
+}
+
+// RequireScopeGrants is RequireScope plus the caller's effective permissions.
+func (s *Server) RequireScopeGrants(w http.ResponseWriter, r *http.Request, user identity.User, action string) (isolation.Scope, []string, bool) {
+	ws, tenant, _, perms, ok := s.RequireAccess(w, r, user, action)
 	if !ok {
-		return isolation.Scope{}, false
+		return isolation.Scope{}, nil, false
 	}
 	scope, err := isolation.AuthorizeTenancy(ws.ID, user.ID, tenant.ID, ws.WorkbenchKey)
 	if err != nil {
 		WriteIdentityError(w, r, err)
-		return isolation.Scope{}, false
+		return isolation.Scope{}, nil, false
 	}
-	return scope, true
+	return scope, perms, true
+}
+
+// PeekScopeGrants resolves workspace scope and permissions without enforcing
+// an action and without charging quota. Empty membership is not a 403.
+// Callers decide 404 versus 403 from the returned grants.
+func (s *Server) PeekScopeGrants(w http.ResponseWriter, r *http.Request, user identity.User) (isolation.Scope, []string, bool) {
+	ws, tenant, ok := s.resolveWorkspace(w, r)
+	if !ok {
+		return isolation.Scope{}, nil, false
+	}
+	if ws.Status != "active" || tenant.Status != "active" {
+		WriteForbidden(w, r)
+		return isolation.Scope{}, nil, false
+	}
+	_, perms, err := s.Store.EffectiveAccess(r.Context(), ws.ID, user.ID)
+	if err != nil {
+		WriteIdentityError(w, r, err)
+		return isolation.Scope{}, nil, false
+	}
+	perms, err = s.unionMachinePerms(r, user, ws, perms)
+	if err != nil {
+		if errors.Is(err, machine.ErrRevoked) || errors.Is(err, machine.ErrWorkspace) {
+			WriteForbidden(w, r)
+			return isolation.Scope{}, nil, false
+		}
+		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "Machine principal store is not available.")
+		return isolation.Scope{}, nil, false
+	}
+	if pc := PrincipalFromRequest(r); pc != nil && pc.Session != nil && pc.Session.Binding.Bound() {
+		perms = embed.IntersectCapabilities(perms, pc.Session.Binding.Capabilities)
+	}
+	scope, err := isolation.AuthorizeTenancy(ws.ID, user.ID, tenant.ID, ws.WorkbenchKey)
+	if err != nil {
+		WriteIdentityError(w, r, err)
+		return isolation.Scope{}, nil, false
+	}
+	return scope, perms, true
 }
 
 func (s *Server) RequirePrincipal(w http.ResponseWriter, r *http.Request) (identity.User, bool) {

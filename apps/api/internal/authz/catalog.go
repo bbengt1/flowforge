@@ -23,6 +23,7 @@ const (
 const (
 	PermWorkflowView        = "workflow.view"
 	PermWorkflowEdit        = "workflow.edit"
+	PermWorkflowDelete      = "workflow.delete"
 	PermWorkflowPublish     = "workflow.publish"
 	PermWorkflowExecute     = "workflow.execute"
 	PermExecutionView       = "execution.view"
@@ -91,6 +92,7 @@ func Permissions() []Permission {
 	return []Permission{
 		{Key: PermWorkflowView, Family: FamilyView},
 		{Key: PermWorkflowEdit, Family: FamilyEdit},
+		{Key: PermWorkflowDelete, Family: FamilyEdit},
 		{Key: PermWorkflowPublish, Family: FamilyPublish},
 		{Key: PermWorkflowExecute, Family: FamilyExecute},
 		{Key: PermExecutionView, Family: FamilyView},
@@ -138,8 +140,8 @@ func Roles() []Role {
 		},
 		{
 			Key:         RoleEditor,
-			Description: "Create and edit workflow drafts. Cannot publish, execute, or administer the workspace.",
-			Permissions: []string{PermWorkflowView, PermWorkflowEdit, PermExecutionView, PermCredentialView, PermApprovalView, PermOpsConfigView, PermOpsConfigEdit, PermAlertView},
+			Description: "Create, edit, and delete workflows. Cannot publish, execute, or administer the workspace.",
+			Permissions: []string{PermWorkflowView, PermWorkflowEdit, PermWorkflowDelete, PermExecutionView, PermCredentialView, PermApprovalView, PermOpsConfigView, PermOpsConfigEdit, PermAlertView},
 		},
 		{
 			Key:         RolePublisher,

@@ -42,6 +42,9 @@ const (
 	// CodeMFARequired is the step-up denial for platform.administer and
 	// credential.* on a local-login or OIDC session.
 	CodeMFARequired = "mfa-required"
+	// Soft-delete conflicts. Underscores match the workflow contract.
+	CodeWorkflowHasActiveExecutions = "workflow_has_active_executions"
+	CodeWorkflowSlugReserved        = "workflow_slug_reserved"
 )
 
 // FieldError is a YAML-path validation failure returned on invalid-workflow.

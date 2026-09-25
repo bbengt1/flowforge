@@ -517,6 +517,11 @@ x-flowforge-routes:
     auth: authenticated
     proxy: browser
     pattern: /api/v1/workflows/{workflowId}
+  - method: DELETE
+    path: /workflows/{workflowId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/{workflowId}
   - method: PATCH
     path: /workflows/{workflowId}/folder
     auth: authenticated
@@ -3146,6 +3151,25 @@ paths:
       summary: GET /workflows/{workflowId}
       description: |
         Generated from the route table (GET /api/v1/workflows/{workflowId}).
+        Auth class: authenticated. Identity proxy: browser.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+        Vault references are display name and UUID only.
+      responses:
+        "200":
+          description: Success
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: deleteWorkflowsWorkflowId
+      summary: DELETE /workflows/{workflowId}
+      description: |
+        Generated from the route table (DELETE /api/v1/workflows/{workflowId}).
         Auth class: authenticated. Identity proxy: browser.
         Responses never include secrets, credentials, tokens, private keys, or vault material.
         Vault references are display name and UUID only.
@@ -6681,6 +6705,8 @@ components:
             - artifact-unsigned
             - artifact-scan-failed
             - mfa-required
+            - workflow_has_active_executions
+            - workflow_slug_reserved
         request_id:
           type: string
         errors:
@@ -7717,7 +7743,7 @@ components:
             $ref: "#/components/schemas/WorkflowFieldError"
     WorkflowRecord:
       type: object
-      required: [id, slug, name, status, draftRevision, draftDigest, latestVersionNumber, createdAt, updatedAt, folderId]
+      required: [id, slug, name, status, draftRevision, draftDigest, latestVersionNumber, createdAt, updatedAt, folderId, capabilities]
       properties:
         id:
           type: string
@@ -7756,6 +7782,13 @@ components:
           format: uuid
           nullable: true
           description: Null means Unfiled. Not stored in YAML.
+        capabilities:
+          type: object
+          required: [delete]
+          description: Caller-specific actions. delete is true for editors, the workflow owner, and workspace admins, and false for viewers who do not own the workflow.
+          properties:
+            delete:
+              type: boolean
     WorkflowList:
       type: object
       required: [items]

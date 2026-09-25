@@ -49,6 +49,11 @@ var (
 	ErrFolderNotEmpty             = errors.New("folder is not empty")
 	// ErrConcurrency is the per-workspace cap on non-terminal executions.
 	ErrConcurrency = errors.New("execution concurrency limit exceeded")
+	// ErrActiveExecutions blocks soft-delete while a queued or running
+	// execution exists. Waiting and pinned rows do not block.
+	ErrActiveExecutions = errors.New("workflow has active executions")
+	// ErrSlugReserved is a tombstone holding the slug. A live slug is ErrConflict.
+	ErrSlugReserved = errors.New("workflow slug is reserved")
 )
 
 // Validation states persisted with a draft.
@@ -107,6 +112,13 @@ const (
 	MaxFolderNameGraphemes    = 64
 	FolderListUnfiled         = "unfiled"
 )
+
+// DeleteResult is the secret-free record of a soft delete.
+type DeleteResult struct {
+	ID        string
+	Name      string
+	Published bool
+}
 
 // Workflow is the workspace-owned authoring record.
 type Workflow struct {
@@ -553,6 +565,9 @@ type Store interface {
 	Create(ctx context.Context, scope isolation.Scope, in CreateInput) (Workflow, Draft, error)
 	List(ctx context.Context, scope isolation.Scope, filter WorkflowListFilter) ([]Workflow, error)
 	Get(ctx context.Context, scope isolation.Scope, id string) (Workflow, error)
+	// Delete soft-deletes one workflow. It unpublishes, disables triggers and
+	// schedules, and writes workflow.deleted in the same transaction.
+	Delete(ctx context.Context, scope isolation.Scope, id string) (DeleteResult, error)
 	SetWorkflowFolder(ctx context.Context, scope isolation.Scope, workflowID, folderID string) (Workflow, error)
 	CreateFolder(ctx context.Context, scope isolation.Scope, in CreateFolderInput) (Folder, error)
 	ListFolders(ctx context.Context, scope isolation.Scope) ([]Folder, error)

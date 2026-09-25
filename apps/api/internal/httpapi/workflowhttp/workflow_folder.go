@@ -191,7 +191,7 @@ func patchWorkflowFolder(s *core.Server, w http.ResponseWriter, r *http.Request)
 	if RejectReservedWorkflowPath(s, w, r) {
 		return
 	}
-	scope, ok := WorkflowScope(s, w, r, authz.PermWorkflowEdit)
+	scope, perms, ok := WorkflowScopeGrants(s, w, r, authz.PermWorkflowEdit)
 	if !ok {
 		return
 	}
@@ -223,7 +223,7 @@ func patchWorkflowFolder(s *core.Server, w http.ResponseWriter, r *http.Request)
 		"fromFolderId": before.FolderID,
 		"toFolderId":   wf.FolderID,
 	})
-	core.WriteJSON(w, http.StatusOK, wf)
+	core.WriteJSON(w, http.StatusOK, presentWorkflow(perms, scope.ActorID(), wf))
 }
 
 func writeFolderAudit(s *core.Server, r *http.Request, scope isolation.Scope, action, resourceID, outcome string, details map[string]any) {

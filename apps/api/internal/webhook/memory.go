@@ -141,6 +141,27 @@ func (m *Memory) SetStatus(_ context.Context, scope isolation.Scope, id, status 
 	return cloneTrigger(row.record), nil
 }
 
+func (m *Memory) DisableForWorkflow(_ context.Context, scope isolation.Scope, workflowID string) error {
+	if scope.Zero() {
+		return ErrNoScope
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	now := time.Now().UTC()
+	for id, row := range m.triggers {
+		if row.workspaceID != scope.WorkspaceID() || row.record.WorkflowID != workflowID {
+			continue
+		}
+		if row.record.Status == StatusDisabled {
+			continue
+		}
+		row.record.Status = StatusDisabled
+		row.record.UpdatedAt = now
+		m.triggers[id] = row
+	}
+	return nil
+}
+
 func (m *Memory) Delete(_ context.Context, scope isolation.Scope, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

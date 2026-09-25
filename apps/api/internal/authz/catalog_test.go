@@ -66,7 +66,7 @@ func TestAllowsDenyByDefault(t *testing.T) {
 func TestViewerCannotPerformPrivilegedActions(t *testing.T) {
 	granted := ExpandRoles([]string{RoleViewer})
 	for _, action := range []string{
-		PermWorkflowEdit, PermWorkflowPublish, PermWorkflowExecute,
+		PermWorkflowEdit, PermWorkflowDelete, PermWorkflowPublish, PermWorkflowExecute,
 		PermCredentialUse, PermCredentialManage, PermApprovalDecide,
 		PermWorkspaceAdminister, PermPlatformAdminister, PermEmbedImpersonate, PermKubernetesApply, PermKubernetesRead, PermSSHRun, PermScriptRun,
 		PermScriptRevoke, PermScriptEmergencyStop, PermAlertAck,
@@ -77,6 +77,20 @@ func TestViewerCannotPerformPrivilegedActions(t *testing.T) {
 	}
 	if !Allows(granted, PermWorkflowView) {
 		t.Fatal("viewer should view workflows")
+	}
+}
+
+func TestEditorCanDeleteWorkflows(t *testing.T) {
+	if !Allows(ExpandRoles([]string{RoleEditor}), PermWorkflowDelete) {
+		t.Fatal("editor must have workflow.delete")
+	}
+	if !Allows(ExpandRoles([]string{RoleAdmin}), PermWorkflowDelete) {
+		t.Fatal("workspace admin must have workflow.delete")
+	}
+	for _, role := range []string{RoleViewer, RolePublisher, RoleOperator, RoleApprover} {
+		if Allows(ExpandRoles([]string{role}), PermWorkflowDelete) {
+			t.Fatalf("%s must not receive workflow.delete", role)
+		}
 	}
 }
 

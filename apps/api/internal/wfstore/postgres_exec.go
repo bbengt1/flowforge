@@ -70,6 +70,9 @@ func (p *Postgres) PeekIdempotent(ctx context.Context, scope isolation.Scope, wo
 		return Execution{}, mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
+	if err := requireWorkflow(ctx, tx, workflowID); err != nil {
+		return Execution{}, err
+	}
 	ver, err := scanVersion(tx.QueryRow(ctx, getVersionSQL, workflowID, in.VersionID))
 	if err != nil {
 		return Execution{}, err
@@ -118,7 +121,7 @@ func (p *Postgres) GetExecutionByID(ctx context.Context, scope isolation.Scope, 
 		SELECT `+executionColumns+`
 		FROM executions e
 		JOIN workflows w ON w.workspace_id = e.workspace_id AND w.id = e.workflow_id
-		WHERE e.id = $1::uuid
+		WHERE e.id = $1::uuid AND w.deleted_at IS NULL
 	`, executionID))
 	if err != nil {
 		return Execution{}, err
@@ -188,6 +191,7 @@ func listExecutionQuery(filter ExecutionListFilter) (string, []any, error) {
 		JOIN workflows w ON w.workspace_id = e.workspace_id AND w.id = e.workflow_id
 		WHERE ($1 = '' OR e.workflow_id = $1::uuid)
 		  AND ($2 = '' OR e.status = $2)
+		  AND w.deleted_at IS NULL
 		ORDER BY e.started_at DESC NULLS LAST, e.created_at DESC
 		LIMIT $3
 	`, []any{filter.WorkflowID, strings.TrimSpace(filter.Status), listLimit(filter.Limit)}, nil
@@ -199,6 +203,7 @@ func listExecutionQuery(filter ExecutionListFilter) (string, []any, error) {
 	parts := []string{
 		"($1 = '' OR e.workflow_id = $1::uuid)",
 		"($2 = '' OR e.status = $2)",
+		"w.deleted_at IS NULL",
 	}
 	if pred := page.SearchPredicate(&args, filter.Page.Q, "w.name", "w.slug", "e.correlation_id", "e.status"); pred != "" {
 		parts = append(parts, pred)
@@ -476,6 +481,7 @@ func lookupIdempotentTx(ctx context.Context, tx pgx.Tx, workflowID, versionID, k
 		WHERE e.workflow_id = $1::uuid
 		  AND e.workflow_version_id = $2::uuid
 		  AND e.idempotency_key = $3
+		  AND w.deleted_at IS NULL
 		FOR UPDATE OF e
 	`, workflowID, versionID, key))
 	if err != nil {

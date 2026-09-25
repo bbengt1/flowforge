@@ -70,6 +70,12 @@ func (p *Postgres) Create(ctx context.Context, scope isolation.Scope, in CreateI
 			return Workflow{}, Draft{}, err
 		}
 	}
+	if err := slugClaim(ctx, tx, slug); err != nil {
+		return Workflow{}, Draft{}, err
+	}
+	if _, err := tx.Exec(ctx, "SAVEPOINT workflow_slug"); err != nil {
+		return Workflow{}, Draft{}, mapDBErr(err)
+	}
 
 	var wf Workflow
 	err = tx.QueryRow(ctx, `
@@ -82,6 +88,15 @@ func (p *Postgres) Create(ctx context.Context, scope isolation.Scope, in CreateI
 		&wf.CreatedBy, &wf.UpdatedBy, &wf.CreatedAt, &wf.UpdatedAt,
 	)
 	if err != nil {
+		if workflowSlugUnique(err) {
+			if _, rbErr := tx.Exec(ctx, "ROLLBACK TO SAVEPOINT workflow_slug"); rbErr != nil {
+				return Workflow{}, Draft{}, mapDBErr(rbErr)
+			}
+			return Workflow{}, Draft{}, slugClaim(ctx, tx, slug)
+		}
+		return Workflow{}, Draft{}, mapDBErr(err)
+	}
+	if _, err := tx.Exec(ctx, "RELEASE SAVEPOINT workflow_slug"); err != nil {
 		return Workflow{}, Draft{}, mapDBErr(err)
 	}
 
@@ -170,6 +185,7 @@ func listWorkflowQuery(filter WorkflowListFilter) (string, []any, error) {
 	if keyset != "" {
 		parts = append(parts, keyset)
 	}
+	parts = append(parts, "w.deleted_at IS NULL")
 	q := listWorkflowSQL
 	if len(parts) > 0 {
 		q += " WHERE " + strings.Join(parts, " AND ")
@@ -214,6 +230,9 @@ func (p *Postgres) GetDraft(ctx context.Context, scope isolation.Scope, workflow
 	}
 	defer tx.Rollback(ctx)
 
+	if err := requireWorkflow(ctx, tx, workflowID); err != nil {
+		return Draft{}, err
+	}
 	draft, err := scanDraft(tx.QueryRow(ctx, getDraftSQL, workflowID))
 	if err != nil {
 		return Draft{}, err
@@ -248,6 +267,9 @@ func (p *Postgres) SaveDraft(ctx context.Context, scope isolation.Scope, workflo
 	}
 	defer tx.Rollback(ctx)
 
+	if err := requireWorkflow(ctx, tx, workflowID); err != nil {
+		return Workflow{}, Draft{}, err
+	}
 	var current int64
 	err = tx.QueryRow(ctx, `SELECT revision FROM workflow_drafts WHERE workflow_id = $1::uuid`, workflowID).Scan(&current)
 	if err != nil {
@@ -314,6 +336,9 @@ func (p *Postgres) Publish(ctx context.Context, scope isolation.Scope, workflowI
 	}
 	defer tx.Rollback(ctx)
 
+	if err := requireWorkflow(ctx, tx, workflowID); err != nil {
+		return Workflow{}, Version{}, err
+	}
 	draft, err := scanDraft(tx.QueryRow(ctx, getDraftSQL+` FOR UPDATE`, workflowID))
 	if err != nil {
 		return Workflow{}, Version{}, err
@@ -457,6 +482,9 @@ func (p *Postgres) GetVersion(ctx context.Context, scope isolation.Scope, workfl
 	}
 	defer tx.Rollback(ctx)
 
+	if err := requireWorkflow(ctx, tx, workflowID); err != nil {
+		return Version{}, err
+	}
 	ver, err := scanVersion(tx.QueryRow(ctx, getVersionSQL, workflowID, versionID))
 	if err != nil {
 		return Version{}, err
@@ -511,6 +539,9 @@ func (p *Postgres) Restore(ctx context.Context, scope isolation.Scope, workflowI
 	}
 	defer tx.Rollback(ctx)
 
+	if err := requireWorkflow(ctx, tx, workflowID); err != nil {
+		return Workflow{}, Draft{}, err
+	}
 	ver, err := scanVersion(tx.QueryRow(ctx, getVersionSQL, workflowID, in.VersionID))
 	if err != nil {
 		return Workflow{}, Draft{}, err
@@ -580,6 +611,9 @@ func (p *Postgres) StartExecution(ctx context.Context, scope isolation.Scope, wo
 	}
 	defer tx.Rollback(ctx)
 
+	if err := lockLiveWorkflow(ctx, tx, workflowID); err != nil {
+		return Execution{}, err
+	}
 	ver, err := scanVersion(tx.QueryRow(ctx, getVersionSQL, workflowID, in.VersionID))
 	if err != nil {
 		return Execution{}, err
@@ -736,18 +770,18 @@ func (p *Postgres) FindCredentialRefs(ctx context.Context, scope isolation.Scope
 		SELECT 'draft', w.id::text, w.slug, w.name, '', 0, '', ''
 		FROM workflow_drafts d
 		JOIN workflows w ON w.workspace_id = d.workspace_id AND w.id = d.workflow_id
-		WHERE position($1 in d.normalized_yaml) > 0
+		WHERE w.deleted_at IS NULL AND position($1 in d.normalized_yaml) > 0
 		UNION ALL
 		SELECT 'version', w.id::text, w.slug, w.name, v.id::text, v.version_number, '', ''
 		FROM workflow_versions v
 		JOIN workflows w ON w.workspace_id = v.workspace_id AND w.id = v.workflow_id
-		WHERE position($1 in v.normalized_yaml) > 0
+		WHERE w.deleted_at IS NULL AND position($1 in v.normalized_yaml) > 0
 		UNION ALL
 		SELECT 'execution', w.id::text, w.slug, w.name, v.id::text, v.version_number, e.id::text, e.status
 		FROM executions e
 		JOIN workflow_versions v ON v.workspace_id = e.workspace_id AND v.id = e.workflow_version_id
 		JOIN workflows w ON w.workspace_id = e.workspace_id AND w.id = e.workflow_id
-		WHERE position($1 in v.normalized_yaml) > 0
+		WHERE w.deleted_at IS NULL AND position($1 in v.normalized_yaml) > 0
 		  AND e.status IN ('queued', 'pinned', 'running')
 		ORDER BY 1, 3
 	`, credentialID)
@@ -795,7 +829,7 @@ func (p *Postgres) GetExecution(ctx context.Context, scope isolation.Scope, work
 		SELECT `+executionColumns+`
 		FROM executions e
 		JOIN workflows w ON w.workspace_id = e.workspace_id AND w.id = e.workflow_id
-		WHERE e.workflow_id = $1::uuid AND e.id = $2::uuid
+		WHERE e.workflow_id = $1::uuid AND e.id = $2::uuid AND w.deleted_at IS NULL
 	`, workflowID, executionID))
 	if err != nil {
 		return Execution{}, err
@@ -838,7 +872,7 @@ LEFT JOIN LATERAL (
     ORDER BY version_number DESC
     LIMIT 1
 ) v ON true
-WHERE w.id = $1::uuid
+WHERE w.id = $1::uuid AND w.deleted_at IS NULL
 `
 
 const getDraftSQL = `
@@ -873,7 +907,7 @@ func insertDraft(ctx context.Context, tx pgx.Tx, scope isolation.Scope, workflow
 
 func requireWorkflow(ctx context.Context, tx pgx.Tx, workflowID string) error {
 	var id string
-	err := tx.QueryRow(ctx, `SELECT id::text FROM workflows WHERE id = $1::uuid`, workflowID).Scan(&id)
+	err := tx.QueryRow(ctx, `SELECT id::text FROM workflows WHERE id = $1::uuid AND deleted_at IS NULL`, workflowID).Scan(&id)
 	if err != nil {
 		return mapDBErr(err)
 	}

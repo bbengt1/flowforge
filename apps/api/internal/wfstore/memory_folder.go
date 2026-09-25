@@ -180,6 +180,9 @@ func (m *Memory) DeleteFolder(_ context.Context, scope isolation.Scope, folderID
 	}
 	workflows := 0
 	for _, row := range m.workflows {
+		if row.deletedAt != nil {
+			continue
+		}
 		if row.workspaceID == scope.WorkspaceID() && row.record.FolderID != nil && *row.record.FolderID == folderID {
 			workflows++
 		}
@@ -198,8 +201,8 @@ func (m *Memory) SetWorkflowFolder(_ context.Context, scope isolation.Scope, wor
 	folderID = strings.TrimSpace(folderID)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	row, ok := m.workflows[workflowID]
-	if !ok || row.workspaceID != scope.WorkspaceID() {
+	row, ok := m.liveLocked(scope, workflowID)
+	if !ok {
 		return Workflow{}, ErrNotFound
 	}
 	if folderID != "" {

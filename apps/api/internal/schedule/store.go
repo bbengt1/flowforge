@@ -165,6 +165,7 @@ type Store interface {
 	Update(ctx context.Context, scope isolation.Scope, now time.Time, id string, in UpdateInput) (Record, error)
 	SetStatus(ctx context.Context, scope isolation.Scope, now time.Time, id, status string) (Record, error)
 	Delete(ctx context.Context, scope isolation.Scope, id string) error
+	DisableForWorkflow(ctx context.Context, scope isolation.Scope, now time.Time, workflowID string) error
 	ListDue(ctx context.Context, scope isolation.Scope, now time.Time) ([]Record, error)
 	RecordFire(ctx context.Context, scope isolation.Scope, now time.Time, id string, in FireUpdate) (Record, error)
 }

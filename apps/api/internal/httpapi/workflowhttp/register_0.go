@@ -23,6 +23,7 @@ func Routes1(s *core.Server) []rt.Route {
 		rt.R(http.MethodGet, "/api/v1/workflows", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, listWorkflows)),
 		rt.R(http.MethodPost, "/api/v1/workflows", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, CreateWorkflow)),
 		rt.R(http.MethodGet, "/api/v1/workflows/{workflowId}", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, getWorkflow)),
+		rt.R(http.MethodDelete, "/api/v1/workflows/{workflowId}", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, deleteWorkflow)),
 		rt.R(http.MethodPatch, "/api/v1/workflows/{workflowId}/folder", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, patchWorkflowFolder)),
 		rt.R(http.MethodGet, "/api/v1/workflows/{workflowId}/draft", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, getWorkflowDraft)),
 		rt.R(http.MethodPut, "/api/v1/workflows/{workflowId}/draft", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, putWorkflowDraft)),

@@ -836,9 +836,10 @@ Suggested UI flow:
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
-| `GET /api/v1/workflows` | List summaries (no YAML). Requires `workflow.view`. Each item includes `folderId` (`null` = Unfiled). Additive query `folderId=<uuid>` or `folderId=unfiled`. Omit = today's full list. | `200` `{items}` | `401` `403` `404` (unknown / cross-workspace folder) |
-| `POST /api/v1/workflows` | Create workflow + draft revision 1. JSON `{definitionYaml, slug?, name?, folderId?}`. Missing / null `folderId` is Unfiled. Requires `workflow.edit`. | `201` `{workflow,draft}` | `400` `invalid-workflow` / `401` `403` `404` (folder) `409` (slug) |
-| `GET /api/v1/workflows/{workflowId}` | Summary including `draftRevision`, `draftDigest`, `folderId`, latest version. | `200` workflow | `401` `403` `404` |
+| `GET /api/v1/workflows` | List summaries (no YAML). Requires `workflow.view`. Each item includes `folderId` (`null` = Unfiled) and `capabilities.delete`. Additive query `folderId=<uuid>` or `folderId=unfiled`. Omit = today's full list. Tombstoned workflows are omitted. | `200` `{items}` | `401` `403` `404` (unknown / cross-workspace folder) |
+| `POST /api/v1/workflows` | Create workflow + draft revision 1. JSON `{definitionYaml, slug?, name?, folderId?}`. Missing / null `folderId` is Unfiled. Requires `workflow.edit`. Response `workflow.capabilities.delete` follows the caller. A live slug is `409` `conflict`. A slug held by a tombstone is `409` `workflow_slug_reserved`. Omitted slug is slugified at create and stays stable on rename. | `201` `{workflow,draft}` | `400` `invalid-workflow` / `401` `403` `404` (folder) `409` `conflict` or `workflow_slug_reserved` |
+| `GET /api/v1/workflows/{workflowId}` | Summary including `draftRevision`, `draftDigest`, `folderId`, latest version, and `capabilities.delete`. A tombstone is the same `404` `not-found` as a missing workflow. | `200` workflow | `401` `403` `404` |
+| `DELETE /api/v1/workflows/{workflowId}` | Soft-delete. One transaction unpublishes (`status` returns to `draft`), disables triggers and schedules, and sets the tombstone. YAML is not modified. Version history stays stored and becomes unreachable. No purge and no restore. Success is `204` with no body. `workflow.delete` is granted to editors and workspace admins (`workspace.administer`). The workflow owner (`createdBy`) may also delete. `capabilities.delete` is true for those callers and false for a viewer who is not the owner. A viewer who is not the owner gets `403` `forbidden`. No `workflow.view` (no membership, other tenant) gets `404` `not-found`, same as an unknown or already-deleted id. Queued or running executions return `409` `workflow_has_active_executions` and are not canceled. Waiting and pinned executions do not block. There is no delete route on `/embed/v1`. | `204` | `401` `403` `404` `409` `workflow_has_active_executions` |
 | `PATCH /api/v1/workflows/{workflowId}/folder` | **Move only.** JSON `{folderId}` (`null` / omitted = Unfiled). Does **not** bump `draftRevision` or change YAML. Requires `workflow.edit`. | `200` workflow | `400` host identity / `401` `403` `404` |
 | `GET /api/v1/workflows/{workflowId}/draft` | Current mutable draft. | `200` `{workflowId,revision,definitionYaml,digest,summary,warnings,validationState}` | `401` `403` `404` |
 | `PUT /api/v1/workflows/{workflowId}/draft` | Conflict-safe save. JSON `{revision,definitionYaml}` or YAML + `If-Match: <revision>`. Requires `workflow.edit`. | `200` `{workflow,draft}` (revision incremented) | `400` `invalid-workflow` / `409` revision mismatch / `401` `403` `404` |
@@ -1191,7 +1192,7 @@ Kinds emitted by the API (safe fixtures in tests):
 
 Out of scope: SIEM integrations, provider engines, `apps/web` rewrite.
 
-RBAC: viewer can list/get/compare/export; editor can create/save/restore; publisher can publish; operator can start a pinned execution (not edit). `workflow.status` is `draft` until the first publish, then `published`. An omitted slug is slugified from the display name at create and stays stable on rename; display `name` tracks the draft summary on save.
+RBAC: viewer can list/get/compare/export; editor can create/save/restore/delete; publisher can publish; operator can start a pinned execution (not edit). `workflow.delete` is also held by workspace admins, and the workflow owner (`createdBy`) can delete without that grant. `capabilities.delete` on workflow responses is true for editors, owners, and admins, and false for viewers who do not own the workflow. `workflow.status` is `draft` until the first publish, then `published`. Soft-delete sets `status` back to `draft` and hides the row. An omitted slug is slugified from the display name at create and stays stable on rename; display `name` tracks the draft summary on save. A tombstone keeps the slug reserved.
 
 Every request receives `X-Request-ID`. A caller-supplied value is accepted only when it is 16–128 ASCII letters, digits, or hyphens; otherwise the API generates one. The same identifier is present on the response header, in `application/problem+json` as `request_id`, and in structured request logs so an API flow can be traced end to end.
 
@@ -1204,7 +1205,9 @@ Errors use `application/problem+json` and include `type`, `title`, `status`, `de
 | `unauthenticated` | 401 | Missing or invalid credentials |
 | `forbidden` | 403 | Authenticated caller is not authorized |
 | `not-found` | 404 | Unknown path or missing tenant/workspace/user |
-| `conflict` | 409 | Unique identity collision, last-admin protection, draft revision mismatch, duplicate published digest, idempotency fingerprint mismatch, fencing/lease mismatch, or a retry/cancel that is not allowed |
+| `conflict` | 409 | Unique identity collision, last-admin protection, draft revision mismatch, duplicate published digest, idempotency fingerprint mismatch, fencing/lease mismatch, a live workflow slug, or a retry/cancel that is not allowed |
+| `workflow_has_active_executions` | 409 | Soft-delete refused because a queued or running execution exists. Waiting and pinned executions do not block. The run is not canceled. |
+| `workflow_slug_reserved` | 409 | Create used a slug still held by a soft-deleted workflow |
 | `retry-denied` | 409 | SSH/script retry rejected: default `maxAttempts=0`, not `retrySafe`, missing verification or idempotency key, or no attempts remain. Indeterminate non-retrySafe steps stay closed. |
 | `artifact-mutable` | 400 | Draft or unsigned script package cannot execute. Publish first. |
 | `artifact-unscanned` | 400 | Script artifact `scanStatus` is pending or missing. |
