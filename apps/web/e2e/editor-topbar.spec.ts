@@ -90,7 +90,7 @@ async function expectControlInViewport(page: Page, name: string | RegExp): Promi
 }
 
 test.describe("editor top bar", () => {
-  test("keeps the workflow name visible at 1280, 1440, and 1680", async ({
+  test("keeps the workflow name visible at 1280, 1440, 1680, and 1760", async ({
     page,
   }) => {
     await installOperatorApi(page);
@@ -105,7 +105,7 @@ test.describe("editor top bar", () => {
       page.locator('[data-editor-topbar="identity"]').getByText("deploy", { exact: true }),
     ).toBeVisible();
 
-    for (const width of [1280, 1440, 1680]) {
+    for (const width of [1280, 1440, 1680, 1760]) {
       await page.setViewportSize({ width, height: 800 });
       await expect(name).toBeVisible();
       const box = await name.boundingBox();
