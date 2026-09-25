@@ -2,7 +2,10 @@ import Link from "next/link";
 import { ApprovalBindingSnapshot } from "@/components/approvals/ApprovalBindingSnapshot";
 import { ApprovalDecideControls } from "@/components/approvals/ApprovalDecideControls";
 import { ApprovalValidityBanner } from "@/components/approvals/ApprovalValidityBanner";
-import { approvalStatusLabel, isExecutionAwaitingApproval } from "@/lib/approval";
+import {
+  approvalStatusLabelForRun,
+  isExecutionAwaitingApproval,
+} from "@/lib/approval";
 import { isTerminalRunStatus } from "@/lib/execution";
 import {
   APPROVAL_BINDING_HELP,
@@ -56,7 +59,7 @@ export function ExecutionApprovalState({
         {approvals.map((item) => (
           <li key={item.id} className="space-y-2">
             <p className="text-sm font-medium">
-              {approvalStatusLabel(item.status)} ·{" "}
+              {approvalStatusLabelForRun(item.status, executionStatus)} ·{" "}
               <Link
                 href={`/approvals/${item.id}`}
                 className="text-fg underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"

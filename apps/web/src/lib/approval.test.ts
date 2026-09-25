@@ -25,6 +25,7 @@ import {
   stripSecretKeys,
   approvalDecideControlsState,
   approvalStatusLabel,
+  approvalStatusLabelForRun,
   approvalValidityBannerState,
   failClosedProblemTitle,
 } from "./approval.ts";
@@ -496,6 +497,11 @@ describe("E10.3 approval decide contract", () => {
     assert.equal(closed?.closeReason, "run_canceled");
     assert.equal(closed?.validity.current, false);
     assert.equal(approvalStatusLabel("canceled"), "Closed");
+    assert.equal(approvalStatusLabelForRun("pending", "canceled"), "Closed");
+    assert.equal(approvalStatusLabelForRun("pending", "failed"), "Closed");
+    assert.equal(approvalStatusLabelForRun("canceled", "failed"), "Closed");
+    assert.equal(approvalStatusLabelForRun("pending", "running"), "Pending");
+    assert.equal(approvalStatusLabelForRun("approved", "failed"), "Approved");
     assert.equal(canDecideApproval(closed!), false);
 
     const deleted = parseApprovalRequest({

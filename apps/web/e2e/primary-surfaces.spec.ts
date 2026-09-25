@@ -216,7 +216,9 @@ test.describe("primary surfaces", () => {
     ).toBeVisible();
     await expect(page.locator("#graph-replay-heading")).toBeVisible();
     await expect(page.getByRole("button", { name: "Retry execution" })).toHaveCount(0);
-    await expect(page.getByText("Canceled runs can't be retried.")).toBeVisible();
+    await expect(
+      page.getByText("Canceled runs can't be retried.").first(),
+    ).toBeVisible();
     const gate = page.locator("[data-canvas-node='gate']");
     await expect(gate).toContainText("Canceled");
     await expect(gate).not.toContainText("Approval required");
@@ -227,8 +229,13 @@ test.describe("primary surfaces", () => {
       .filter({ hasText: "attempt" });
     await expect(gateRow).toBeVisible();
     await expect(gateRow).not.toContainText("waiting");
-    await expect(page.getByRole("button", { name: "Approve" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Reject" })).toHaveCount(0);
+    const approvalState = page
+      .locator("section")
+      .filter({ has: page.getByRole("heading", { name: "Execution approval state" }) });
+    await expect(approvalState).toContainText("Closed");
+    await expect(approvalState).not.toContainText("Pending");
+    await expect(page.getByRole("button", { name: "Approve", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Reject", exact: true })).toHaveCount(0);
     await expectOneMain(page);
     await expectNoBlockingAxeViolations(page);
     await expectNoSecretsInBrowserStorage(page);
