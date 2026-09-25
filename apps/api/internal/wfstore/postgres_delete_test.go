@@ -207,11 +207,13 @@ func TestPostgresResumeWaitAfterDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
 	exec, err := store.StartExecution(ctx, scope, wf.ID, StartInput{VersionID: ver.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Claim at or after the start clock. An earlier timestamp is not
+	// eligible and returns ErrEmptyClaim ("no eligible job").
+	now := time.Now().UTC()
 	claimed, err := store.ClaimJob(ctx, scope, now, ClaimInput{WorkerID: "pg-resume", Lease: time.Minute})
 	if err != nil {
 		t.Fatal(err)
@@ -261,6 +263,7 @@ func TestPostgresResumeWaitAfterDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	now = time.Now().UTC()
 	claimed, err = store.ClaimJob(ctx, scope, now, ClaimInput{WorkerID: "pg-live", Lease: time.Minute})
 	if err != nil {
 		t.Fatal(err)
