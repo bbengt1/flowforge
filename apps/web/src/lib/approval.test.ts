@@ -24,7 +24,9 @@ import {
   shouldBlockRun,
   stripSecretKeys,
   approvalDecideControlsState,
+  approvalStatusLabel,
   approvalValidityBannerState,
+  failClosedProblemTitle,
 } from "./approval.ts";
 import {
   APPROVAL_PROBLEM_CODES,
@@ -475,5 +477,67 @@ describe("E10.3 approval decide contract", () => {
     assert.equal(catalog.waitSurvivesWorkerLoss, true);
     assert.equal(catalog.selfApprovalDenied, true);
     assert.equal(catalog.freshAuthRequired, true);
+  });
+
+  it("reads a canceled approval as closed and refuses a decision", () => {
+    const closed = parseApprovalRequest({
+      id: "77777777-7777-4777-8777-777777777777",
+      status: "canceled",
+      closeReason: "run_canceled",
+      binding: {
+        workflowVersionId: "22222222-2222-4222-8222-222222222222",
+        operation: "deploy",
+        nodeId: "gate",
+      },
+      validity: { current: true },
+    });
+    assert.ok(closed);
+    assert.equal(closed?.status, "canceled");
+    assert.equal(closed?.closeReason, "run_canceled");
+    assert.equal(closed?.validity.current, false);
+    assert.equal(approvalStatusLabel("canceled"), "Closed");
+    assert.equal(canDecideApproval(closed!), false);
+
+    const deleted = parseApprovalRequest({
+      id: "77777777-7777-4777-8777-777777777777",
+      status: "canceled",
+      closeReason: "workflow_deleted",
+      binding: {
+        workflowVersionId: "22222222-2222-4222-8222-222222222222",
+        operation: "deploy",
+        nodeId: "gate",
+      },
+    });
+    assert.equal(deleted?.closeReason, "workflow_deleted");
+    assert.equal(deleted?.status === "pending", false);
+
+    const stalePending = approval({ executionStatus: "canceled" });
+    assert.equal(canDecideApproval(stalePending), false);
+    const failedRun = approval({ executionStatus: "failed" });
+    assert.equal(canDecideApproval(failedRun), false);
+    assert.equal(
+      problemClosesApproval({
+        type: "urn:flowforge:problem:approval_closed",
+        title: "Conflict",
+        status: 409,
+        detail: "This approval is closed and can no longer be decided.",
+        instance: "/approvals/x/decide",
+        code: "approval_closed",
+        request_id: "req",
+      }),
+      true,
+    );
+    assert.equal(
+      failClosedProblemTitle({
+        type: "urn:flowforge:problem:approval_closed",
+        title: "Conflict",
+        status: 409,
+        detail: "closed",
+        instance: "/approvals/x/decide",
+        code: "approval_closed",
+        request_id: "req",
+      }),
+      "Approval already closed",
+    );
   });
 });

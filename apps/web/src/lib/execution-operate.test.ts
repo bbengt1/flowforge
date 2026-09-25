@@ -96,7 +96,10 @@ function step(overrides: Partial<ExecutionStep> = {}): ExecutionStep {
 
 function detail(overrides: Partial<ExecutionDetail> = {}): ExecutionDetail {
   return {
-    ...record({ status: "failed" }),
+    ...record({
+      status: "failed",
+      capabilities: { retry: { allowed: true } },
+    }),
     pins: [],
     steps: [step()],
     jobs: [],
@@ -115,7 +118,7 @@ describe("R4.4 execution operate density", () => {
     assert.equal(executionOperateInheritsR4Guardrails(), true);
     assert.equal(R4_GUARDRAILS.loudIndeterminate, true);
     assert.match(R4_LATER_STORY_NOTES.r44, /#257/);
-    assert.match(EXECUTION_OPERATE_HELP, /result\.retry\.allowed/);
+    assert.match(EXECUTION_OPERATE_HELP, /capabilities\.retry\.allowed/);
     assert.match(EXECUTION_OPERATE_HELP, /\/executions\/\{id\}\/cancel/);
     assert.match(EXECUTION_OPERATE_HELP, /emergency-stop/);
     assert.match(EXECUTION_OPERATE_HELP, /never silent success/);
@@ -183,6 +186,7 @@ describe("R4.4 execution operate density", () => {
     const sshAllowed = executionOperateRetryAllowed({
       permissions: ["workflow.execute"],
       status: "indeterminate",
+      capabilities: { retry: { allowed: true } },
       steps: [
         step({
           nodeType: "ssh.run",
@@ -192,6 +196,20 @@ describe("R4.4 execution operate density", () => {
       ],
     });
     assert.equal(sshAllowed, true);
+    assert.equal(
+      executionOperateRetryAllowed({
+        permissions: ["workflow.execute"],
+        status: "indeterminate",
+        steps: [
+          step({
+            nodeType: "ssh.run",
+            status: "indeterminate",
+            output: { retry: { allowed: true, retrySafe: true } },
+          }),
+        ],
+      }),
+      false,
+    );
 
     const sshDenied = executionOperateAffordances({
       permissions: ["workflow.execute"],
@@ -224,7 +242,7 @@ describe("R4.4 execution operate density", () => {
     assert.equal(closed, false);
 
     assert.equal(executionOperateNeverOffersBlindRetry(), true);
-    assert.match(EXECUTION_OPERATE_RETRY_GATE_HELP, /result\.retry\.allowed/);
+    assert.match(EXECUTION_OPERATE_RETRY_GATE_HELP, /capabilities\.retry\.allowed/);
   });
 
   it("offers emergency stop only for open script runs", () => {

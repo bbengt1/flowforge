@@ -37,8 +37,8 @@ export default function ExecutionsPage() {
           (icon + text + explanation — never silent success). Cancel, retry,
           and emergency stop sit on the inbox row using the existing E5/E8/E9
           routes. Retry is shown only when{" "}
-          <code className="font-mono text-sm">result.retry.allowed</code> is
-          true. Artifacts stay on the detail page.
+          <code className="font-mono text-sm">capabilities.retry.allowed</code>{" "}
+          is true. Artifacts stay on the detail page.
         </p>
       </header>
       <Suspense

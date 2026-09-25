@@ -3,6 +3,7 @@ import { ApprovalBindingSnapshot } from "@/components/approvals/ApprovalBindingS
 import { ApprovalDecideControls } from "@/components/approvals/ApprovalDecideControls";
 import { ApprovalValidityBanner } from "@/components/approvals/ApprovalValidityBanner";
 import { approvalStatusLabel, isExecutionAwaitingApproval } from "@/lib/approval";
+import { isTerminalRunStatus } from "@/lib/execution";
 import {
   APPROVAL_BINDING_HELP,
   APPROVAL_WAIT_DURABLE_HELP,
@@ -18,6 +19,7 @@ type ExecutionApprovalStateProps = {
   actorUserId?: string;
   permissions?: string[] | null;
   onApprovalUpdated?: (approval: ApprovalRequest) => void;
+  onRefetch?: () => void;
 };
 
 export function ExecutionApprovalState({
@@ -27,8 +29,10 @@ export function ExecutionApprovalState({
   actorUserId = "",
   permissions,
   onApprovalUpdated,
+  onRefetch,
 }: ExecutionApprovalStateProps) {
-  const waiting = isExecutionAwaitingApproval(executionStatus);
+  const terminal = isTerminalRunStatus(executionStatus);
+  const waiting = !terminal && isExecutionAwaitingApproval(executionStatus);
   const waitControls = approvalWaitControls();
   if (!waiting && approvals.length === 0) {
     return null;
@@ -62,13 +66,14 @@ export function ExecutionApprovalState({
             </p>
             <ApprovalValidityBanner approval={item} />
             <ApprovalBindingSnapshot binding={item.binding} />
-            {identity && item.status === "pending" ? (
+            {identity && item.status === "pending" && !terminal ? (
               <ApprovalDecideControls
                 identity={identity}
                 approval={item}
                 actorUserId={actorUserId}
                 permissions={permissions}
                 onUpdated={onApprovalUpdated}
+                onRefetch={onRefetch}
               />
             ) : (
               <p className="text-sm">

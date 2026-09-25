@@ -6,6 +6,7 @@ import {
   expectNoSecretsInBrowserStorage,
   installOperatorApi,
   installSignedOutApi,
+  OPERATOR_CANCELED_EXECUTION_ID,
   OPERATOR_EXECUTION_ID,
   OPERATOR_FAILED_EXECUTION_ID,
   OPERATOR_FOLDER_NAME,
@@ -193,6 +194,50 @@ test.describe("primary surfaces", () => {
       await page.setViewportSize({ width: 1280, height: 3600 });
       await expect(page.getByRole("heading", { name: "Jobs", level: 2 })).toBeVisible();
       await page.screenshot({ path: notReachedShot });
+    }
+    const retryShot = process.env.FF_RETRY_SCREENSHOT;
+    if (retryShot) {
+      mkdirSync(dirname(retryShot), { recursive: true });
+      await page.setViewportSize({ width: 1280, height: 3600 });
+      await expect(page.getByRole("button", { name: "Retry execution" })).toBeVisible();
+      await page.screenshot({ path: retryShot });
+    }
+  });
+
+  test("canceled run hides retry and does not leave the gate waiting", async ({
+    page,
+  }) => {
+    await installOperatorApi(page);
+    await page.goto(
+      `/executions/${OPERATOR_CANCELED_EXECUTION_ID}?workflowId=${OPERATOR_WORKFLOW_ID}`,
+    );
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Execution" }),
+    ).toBeVisible();
+    await expect(page.locator("#graph-replay-heading")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry execution" })).toHaveCount(0);
+    await expect(page.getByText("Canceled runs can't be retried.")).toBeVisible();
+    const gate = page.locator("[data-canvas-node='gate']");
+    await expect(gate).toContainText("Canceled");
+    await expect(gate).not.toContainText("Approval required");
+    await expect(gate).not.toContainText("◇");
+    const gateRow = page
+      .getByRole("button")
+      .filter({ hasText: "gate" })
+      .filter({ hasText: "attempt" });
+    await expect(gateRow).toBeVisible();
+    await expect(gateRow).not.toContainText("waiting");
+    await expect(page.getByRole("button", { name: "Approve" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Reject" })).toHaveCount(0);
+    await expectOneMain(page);
+    await expectNoBlockingAxeViolations(page);
+    await expectNoSecretsInBrowserStorage(page);
+    const shot = process.env.FF_CANCELED_RUN_SCREENSHOT;
+    if (shot) {
+      mkdirSync(dirname(shot), { recursive: true });
+      await page.setViewportSize({ width: 1280, height: 3600 });
+      await expect(gate).toBeVisible();
+      await page.screenshot({ path: shot });
     }
   });
 

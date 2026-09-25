@@ -12,6 +12,10 @@ import {
   RETRY_FORBIDDEN_MESSAGE,
 } from "@/lib/execution-contract";
 import {
+  retryProblemMessage,
+  retryProblemShouldRefetch,
+} from "@/lib/execution-retry";
+import {
   EXECUTION_OPERATE_CANCEL_LABEL,
   EXECUTION_OPERATE_HELP,
   EXECUTION_OPERATE_RETRY_LABEL,
@@ -44,7 +48,10 @@ type ExecutionOperateActionsProps = {
   workflowId?: string;
   status?: ExecutionStatus;
   permissions?: readonly string[] | null;
-  detail?: Pick<ExecutionDetail, "status" | "steps"> | null;
+  detail?: Pick<
+    ExecutionDetail,
+    "status" | "steps" | "capabilities" | "capabilitiesInvalid"
+  > | null;
   surface?: ExecutionOperateSurface;
   compact?: boolean;
   disabled?: boolean;
@@ -70,12 +77,14 @@ export function ExecutionOperateActions({
   const [stoppedUncertain, setStoppedUncertain] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const resolvedStatus = detail?.status ?? status;
-  // Retry stays gated by GET /executions/{id} result.retry.allowed.
+  // Retry stays gated by capabilities.retry.allowed on the execution.
   const affordances = executionOperateAffordances({
     permissions,
     status: resolvedStatus,
     steps: detail?.steps,
     stoppedUncertain,
+    capabilities: detail?.capabilities,
+    capabilitiesInvalid: detail?.capabilitiesInvalid,
   });
   const busy = cancelPending || retryPending || stopPending || disabled;
   const pad = compact ? "px-2 py-0.5 text-[11px]" : "px-2.5 py-1 text-xs";
@@ -113,11 +122,16 @@ export function ExecutionOperateActions({
       if (result.forbidden) {
         setMessage(RETRY_FORBIDDEN_MESSAGE);
       } else if (result.statusCode === 409) {
+        const conflict = retryProblemMessage(result.problem);
         setMessage(
-          result.problem.code === "retry-denied"
-            ? result.problem.detail || SSH_RETRY_DENIED_MESSAGE
-            : RETRY_CONFLICT_MESSAGE,
+          conflict ??
+            (result.problem.code === "retry-denied"
+              ? result.problem.detail || SSH_RETRY_DENIED_MESSAGE
+              : RETRY_CONFLICT_MESSAGE),
         );
+        if (retryProblemShouldRefetch(result.problem)) {
+          onOperated?.();
+        }
       } else {
         setMessage(result.problem.detail || result.problem.title);
       }

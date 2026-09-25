@@ -136,15 +136,17 @@ export function editorRunOverlayGraph(
 
 export function editorRunWaitingNodeIds(
   approvals: readonly ApprovalRequest[] = [],
+  runStatus?: string,
 ): string[] {
-  return waitingApprovalNodeIds(approvals);
+  return waitingApprovalNodeIds(approvals, runStatus);
 }
 
 export function editorRunCurrentNodeId(
   steps: readonly ExecutionStep[],
   waitingApprovalIds: readonly string[] = [],
+  runStatus?: string,
 ): string | null {
-  return currentReplayNodeId(steps, waitingApprovalIds);
+  return currentReplayNodeId(steps, waitingApprovalIds, runStatus);
 }
 
 /** Live run statuses only. Step `pending` and job `blocked` do not keep the poll alive. `skipped` is terminal. */

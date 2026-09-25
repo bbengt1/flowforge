@@ -11,7 +11,16 @@ export const APPROVAL_STATUSES = [
   "rejected",
   "expired",
   "invalidated",
+  "canceled",
 ] as const;
+
+/** Why a pending approval was closed without a decision. */
+export const APPROVAL_CLOSE_REASONS = [
+  "run_canceled",
+  "workflow_deleted",
+] as const;
+
+export type ApprovalCloseReason = (typeof APPROVAL_CLOSE_REASONS)[number];
 
 export type ApprovalStatus = (typeof APPROVAL_STATUSES)[number];
 
@@ -122,6 +131,8 @@ export type ApprovalRequest = {
   executionStatus: string;
   approverRole: string;
   permittedActions: ApprovalAction[];
+  /** Set when `status` is `canceled`. Unknown values are dropped. */
+  closeReason?: ApprovalCloseReason | "";
 };
 
 /** Evaluate `requirements[]` — not yet a stored approval row. */
