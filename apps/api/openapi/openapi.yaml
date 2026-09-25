@@ -3128,19 +3128,29 @@ paths:
           $ref: "#/components/responses/InternalError"
     post:
       operationId: postWorkflows
-      summary: POST /workflows
+      summary: Create a workflow draft
       description: |
-        Generated from the route table (POST /api/v1/workflows).
+        Creates a workflow and draft revision 1. Requires workflow.edit. Drafts are not runnable.
+        slug is optional. Precedence is the JSON slug, then metadata.slug in definitionYaml, then a slug derived from name (or from metadata.name when name is omitted).
+        Derivation lowercases the name, replaces each run of characters that are not letters or digits with one hyphen, trims hyphens, prefixes a leading digit with w-, and caps the length at 63, dropping a trailing hyphen after the cap. An empty result becomes workflow.
+        A derived slug that is reserved (catalog, validate, normalize) or already taken, including by a soft-deleted workflow, gains a numeric suffix (-2, -3, and so on). Uniqueness comes from the workflows unique index, retried at most 20 times. An explicit slug is never rewritten.
+        A live explicit clash is 409 conflict. A tombstone clash is 409 workflow_slug_reserved. Both set errors[].path to slug. After 20 derived attempts the response is 409 conflict.
+        The chosen slug is written back to metadata.slug in the stored YAML. Later renames do not change the slug.
         Auth class: authenticated. Identity proxy: browser.
         Responses never include secrets, credentials, tokens, private keys, or vault material.
-        Vault references are display name and UUID only.
       responses:
-        "200":
-          description: Success
+        "201":
+          description: Created. Body is the workflow and draft revision 1, including the chosen slug in metadata.slug.
+        "400":
+          description: invalid-workflow, or invalid-request when an explicit slug fails validation. An invalid explicit slug sets errors[].path to slug.
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          description: folderId is unknown or outside the workspace.
+        "409":
+          description: conflict when an explicit slug is live or derived suffixes are exhausted. workflow_slug_reserved when an explicit slug is held by a deleted workflow. errors[].path is slug.
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "500":
@@ -3171,8 +3181,9 @@ paths:
       description: |
         Soft-deletes one workflow. The same transaction unpublishes it, disables its triggers and schedules, and sets a tombstone.
         A deleted workflow is not found on get, update, export, versions, or runs, and it disappears from list, search, and the folder tree.
-        Version history stays stored. There is no purge and no restore. The slug stays reserved (create returns 409 workflow_slug_reserved).
-        A live slug conflict stays 409 conflict. YAML is not modified.
+        Version history stays stored. There is no purge and no restore. The slug stays reserved.
+        Reusing that slug explicitly returns 409 workflow_slug_reserved. A create that omits the slug derives one and suffixes it when the reserved slug clashes.
+        A live explicit slug conflict stays 409 conflict. Delete does not modify YAML.
         workflow.delete is granted to editors and workspace admins. The workflow owner (createdBy) may also delete.
         Viewers who are not the owner receive 403. Callers with no workflow.view, including another tenant, receive 404.
         The delete handler refuses any embed session with 403 forbidden before it reads permissions, capabilities, or ownership. That includes a session minted earlier whose stored caps still list workflow.delete. capabilities.delete is false for every embed session. Ownership never adds a permission an embed session does not already hold.
@@ -6725,7 +6736,7 @@ components:
           type: string
         errors:
           type: array
-          description: Field-level workflow validation errors (invalid-workflow only).
+          description: Field-level errors. invalid-workflow lists YAML paths. Create slug conflicts and an invalid explicit slug use path slug.
           items:
             $ref: "#/components/schemas/WorkflowFieldError"
     Tenant:
@@ -7912,8 +7923,28 @@ components:
       properties:
         slug:
           type: string
+          description: >
+            Optional on create. Precedence is this field, then metadata.slug
+            in definitionYaml, then a slug derived from name (or from
+            metadata.name when name is omitted). Derivation lowercases the
+            name, replaces each run of characters that are not letters or
+            digits with one hyphen, trims hyphens, prefixes a leading digit
+            with w-, and caps the length at 63, dropping a trailing hyphen
+            after the cap. An empty result becomes workflow. A derived slug
+            that is reserved (catalog, validate, normalize) or already taken,
+            including by a soft-deleted workflow, gains a numeric suffix
+            (-2, -3, and so on, at most 20 attempts) chosen by retrying the
+            unique index. An explicit slug is never rewritten. A live clash
+            is 409 conflict and a tombstone clash is 409
+            workflow_slug_reserved. Both set errors[].path to slug. The
+            chosen slug is written back to metadata.slug in the stored YAML
+            and stays stable on later renames.
         name:
           type: string
+          description: >
+            Optional display name. When set, it is stored on the workflow
+            row and is the name a derived slug is taken from. metadata.name
+            in the YAML is left as submitted.
         definitionYaml:
           type: string
         folderId:

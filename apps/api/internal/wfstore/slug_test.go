@@ -2,6 +2,7 @@ package wfstore
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -37,8 +38,36 @@ func TestSlugifyWorkflowName(t *testing.T) {
 	if !validDerivedWorkflowSlug(got) || len(got) > 63 || strings.HasSuffix(got, "-") {
 		t.Fatalf("long title slug = %q", got)
 	}
-	if workflowSlug("Keep-Me", "Deploy API") != "Keep-Me" {
-		t.Fatal("explicit slug was rewritten")
+	choice, err := ChooseCreateSlug("keep-me", "yaml-slug", "Deploy API")
+	if err != nil || choice.Derived || choice.Slug != "keep-me" {
+		t.Fatalf("body slug = %+v %v", choice, err)
+	}
+	choice, err = ChooseCreateSlug("", "yaml-slug", "Deploy API")
+	if err != nil || choice.Derived || choice.Slug != "yaml-slug" {
+		t.Fatalf("yaml slug = %+v %v", choice, err)
+	}
+	choice, err = ChooseCreateSlug("", "", "Deploy API")
+	if err != nil || !choice.Derived || choice.Slug != "deploy-api" {
+		t.Fatalf("derived slug = %+v %v", choice, err)
+	}
+	choice, err = ChooseCreateSlug("", "", "🎉")
+	if err != nil || !choice.Derived || choice.Slug != "workflow" {
+		t.Fatalf("emoji slug = %+v %v", choice, err)
+	}
+	choice, err = ChooseCreateSlug("", "", "Catalog")
+	if err != nil || !choice.Derived || choice.Slug != "catalog" {
+		t.Fatalf("reserved base = %+v %v", choice, err)
+	}
+	if _, err := ChooseCreateSlug("catalog", "", "Deploy API"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("explicit reserved = %v", err)
+	}
+	cands, err := slugCandidates(SlugChoice{Slug: "catalog", Derived: true})
+	if err != nil || len(cands) == 0 || cands[0] != "catalog-2" {
+		t.Fatalf("reserved candidates = %v %v", cands, err)
+	}
+	long, ok := workflowSlugCandidate(strings.Repeat("a", 63), 2)
+	if !ok || len(long) > 63 || strings.HasSuffix(long, "-") || !strings.HasSuffix(long, "-2") {
+		t.Fatalf("capped suffix = %q", long)
 	}
 }
 

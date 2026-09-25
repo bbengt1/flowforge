@@ -40,6 +40,7 @@ var topLevelKeys = map[string]bool{
 
 var metadataKeys = map[string]bool{
 	"name":   true,
+	"slug":   true,
 	"labels": true,
 	"ui":     true,
 }
@@ -305,6 +306,13 @@ func decodeMetadata(n *yaml.Node) (Metadata, ErrorList) {
 		}
 	} else {
 		errs = append(errs, fieldError("metadata.name", n.Line, n.Column, CodeMissingField, "metadata.name is required."))
+	}
+	if v, ok := mappingValue(n, "slug"); ok {
+		if s, err := scalarString(v, "metadata.slug"); err != nil {
+			errs = append(errs, *err)
+		} else {
+			md.Slug = s
+		}
 	}
 	if v, ok := mappingValue(n, "labels"); ok {
 		labels, labelErrs := decodeStringMap(v, "metadata.labels")

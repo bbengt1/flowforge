@@ -50,6 +50,9 @@ func Digest(normalizedYAML string) string {
 func encodeMetadata(md Metadata) *yaml.Node {
 	n := mappingNode()
 	appendKV(n, "name", plainScalar(md.Name))
+	if md.Slug != "" {
+		appendKV(n, "slug", plainScalar(md.Slug))
+	}
 	if len(md.Labels) > 0 {
 		labels := mappingNode()
 		for _, k := range sortedKeys(md.Labels) {

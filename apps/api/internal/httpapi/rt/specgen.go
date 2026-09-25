@@ -260,6 +260,9 @@ func fillPathItem(dst *yaml.Node, routes []Route) error {
 }
 
 func stubOperation(rt Route) (*yaml.Node, error) {
+	if rt.Method == "POST" && rt.Pattern == "/api/v1/workflows" {
+		return workflowCreateOperation(rt)
+	}
 	if rt.Method == "DELETE" && rt.Pattern == "/api/v1/workflows/{workflowId}" {
 		return workflowDeleteOperation(rt)
 	}
@@ -287,6 +290,39 @@ func stubOperation(rt Route) (*yaml.Node, error) {
 	return unmarshalNode(b.String())
 }
 
+func workflowCreateOperation(rt Route) (*yaml.Node, error) {
+	var b strings.Builder
+	fmt.Fprintf(&b, "operationId: %s\n", operationID(rt.Method, rt.OpenAPIPath()))
+	b.WriteString("summary: Create a workflow draft\n")
+	b.WriteString("description: |\n")
+	b.WriteString("  Creates a workflow and draft revision 1. Requires workflow.edit. Drafts are not runnable.\n")
+	b.WriteString("  slug is optional. Precedence is the JSON slug, then metadata.slug in definitionYaml, then a slug derived from name (or from metadata.name when name is omitted).\n")
+	b.WriteString("  Derivation lowercases the name, replaces each run of characters that are not letters or digits with one hyphen, trims hyphens, prefixes a leading digit with w-, and caps the length at 63, dropping a trailing hyphen after the cap. An empty result becomes workflow.\n")
+	b.WriteString("  A derived slug that is reserved (catalog, validate, normalize) or already taken, including by a soft-deleted workflow, gains a numeric suffix (-2, -3, and so on). Uniqueness comes from the workflows unique index, retried at most 20 times. An explicit slug is never rewritten.\n")
+	b.WriteString("  A live explicit clash is 409 conflict. A tombstone clash is 409 workflow_slug_reserved. Both set errors[].path to slug. After 20 derived attempts the response is 409 conflict.\n")
+	b.WriteString("  The chosen slug is written back to metadata.slug in the stored YAML. Later renames do not change the slug.\n")
+	fmt.Fprintf(&b, "  Auth class: %s. Identity proxy: %s.\n", rt.Auth, rt.Proxy)
+	b.WriteString("  Responses never include secrets, credentials, tokens, private keys, or vault material.\n")
+	b.WriteString("responses:\n")
+	b.WriteString("  \"201\":\n")
+	b.WriteString("    description: Created. Body is the workflow and draft revision 1, including the chosen slug in metadata.slug.\n")
+	b.WriteString("  \"400\":\n")
+	b.WriteString("    description: invalid-workflow, or invalid-request when an explicit slug fails validation. An invalid explicit slug sets errors[].path to slug.\n")
+	b.WriteString("  \"401\":\n")
+	b.WriteString("    $ref: \"#/components/responses/Unauthenticated\"\n")
+	b.WriteString("  \"403\":\n")
+	b.WriteString("    $ref: \"#/components/responses/Forbidden\"\n")
+	b.WriteString("  \"404\":\n")
+	b.WriteString("    description: folderId is unknown or outside the workspace.\n")
+	b.WriteString("  \"409\":\n")
+	b.WriteString("    description: conflict when an explicit slug is live or derived suffixes are exhausted. workflow_slug_reserved when an explicit slug is held by a deleted workflow. errors[].path is slug.\n")
+	b.WriteString("  \"405\":\n")
+	b.WriteString("    $ref: \"#/components/responses/MethodNotAllowed\"\n")
+	b.WriteString("  \"500\":\n")
+	b.WriteString("    $ref: \"#/components/responses/InternalError\"\n")
+	return unmarshalNode(b.String())
+}
+
 func workflowDeleteOperation(rt Route) (*yaml.Node, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "operationId: %s\n", operationID(rt.Method, rt.OpenAPIPath()))
@@ -294,8 +330,9 @@ func workflowDeleteOperation(rt Route) (*yaml.Node, error) {
 	b.WriteString("description: |\n")
 	b.WriteString("  Soft-deletes one workflow. The same transaction unpublishes it, disables its triggers and schedules, and sets a tombstone.\n")
 	b.WriteString("  A deleted workflow is not found on get, update, export, versions, or runs, and it disappears from list, search, and the folder tree.\n")
-	b.WriteString("  Version history stays stored. There is no purge and no restore. The slug stays reserved (create returns 409 workflow_slug_reserved).\n")
-	b.WriteString("  A live slug conflict stays 409 conflict. YAML is not modified.\n")
+	b.WriteString("  Version history stays stored. There is no purge and no restore. The slug stays reserved.\n")
+	b.WriteString("  Reusing that slug explicitly returns 409 workflow_slug_reserved. A create that omits the slug derives one and suffixes it when the reserved slug clashes.\n")
+	b.WriteString("  A live explicit slug conflict stays 409 conflict. Delete does not modify YAML.\n")
 	b.WriteString("  workflow.delete is granted to editors and workspace admins. The workflow owner (createdBy) may also delete.\n")
 	b.WriteString("  Viewers who are not the owner receive 403. Callers with no workflow.view, including another tenant, receive 404.\n")
 	b.WriteString("  The delete handler refuses any embed session with 403 forbidden before it reads permissions, capabilities, or ownership. That includes a session minted earlier whose stored caps still list workflow.delete. capabilities.delete is false for every embed session. Ownership never adds a permission an embed session does not already hold.\n")

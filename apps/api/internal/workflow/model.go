@@ -220,9 +220,12 @@ type Document struct {
 	pos        positions
 }
 
-// Metadata is the workflow-local identifier, labels, and optional UI hints.
+// Metadata is the display name, optional slug, labels, and optional UI hints.
+// Slug is the workspace workflow slug when the author wrote one. Create
+// writes the chosen slug back here so YAML stays the source of truth.
 type Metadata struct {
 	Name   string
+	Slug   string
 	Labels map[string]string
 	UI     *UIMetadata
 }

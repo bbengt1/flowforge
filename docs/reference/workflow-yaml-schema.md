@@ -53,7 +53,8 @@ spec:
 apiVersion: flowforge/v1                 # required
 kind: Workflow                            # required
 metadata:
-  name: DNS-label                         # required, workflow-local identifier
+  name: display title                     # required; not the stored workflow slug
+  slug: DNS-label                         # optional; create writes the chosen slug
   labels: string-to-string map            # optional
   ui:                                     # optional; ignored by executor
     layout:                               # optional; non-authoritative canvas hints (D1)
@@ -67,6 +68,8 @@ spec:
   edges: Edge[]                           # optional; graph must be acyclic in MVP
   outputs: Output[]                       # optional
 ```
+
+`metadata.name` is the display title. It is not the stored workflow slug. `metadata.slug` is optional. On create the API chooses a slug from the JSON `slug`, then this field, then a derivation of the display name, and writes the chosen value back here. The stored form is a lowercase DNS label of at most 63 characters (`^[a-z][a-z0-9-]{0,62}$`) and is not `catalog`, `validate`, or `normalize`. An empty `metadata.slug` is omitted. Unknown metadata keys still fail closed.
 
 `metadata.ui.layout` is additive optional on `flowforge/v1` (D1 / issue). The API stores and returns it on validate, normalize, draft save/load, and published versions. **Executor, `POST /policy/evaluate`, port typing, and dispatch ignore it.** Node keys must match `spec.nodes[].id`; extra keys are stripped (never invent a node). Missing keys auto-place that node. Non-finite coordinates or a non-object layout are treated as absent (auto-layout). Layout never carries edges, types, `with`, credentials, or ports. Unknown keys under `metadata.ui` / `layout` besides `layout` / `version`+`nodes` still fail closed. Older documents without the field keep working. applies `summary.ui.layout` or the YAML field on canvas load and writes it back on draft save (R2.5). Embed and standalone share this API.
 
