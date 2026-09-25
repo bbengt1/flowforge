@@ -184,3 +184,24 @@ go test ./internal/postgres/ -count=1 -run 'TestCleanTreeChecksumVerificationSuc
 The clean-tree and drift tests run without a database. The happy-path
 and refused-boot tests skip unless a database URL is set. CI runs the
 database-free tests on every API change (`go test./...`).
+
+## Migration role for 000034 and 000035
+
+`000034_execution_edges.sql` creates `app.backfill_execution_dependencies()`
+as `SECURITY DEFINER` with `SET row_security = off`. PostgreSQL allows
+that only for a superuser or a role with `BYPASSRLS`. The function is
+not granted to `flowforge_app`. Run that migration as the superuser or
+`BYPASSRLS` maintenance role.
+
+`000035_retry_gates_and_approval_close.sql` does not turn row security
+off. `app.backfill_execution_edge_resolution()` and
+`app.backfill_close_stale_approvals()` read `workspaces` and call
+`app.set_workspace_id` once per workspace, so FORCE RLS still applies.
+Those two functions are not granted to `flowforge_app`. A `NOBYPASSRLS`
+migration role can run them. A superuser still bypasses RLS, so each
+statement also filters on `app.current_workspace_id()`.
+`app.close_pending_approvals` is granted to `flowforge_app` and only
+updates rows in the current workspace.
+API boot grants `EXECUTE` on every `app` function to `flowforge_app`,
+then revokes that grant from `backfill_execution_dependencies`,
+`backfill_execution_edge_resolution`, and `backfill_close_stale_approvals`.

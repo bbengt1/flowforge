@@ -48,6 +48,12 @@ const (
 	// CodeWorkflowDeleted is the approval-decide and retry refusal when
 	// the workflow tombstone is set. The run is failed, not continued.
 	CodeWorkflowDeleted = "workflow_deleted"
+	// CodeExecutionNotRetryable refuses a step retry that is not eligible.
+	CodeExecutionNotRetryable = "execution_not_retryable"
+	// CodeStepAttemptSuperseded refuses a retry of an older attempt.
+	CodeStepAttemptSuperseded = "step_attempt_superseded"
+	// CodeApprovalClosed refuses a decision on an approval closed with the run.
+	CodeApprovalClosed = "approval_closed"
 )
 
 // FieldError is a YAML-path validation failure returned on invalid-workflow.
@@ -68,21 +74,27 @@ type Problem struct {
 	Instance  string       `json:"instance"`
 	Code      string       `json:"code"`
 	RequestID string       `json:"request_id"`
+	Reason    string       `json:"reason,omitempty"`
 	Errors    []FieldError `json:"errors,omitempty"`
 }
 
 // WriteProblem writes an application/problem+json response. Detail must not
 // include secret material or raw request bodies.
 func WriteProblem(w http.ResponseWriter, r *http.Request, status int, code, title, detail string) {
-	writeProblem(w, r, status, code, title, detail, nil)
+	writeProblem(w, r, status, code, title, detail, "", nil)
+}
+
+// WriteProblemReason writes a problem document with a machine-readable reason.
+func WriteProblemReason(w http.ResponseWriter, r *http.Request, status int, code, title, detail, reason string) {
+	writeProblem(w, r, status, code, title, detail, reason, nil)
 }
 
 // WriteProblemErrors writes a problem document with a field-level errors array.
 func WriteProblemErrors(w http.ResponseWriter, r *http.Request, status int, code, title, detail string, errors []FieldError) {
-	writeProblem(w, r, status, code, title, detail, errors)
+	writeProblem(w, r, status, code, title, detail, "", errors)
 }
 
-func writeProblem(w http.ResponseWriter, r *http.Request, status int, code, title, detail string, errors []FieldError) {
+func writeProblem(w http.ResponseWriter, r *http.Request, status int, code, title, detail, reason string, errors []FieldError) {
 	p := Problem{
 		Type:      ProblemTypePrefix + code,
 		Title:     title,
@@ -91,6 +103,7 @@ func writeProblem(w http.ResponseWriter, r *http.Request, status int, code, titl
 		Instance:  r.URL.Path,
 		Code:      code,
 		RequestID: RequestIDFromContext(r.Context()),
+		Reason:    reason,
 		Errors:    errors,
 	}
 	body, err := json.Marshal(p)

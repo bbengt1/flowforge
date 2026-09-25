@@ -4,8 +4,33 @@ import (
 	"context"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/jackc/pgx/v5"
 )
+
+func peekJobTx(ctx context.Context, tx pgx.Tx, jobID string) (executionID, workflowID, status string, err error) {
+	err = tx.QueryRow(ctx, `
+		SELECT j.execution_id::text, e.workflow_id::text, j.status
+		FROM execution_jobs j
+		JOIN executions e ON e.workspace_id = j.workspace_id AND e.id = j.execution_id
+		WHERE j.id = $1::uuid
+	`, jobID).Scan(&executionID, &workflowID, &status)
+	if err != nil {
+		err = mapDBErr(err)
+	}
+	return executionID, workflowID, status, err
+}
+
+func closePendingApprovalsTx(ctx context.Context, tx pgx.Tx, executionID, reason string, now time.Time) (int, error) {
+	var n int
+	err := tx.QueryRow(ctx, `SELECT app.close_pending_approvals($1::uuid, $2, $3)`, executionID, reason, now).Scan(&n)
+	if err != nil {
+		return 0, mapDBErr(err)
+	}
+	return n, nil
+}
 
 func lockExecutionTx(ctx context.Context, tx pgx.Tx, executionID string) error {
 	var id string
@@ -165,6 +190,29 @@ func persistRunDiff(ctx context.Context, tx pgx.Tx, beforeEdges, edges []execEdg
 			return mapDBErr(err)
 		}
 	}
+	return nil
+}
+
+func (p *Postgres) AnnotateRetryCapabilities(ctx context.Context, scope isolation.Scope, exec *Execution, steps []ExecutionStep) error {
+	if scope.Zero() {
+		return ErrNoScope
+	}
+	if exec == nil || !authz.ValidUUID(exec.ID) {
+		return ErrNotFound
+	}
+	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
+	if err != nil {
+		return mapDBErr(err)
+	}
+	defer tx.Rollback(ctx)
+	edges, err := loadEdgesTx(ctx, tx, exec.ID)
+	if err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return mapDBErr(err)
+	}
+	applyRetryCapabilities(exec, steps, edges)
 	return nil
 }
 

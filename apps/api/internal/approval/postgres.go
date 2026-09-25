@@ -22,6 +22,7 @@ const recordColumns = `
 	COALESCE(policy_resource_id::text, ''), COALESCE(policy_version_id::text, ''), policy_digest, policy_revision,
 	binding_fingerprint, approver_role, status, expires_at,
 	COALESCE(requested_by::text, ''), COALESCE(decided_by::text, ''), decided_at, decision_note,
+	COALESCE(close_reason, ''),
 	created_at, updated_at
 `
 
@@ -211,6 +212,27 @@ func (p *Postgres) Decide(ctx context.Context, scope isolation.Scope, id string,
 	if err := scanRecord(tx.QueryRow(ctx, `SELECT `+recordColumns+` FROM approvals WHERE id = $1::uuid`, id), &rec); err != nil {
 		return Record{}, err
 	}
+	if rec.Status == StatusCanceled {
+		return Record{}, ErrClosed
+	}
+	if rec.ExecutionID != "" {
+		closed, err := refuseClosedRunTx(ctx, tx, rec.ExecutionID, now)
+		if err != nil {
+			return Record{}, err
+		}
+		if closed {
+			if err := tx.Commit(ctx); err != nil {
+				return Record{}, mapDBErr(err)
+			}
+			return Record{}, ErrClosed
+		}
+	}
+	if err := scanRecord(tx.QueryRow(ctx, `SELECT `+recordColumns+` FROM approvals WHERE id = $1::uuid FOR UPDATE`, id), &rec); err != nil {
+		return Record{}, err
+	}
+	if rec.Status == StatusCanceled {
+		return Record{}, ErrClosed
+	}
 	if scope.ActorID() != "" && rec.RequestedBy != "" && scope.ActorID() == rec.RequestedBy {
 		return Record{}, ErrSelfApproval
 	}
@@ -245,6 +267,36 @@ func (p *Postgres) Decide(ctx context.Context, scope isolation.Scope, id string,
 		return Record{}, mapDBErr(err)
 	}
 	return rec, nil
+}
+
+func (p *Postgres) ClosePendingForExecution(ctx context.Context, scope isolation.Scope, executionID, reason string, now time.Time) error {
+	if scope.Zero() {
+		return ErrNoScope
+	}
+	executionID = strings.TrimSpace(executionID)
+	if !authz.ValidUUID(executionID) {
+		return nil
+	}
+	if reason != ReasonRunCanceled && reason != ReasonWorkflowDeleted {
+		return ErrInvalid
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
+	if err != nil {
+		return mapDBErr(err)
+	}
+	defer tx.Rollback(ctx)
+	if err := closePendingApprovalsTx(ctx, tx, executionID, reason, now); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return mapDBErr(err)
+	}
+	return nil
 }
 
 func (p *Postgres) Refresh(ctx context.Context, scope isolation.Scope, id string, heads CurrentHeads, now time.Time) (Record, error) {
@@ -455,7 +507,7 @@ func scanRecord(row rowScanner, rec *Record) error {
 		&rec.TargetKind, &rec.TargetID, &rec.TargetVersionID, &rec.TargetDigest,
 		&rec.PolicyResourceID, &rec.PolicyVersionID, &rec.PolicyDigest, &rec.PolicyRevision,
 		&rec.BindingFingerprint, &rec.ApproverRole, &rec.Status, &rec.ExpiresAt,
-		&rec.RequestedBy, &rec.DecidedBy, &decidedAt, &rec.DecisionNote,
+		&rec.RequestedBy, &rec.DecidedBy, &decidedAt, &rec.DecisionNote, &rec.CloseReason,
 		&rec.CreatedAt, &rec.UpdatedAt,
 	)
 	if err != nil {
@@ -472,9 +524,58 @@ func recordDest(rec *Record) []any {
 		&rec.TargetKind, &rec.TargetID, &rec.TargetVersionID, &rec.TargetDigest,
 		&rec.PolicyResourceID, &rec.PolicyVersionID, &rec.PolicyDigest, &rec.PolicyRevision,
 		&rec.BindingFingerprint, &rec.ApproverRole, &rec.Status, &rec.ExpiresAt,
-		&rec.RequestedBy, &rec.DecidedBy, &rec.DecidedAt, &rec.DecisionNote,
+		&rec.RequestedBy, &rec.DecidedBy, &rec.DecidedAt, &rec.DecisionNote, &rec.CloseReason,
 		&rec.CreatedAt, &rec.UpdatedAt,
 	}
+}
+
+// refuseClosedRunTx locks the execution, then closes a still-pending
+// approval when the run was canceled or the workflow was deleted.
+// A failed run that was not deleted is refused without a new close reason.
+func refuseClosedRunTx(ctx context.Context, tx pgx.Tx, executionID string, now time.Time) (bool, error) {
+	var status string
+	var deleted, stopped bool
+	err := tx.QueryRow(ctx, `
+		SELECT e.status,
+		       w.deleted_at IS NOT NULL,
+		       EXISTS (
+		           SELECT 1 FROM execution_steps s
+		            WHERE s.workspace_id = e.workspace_id
+		              AND s.execution_id = e.id
+		              AND COALESCE(s.error_redacted->>'code', '') = 'workflow_deleted'
+		       )
+		  FROM executions e
+		  JOIN workflows w ON w.workspace_id = e.workspace_id AND w.id = e.workflow_id
+		 WHERE e.id = $1::uuid
+		 FOR UPDATE OF e
+	`, executionID).Scan(&status, &deleted, &stopped)
+	if err != nil {
+		if errors.Is(mapDBErr(err), ErrNotFound) {
+			return false, ErrClosed
+		}
+		return false, mapDBErr(err)
+	}
+	reason := ""
+	switch {
+	case status == "canceled":
+		reason = ReasonRunCanceled
+	case deleted || stopped:
+		reason = ReasonWorkflowDeleted
+	case status == "failed":
+		return false, ErrClosed
+	default:
+		return false, nil
+	}
+	if err := closePendingApprovalsTx(ctx, tx, executionID, reason, now); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func closePendingApprovalsTx(ctx context.Context, tx pgx.Tx, executionID, reason string, now time.Time) error {
+	var n int
+	err := tx.QueryRow(ctx, `SELECT app.close_pending_approvals($1::uuid, $2, $3)`, executionID, reason, now).Scan(&n)
+	return mapDBErr(err)
 }
 
 type rowScanner interface {

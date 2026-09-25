@@ -100,12 +100,15 @@ func evalCondition(with, inputs map[string]any) (*EvalResult, ErrorList) {
 }
 
 func conditionRoute(value any, matched bool) *EvalResult {
+	port := "false"
 	out := map[string]any{"true": nil, "false": nil}
 	if matched {
 		out["true"] = value
+		port = "true"
 	} else {
 		out["false"] = value
 	}
+	out["port"] = port
 	return &EvalResult{Outputs: out}
 }
 

@@ -221,7 +221,7 @@ func (m *Memory) CompleteJob(_ context.Context, scope isolation.Scope, now time.
 			step.Output = map[string]any{}
 		}
 		applyStepStatus(step, ExecutionSucceeded, now)
-		releaseFrom(exec.steps, exec.jobs, exec.edges, step.NodeID, emittedPorts(step.Output), now)
+		releaseFrom(exec.steps, exec.jobs, exec.edges, step.NodeID, emittedPorts(step.NodeType, step.Output), now)
 		return nil
 	}, "job.complete", "succeeded")
 }
@@ -438,14 +438,17 @@ func (m *Memory) RetryStep(ctx context.Context, scope isolation.Scope, now time.
 		return RetryResult{}, ErrNotFound
 	}
 	src = exec.steps[stepIdx]
-	// SSH retry-safe + verification may still queue a verify-first attempt.
-	if exec.record.Status == ExecutionIndeterminate && !allowsIndeterminateRetry(src.NodeType) {
-		return RetryResult{}, ErrRetryNotAllowed
+	if err := retryStatusError(exec.record, src, exec.steps); err != nil {
+		return RetryResult{}, err
 	}
 	if len(hint) > 0 {
 		applyRetryHint(&src, hint[0])
 	}
 	if err := canRetryStep(src); err != nil {
+		return RetryResult{}, err
+	}
+	unresolved, err := incomingRetryError(src.NodeID, exec.edges)
+	if err != nil {
 		return RetryResult{}, err
 	}
 	next := cloneStep(src)
@@ -460,7 +463,7 @@ func (m *Memory) RetryStep(ctx context.Context, scope isolation.Scope, now time.
 	next.UpdatedAt = now
 	next.StartedAt = nil
 	next.FinishedAt = nil
-	next.UnresolvedIncoming = 0
+	next.UnresolvedIncoming = unresolved
 	job := ExecutionJob{
 		ID:              newID(),
 		ExecutionID:     executionID,
@@ -560,7 +563,7 @@ func (m *Memory) ResumeWait(ctx context.Context, scope isolation.Scope, now time
 			step.Output = waitOutput(port, nil)
 		}
 		applyStepStatus(step, ExecutionSucceeded, now)
-		releaseFrom(exec.steps, exec.jobs, exec.edges, step.NodeID, emittedPorts(step.Output), now)
+		releaseFrom(exec.steps, exec.jobs, exec.edges, step.NodeID, emittedPorts(step.NodeType, step.Output), now)
 		return nil
 	}, "job.resume", port)
 }
@@ -714,7 +717,7 @@ func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope
 				if stepIdx >= 0 {
 					exec.steps[stepIdx].Output = waitOutput(port, nil)
 					applyStepStatus(&exec.steps[stepIdx], ExecutionSucceeded, now)
-					releaseFrom(exec.steps, exec.jobs, exec.edges, nodeID, emittedPorts(exec.steps[stepIdx].Output), now)
+					releaseFrom(exec.steps, exec.jobs, exec.edges, nodeID, emittedPorts(exec.steps[stepIdx].NodeType, exec.steps[stepIdx].Output), now)
 				}
 				changed = true
 				outcome = port
@@ -769,7 +772,28 @@ func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope
 }
 
 func (m *Memory) rollupLocked(exec *memExecution, now time.Time) {
-	applyExecutionStatus(&exec.record, rollupExecutionStatus(exec.jobs), now)
+	if exec.record.Status == ExecutionCanceled {
+		return
+	}
+	next := guardCanceledRollup(exec.record.Status, rollupExecutionStatus(exec.jobs, exec.steps))
+	applyExecutionStatus(&exec.record, next, now)
+}
+
+func (m *Memory) AnnotateRetryCapabilities(_ context.Context, scope isolation.Scope, exec *Execution, steps []ExecutionStep) error {
+	if scope.Zero() {
+		return ErrNoScope
+	}
+	if exec == nil {
+		return ErrInvalid
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	row, ok := m.executions[exec.ID]
+	if !ok || row.workspaceID != scope.WorkspaceID() {
+		return ErrNotFound
+	}
+	applyRetryCapabilities(exec, steps, row.edges)
+	return nil
 }
 
 func (m *Memory) lookupJobLocked(workspaceID, jobID string) (string, ExecutionJob, bool) {

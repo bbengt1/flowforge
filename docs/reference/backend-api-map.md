@@ -322,11 +322,11 @@ RBAC: `approval.view` list/get/events/catalog/evaluate; `workflow.execute` creat
 | `GET /api/v1/approvals` | List. Query `status`, `workflowId`, `workflowVersionId`, `executionId`. Refreshes stale rows. | `200` `{items}` | `401` `403` |
 | `POST /api/v1/approvals` | Materialize pending requirements from evaluate. Idempotent on active fingerprint. Requires `workflow.execute`. | `201` `{items}` | `400` `401` `403` `404` |
 | `GET /api/v1/approvals/{approvalId}` | One requirement; refreshes expiry/binding. | `200` | `401` `403` `404` |
-| `POST /api/v1/approvals/{approvalId}/decide` | Fresh auth. `{decision, note?}`. No self-approval. | `200` | `400` `401` `403` `404` `409` (expired/invalidated/not pending) |
+| `POST /api/v1/approvals/{approvalId}/decide` | Fresh auth. `{decision, note?}`. No self-approval. A closed approval, or one whose run is canceled, failed, or deleted, is `409` `approval_closed`. | `200` | `400` `401` `403` `404` `409` (expired/invalidated/not pending/`approval_closed`) |
 | `GET /api/v1/approvals/{approvalId}/events` | Secret-free audit. | `200` `{items}` | `401` `403` `404` |
 | `POST /api/v1/workflows/{workflowId}/executions` | **Also** evaluates policy before the pin stub. Approval-required without a valid approval is `409` (pending rows are created). Deny is `403`. | `201` execution | `400` `401` `403` `404` `409` |
 
-Statuses: `pending`, `approved`, `rejected`, `expired`, `invalidated`. Binding fields on every requirement/record: `workflowVersionId`, `workflowDigest`, `targetId`/`targetVersionId`/`targetDigest`, `policyResourceId`/`policyVersionId`/`policyDigest`/`policyRevision`, `operation`, `nodeId`, `expiresAt`, `bindingFingerprint`.
+Statuses: `pending`, `approved`, `rejected`, `expired`, `invalidated`, `canceled`. `canceled` is set when the run is canceled (`closeReason: run_canceled`) or stopped because the workflow was deleted (`closeReason: workflow_deleted`). No decider is recorded. Closed rows leave `GET /approvals?status=pending`. Binding fields on every requirement/record: `workflowVersionId`, `workflowDigest`, `targetId`/`targetVersionId`/`targetDigest`, `policyResourceId`/`policyVersionId`/`policyDigest`/`policyRevision`, `operation`, `nodeId`, `expiresAt`, `bindingFingerprint`.
 
 `flow.approval` nodes always produce a **wait** requirement (`with.approverRole`, `with.expiresIn`, `wait: true`). Wait-only graphs are `decision=allow` / `dispatchAllowed=true` so the run can start and park. A kubernetes/ssh/http/notification/script policy produces a pre-dispatch requirement when `kind=approval` or `policy.requireApproval=true`. Allowlists fail closed when present (a present empty list denies). Cluster-target `allowedNamespaces` is also enforced at evaluate. A `policyId` that is not a published policy in the workspace is deny. No bound policy means no extra constraint (existing E4.2 workflows still run).
 
@@ -975,7 +975,7 @@ Suggested approval wait flow:
 1. Start a published version that contains `flow.approval`. Evaluate lists wait requirements with `wait: true` and still allows start.
 2. Worker `POST /jobs/claim` parks the node: job/step/execution become `waiting` with **no lease**. Wait survives `POST /jobs/recover` and pod loss.
 3. A bound approval row is materialized with `executionId`. Fingerprint includes version, target, policy, operation, node, and execution.
-4. Approver decides: `POST /approvals/{id}/decide` `{decision}`. Fresh `approval.decide` + membership. Requester self-approval is `403`. Resume writes output port `approved` / `rejected`. If the workflow was deleted while the run was waiting, decide returns `409` `workflow_deleted` and the run is `failed` with that reason. The pre-check does not record the decision (the approval stays `pending`). A race that decides first still returns `409` and stops the run on resume.
+4. Approver decides: `POST /approvals/{id}/decide` `{decision}`. Fresh `approval.decide` + membership. Requester self-approval is `403`. Resume writes output port `approved` / `rejected`. If the workflow was deleted while the run was waiting, the same transaction fails the run with `workflow_deleted` and cancels the pending approval (`closeReason: workflow_deleted`, no decider). Decide returns `409` `approval_closed` and does not record a decision. A race that decides first still returns `409` and stops the run on resume.
 5. Expiry (`availableAt`) or binding change (policy/target/version digest) resumes `expired` and never `approved`.
 
 | Field | Required | Notes |
@@ -1002,7 +1002,7 @@ Suggested approval wait flow:
 | `DELETE /api/v1/schedules/{scheduleId}` | Delete. Requires `workflow.edit` + CSRF. | `204` | `401` `403` `404` |
 | `POST /api/v1/schedules/dispatch` | Tick due schedules. Requires `workflow.execute` + CSRF. | `200` `{items}` | `401` `403` |
 | `GET /api/v1/approvals/catalog` | Now `waitResumeEnabled: true`. Resume via decide. | `200` catalog | `401` `403` |
-| `POST /api/v1/approvals/{approvalId}/decide` | Fresh-auth decide **and** resume wait. A deleted workflow is `409` `workflow_deleted` (approval stays pending when the pre-check wins). | `200` approval | `401` `403` `409` `workflow_deleted` |
+| `POST /api/v1/approvals/{approvalId}/decide` | Fresh-auth decide **and** resume wait. A deleted workflow stops the run and closes the approval; decide is `409` `approval_closed`. | `200` approval | `401` `403` `409` `approval_closed` |
 
 Out of scope: `apps/web` rewrite. HTTP and notification action nodes are E10.4 below.
 
@@ -1074,7 +1074,7 @@ Step statuses: `pending` (incoming edges have not all resolved), `queued`, `runn
 
 Job statuses: `blocked` (the step is not eligible to run), `queued`, `claimed`, `running`, `waiting`, `succeeded`, `failed`, `canceled`, `indeterminate`, `skipped`.
 
-Only a node with no incoming edge starts `queued`. Every other step starts `pending` with its job `blocked`. An edge is satisfied only when the upstream step emits that port. The default join is AND: a step is queued only when every incoming edge has resolved satisfied, and it is `skipped` as soon as any incoming edge resolves unsatisfied. A node may set `join: any` for OR: once every incoming edge has resolved, the step is queued if at least one was satisfied and `skipped` if none were. `flow.join` stays registry-disabled. A skip resolves that step's outgoing edges as unsatisfied and does not fail the run. Workers claim a job only when its status is `queued`, it is not `blocked`, and the step's unresolved incoming count is 0. Cancel and retry use `/executions/{id}/cancel` and `/retry`. Do not claim jobs from the browser. Waiting jobs hold no lease. An approval resumes via `POST /approvals/{id}/decide`. A delay resumes when its timer is due.
+Only a node with no incoming edge starts `queued`. Every other step starts `pending` with its job `blocked`. An edge is satisfied only when the upstream step emits that port. `flow.condition` sets `output.port` to the branch it took. Any other succeeded node satisfies all of its declared output ports, including ports whose value is missing or null. The default join is AND: a step is queued only when every incoming edge has resolved satisfied, and it is `skipped` as soon as any incoming edge resolves unsatisfied. A node may set `join: any` for OR: once every incoming edge has resolved, the step is queued if at least one was satisfied and `skipped` if none were. `flow.join` stays registry-disabled. A skip resolves that step's outgoing edges as unsatisfied and does not fail the run. A failed step leaves its outgoing edges unresolved so a later retry can release them; downstream steps stay `pending` / `blocked`. Workers claim a job only when its status is `queued`, it is not `blocked`, and the step's unresolved incoming count is 0. Cancel and retry use `/executions/{id}/cancel` and `/retry`. Do not claim jobs from the browser. Waiting jobs hold no lease. An approval resumes via `POST /approvals/{id}/decide`. A delay resumes when its timer is due. Detail and step reads include `capabilities.retry` (`allowed`, and when refused `code` plus `reason`) from the same eligibility function as retry.
 
 Retention: executions `retentionUntil` default 90 days; audit events 365 days. Monthly partitions apply to `audit_events` only.
 
@@ -1098,7 +1098,7 @@ Suggested UI flow:
 
 1. Status: keep polling `GET /executions/{id}` (`steps[]`, `jobs[]`). Show `leaseExpiresAt`, `heartbeatAt`, `workerId`, `fencingToken` as diagnostics only. If `status=queued` and `statusReason=no-worker`, tell the operator no worker is claiming jobs (local compose: start the `worker` service).
 2. Cancel: `POST /executions/{id}/cancel` `{}` with CSRF. Requires `execution.cancel` (operator/admin). Viewer/approver → `403`. Already canceled → `200` (idempotent). `succeeded` / `failed` / `indeterminate` → `409`.
-3. Retry: `failed` or `canceled` **core** `data.*` / `flow.*` steps, `ssh.run` when E8.3 allows it (`retrySafe` + verification + `maxAttempts>0`), or `script.python` / `script.go` when E9.3 allows it (`retrySafe` + idempotency key + verification + `maxAttempts>0`). `POST /executions/{id}/steps/{stepId}/retry` `{}` or `POST /executions/{id}/retry` `{stepId?}`. Requires `workflow.execute`. `201` `{execution,step,job}` with `attempt+1` queued. Other provider nodes → `409`. SSH/script that is not retry-safe, including `indeterminate` lease loss, → `409` `retry-denied`.
+3. Retry: only a `failed` or `indeterminate` run, and only the latest attempt of a step that started (`startedAt` set) and ended `failed` or `indeterminate`. A canceled run, a step that never started, or a step that is not failed is `409` `execution_not_retryable` with `reason` (`run_canceled`, `run_not_failed`, `step_not_started`, `step_not_failed`, `incoming_unresolved`). An older attempt is `409` `step_attempt_superseded`. Core `data.*` / `flow.*` steps, `ssh.run` when E8.3 allows it (`retrySafe` + verification + `maxAttempts>0`), or `script.python` / `script.go` when E9.3 allows it (`retrySafe` + idempotency key + verification + `maxAttempts>0`). `POST /executions/{id}/steps/{stepId}/retry` `{}` or `POST /executions/{id}/retry` `{stepId?}`. Requires `workflow.execute`. `201` `{execution,step,job}` with `attempt+1` queued. Detail and step reads expose the same decision as `capabilities.retry`. SSH/script that is not retry-safe, including `indeterminate` lease loss, → `409` `retry-denied`.
 4. Do **not** call `/jobs/claim` from the UI. That is the worker client.
 
 Worker client (not the UI):
@@ -1120,11 +1120,11 @@ Default lease **30s** (min 1s, max 5m). `JOB_BINDING_SECRET` (32-byte base64/hex
 | `POST /api/v1/jobs/{jobId}/release` | Requeue if not yet running; otherwise `indeterminate`. | `200` | `400` `401` `403` `404` `409` |
 | `POST /api/v1/jobs/{jobId}/complete` | Succeed with redacted `output`. | `200` | `400` `401` `403` `404` `409` |
 | `POST /api/v1/jobs/{jobId}/fail` | Fail with redacted `error`. | `200` | `400` `401` `403` `404` `409` |
-| `POST /api/v1/executions/{executionId}/cancel` | Cancel open steps/jobs. Requires `execution.cancel`. Idempotent. | `200` detail | `401` `403` `404` `409` |
+| `POST /api/v1/executions/{executionId}/cancel` | Cancel open steps/jobs and close pending approvals (`canceled` / `run_canceled`) in the same transaction. Requires `execution.cancel`. Idempotent. | `200` detail | `401` `403` `404` `409` |
 | `POST /api/v1/executions/{executionId}/emergency-stop` | E9.4: stop a script step. Requires `script.emergencyStop`. Uncertain/running → `indeterminate`. | `200` detail | `401` `403` `404` `409` |
 | `POST /api/v1/executions/{executionId}/steps/{stepId}/emergency-stop` | E9.4: stop one script step. | `200` detail | `401` `403` `404` `409` |
-| `POST /api/v1/executions/{executionId}/retry` | Retry latest failed/canceled eligible step, E8.3-eligible `ssh.run`, or E9.3-eligible script. Requires `workflow.execute`. | `201` | `401` `403` `404` `409` (`conflict` or `retry-denied`) |
-| `POST /api/v1/executions/{executionId}/steps/{stepId}/retry` | Retry one step. | `201` | `401` `403` `404` `409` (`conflict` or `retry-denied`) |
+| `POST /api/v1/executions/{executionId}/retry` | Retry the newest step whose `capabilities.retry.allowed` is true. Requires `workflow.execute`. Only a `failed` or `indeterminate` run, and only the latest attempt of a step that started and ended `failed` or `indeterminate`. | `201` | `401` `403` `404` `409` (`execution_not_retryable`, `step_attempt_superseded`, or `retry-denied`) |
+| `POST /api/v1/executions/{executionId}/steps/{stepId}/retry` | Retry one step under the same rules. A superseded attempt is `409` `step_attempt_superseded`. | `201` | `401` `403` `404` `409` (`execution_not_retryable`, `step_attempt_superseded`, or `retry-denied`) |
 
 ## Execution artifacts (E5.3)
 
@@ -1214,7 +1214,10 @@ Errors use `application/problem+json` and include `type`, `title`, `status`, `de
 | `conflict` | 409 | Unique identity collision, last-admin protection, draft revision mismatch, duplicate published digest, idempotency fingerprint mismatch, fencing/lease mismatch, a live workflow slug, or a retry/cancel that is not allowed |
 | `workflow_has_active_executions` | 409 | Soft-delete refused because a queued or running execution exists. Waiting and pinned executions do not block. The run is not canceled. |
 | `workflow_slug_reserved` | 409 | Create used a slug still held by a soft-deleted workflow |
-| `workflow_deleted` | 409 | Resume, retry, or approval decide found the workflow tombstoned. The run is `failed` with reason `workflow_deleted` and does not continue. |
+| `workflow_deleted` | 409 | Resume or retry found the workflow tombstoned. The run is `failed` with reason `workflow_deleted` and does not continue. Pending approvals on that run are `canceled` with `closeReason` `workflow_deleted`. |
+| `approval_closed` | 409 | Decide on an approval that is `canceled`, or whose run is canceled, failed, or whose workflow was deleted. No decision is recorded. |
+| `execution_not_retryable` | 409 | Retry refused. `reason` is `run_canceled`, `run_not_failed`, `step_not_started`, `step_not_failed`, or `incoming_unresolved`. |
+| `step_attempt_superseded` | 409 | Retry targeted an attempt that is not the latest for that step. |
 | `retry-denied` | 409 | SSH/script retry rejected: default `maxAttempts=0`, not `retrySafe`, missing verification or idempotency key, or no attempts remain. Indeterminate non-retrySafe steps stay closed. |
 | `artifact-mutable` | 400 | Draft or unsigned script package cannot execute. Publish first. |
 | `artifact-unscanned` | 400 | Script artifact `scanStatus` is pending or missing. |

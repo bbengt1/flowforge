@@ -450,13 +450,26 @@ func retryExecution(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	executionID := strings.TrimSpace(r.PathValue("executionId"))
 	stepID := strings.TrimSpace(core.FirstNonEmpty(r.PathValue("stepId"), req.StepID))
 	if stepID == "" {
+		exec, err := s.Workflows.GetExecutionByID(r.Context(), scope, executionID)
+		if err != nil {
+			WriteWorkflowStoreError(w, r, err)
+			return
+		}
 		steps, err := s.Workflows.ListSteps(r.Context(), scope, executionID)
 		if err != nil {
 			WriteWorkflowStoreError(w, r, err)
 			return
 		}
+		if err := s.Workflows.AnnotateRetryCapabilities(r.Context(), scope, &exec, steps); err != nil {
+			WriteWorkflowStoreError(w, r, err)
+			return
+		}
 		stepID = LatestRetryCandidate(steps)
 		if stepID == "" {
+			if exec.Capabilities != nil {
+				writeRetryCapability(w, r, exec.Capabilities.Retry)
+				return
+			}
 			WriteWorkflowStoreError(w, r, wfstore.ErrRetryNotAllowed)
 			return
 		}
@@ -467,7 +480,40 @@ func retryExecution(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
+	annotateRetryResult(s, r, scope, &result)
 	core.WriteJSON(w, http.StatusCreated, RetryResponse{Execution: result.Execution, Step: result.Step, Job: result.Job})
+}
+
+func writeRetryCapability(w http.ResponseWriter, r *http.Request, cap wfstore.RetryCapability) {
+	switch cap.Code {
+	case wfstore.CodeStepAttemptSuperseded:
+		core.WriteProblem(w, r, http.StatusConflict, core.CodeStepAttemptSuperseded, "Conflict", "This step attempt was superseded by a later attempt.")
+	case wfstore.CodeRetryDenied:
+		core.WriteProblem(w, r, http.StatusConflict, core.CodeRetryDenied, "Retry Denied", "Retry is not allowed: default maxAttempts is 0, the node is not retrySafe, verification or idempotency key is missing, or no attempts remain. Indeterminate SSH/script steps are never blindly re-run.")
+	default:
+		core.WriteProblemReason(w, r, http.StatusConflict, core.CodeExecutionNotRetryable, "Conflict", "This execution cannot be retried.", cap.Reason)
+	}
+}
+
+func annotateRetryResult(s *core.Server, r *http.Request, scope isolation.Scope, result *wfstore.RetryResult) {
+	if s.Workflows == nil || result == nil {
+		return
+	}
+	steps, err := s.Workflows.ListSteps(r.Context(), scope, result.Execution.ID)
+	if err != nil {
+		return
+	}
+	exec := result.Execution
+	if err := s.Workflows.AnnotateRetryCapabilities(r.Context(), scope, &exec, steps); err != nil {
+		return
+	}
+	result.Execution = exec
+	for _, step := range steps {
+		if step.ID == result.Step.ID {
+			result.Step.Capabilities = step.Capabilities
+			return
+		}
+	}
 }
 
 func retryHint(s *core.Server, ctx context.Context, scope isolation.Scope, executionID, stepID string) map[string]any {
@@ -582,14 +628,22 @@ func secondsDuration(n int) time.Duration {
 	return time.Duration(n) * time.Second
 }
 
-// LatestRetryCandidate picks the newest failed, canceled, or indeterminate step
-// for POST /executions/{id}/retry. Store gates still deny non-retrySafe cases.
+// LatestRetryCandidate picks the newest step whose capabilities.retry.allowed
+// is true. Callers annotate with the shared eligibility function first.
 func LatestRetryCandidate(steps []wfstore.ExecutionStep) string {
-	for i := len(steps) - 1; i >= 0; i-- {
-		switch steps[i].Status {
-		case wfstore.ExecutionFailed, wfstore.ExecutionCanceled, wfstore.ExecutionIndeterminate:
-			return steps[i].ID
+	var best *wfstore.ExecutionStep
+	for i := range steps {
+		cap := steps[i].Capabilities
+		if cap == nil || !cap.Retry.Allowed {
+			continue
+		}
+		if best == nil || steps[i].Attempt > best.Attempt || (steps[i].Attempt == best.Attempt && steps[i].UpdatedAt.After(best.UpdatedAt)) {
+			chosen := steps[i]
+			best = &chosen
 		}
 	}
-	return ""
+	if best == nil {
+		return ""
+	}
+	return best.ID
 }

@@ -86,22 +86,23 @@ func planGraph(yamlDoc string, summary workflow.Summary) ([]plannedNode, []execE
 }
 
 // emittedPorts is the set of ports a finished step actually produced.
-// A non-empty output.port selects that port alone. Otherwise every key
-// whose value is non-nil counts as emitted.
-func emittedPorts(output map[string]any) map[string]struct{} {
+// A non-empty output.port selects that port alone. Otherwise every
+// declared output port of the node type is satisfied, including ports
+// whose output value is missing or null. An unknown node type satisfies
+// nothing.
+func emittedPorts(nodeType string, output map[string]any) map[string]struct{} {
 	out := map[string]struct{}{}
-	if output == nil {
-		return out
+	if output != nil {
+		if port, ok := output["port"].(string); ok && strings.TrimSpace(port) != "" {
+			out[strings.TrimSpace(port)] = struct{}{}
+			return out
+		}
 	}
-	if port, ok := output["port"].(string); ok && strings.TrimSpace(port) != "" {
-		out[strings.TrimSpace(port)] = struct{}{}
-		return out
-	}
-	for k, v := range output {
-		if v == nil {
+	for _, name := range workflow.OutputPortNames(nodeType) {
+		if name == "" {
 			continue
 		}
-		out[k] = struct{}{}
+		out[name] = struct{}{}
 	}
 	return out
 }

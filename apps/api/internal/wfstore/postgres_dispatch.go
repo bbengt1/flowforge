@@ -117,6 +117,9 @@ func (p *Postgres) ClaimJob(ctx context.Context, scope isolation.Scope, now time
 			}
 			lockedWorkflow = workflowID
 		}
+		if err := lockExecutionTx(ctx, tx, executionID); err != nil {
+			return DispatchResult{}, err
+		}
 		err = tx.QueryRow(ctx, `
 			SELECT j.id::text
 			FROM execution_jobs j
@@ -306,11 +309,17 @@ func (p *Postgres) CancelExecution(ctx context.Context, scope isolation.Scope, n
 		return Execution{}, mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
+	if err := lockExecutionTx(ctx, tx, executionID); err != nil {
+		return Execution{}, err
+	}
 	exec, err := getExecutionTx(ctx, tx, executionID)
 	if err != nil {
 		return Execution{}, err
 	}
 	if exec.Status == ExecutionCanceled {
+		if _, err := closePendingApprovalsTx(ctx, tx, executionID, ReasonRunCanceled, now); err != nil {
+			return Execution{}, err
+		}
 		if err := tx.Commit(ctx); err != nil {
 			return Execution{}, mapDBErr(err)
 		}
@@ -343,11 +352,16 @@ func (p *Postgres) CancelExecution(ctx context.Context, scope isolation.Scope, n
 	if err := applyExecutionStatusTx(ctx, tx, executionID, ExecutionCanceled, now); err != nil {
 		return Execution{}, err
 	}
+	closed, err := closePendingApprovalsTx(ctx, tx, executionID, ReasonRunCanceled, now)
+	if err != nil {
+		return Execution{}, err
+	}
 	if _, err := insertAuditTx(ctx, tx, scope, AuditWrite{
 		Action:       "execution.cancel",
 		ResourceType: "execution",
 		ResourceID:   executionID,
 		Outcome:      "canceled",
+		Details:      map[string]any{"approvalsClosed": closed},
 	}); err != nil {
 		return Execution{}, err
 	}
@@ -539,17 +553,11 @@ func (p *Postgres) RetryStep(ctx context.Context, scope isolation.Scope, now tim
 		return RetryResult{}, mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
-	exec, err := getExecutionTx(ctx, tx, executionID)
-	if err != nil {
-		return RetryResult{}, err
+	var workflowID string
+	if err := tx.QueryRow(ctx, `SELECT workflow_id::text FROM executions WHERE id = $1::uuid`, executionID).Scan(&workflowID); err != nil {
+		return RetryResult{}, mapDBErr(err)
 	}
-	src, err := scanStep(tx.QueryRow(ctx, `
-		SELECT `+stepColumns+` FROM execution_steps WHERE execution_id = $1::uuid AND id = $2::uuid
-	`, executionID, stepID))
-	if err != nil {
-		return RetryResult{}, err
-	}
-	if err := guardLiveWorkflowTx(ctx, tx, scope, now, exec.WorkflowID, executionID); err != nil {
+	if err := guardLiveWorkflowTx(ctx, tx, scope, now, workflowID, executionID); err != nil {
 		if errors.Is(err, ErrWorkflowDeleted) {
 			if commitErr := tx.Commit(ctx); commitErr != nil {
 				return RetryResult{}, mapDBErr(commitErr)
@@ -558,13 +566,38 @@ func (p *Postgres) RetryStep(ctx context.Context, scope isolation.Scope, now tim
 		}
 		return RetryResult{}, err
 	}
-	if exec.Status == ExecutionIndeterminate && !allowsIndeterminateRetry(src.NodeType) {
-		return RetryResult{}, ErrRetryNotAllowed
+	if err := lockExecutionTx(ctx, tx, executionID); err != nil {
+		return RetryResult{}, err
+	}
+	exec, err := getExecutionTx(ctx, tx, executionID)
+	if err != nil {
+		return RetryResult{}, err
+	}
+	src, err := scanStep(tx.QueryRow(ctx, `
+		SELECT `+stepColumns+` FROM execution_steps WHERE execution_id = $1::uuid AND id = $2::uuid FOR UPDATE
+	`, executionID, stepID))
+	if err != nil {
+		return RetryResult{}, err
+	}
+	steps, err := loadStepsTx(ctx, tx, executionID)
+	if err != nil {
+		return RetryResult{}, err
+	}
+	edges, err := loadEdgesTx(ctx, tx, executionID)
+	if err != nil {
+		return RetryResult{}, err
+	}
+	if err := retryStatusError(exec, src, steps); err != nil {
+		return RetryResult{}, err
 	}
 	if len(hint) > 0 {
 		applyRetryHint(&src, hint[0])
 	}
 	if err := canRetryStep(src); err != nil {
+		return RetryResult{}, err
+	}
+	unresolved, err := incomingRetryError(src.NodeID, edges)
+	if err != nil {
 		return RetryResult{}, err
 	}
 	next := cloneStep(src)
@@ -579,6 +612,7 @@ func (p *Postgres) RetryStep(ctx context.Context, scope isolation.Scope, now tim
 	next.UpdatedAt = now
 	next.StartedAt = nil
 	next.FinishedAt = nil
+	next.UnresolvedIncoming = unresolved
 	inputRaw, err := marshalObject(next.Input)
 	if err != nil {
 		return RetryResult{}, ErrInvalid
@@ -586,9 +620,9 @@ func (p *Postgres) RetryStep(ctx context.Context, scope isolation.Scope, now tim
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO execution_steps (
 			workspace_id, id, execution_id, node_id, node_type, attempt, status,
-			input_redacted, created_at, updated_at
-		) VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8::jsonb, $9, $9)
-	`, scope.WorkspaceID(), next.ID, executionID, next.NodeID, next.NodeType, next.Attempt, next.Status, inputRaw, now); err != nil {
+			input_redacted, unresolved_incoming, created_at, updated_at
+		) VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8::jsonb, $9, $10, $10)
+	`, scope.WorkspaceID(), next.ID, executionID, next.NodeID, next.NodeType, next.Attempt, next.Status, inputRaw, unresolved, now); err != nil {
 		return RetryResult{}, mapDBErr(err)
 	}
 	job := ExecutionJob{
@@ -650,6 +684,13 @@ func (p *Postgres) WaitJob(ctx context.Context, scope isolation.Scope, now time.
 		return DispatchResult{}, mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
+	executionID, _, _, err := peekJobTx(ctx, tx, in.JobID)
+	if err != nil {
+		return DispatchResult{}, err
+	}
+	if err := lockExecutionTx(ctx, tx, executionID); err != nil {
+		return DispatchResult{}, err
+	}
 	job, err := scanJob(tx.QueryRow(ctx, `SELECT `+jobColumns+` FROM execution_jobs WHERE id = $1::uuid FOR UPDATE`, in.JobID))
 	if err != nil {
 		return DispatchResult{}, err
@@ -727,6 +768,24 @@ func (p *Postgres) ResumeWait(ctx context.Context, scope isolation.Scope, now ti
 		return DispatchResult{}, mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
+	executionID, workflowID, peeked, err := peekJobTx(ctx, tx, in.JobID)
+	if err != nil {
+		return DispatchResult{}, err
+	}
+	if peeked != JobSucceeded {
+		if err := guardLiveWorkflowTx(ctx, tx, scope, now, workflowID, executionID); err != nil {
+			if errors.Is(err, ErrWorkflowDeleted) {
+				if commitErr := tx.Commit(ctx); commitErr != nil {
+					return DispatchResult{}, mapDBErr(commitErr)
+				}
+				return DispatchResult{}, ErrWorkflowDeleted
+			}
+			return DispatchResult{}, err
+		}
+	}
+	if err := lockExecutionTx(ctx, tx, executionID); err != nil {
+		return DispatchResult{}, err
+	}
 	job, err := scanJob(tx.QueryRow(ctx, `SELECT `+jobColumns+` FROM execution_jobs WHERE id = $1::uuid FOR UPDATE`, in.JobID))
 	if err != nil {
 		return DispatchResult{}, err
@@ -734,21 +793,8 @@ func (p *Postgres) ResumeWait(ctx context.Context, scope isolation.Scope, now ti
 	if job.Status == JobSucceeded {
 		return p.dispatchSnapshotTx(ctx, tx, scope, now, job)
 	}
-	if job.Status != JobWaiting {
+	if job.Status != JobWaiting || peeked == JobSucceeded {
 		return DispatchResult{}, ErrNotClaimable
-	}
-	exec, err := getExecutionTx(ctx, tx, job.ExecutionID)
-	if err != nil {
-		return DispatchResult{}, err
-	}
-	if err := guardLiveWorkflowTx(ctx, tx, scope, now, exec.WorkflowID, job.ExecutionID); err != nil {
-		if errors.Is(err, ErrWorkflowDeleted) {
-			if commitErr := tx.Commit(ctx); commitErr != nil {
-				return DispatchResult{}, mapDBErr(commitErr)
-			}
-			return DispatchResult{}, ErrWorkflowDeleted
-		}
-		return DispatchResult{}, err
 	}
 	payload, err := marshalObject(redactObject(waitOutput(port, in.Output)))
 	if err != nil {
@@ -768,7 +814,7 @@ func (p *Postgres) ResumeWait(ctx context.Context, scope isolation.Scope, now ti
 	if err != nil {
 		return DispatchResult{}, err
 	}
-	if err := resolveOutgoingTx(ctx, tx, job.ExecutionID, step.NodeID, emittedPorts(step.Output), now); err != nil {
+	if err := resolveOutgoingTx(ctx, tx, job.ExecutionID, step.NodeID, emittedPorts(step.NodeType, step.Output), now); err != nil {
 		return DispatchResult{}, err
 	}
 	if err := rollupExecutionTx(ctx, tx, job.ExecutionID, now); err != nil {
@@ -783,7 +829,7 @@ func (p *Postgres) ResumeWait(ctx context.Context, scope isolation.Scope, now ti
 	}); err != nil {
 		return DispatchResult{}, err
 	}
-	exec, err = getExecutionTx(ctx, tx, job.ExecutionID)
+	exec, err := getExecutionTx(ctx, tx, job.ExecutionID)
 	if err != nil {
 		return DispatchResult{}, err
 	}
@@ -870,6 +916,24 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 		return DispatchResult{}, mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
+	executionID, workflowID, _, err := peekJobTx(ctx, tx, in.JobID)
+	if err != nil {
+		return DispatchResult{}, err
+	}
+	if opts.clearClaim {
+		if err := guardLiveWorkflowTx(ctx, tx, scope, now, workflowID, executionID); err != nil {
+			if errors.Is(err, ErrWorkflowDeleted) {
+				if commitErr := tx.Commit(ctx); commitErr != nil {
+					return DispatchResult{}, mapDBErr(commitErr)
+				}
+				return DispatchResult{}, ErrWorkflowDeleted
+			}
+			return DispatchResult{}, err
+		}
+	}
+	if err := lockExecutionTx(ctx, tx, executionID); err != nil {
+		return DispatchResult{}, err
+	}
 	job, err := scanJob(tx.QueryRow(ctx, `
 		SELECT `+jobColumns+` FROM execution_jobs WHERE id = $1::uuid FOR UPDATE
 	`, in.JobID))
@@ -895,15 +959,6 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 	}
 	if nextStatus == JobQueued && opts.clearClaim {
 		leaseExp = nil
-		if err := guardLiveWorkflowTx(ctx, tx, scope, now, exec.WorkflowID, exec.ID); err != nil {
-			if errors.Is(err, ErrWorkflowDeleted) {
-				if commitErr := tx.Commit(ctx); commitErr != nil {
-					return DispatchResult{}, mapDBErr(commitErr)
-				}
-				return DispatchResult{}, ErrWorkflowDeleted
-			}
-			return DispatchResult{}, err
-		}
 	}
 	var hb any
 	if opts.running {
@@ -977,7 +1032,7 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 		return DispatchResult{}, err
 	}
 	if opts.releaseOnSuccess && nextStatus == JobSucceeded && prevStatus != JobSucceeded {
-		if err := resolveOutgoingTx(ctx, tx, job.ExecutionID, step.NodeID, emittedPorts(step.Output), now); err != nil {
+		if err := resolveOutgoingTx(ctx, tx, job.ExecutionID, step.NodeID, emittedPorts(step.NodeType, step.Output), now); err != nil {
 			return DispatchResult{}, err
 		}
 	}
@@ -1158,6 +1213,9 @@ func resumeOrStopDueWaits(ctx context.Context, tx pgx.Tx, scope isolation.Scope,
 			if err != nil {
 				return 0, 0, ErrInvalid
 			}
+			if err := lockExecutionTx(ctx, tx, row.exec); err != nil {
+				return 0, 0, err
+			}
 			tag, err := tx.Exec(ctx, `
 				UPDATE execution_jobs
 				SET status = 'succeeded', updated_at = $1
@@ -1177,7 +1235,7 @@ func resumeOrStopDueWaits(ctx context.Context, tx pgx.Tx, scope isolation.Scope,
 			if err != nil {
 				return 0, 0, err
 			}
-			if err := resolveOutgoingTx(ctx, tx, row.exec, step.NodeID, emittedPorts(step.Output), now); err != nil {
+			if err := resolveOutgoingTx(ctx, tx, row.exec, step.NodeID, emittedPorts(step.NodeType, step.Output), now); err != nil {
 				return 0, 0, err
 			}
 			expPairs = append(expPairs, recoverPair{exec: row.exec, step: row.step})
@@ -1232,6 +1290,13 @@ func finishRecoverPairs(ctx context.Context, tx pgx.Tx, scope isolation.Scope, n
 }
 
 func rollupExecutionTx(ctx context.Context, tx pgx.Tx, executionID string, now time.Time) error {
+	exec, err := getExecutionTx(ctx, tx, executionID)
+	if err != nil {
+		return err
+	}
+	if exec.Status == ExecutionCanceled {
+		return nil
+	}
 	rows, err := tx.Query(ctx, `SELECT `+jobColumns+` FROM execution_jobs WHERE execution_id = $1::uuid`, executionID)
 	if err != nil {
 		return mapDBErr(err)
@@ -1248,7 +1313,12 @@ func rollupExecutionTx(ctx context.Context, tx pgx.Tx, executionID string, now t
 	if err := rows.Err(); err != nil {
 		return mapDBErr(err)
 	}
-	return applyExecutionStatusTx(ctx, tx, executionID, rollupExecutionStatus(jobs), now)
+	steps, err := loadStepsTx(ctx, tx, executionID)
+	if err != nil {
+		return err
+	}
+	next := guardCanceledRollup(exec.Status, rollupExecutionStatus(jobs, steps))
+	return applyExecutionStatusTx(ctx, tx, executionID, next, now)
 }
 
 func applyExecutionStatusTx(ctx context.Context, tx pgx.Tx, executionID, status string, now time.Time) error {

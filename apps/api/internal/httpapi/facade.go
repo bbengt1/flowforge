@@ -43,6 +43,9 @@ const (
 	CodeWorkflowHasActiveExecutions = core.CodeWorkflowHasActiveExecutions
 	CodeWorkflowSlugReserved        = core.CodeWorkflowSlugReserved
 	CodeWorkflowDeleted             = core.CodeWorkflowDeleted
+	CodeExecutionNotRetryable       = core.CodeExecutionNotRetryable
+	CodeStepAttemptSuperseded       = core.CodeStepAttemptSuperseded
+	CodeApprovalClosed              = core.CodeApprovalClosed
 	MaxRequestBody                  = core.MaxRequestBody
 	RequestIDHeader                 = core.RequestIDHeader
 	AuthPublic                      = rt.AuthPublic

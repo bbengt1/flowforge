@@ -902,6 +902,11 @@ func resourceTypeForStart(executionID string) string {
 }
 
 func WriteWorkflowStoreError(w http.ResponseWriter, r *http.Request, err error) {
+	var refused *wfstore.NotRetryableError
+	if errors.As(err, &refused) {
+		core.WriteProblemReason(w, r, http.StatusConflict, core.CodeExecutionNotRetryable, "Conflict", "This execution cannot be retried.", refused.Reason)
+		return
+	}
 	switch {
 	case errors.Is(err, wfstore.ErrNotFound):
 		core.WriteProblem(w, r, http.StatusNotFound, core.CodeNotFound, "Not Found", "The requested resource was not found.")
@@ -915,6 +920,12 @@ func WriteWorkflowStoreError(w http.ResponseWriter, r *http.Request, err error) 
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeWorkflowSlugReserved, "Conflict", "This slug is reserved by a deleted workflow.")
 	case errors.Is(err, wfstore.ErrWorkflowDeleted):
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeWorkflowDeleted, "Conflict", "This workflow was deleted. The run will not continue.")
+	case errors.Is(err, wfstore.ErrStepAttemptSuperseded):
+		core.WriteProblem(w, r, http.StatusConflict, core.CodeStepAttemptSuperseded, "Conflict", "This step attempt was superseded by a later attempt.")
+	case errors.Is(err, wfstore.ErrExecutionNotRetryable):
+		core.WriteProblemReason(w, r, http.StatusConflict, core.CodeExecutionNotRetryable, "Conflict", "This execution cannot be retried.", "")
+	case errors.Is(err, wfstore.ErrConstraint):
+		core.WriteProblem(w, r, http.StatusConflict, core.CodeConflict, "Conflict", "The request conflicts with an existing record.")
 	case errors.Is(err, wfstore.ErrConflict):
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeConflict, "Conflict", "A workflow with this slug already exists.")
 	case errors.Is(err, wfstore.ErrImmutable):

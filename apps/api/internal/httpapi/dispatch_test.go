@@ -226,16 +226,29 @@ func TestLatestRetryCandidateIncludesIndeterminate(t *testing.T) {
 	if id := latestRetryCandidate(nil); id != "" {
 		t.Fatalf("empty = %s", id)
 	}
+	allow := func(id string, attempt int) wfstore.ExecutionStep {
+		return wfstore.ExecutionStep{
+			ID: id, Attempt: attempt, Status: wfstore.ExecutionFailed,
+			Capabilities: &wfstore.ExecutionCapabilities{Retry: wfstore.RetryCapability{Allowed: true}},
+		}
+	}
 	steps := []wfstore.ExecutionStep{
 		{ID: "ok", Status: wfstore.ExecutionSucceeded},
-		{ID: "indet", Status: wfstore.ExecutionIndeterminate},
+		allow("indet", 1),
 	}
 	if id := latestRetryCandidate(steps); id != "indet" {
 		t.Fatalf("indet = %s", id)
 	}
-	steps = append(steps, wfstore.ExecutionStep{ID: "later-fail", Status: wfstore.ExecutionFailed})
+	steps = append(steps, allow("later-fail", 2))
 	if id := latestRetryCandidate(steps); id != "later-fail" {
 		t.Fatalf("newest = %s", id)
+	}
+	steps = append(steps, wfstore.ExecutionStep{
+		ID: "canceled", Attempt: 3, Status: wfstore.ExecutionCanceled,
+		Capabilities: &wfstore.ExecutionCapabilities{Retry: wfstore.RetryCapability{Allowed: false, Code: wfstore.CodeExecutionNotRetryable, Reason: wfstore.ReasonRunCanceled}},
+	})
+	if id := latestRetryCandidate(steps); id != "later-fail" {
+		t.Fatalf("refused latest = %s", id)
 	}
 }
 

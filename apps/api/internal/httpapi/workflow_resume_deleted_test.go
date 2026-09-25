@@ -53,7 +53,7 @@ func TestApprovalDecideAfterDeleteStopsTheRun(t *testing.T) {
 	rec = httptest.NewRecorder()
 	req = workspaceJSON(http.MethodPost, "/api/v1/approvals/"+listed.Items[0].ID+"/decide", body, approver.User, tenant, ws)
 	h.ServeHTTP(rec, req)
-	assertProblem(t, rec, http.StatusConflict, CodeWorkflowDeleted, "")
+	assertProblem(t, rec, http.StatusConflict, CodeApprovalClosed, "")
 
 	rec = httptest.NewRecorder()
 	req = workspaceRequest(http.MethodGet, "/api/v1/approvals/"+listed.Items[0].ID, nil, admin, tenant, ws)
@@ -62,8 +62,8 @@ func TestApprovalDecideAfterDeleteStopsTheRun(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &still); err != nil {
 		t.Fatal(err)
 	}
-	if still.Status != approval.StatusPending {
-		t.Fatalf("approval status = %s", still.Status)
+	if still.Status != approval.StatusCanceled || still.CloseReason != approval.ReasonWorkflowDeleted || still.DecidedBy != "" {
+		t.Fatalf("approval = %+v", still)
 	}
 
 	rec = httptest.NewRecorder()
