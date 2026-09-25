@@ -211,7 +211,8 @@ spec:
     assert.doesNotMatch(topBar, /aria-haspopup="menu"/);
     assert.doesNotMatch(topBar, /data-editor-topbar="overflow"/);
     assert.doesNotMatch(topBar, /<details/);
-    const viewer = topBar.slice(topBar.lastIndexOf(") : ("));
+    const viewerStart = topBar.lastIndexOf(") : (");
+    const viewer = topBar.slice(viewerStart, topBar.indexOf("{error ?", viewerStart));
     assert.match(viewer, /title=\{heading\}/);
     assert.match(viewer, /\{heading\}/);
     assert.doesNotMatch(viewer, /<button/);

@@ -15,26 +15,34 @@ const VIEWER_PERMISSIONS = [
 ] as const;
 
 async function installLongWorkflowName(page: Page): Promise<void> {
-  await page.route(
-    /\/api\/(?:v1|control-plane)\/workflows\/33333333-3333-4333-8333-333333333333$/,
-    async (route) => {
-      if (route.request().method() !== "GET") {
-        await route.fallback();
-        return;
-      }
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          id: OPERATOR_WORKFLOW_ID,
-          slug: "deploy",
-          name: LONG_NAME,
-          status: "draft",
-          draftRevision: 1,
-        }),
-      });
-    },
-  );
+  await page.route(/\/api\/(?:v1|control-plane)\/workflows(?:\?|$)/, async (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname.replace(/^\/api\/(?:v1|control-plane)/, "");
+    if (route.request().method() !== "GET" || path !== "/workflows") {
+      await route.fallback();
+      return;
+    }
+    const folderId = url.searchParams.get("folderId")?.trim() ?? "";
+    if (folderId && folderId !== "unfiled") {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: [
+          {
+            id: OPERATOR_WORKFLOW_ID,
+            slug: "deploy",
+            name: LONG_NAME,
+            status: "draft",
+            draftRevision: 1,
+          },
+        ],
+      }),
+    });
+  });
 }
 
 async function expectNoTopBarOverflow(page: Page): Promise<void> {
@@ -104,6 +112,11 @@ test.describe("editor top bar", () => {
       expect(box, `name button at ${width}px`).not.toBeNull();
       expect(box!.width).toBeGreaterThanOrEqual(100);
       await expectNoTopBarOverflow(page);
+      if (process.env.FF_TOPBAR_SCREENSHOTS) {
+        await page.locator('[data-editor-context="sticky"]').screenshot({
+          path: `/tmp/flowforge-topbar-${width}.png`,
+        });
+      }
       for (const label of ["Save draft", "Add action", "Start published", "Test run"] as const) {
         await expectControlInViewport(page, label);
       }
