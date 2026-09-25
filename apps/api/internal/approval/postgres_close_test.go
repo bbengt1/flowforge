@@ -3,6 +3,7 @@ package approval
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestPostgresCloseApprovalsOnCancelAndDelete(t *testing.T) {
@@ -154,6 +156,79 @@ func TestPostgresCloseApprovalsOnCancelAndDelete(t *testing.T) {
 			t.Fatal("missing canceled event")
 		}
 	})
+
+	t.Run("cancel races decide", func(t *testing.T) {
+		approverUser, err := ids.UpsertUser(ctx, "https://idp.example", formatSlug("apd", suffix), "Approver")
+		if err != nil {
+			t.Fatal(err)
+		}
+		approver, err := isolation.Authorize(ws.ID, approverUser.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < 4; i++ {
+			exec := startApprovalRun(t, ctx, workflows, scope)
+			rec := bindApproval(t, ctx, store, scope, exec)
+			var decideErr, cancelErr error
+			var decided Record
+			assertNoDeadlock(t, func() error {
+				decided, decideErr = store.Decide(ctx, approver, rec.ID, DecideInput{Decision: DecisionApproved, Now: now})
+				return decideErr
+			}, func() error {
+				_, cancelErr = workflows.CancelExecution(ctx, scope, now, exec.ID)
+				return cancelErr
+			})
+			if cancelErr != nil {
+				t.Fatalf("cancel = %v", cancelErr)
+			}
+			got, err := store.Get(ctx, scope, rec.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			run, err := workflows.GetExecutionByID(ctx, scope, exec.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if run.Status != wfstore.ExecutionCanceled {
+				t.Fatalf("run = %s", run.Status)
+			}
+			switch {
+			case decideErr == nil:
+				if decided.Status != DecisionApproved || got.Status != DecisionApproved || got.CloseReason != "" {
+					t.Fatalf("decision won but approval = %+v decided %+v", got, decided)
+				}
+			case errors.Is(decideErr, ErrClosed):
+				if got.Status != StatusCanceled || got.CloseReason != ReasonRunCanceled || got.DecidedBy != "" {
+					t.Fatalf("cancel won but approval = %+v", got)
+				}
+			default:
+				t.Fatalf("decide = %v", decideErr)
+			}
+		}
+	})
+}
+
+func assertNoDeadlock(t *testing.T, a, b func() error) {
+	t.Helper()
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		errs <- a()
+	}()
+	go func() {
+		defer wg.Done()
+		errs <- b()
+	}()
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && (pgErr.Code == "40P01" || pgErr.Code == "55P03") {
+			t.Fatalf("deadlock %s: %v", pgErr.Code, err)
+		}
+	}
 }
 
 func startApprovalRun(t *testing.T, ctx context.Context, workflows *wfstore.Postgres, scope isolation.Scope) wfstore.Execution {

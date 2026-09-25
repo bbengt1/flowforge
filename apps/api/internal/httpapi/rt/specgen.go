@@ -302,7 +302,7 @@ func workflowDeleteOperation(rt Route) (*yaml.Node, error) {
 	b.WriteString("  workflow.delete cannot be minted on an embed assertion (ErrCapability, the same rejection as platform.administer). It stays on the editor and admin workspace roles.\n")
 	b.WriteString("  The browser identity proxy refuses DELETE /workflows/{workflowId} for an embed session with 403. First-party browser DELETE stays allowlisted.\n")
 	b.WriteString("  Queued or running executions return 409 workflow_has_active_executions and are not canceled. Waiting and pinned executions do not block.\n")
-	b.WriteString("  A waiting run that later resumes, is retried, or is requeued after the workflow is deleted is failed with reason workflow_deleted. No further steps run. Approval decide on that run returns 409 workflow_deleted and does not record the decision when the pre-check wins.\n")
+	b.WriteString("  A waiting run that later resumes or is requeued after the workflow is deleted is failed with reason workflow_deleted. No further steps run. Step retry returns 409 execution_not_retryable with reason workflow_deleted. Approval decide on that run returns 409 approval_closed and does not record the decision.\n")
 	fmt.Fprintf(&b, "  Auth class: %s. Identity proxy: %s.\n", rt.Auth, rt.Proxy)
 	b.WriteString("  Responses never include secrets, credentials, tokens, private keys, or vault material.\n")
 	b.WriteString("responses:\n")

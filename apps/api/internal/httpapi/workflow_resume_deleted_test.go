@@ -75,9 +75,23 @@ func TestApprovalDecideAfterDeleteStopsTheRun(t *testing.T) {
 	var detail struct {
 		Status       string `json:"status"`
 		StatusReason string `json:"statusReason"`
-		Steps        []struct {
-			Error  map[string]any `json:"error"`
-			Output map[string]any `json:"output"`
+		Capabilities *struct {
+			Retry struct {
+				Allowed bool   `json:"allowed"`
+				Code    string `json:"code"`
+				Reason  string `json:"reason"`
+			} `json:"retry"`
+		} `json:"capabilities"`
+		Steps []struct {
+			Error        map[string]any `json:"error"`
+			Output       map[string]any `json:"output"`
+			Capabilities *struct {
+				Retry struct {
+					Allowed bool   `json:"allowed"`
+					Code    string `json:"code"`
+					Reason  string `json:"reason"`
+				} `json:"retry"`
+			} `json:"capabilities"`
 		} `json:"steps"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
@@ -92,6 +106,12 @@ func TestApprovalDecideAfterDeleteStopsTheRun(t *testing.T) {
 	if detail.Steps[0].Output["port"] == "approved" {
 		t.Fatal("approved port must not be written")
 	}
+	if detail.Capabilities == nil || detail.Capabilities.Retry.Allowed || detail.Capabilities.Retry.Code != wfstore.CodeExecutionNotRetryable || detail.Capabilities.Retry.Reason != wfstore.ReasonWorkflowDeleted {
+		t.Fatalf("execution capability = %+v", detail.Capabilities)
+	}
+	if detail.Steps[0].Capabilities == nil || detail.Steps[0].Capabilities.Retry.Code != wfstore.CodeExecutionNotRetryable || detail.Steps[0].Capabilities.Retry.Reason != wfstore.ReasonWorkflowDeleted {
+		t.Fatalf("step capability = %+v", detail.Steps[0].Capabilities)
+	}
 
 	rec = httptest.NewRecorder()
 	req = workspaceRequest(http.MethodGet, "/api/v1/workflows/"+wf.Workflow.ID+"/executions/"+exec.ID, nil, admin, tenant, ws)
@@ -101,7 +121,10 @@ func TestApprovalDecideAfterDeleteStopsTheRun(t *testing.T) {
 	rec = httptest.NewRecorder()
 	req = workspaceJSON(http.MethodPost, "/api/v1/executions/"+exec.ID+"/retry", []byte(`{}`), admin, tenant, ws)
 	h.ServeHTTP(rec, req)
-	assertProblem(t, rec, http.StatusConflict, CodeWorkflowDeleted, "")
+	problem := assertProblem(t, rec, http.StatusConflict, CodeExecutionNotRetryable, "")
+	if problem.Reason != wfstore.ReasonWorkflowDeleted {
+		t.Fatalf("reason = %s body=%s", problem.Reason, rec.Body.String())
+	}
 
 	rec = httptest.NewRecorder()
 	req = workspaceJSON(http.MethodPost, "/api/v1/workflows/"+wf.Workflow.ID+"/executions", []byte(`{"workflowVersionId":"`+pub.Version.ID+`"}`), admin, tenant, ws)

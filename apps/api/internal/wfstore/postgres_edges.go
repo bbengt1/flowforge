@@ -2,6 +2,7 @@ package wfstore
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
@@ -37,6 +38,31 @@ func lockExecutionTx(ctx context.Context, tx pgx.Tx, executionID string) error {
 	err := tx.QueryRow(ctx, `SELECT id::text FROM executions WHERE id = $1::uuid FOR UPDATE`, executionID).Scan(&id)
 	if err != nil {
 		return mapDBErr(err)
+	}
+	return nil
+}
+
+// lockExecutionsSorted locks execution rows in id order before any job,
+// step, or edge update in the same transaction. Callers that also lock a
+// workflow take that lock first.
+func lockExecutionsSorted(ctx context.Context, tx pgx.Tx, ids []string) error {
+	seen := map[string]struct{}{}
+	order := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		order = append(order, id)
+	}
+	sort.Strings(order)
+	for _, id := range order {
+		if err := lockExecutionTx(ctx, tx, id); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -209,10 +235,19 @@ func (p *Postgres) AnnotateRetryCapabilities(ctx context.Context, scope isolatio
 	if err != nil {
 		return err
 	}
+	var deleted bool
+	if err := tx.QueryRow(ctx, `
+		SELECT w.deleted_at IS NOT NULL
+		FROM executions e
+		JOIN workflows w ON w.workspace_id = e.workspace_id AND w.id = e.workflow_id
+		WHERE e.id = $1::uuid
+	`, exec.ID).Scan(&deleted); err != nil {
+		return mapDBErr(err)
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return mapDBErr(err)
 	}
-	applyRetryCapabilities(exec, steps, edges)
+	applyRetryCapabilities(exec, steps, edges, deleted)
 	return nil
 }
 

@@ -317,7 +317,7 @@ E8.3 wires map on `main`. `apps/api` is unchanged. The single retarget adapter i
 
 - **Command profiles:** first-class `retrySafe` (default false) plus `spec.verification` (required when retrySafe). Probe is an idempotent read-only `{name}` template — never the mutating command. `onMatch=already-applied`, `onMismatch=safe-to-retry`, `onError=indeterminate`.
 - **ssh.run wizard:** `retryPolicy.maxAttempts` defaults to 0. `maxAttempts>0` requires profile `retrySafe` **and** a declared verification probe (`retry-denied` / `invalid-verification`). No affordance that implies a blind repeat.
-- **Execution / history:** `indeterminate` is unmistakable (icon + text) for lease loss / unknown / inconclusive probe — never imply the command did not run. Show **Retry** only when `result.retry.allowed` is true (same rule on `POST …/retry`; `409 retry-denied` when closed). Hide Retry for non-retrySafe indeterminate.
+- **Execution / history:** `indeterminate` is unmistakable (icon + text) for lease loss / unknown / inconclusive probe — never imply the command did not run. Show **Retry** only when `result.retry.allowed` is true (same rule on `POST …/retry`; `409 execution_not_retryable` reason `retry_not_allowed` when closed). Hide Retry for non-retrySafe indeterminate.
 - **Unchanged:** E8.1 `/config` collections; E8.2 node fields; no invented routes; `apps/api` untouched.
 
 ## E9.1 script source authoring and publish UI
@@ -355,7 +355,7 @@ E9.3 authors declared input/output schemas and surfaces redacted results plus le
 
 - **Authoring:** `script.python` / `script.go` edit `inputSchema` / `outputSchema` as the documented JSON Schema subset (`type`, `properties`, `required`, `additionalProperties`, `items`, `enum`, `maxLength`, `maxItems`, `maxProperties`, `minimum`, `maximum`, `classification`). Root `type` must be the string `object`. Size bounds are catalog 16 KiB plus schema `maxLength` / `maxItems` / `maxProperties`. Name=type stubs coerce to that subset. Secret / handle field names are rejected. `retrySafe` (default false) requires `idempotencyKey` and `verification.behavior=declared-hook`. `retryPolicy.maxAttempts` defaults to 0; `maxAttempts>0` without those gates is `retry-denied` / `invalid-verification`.
 - **Handles / env:** never collect plaintext credentials into YAML, env, or the run form. Handles are `{id,scopes,expiresAt}` only (TTL 60s, max 5m). Runtime env is the catalog `FLOWFORGE_*` allowlist.
-- **Execution / history:** redacted typed output, schema validation errors (path + code only), and loud `indeterminate` on lease loss / unknown / inconclusive hook — never imply the script did not run. Show **Retry** only when `result.retry.allowed` is true (same E8.3 pattern). Never a blind re-run. Scoped handles are stripped and never shown. Closed retry is HTTP 409 `retry-denied`.
+- **Execution / history:** redacted typed output, schema validation errors (path + code only), and loud `indeterminate` on lease loss / unknown / inconclusive hook — never imply the script did not run. Show **Retry** only when `result.retry.allowed` is true (same E8.3 pattern). Never a blind re-run. Scoped handles are stripped and never shown. Closed retry is HTTP 409 `execution_not_retryable` with reason `retry_not_allowed`.
 - **Fail closed:** HTTP 403 empties selectors as in E9.1/E9.2. Unexpected secret fields are stripped and treated as a contract bug.
 - **Unchanged:** E9.1 source/publish; E9.2 runtime-profile isolation; no invented routes; `apps/api` untouched.
 

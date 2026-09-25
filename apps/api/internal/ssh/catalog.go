@@ -247,7 +247,7 @@ func ErrorCatalog() []ErrorShape {
 		{Code: CodeForwardingDenied, Status: 403, Meaning: "Agent forwarding, port forwarding, proxy commands, or an interactive shell was requested."},
 		{Code: CodeRootDenied, Status: 403, Meaning: "Remote account is root (or another denied privileged name)."},
 		{Code: CodeHandleForbidden, Status: 403, Meaning: "Credential handle missing, expired, or contained an unusable private key. privateKey is never accepted on the node."},
-		{Code: CodeRetryDenied, Status: 400, Meaning: "retryPolicy.maxAttempts>0 without retrySafe+verification, or a step retry that is not allowed. HTTP execution retry uses 409 retry-denied."},
+		{Code: CodeRetryDenied, Status: 400, Meaning: "retryPolicy.maxAttempts>0 without retrySafe+verification, or a step retry that is not allowed. HTTP execution retry uses 409 execution_not_retryable with reason retry_not_allowed."},
 		{Code: CodeInvalidVerification, Status: 400, Meaning: "retrySafe=true but verification is missing/invalid, or verification was set on a non-retrySafe profile."},
 		{Code: CodePolicyDenied, Status: 403, Meaning: "SSH policy deny or host/address/operation allowlist failed closed."},
 		{Code: CodeConnectFailed, Status: 502, Meaning: "TCP or SSH handshake to the verified address failed."},

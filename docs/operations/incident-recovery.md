@@ -95,8 +95,9 @@ On lease expiry or a disconnected worker:
  ([security model — Incident-safe behavior](../reference/security-model.md#incident-safe-behavior)).
 
 Retry of `indeterminate` provider steps is denied unless the node is
-explicitly retry-safe (`409` `retry-denied`). Cancel of terminal /
-`indeterminate` executions is `409`.
+explicitly retry-safe (`409` `execution_not_retryable`, reason
+`retry_not_allowed`). Cancel of terminal / `indeterminate` executions
+is `409`.
 
 **Evidence (do not weaken):** E12.2 domain 2 and E12.1 domain 7.
 

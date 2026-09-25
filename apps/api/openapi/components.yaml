@@ -1529,7 +1529,7 @@ components:
           type: string
         reason:
           type: string
-          description: Machine-readable cause. Set on execution_not_retryable (run_canceled, run_not_failed, step_not_started, step_not_failed, incoming_unresolved, retry_not_allowed).
+          description: Machine-readable cause. Set on execution_not_retryable (run_canceled, run_not_failed, step_not_started, step_not_failed, incoming_unresolved, retry_not_allowed, workflow_deleted).
         errors:
           type: array
           description: Field-level workflow validation errors (invalid-workflow only).
@@ -2939,12 +2939,12 @@ components:
           type: boolean
         code:
           type: string
-          description: execution_not_retryable, step_attempt_superseded, or retry-denied when allowed is false.
-          enum: [execution_not_retryable, step_attempt_superseded, retry-denied]
+          description: execution_not_retryable or step_attempt_superseded when allowed is false.
+          enum: [execution_not_retryable, step_attempt_superseded]
         reason:
           type: string
           description: Set when code is execution_not_retryable.
-          enum: [run_canceled, run_not_failed, step_not_started, step_not_failed, incoming_unresolved, retry_not_allowed]
+          enum: [run_canceled, run_not_failed, step_not_started, step_not_failed, incoming_unresolved, retry_not_allowed, workflow_deleted]
     ExecutionCapabilities:
       type: object
       required: [retry]

@@ -24,7 +24,7 @@ FlowForge requires `workflow.execute`, `ssh.run`, `sshTarget.use`, and `commandP
 
 Automatic retries default to zero because remote side effects may not be idempotent. A profile may explicitly mark itself retry-safe (`retrySafe=true`) **and** declare an idempotent `verification` probe plus a bounded `retryPolicy.maxAttempts` (1–5). If the worker loses its lease after dispatch, or the provider outcome is unknown, FlowForge reports `indeterminate` until that probe confirms remote state; it never blindly repeats the mutating command.
 
-Verification contract: `verification.template` is a reviewed `{name}` probe using the same `parameterSchema`. `onMatch` defaults to `already-applied` (resolve success, do not re-run). `onMismatch` defaults to `safe-to-retry` (allow one more mutating attempt). `onError` is `indeterminate`. Step/execution retry APIs use the same rules and return `retry-denied` when they are not met.
+Verification contract: `verification.template` is a reviewed `{name}` probe using the same `parameterSchema`. `onMatch` defaults to `already-applied` (resolve success, do not re-run). `onMismatch` defaults to `safe-to-retry` (allow one more mutating attempt). `onError` is `indeterminate`. Step/execution retry APIs use the same rules and return `409` `execution_not_retryable` with reason `retry_not_allowed` when they are not met.
 
 ## Initial implementation layout
 

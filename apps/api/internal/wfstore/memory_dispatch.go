@@ -430,6 +430,9 @@ func (m *Memory) RetryStep(ctx context.Context, scope isolation.Scope, now time.
 	}
 	src := exec.steps[stepIdx]
 	if err := m.guardLiveLocked(ctx, scope, now, exec.record.WorkflowID, executionID); err != nil {
+		if errors.Is(err, ErrWorkflowDeleted) {
+			return RetryResult{}, &NotRetryableError{Reason: ReasonWorkflowDeleted}
+		}
 		return RetryResult{}, err
 	}
 	exec = m.executions[executionID]
@@ -792,7 +795,9 @@ func (m *Memory) AnnotateRetryCapabilities(_ context.Context, scope isolation.Sc
 	if !ok || row.workspaceID != scope.WorkspaceID() {
 		return ErrNotFound
 	}
-	applyRetryCapabilities(exec, steps, row.edges)
+	wf, ok := m.workflows[row.record.WorkflowID]
+	deleted := !ok || wf.workspaceID != scope.WorkspaceID() || wf.deletedAt != nil
+	applyRetryCapabilities(exec, steps, row.edges, deleted)
 	return nil
 }
 

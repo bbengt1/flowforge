@@ -85,7 +85,6 @@ DECLARE
     ws record;
     run record;
     ed record;
-    iters integer;
     n integer;
     n_resolve integer;
     n_skip integer;
@@ -146,10 +145,7 @@ BEGIN
                   AND s2.node_id = s.node_id
            );
 
-        iters := 0;
         LOOP
-            iters := iters + 1;
-            EXIT WHEN iters > 64;
             n_resolve := 0;
 
             UPDATE execution_edges e

@@ -63,9 +63,10 @@ var (
 	ErrActiveExecutions = errors.New("workflow has active executions")
 	// ErrSlugReserved is a tombstone holding the slug. A live slug is ErrConflict.
 	ErrSlugReserved = errors.New("workflow slug is reserved")
-	// ErrWorkflowDeleted means a resume, retry, requeue, or claim found
-	// deleted_at set. The run is failed with ReasonWorkflowDeleted and
-	// must not continue.
+	// ErrWorkflowDeleted means a resume, requeue, or claim found deleted_at
+	// set. The run is failed with ReasonWorkflowDeleted and must not
+	// continue. Step retry reports that tombstone as
+	// execution_not_retryable with reason workflow_deleted.
 	ErrWorkflowDeleted = errors.New("workflow was deleted")
 )
 
@@ -101,10 +102,11 @@ const (
 	ReasonWorkflowDeleted = "workflow_deleted"
 
 	// Retry refusal codes and reasons. The same values are written on
-	// capabilities.retry and on 409 execution_not_retryable.
+	// capabilities.retry and on the retry 409. SSH and script policy
+	// denial is execution_not_retryable with reason retry_not_allowed.
+	// A soft-deleted workflow uses reason workflow_deleted.
 	CodeExecutionNotRetryable = "execution_not_retryable"
 	CodeStepAttemptSuperseded = "step_attempt_superseded"
-	CodeRetryDenied           = "retry-denied"
 	ReasonRunCanceled         = "run_canceled"
 	ReasonRunNotFailed        = "run_not_failed"
 	ReasonStepNotStarted      = "step_not_started"

@@ -402,7 +402,7 @@ func ErrorCatalog() []ErrorShape {
 		{Code: CodeIndeterminate, Status: 409, Meaning: "Lease lost after dispatch, unknown provider outcome, uncertain emergency stop, or verification could not confirm state. Never a silent re-run."},
 		{Code: CodeEmergencyStopped, Status: 409, Meaning: "Emergency stop halted the script before dispatch. The runner was not started."},
 		{Code: CodeEmergencyStopDenied, Status: 403, Meaning: "Missing script.emergencyStop or kind=script policy denies emergency stop."},
-		{Code: CodeRetryDenied, Status: 400, Meaning: "retryPolicy.maxAttempts>0 without retrySafe+idempotencyKey+verification, or a step retry that is not allowed. HTTP execution retry uses 409 retry-denied."},
+		{Code: CodeRetryDenied, Status: 400, Meaning: "retryPolicy.maxAttempts>0 without retrySafe+idempotencyKey+verification, or a step retry that is not allowed. HTTP execution retry uses 409 execution_not_retryable with reason retry_not_allowed."},
 		{Code: CodeInvalidVerification, Status: 400, Meaning: "retrySafe=true without a valid idempotency key or verification.behavior, or verification set on a non-retrySafe node."},
 		{Code: CodeHandleForbidden, Status: 403, Meaning: "Credential handle missing, expired, unscoped, or contained plaintext secrets. Handles only."},
 		{Code: CodeEnvDenied, Status: 403, Meaning: "Runtime environment key is outside the allowlist, or plaintext credentials were supplied as env."},

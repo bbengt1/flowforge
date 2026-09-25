@@ -544,14 +544,14 @@ Success `result`: `{ok, operation, sshTargetId, commandProfileId, hostname, port
 | `address-denied` | 403 | Resolved address outside allowlist or DNS without allowlist |
 | `auth-denied` / `forwarding-denied` / `root-denied` / `handle-forbidden` / `policy-denied` | 403 | Hard denies / expired handle / policy |
 | `timeout` / `canceled` | 408 | Bounded wait |
-| `retry-denied` | 400 / 409 | `maxAttempts>0` without `retrySafe`+verification, or a step/execution retry that is not allowed |
+| `retry-denied` | 400 | `maxAttempts>0` without `retrySafe`+verification at profile save, publish, or execute. Execution retry is `409` `execution_not_retryable` with reason `retry_not_allowed` |
 | `invalid-verification` | 400 | `retrySafe=true` without a valid `verification` probe |
 | `connect-failed` / `command-failed` | 502 | Transport / known non-zero exit |
 | `indeterminate` | 409 | Lease lost after dispatch, unknown provider outcome, or verification could not confirm state. **Never a silent re-run.** |
 
 ## SSH indeterminate / retry semantics (E8.3)
 
-Default retries are **zero**. A retry is allowed only when the **pinned** command profile has `retrySafe=true`, declares `verification`, and the node `retryPolicy.maxAttempts` is `1`–`5` with attempts remaining. Otherwise the engine and `POST /executions/{id}/retry` fail closed (`retry-denied`). This API is the contract.
+Default retries are **zero**. A retry is allowed only when the **pinned** command profile has `retrySafe=true`, declares `verification`, and the node `retryPolicy.maxAttempts` is `1`–`5` with attempts remaining. Otherwise the engine fails closed (`retry-denied`). `POST /executions/{id}/retry` fails closed with `409` `execution_not_retryable` and reason `retry_not_allowed`. This API is the contract.
 
 **UI route map:** do **not** rewrite `apps/web` in this API story. Read `GET /ssh/catalog` `retry.ui` + `retry.probe` and `GET /workflows/catalog` `ssh.run.policy.defaultMaxAttempts=0`. Cookie session + `X-CSRF-Token`. Show an unmistakable `indeterminate` badge (not color alone). Enable **Retry** only when `result.retry.allowed` is true (or evaluate `retryAllowed` on `POST /policy/evaluate` for `ssh.run`). Hide/disable Retry for non-retrySafe indeterminate — never imply the remote command did not run.
 
@@ -560,7 +560,7 @@ Default retries are **zero**. A retry is allowed only when the **pinned** comman
 | Condition | Retry |
 | --- | --- |
 | Omitted / `maxAttempts=0` (default) | No. First attempt only. |
-| `maxAttempts>0` and profile `retrySafe=false` | `retry-denied` at execute, publish pin, and retry API. |
+| `maxAttempts>0` and profile `retrySafe=false` | `retry-denied` at execute and publish pin. The retry API returns `execution_not_retryable` / `retry_not_allowed`. |
 | `retrySafe=true` without `verification` | `invalid-verification` at profile save/publish. |
 | `retrySafe=true` + verification + remaining attempts + status `failed` / `canceled` / `indeterminate` | Yes — **after** the probe. |
 | Lease loss / unknown outcome after dispatch | Status `indeterminate`. No command on that call. A later attempt may run **only** the verification probe first. |
@@ -584,9 +584,9 @@ Default retries are **zero**. A retry is allowed only when the **pinned** comman
 
 `POST /executions/{id}/retry` and `.../steps/{stepId}/retry` still require `workflow.execute`. Core `data.*` / `flow.*` rules are unchanged. For `ssh.run`:
 
-- Default `maxAttempts=0` → `409` `retry-denied`
-- Non-retrySafe or missing verification → `409` `retry-denied`
-- `indeterminate` without retrySafe → stays indeterminate; retry denied
+- Default `maxAttempts=0` → `409` `execution_not_retryable` reason `retry_not_allowed`
+- Non-retrySafe or missing verification → `409` `execution_not_retryable` reason `retry_not_allowed`
+- `indeterminate` without retrySafe → stays indeterminate; retry denied with the same code and reason
 - retrySafe + verification + remaining attempts → `201` queues a new attempt that **must verify first** (never a blind re-run)
 
 Out of scope: `apps/web` rewrite; Kubernetes/script engines.
@@ -683,7 +683,7 @@ Forbidden `with` keys: `env`, `environment`, `secrets`, `credentials`, `privateK
 | `indeterminate` | 409 | Lease lost after dispatch, unknown outcome, uncertain emergency stop, or verification could not confirm state. Never a silent re-run |
 | `emergency-stopped` | 409 | Emergency stop halted the script before dispatch |
 | `emergency-stop-denied` | 403 | Missing `script.emergencyStop` or policy `allowEmergencyStop=false` |
-| `retry-denied` | 400 / 409 | `maxAttempts>0` without retrySafe+idempotencyKey+verification, or a step retry that is not allowed |
+| `retry-denied` | 400 | `maxAttempts>0` without retrySafe+idempotencyKey+verification at validate or execute. Execution retry is `409` `execution_not_retryable` with reason `retry_not_allowed` |
 | `invalid-verification` | 400 | `retrySafe=true` without a valid idempotency key or `verification.behavior` |
 | `handle-forbidden` | 403 | Handle missing, expired, unscoped, or contained plaintext secrets |
 | `env-denied` | 403 | Runtime env key outside the allowlist, or plaintext credentials supplied as env |
@@ -738,12 +738,12 @@ Workers still claim an E5.2 job and call `scripts.Execute`. No new browser route
 
 ### Retry / lease-loss contract
 
-Default retries are **zero**. A node is retry-safe only when it declares `retrySafe=true`, an `idempotencyKey`, and `verification.behavior=declared-hook`, and `retryPolicy.maxAttempts` is `1`–`5` with attempts remaining. Otherwise execute and `POST /executions/{id}/retry` fail closed (`retry-denied`).
+Default retries are **zero**. A node is retry-safe only when it declares `retrySafe=true`, an `idempotencyKey`, and `verification.behavior=declared-hook`, and `retryPolicy.maxAttempts` is `1`–`5` with attempts remaining. Otherwise execute fails closed (`retry-denied`). `POST /executions/{id}/retry` fails closed with `409` `execution_not_retryable` and reason `retry_not_allowed`.
 
 | Condition | Retry |
 | --- | --- |
 | Omitted / `maxAttempts=0` (default) | No. First attempt only. |
-| `maxAttempts>0` without `retrySafe` + key + verification | `retry-denied` at validate, execute, and retry API. |
+| `maxAttempts>0` without `retrySafe` + key + verification | `retry-denied` at validate and execute. The retry API returns `execution_not_retryable` / `retry_not_allowed`. |
 | `retrySafe=true` without key or verification | `invalid-verification` at validate/publish. |
 | `retrySafe` + key + verification + remaining attempts + status `failed` / `canceled` / `indeterminate` | Yes — **after** the verification hook. |
 | Lease loss / unknown outcome after dispatch | Status `indeterminate`. No script on that call. A later attempt may run **only** the verification hook first. |
@@ -764,9 +764,9 @@ Default retries are **zero**. A node is retry-safe only when it declares `retryS
 
 `POST /executions/{id}/retry` and `.../steps/{stepId}/retry` still require `workflow.execute`. For `script.python` / `script.go`:
 
-- Default `maxAttempts=0` → `409` `retry-denied`
-- Non-retrySafe or missing key/verification → `409` `retry-denied`
-- `indeterminate` without retrySafe → stays indeterminate; retry denied
+- Default `maxAttempts=0` → `409` `execution_not_retryable` reason `retry_not_allowed`
+- Non-retrySafe or missing key/verification → `409` `execution_not_retryable` reason `retry_not_allowed`
+- `indeterminate` without retrySafe → stays indeterminate; retry denied with the same code and reason
 - retrySafe + key + verification + remaining attempts → `201` queues a new attempt that **must verify first** (never a blind re-run)
 
 Out of scope: `apps/web` rewrite; artifact revocation + emergency stop (E9.4 below).
@@ -1098,7 +1098,7 @@ Suggested UI flow:
 
 1. Status: keep polling `GET /executions/{id}` (`steps[]`, `jobs[]`). Show `leaseExpiresAt`, `heartbeatAt`, `workerId`, `fencingToken` as diagnostics only. If `status=queued` and `statusReason=no-worker`, tell the operator no worker is claiming jobs (local compose: start the `worker` service).
 2. Cancel: `POST /executions/{id}/cancel` `{}` with CSRF. Requires `execution.cancel` (operator/admin). Viewer/approver → `403`. Already canceled → `200` (idempotent). `succeeded` / `failed` / `indeterminate` → `409`.
-3. Retry: only a `failed` or `indeterminate` run, and only the latest attempt of a step that started (`startedAt` set) and ended `failed` or `indeterminate`. A canceled run, a step that never started, or a step that is not failed is `409` `execution_not_retryable` with `reason` (`run_canceled`, `run_not_failed`, `step_not_started`, `step_not_failed`, `incoming_unresolved`). An older attempt is `409` `step_attempt_superseded`. Core `data.*` / `flow.*` steps, `ssh.run` when E8.3 allows it (`retrySafe` + verification + `maxAttempts>0`), or `script.python` / `script.go` when E9.3 allows it (`retrySafe` + idempotency key + verification + `maxAttempts>0`). `POST /executions/{id}/steps/{stepId}/retry` `{}` or `POST /executions/{id}/retry` `{stepId?}`. Requires `workflow.execute`. `201` `{execution,step,job}` with `attempt+1` queued. Detail and step reads expose the same decision as `capabilities.retry`. SSH/script that is not retry-safe, including `indeterminate` lease loss, → `409` `retry-denied`.
+3. Retry: only a `failed` or `indeterminate` run, and only the latest attempt of a step that started (`startedAt` set) and ended `failed` or `indeterminate`. A canceled run, a step that never started, a step that is not failed, an unresolved incoming join, an SSH/script step that is not retry-safe, or a soft-deleted workflow is `409` `execution_not_retryable` with `reason` (`run_canceled`, `run_not_failed`, `step_not_started`, `step_not_failed`, `incoming_unresolved`, `retry_not_allowed`, `workflow_deleted`). An older attempt is `409` `step_attempt_superseded`. Core `data.*` / `flow.*` steps, `ssh.run` when E8.3 allows it (`retrySafe` + verification + `maxAttempts>0`), or `script.python` / `script.go` when E9.3 allows it (`retrySafe` + idempotency key + verification + `maxAttempts>0`). `POST /executions/{id}/steps/{stepId}/retry` `{}` or `POST /executions/{id}/retry` `{stepId?}`. Requires `workflow.execute`. `201` `{execution,step,job}` with `attempt+1` queued. Detail and step reads expose the same decision as `capabilities.retry`. SSH/script that is not retry-safe, including `indeterminate` lease loss, → `409` `execution_not_retryable` reason `retry_not_allowed`.
 4. Do **not** call `/jobs/claim` from the UI. That is the worker client.
 
 Worker client (not the UI):
@@ -1123,8 +1123,8 @@ Default lease **30s** (min 1s, max 5m). `JOB_BINDING_SECRET` (32-byte base64/hex
 | `POST /api/v1/executions/{executionId}/cancel` | Cancel open steps/jobs and close pending approvals (`canceled` / `run_canceled`) in the same transaction. Requires `execution.cancel`. Idempotent. | `200` detail | `401` `403` `404` `409` |
 | `POST /api/v1/executions/{executionId}/emergency-stop` | E9.4: stop a script step. Requires `script.emergencyStop`. Uncertain/running → `indeterminate`. | `200` detail | `401` `403` `404` `409` |
 | `POST /api/v1/executions/{executionId}/steps/{stepId}/emergency-stop` | E9.4: stop one script step. | `200` detail | `401` `403` `404` `409` |
-| `POST /api/v1/executions/{executionId}/retry` | Retry the newest step whose `capabilities.retry.allowed` is true. Requires `workflow.execute`. Only a `failed` or `indeterminate` run, and only the latest attempt of a step that started and ended `failed` or `indeterminate`. | `201` | `401` `403` `404` `409` (`execution_not_retryable`, `step_attempt_superseded`, or `retry-denied`) |
-| `POST /api/v1/executions/{executionId}/steps/{stepId}/retry` | Retry one step under the same rules. A superseded attempt is `409` `step_attempt_superseded`. | `201` | `401` `403` `404` `409` (`execution_not_retryable`, `step_attempt_superseded`, or `retry-denied`) |
+| `POST /api/v1/executions/{executionId}/retry` | Retry the newest step whose `capabilities.retry.allowed` is true. Requires `workflow.execute`. Only a `failed` or `indeterminate` run, and only the latest attempt of a step that started and ended `failed` or `indeterminate`. | `201` | `401` `403` `404` `409` (`execution_not_retryable` or `step_attempt_superseded`) |
+| `POST /api/v1/executions/{executionId}/steps/{stepId}/retry` | Retry one step under the same rules. A superseded attempt is `409` `step_attempt_superseded`. | `201` | `401` `403` `404` `409` (`execution_not_retryable` or `step_attempt_superseded`) |
 
 ## Execution artifacts (E5.3)
 
@@ -1214,11 +1214,10 @@ Errors use `application/problem+json` and include `type`, `title`, `status`, `de
 | `conflict` | 409 | Unique identity collision, last-admin protection, draft revision mismatch, duplicate published digest, idempotency fingerprint mismatch, fencing/lease mismatch, a live workflow slug, or a retry/cancel that is not allowed |
 | `workflow_has_active_executions` | 409 | Soft-delete refused because a queued or running execution exists. Waiting and pinned executions do not block. The run is not canceled. |
 | `workflow_slug_reserved` | 409 | Create used a slug still held by a soft-deleted workflow |
-| `workflow_deleted` | 409 | Resume or retry found the workflow tombstoned. The run is `failed` with reason `workflow_deleted` and does not continue. Pending approvals on that run are `canceled` with `closeReason` `workflow_deleted`. |
+| `workflow_deleted` | 409 | Resume, requeue, or claim found the workflow tombstoned. The run is `failed` with reason `workflow_deleted` and does not continue. Pending approvals on that run are `canceled` with `closeReason` `workflow_deleted`. Step retry of that run is `execution_not_retryable` with reason `workflow_deleted`. |
 | `approval_closed` | 409 | Decide on an approval that is `canceled`, or whose run is canceled, failed, or whose workflow was deleted. No decision is recorded. |
-| `execution_not_retryable` | 409 | Retry refused. `reason` is `run_canceled`, `run_not_failed`, `step_not_started`, `step_not_failed`, or `incoming_unresolved`. |
+| `execution_not_retryable` | 409 | Retry refused. `reason` is `run_canceled`, `run_not_failed`, `step_not_started`, `step_not_failed`, `incoming_unresolved`, `retry_not_allowed`, or `workflow_deleted`. |
 | `step_attempt_superseded` | 409 | Retry targeted an attempt that is not the latest for that step. |
-| `retry-denied` | 409 | SSH/script retry rejected: default `maxAttempts=0`, not `retrySafe`, missing verification or idempotency key, or no attempts remain. Indeterminate non-retrySafe steps stay closed. |
 | `artifact-mutable` | 400 | Draft or unsigned script package cannot execute. Publish first. |
 | `artifact-unscanned` | 400 | Script artifact `scanStatus` is pending or missing. |
 | `artifact-unsigned` | 400 | Script artifact signature is missing or does not verify. |

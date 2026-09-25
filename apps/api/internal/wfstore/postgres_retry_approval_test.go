@@ -14,6 +14,27 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+const scriptStopYAML = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: script-stop
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: run
+      type: script.python
+      name: Run
+      with:
+        source: |
+          print("ok")
+        entrypoint: main.py
+        runtimeProfileId: 33333333-3333-4333-8333-333333333333
+        timeoutSeconds: 30
+  edges: []
+`
+
 const conditionNullYAML = `apiVersion: flowforge/v1
 kind: Workflow
 metadata:
@@ -244,6 +265,73 @@ func TestPostgresRetryAndApprovalClose(t *testing.T) {
 			})
 			return err
 		})
+	})
+
+	t.Run("cancel races lease recovery", func(t *testing.T) {
+		exec := startGraph(t, ctx, store, scope, retryChainYAML)
+		claimed := claimNode(t, ctx, store, scope, now(), "seed")
+		if _, err := admin.Exec(ctx, `
+			UPDATE execution_jobs
+			SET lease_expires_at = now() - interval '1 minute', status = 'running'
+			WHERE id = $1::uuid
+		`, claimed.Job.ID); err != nil {
+			t.Fatal(err)
+		}
+		stolen := make(chan string, 1)
+		assertNoDeadlock(t, func() error {
+			_, err := store.CancelExecution(ctx, scope, now(), exec.ID)
+			return err
+		}, func() error {
+			got, err := store.ClaimJob(ctx, scope, now(), ClaimInput{WorkerID: "recover-worker", Lease: time.Minute})
+			if errors.Is(err, ErrEmptyClaim) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			stolen <- got.Execution.ID
+			return nil
+		})
+		select {
+		case id := <-stolen:
+			if id != exec.ID {
+				if _, err := store.CancelExecution(ctx, scope, now(), id); err != nil && !errors.Is(err, ErrAlreadyTerminal) {
+					t.Fatal(err)
+				}
+			}
+		default:
+		}
+		if _, err := store.CancelExecution(ctx, scope, now(), exec.ID); err != nil && !errors.Is(err, ErrAlreadyTerminal) {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("complete and cancel race emergency stop", func(t *testing.T) {
+		exec := startGraph(t, ctx, store, scope, scriptStopYAML)
+		claimed := claimNode(t, ctx, store, scope, now(), "run")
+		assertNoDeadlock(t, func() error {
+			_, err := store.CompleteJob(ctx, scope, now(), JobActionInput{
+				JobID: claimed.Job.ID, WorkerID: "edge-worker", FencingToken: claimed.Job.FencingToken,
+				Output: map[string]any{"stdout": "ok"},
+			})
+			return err
+		}, func() error {
+			_, err := store.EmergencyStop(ctx, scope, now(), EmergencyStopInput{ExecutionID: exec.ID})
+			return err
+		})
+
+		other := startGraph(t, ctx, store, scope, scriptStopYAML)
+		claimNode(t, ctx, store, scope, now(), "run")
+		assertNoDeadlock(t, func() error {
+			_, err := store.CancelExecution(ctx, scope, now(), other.ID)
+			return err
+		}, func() error {
+			_, err := store.EmergencyStop(ctx, scope, now(), EmergencyStopInput{ExecutionID: other.ID})
+			return err
+		})
+		if _, err := store.CancelExecution(ctx, scope, now(), other.ID); err != nil && !errors.Is(err, ErrAlreadyTerminal) {
+			t.Fatal(err)
+		}
 	})
 }
 

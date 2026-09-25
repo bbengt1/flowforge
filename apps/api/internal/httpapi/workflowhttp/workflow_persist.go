@@ -946,11 +946,11 @@ func WriteWorkflowStoreError(w http.ResponseWriter, r *http.Request, err error) 
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeConflict, "Conflict", "The authenticated job ticket has expired.")
 	case errors.Is(err, wfstore.ErrJobBinding):
 		core.WriteProblem(w, r, http.StatusForbidden, core.CodeForbidden, "Forbidden", "The authenticated job binding was rejected.")
-	case errors.Is(err, wfstore.ErrRetryDenied):
-		core.WriteProblem(w, r, http.StatusConflict, core.CodeRetryDenied, "Retry Denied", "Retry is not allowed: default maxAttempts is 0, the node is not retrySafe, verification or idempotency key is missing, or no attempts remain. Indeterminate SSH/script steps are never blindly re-run.")
+	case errors.Is(err, wfstore.ErrRetryDenied), errors.Is(err, wfstore.ErrRetryNotAllowed):
+		core.WriteProblemReason(w, r, http.StatusConflict, core.CodeExecutionNotRetryable, "Conflict", "This execution cannot be retried.", wfstore.ReasonRetryNotAllowed)
 	case errors.Is(err, wfstore.ErrEmergencyStopNotApplicable):
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeConflict, "Conflict", "Emergency stop applies only to an open script.python or script.go step.")
-	case errors.Is(err, wfstore.ErrNotClaimable), errors.Is(err, wfstore.ErrAlreadyTerminal), errors.Is(err, wfstore.ErrRetryNotAllowed), errors.Is(err, wfstore.ErrCanceled):
+	case errors.Is(err, wfstore.ErrNotClaimable), errors.Is(err, wfstore.ErrAlreadyTerminal), errors.Is(err, wfstore.ErrCanceled):
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeConflict, "Conflict", "The job or execution cannot be updated in its current state.")
 	case errors.Is(err, wfstore.ErrUnsafeArtifact):
 		core.WriteProblem(w, r, http.StatusBadRequest, core.CodeInvalidRequest, "Invalid Request", "Unsafe artifact content was rejected before upload.")

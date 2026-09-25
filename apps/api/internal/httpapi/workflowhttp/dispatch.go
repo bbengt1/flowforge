@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/approval"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/approvalhttp"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/core"
@@ -429,6 +430,12 @@ func cancelExecution(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
+	if s.Approvals != nil {
+		if closeErr := s.Approvals.ClosePendingForExecution(r.Context(), scope, exec.ID, approval.ReasonRunCanceled, Now(s)); closeErr != nil {
+			core.WriteProblem(w, r, http.StatusInternalServerError, core.CodeInternalError, "Internal Server Error", "An unexpected error occurred.")
+			return
+		}
+	}
 	WriteExecutionDetail(s, w, r, scope, exec, http.StatusOK)
 }
 
@@ -488,8 +495,6 @@ func writeRetryCapability(w http.ResponseWriter, r *http.Request, cap wfstore.Re
 	switch cap.Code {
 	case wfstore.CodeStepAttemptSuperseded:
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeStepAttemptSuperseded, "Conflict", "This step attempt was superseded by a later attempt.")
-	case wfstore.CodeRetryDenied:
-		core.WriteProblem(w, r, http.StatusConflict, core.CodeRetryDenied, "Retry Denied", "Retry is not allowed: default maxAttempts is 0, the node is not retrySafe, verification or idempotency key is missing, or no attempts remain. Indeterminate SSH/script steps are never blindly re-run.")
 	default:
 		core.WriteProblemReason(w, r, http.StatusConflict, core.CodeExecutionNotRetryable, "Conflict", "This execution cannot be retried.", cap.Reason)
 	}

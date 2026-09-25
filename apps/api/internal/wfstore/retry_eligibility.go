@@ -110,7 +110,12 @@ func incomingRetryError(nodeID string, edges []execEdge) (int, error) {
 
 // classifyRetry is the shared eligibility function for RetryStep and
 // capabilities.retry. It does not apply a request-time pin hint.
-func classifyRetry(exec Execution, step ExecutionStep, steps []ExecutionStep, edges []execEdge) error {
+// A soft-deleted workflow is execution_not_retryable / workflow_deleted
+// before attempt, run, or step checks so the capability matches retry.
+func classifyRetry(exec Execution, step ExecutionStep, steps []ExecutionStep, edges []execEdge, workflowDeleted bool) error {
+	if workflowDeleted {
+		return &NotRetryableError{Reason: ReasonWorkflowDeleted}
+	}
 	if err := retryStatusError(exec, step, steps); err != nil {
 		return err
 	}
@@ -132,29 +137,29 @@ func retryCapability(err error) RetryCapability {
 	if errors.Is(err, ErrStepAttemptSuperseded) {
 		return RetryCapability{Allowed: false, Code: CodeStepAttemptSuperseded}
 	}
-	if errors.Is(err, ErrRetryDenied) {
-		return RetryCapability{Allowed: false, Code: CodeRetryDenied}
-	}
-	if errors.Is(err, ErrRetryNotAllowed) {
+	if errors.Is(err, ErrRetryDenied) || errors.Is(err, ErrRetryNotAllowed) {
 		return RetryCapability{Allowed: false, Code: CodeExecutionNotRetryable, Reason: ReasonRetryNotAllowed}
 	}
 	return RetryCapability{Allowed: false, Code: CodeExecutionNotRetryable, Reason: ReasonRunNotFailed}
 }
 
-func applyRetryCapabilities(exec *Execution, steps []ExecutionStep, edges []execEdge) {
+func applyRetryCapabilities(exec *Execution, steps []ExecutionStep, edges []execEdge, workflowDeleted bool) {
 	if exec == nil {
 		return
 	}
 	for i := range steps {
-		err := classifyRetry(*exec, steps[i], steps, edges)
+		err := classifyRetry(*exec, steps[i], steps, edges, workflowDeleted)
 		cap := ExecutionCapabilities{Retry: retryCapability(err)}
 		steps[i].Capabilities = &cap
 	}
-	execCap := executionRetryCapability(*exec, steps)
+	execCap := executionRetryCapability(*exec, steps, workflowDeleted)
 	exec.Capabilities = &ExecutionCapabilities{Retry: execCap}
 }
 
-func executionRetryCapability(exec Execution, steps []ExecutionStep) RetryCapability {
+func executionRetryCapability(exec Execution, steps []ExecutionStep, workflowDeleted bool) RetryCapability {
+	if workflowDeleted {
+		return RetryCapability{Allowed: false, Code: CodeExecutionNotRetryable, Reason: ReasonWorkflowDeleted}
+	}
 	switch exec.Status {
 	case ExecutionCanceled:
 		return RetryCapability{Allowed: false, Code: CodeExecutionNotRetryable, Reason: ReasonRunCanceled}

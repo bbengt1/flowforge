@@ -13,6 +13,31 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+const sshThenStopYAML = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: ssh-then-stop
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: run
+      type: ssh.run
+      name: Run
+      with:
+        sshTargetId: 11111111-1111-4111-8111-111111111111
+        commandProfileId: 22222222-2222-4222-8222-222222222222
+    - id: next
+      type: flow.stop
+      name: Next
+      with:
+        status: success
+  edges:
+    - from: run.stdout
+      to: next.input
+`
+
 const gateThenStopYAML = `apiVersion: flowforge/v1
 kind: Workflow
 metadata:
@@ -465,6 +490,21 @@ func TestPostgresUpstreamEdges(t *testing.T) {
 		jobs := listJobs(t, ctx, store, scope, claimedID)
 		if job := jobByNode(t, jobs, steps, "after"); job.Status != JobClaimed {
 			t.Fatalf("already claimed downstream = %s", job.Status)
+		}
+	})
+
+	t.Run("ssh.run empty or null stdout releases downstream", func(t *testing.T) {
+		for _, output := range []map[string]any{
+			{"stdout": "", "result": map[string]any{}, "exitCode": 0},
+			{"stdout": nil, "result": nil, "exitCode": nil},
+		} {
+			exec := startGraph(t, ctx, store, scope, sshThenStopYAML)
+			claimed := claimNode(t, ctx, store, scope, now(), "run")
+			completeJob(t, ctx, store, scope, now(), claimed, output)
+			assertNode(t, ctx, store, scope, exec.ID, "next", ExecutionQueued, JobQueued)
+			next := claimNode(t, ctx, store, scope, now(), "next")
+			completeJob(t, ctx, store, scope, now(), next, map[string]any{"result": map[string]any{"status": "success"}})
+			assertRun(t, ctx, store, scope, exec.ID, ExecutionSucceeded)
 		}
 	})
 }
