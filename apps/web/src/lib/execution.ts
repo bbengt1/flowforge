@@ -34,13 +34,26 @@ import {
 } from "./execution-contract.ts";
 import {
   ARTIFACT_LOCATOR_KEYS,
+  BLOCKED_STATUS_HELP,
+  BLOCKED_STATUS_ICON,
+  BLOCKED_STATUS_LABEL,
   CANCELABLE_STATUSES,
   EXECUTION_CANCEL_PERMISSION,
   EXECUTION_STATUSES,
   EXECUTION_VIEW_PERMISSION,
   MAX_LOG_CHARS,
   MAX_LOG_LINES,
+  NOT_REACHED_STATUS_HELP,
+  NOT_REACHED_STATUS_ICON,
+  NOT_REACHED_STATUS_LABEL,
+  PENDING_STATUS_HELP,
+  PENDING_STATUS_ICON,
+  PENDING_STATUS_LABEL,
   RETRYABLE_STATUSES,
+  SKIPPED_STATUS_HELP,
+  SKIPPED_STATUS_ICON,
+  SKIPPED_STATUS_LABEL,
+  TERMINAL_STEP_STATUSES,
   WORKFLOW_EXECUTE_PERMISSION,
   REDACTED_MARKER,
   type DownloadGrantView,
@@ -358,6 +371,17 @@ export function isIndeterminateStatus(status: string | undefined): boolean {
   return normalizeExecutionStatus(status) === "indeterminate";
 }
 
+/**
+ * `skipped` finishes the step and does not fail the run.
+ * `pending` and job `blocked` are still waiting. Unknown statuses
+ * are not treated as finished.
+ */
+export function isTerminalStepStatus(status: string | undefined): boolean {
+  return (TERMINAL_STEP_STATUSES as readonly string[]).includes(
+    normalizeExecutionStatus(status),
+  );
+}
+
 export function normalizeExecutionStatus(
   status: ExecutionStatus | undefined,
 ): string {
@@ -437,6 +461,24 @@ export function executionStatusPresentation(
       description: APPROVAL_RESUME_DISABLED_HELP,
       tone: "claimed",
     },
+    blocked: {
+      label: BLOCKED_STATUS_LABEL,
+      icon: BLOCKED_STATUS_ICON,
+      description: BLOCKED_STATUS_HELP,
+      tone: "blocked",
+    },
+    pending: {
+      label: PENDING_STATUS_LABEL,
+      icon: PENDING_STATUS_ICON,
+      description: PENDING_STATUS_HELP,
+      tone: "pending",
+    },
+    skipped: {
+      label: SKIPPED_STATUS_LABEL,
+      icon: SKIPPED_STATUS_ICON,
+      description: SKIPPED_STATUS_HELP,
+      tone: "skipped",
+    },
   };
   if ((EXECUTION_WAITING_STATUSES as readonly string[]).includes(folded)) {
     const waiting = catalog.waiting;
@@ -454,6 +496,61 @@ export function executionStatusPresentation(
     indeterminate,
     tone: "other",
   };
+}
+
+/**
+ * Presentation only. The API still returns `pending` / `blocked`.
+ * A failed run shows those as Not reached. Other run statuses do not.
+ * Retry and cancel keep using the raw statuses.
+ */
+export function displaysAsNotReached(input: {
+  runStatus?: string;
+  status?: string;
+  siblingJobStatuses?: readonly string[];
+}): boolean {
+  if (normalizeExecutionStatus(input.runStatus) !== "failed") {
+    return false;
+  }
+  const folded = normalizeExecutionStatus(input.status);
+  if (folded === "pending" || folded === "blocked") {
+    return true;
+  }
+  return (input.siblingJobStatuses ?? []).some(
+    (jobStatus) => normalizeExecutionStatus(jobStatus) === "blocked",
+  );
+}
+
+export function notReachedStatusPresentation(
+  status: ExecutionStatus | undefined,
+): ExecutionStatusPresentation {
+  return {
+    status: normalizeExecutionStatus(status),
+    label: NOT_REACHED_STATUS_LABEL,
+    icon: NOT_REACHED_STATUS_ICON,
+    description: NOT_REACHED_STATUS_HELP,
+    indeterminate: false,
+    tone: "not-reached",
+  };
+}
+
+export function executionStatusPresentationInRun(
+  status: ExecutionStatus | undefined,
+  runStatus?: ExecutionStatus,
+  siblingJobStatuses?: readonly string[],
+): ExecutionStatusPresentation {
+  if (displaysAsNotReached({ runStatus, status, siblingJobStatuses })) {
+    return notReachedStatusPresentation(status);
+  }
+  return executionStatusPresentation(status);
+}
+
+export function jobStatusesForStep(
+  jobs: readonly { executionStepId?: string; status?: string }[],
+  stepId: string,
+): string[] {
+  return jobs
+    .filter((job) => job.executionStepId === stepId && job.status)
+    .map((job) => job.status as string);
 }
 
 export function isCancelableStatus(status: ExecutionStatus | undefined): boolean {
@@ -585,8 +682,11 @@ export function cancelOutcomeMessage(record: {
     : CANCEL_APPLIED_MESSAGE;
 }
 
-export function jobDispatchView(job: ExecutionJob): JobDispatchView {
-  const presentation = executionStatusPresentation(job.status);
+export function jobDispatchView(
+  job: ExecutionJob,
+  runStatus?: ExecutionStatus,
+): JobDispatchView {
+  const presentation = executionStatusPresentationInRun(job.status, runStatus);
   const claimed =
     normalizeExecutionStatus(job.status) === "claimed" ||
     normalizeExecutionStatus(job.status) === "running" ||
@@ -1283,7 +1383,7 @@ export function executionDetailDisplay(
     pins: detail.pins,
     steps: detail.steps,
     jobs: detail.jobs,
-    jobViews: detail.jobs.map(jobDispatchView),
+    jobViews: detail.jobs.map((job) => jobDispatchView(job, detail.status)),
     auditEvents: detail.auditEvents,
     artifacts: detail.artifacts,
     input: detail.input,

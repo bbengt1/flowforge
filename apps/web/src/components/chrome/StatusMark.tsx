@@ -23,6 +23,7 @@ export function StatusMark({
     <span
       role={role}
       data-ff-status={FF_STATUS_VALUE}
+      title={description || undefined}
       className={`inline-flex items-center gap-1.5 ${className ?? ""}`.trim()}
     >
       <span aria-hidden="true">{icon}</span>

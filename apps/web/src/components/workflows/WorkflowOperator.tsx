@@ -868,7 +868,10 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   const overlayActive = runIoSource === "overlay" && Boolean(selectedRun);
   const canvasGraph =
     graph && overlayActive && selectedRun
-      ? editorRunOverlayGraph(graph, selectedRun.steps, runWaitingIds)
+      ? editorRunOverlayGraph(graph, selectedRun.steps, runWaitingIds, {
+          status: selectedRun.status,
+          jobs: selectedRun.jobs,
+        })
       : graph;
   const runCurrentNodeId = overlayActive && selectedRun
     ? editorRunCurrentNodeId(selectedRun.steps, runWaitingIds) ?? undefined

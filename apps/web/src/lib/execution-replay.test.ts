@@ -23,13 +23,20 @@ import {
   parseTriggerInput,
   projectPinnedVersionGraph,
   publishedRunVersions,
+  replayNodeStateLabel,
   retryBlockedForIndeterminate,
   sideEffectWarnings,
   stepDurationMs,
   summaryFromPublishedYaml,
 } from "./execution-replay.ts";
+import { executionStatusPresentation } from "./execution.ts";
 import type { ExecutionDetail, ExecutionRecord, ExecutionStep } from "./execution-types.ts";
 import { INVALID_WORKFLOW_YAML, STARTER_WORKFLOW_YAML } from "./workflow.ts";
+import {
+  canvasNodeStateDescription,
+  canvasNodeStateIcon,
+  canvasNodeStateLabel,
+} from "./workflow-graph.ts";
 import type { WorkflowCatalog, WorkflowVersion } from "./workflow-types.ts";
 
 const WORKFLOW_ID = "11111111-1111-4111-8111-111111111111";
@@ -314,6 +321,109 @@ describe("graph replay overlay", () => {
     assert.equal(canvasStateFromExecutionStatus("awaiting_approval"), "approval-required");
     assert.equal(stepDurationMs(sampleStep()), 2000);
     assert.equal(formatDuration(2000), "2.0 s");
+  });
+
+  it("shows skipped, pending, and blocked on the graph instead of Valid", () => {
+    const graph = projectPinnedVersionGraph({
+      yaml: STARTER_WORKFLOW_YAML,
+      catalog,
+    });
+    assert.ok(graph);
+    const overlaid = overlayExecutionOnGraph(graph, [
+      sampleStep({ nodeId: "seed", status: "skipped" }),
+      sampleStep({
+        id: "99999999-9999-4999-8999-999999999999",
+        nodeId: "done",
+        nodeType: "flow.stop",
+        status: "pending",
+      }),
+    ]);
+    const skipped = overlaid.nodes.find((node) => node.id === "seed");
+    const pending = overlaid.nodes.find((node) => node.id === "done");
+    assert.equal(skipped?.state, "skipped");
+    assert.equal(pending?.state, "pending");
+    assert.equal(canvasStateFromExecutionStatus("blocked"), "blocked");
+    for (const state of ["skipped", "pending", "blocked"] as const) {
+      const label = replayNodeStateLabel(state);
+      assert.match(label, new RegExp(canvasNodeStateLabel(state)));
+      assert.equal(label.includes("Valid"), false);
+      assert.equal(label.includes("✓"), false);
+      assert.equal(canvasNodeStateIcon(state), executionStatusPresentation(state).icon);
+      assert.notEqual(canvasNodeStateIcon(state), canvasNodeStateIcon("valid"));
+      assert.notEqual(canvasNodeStateIcon(state), canvasNodeStateIcon("succeeded"));
+      assert.notEqual(canvasNodeStateIcon(state), canvasNodeStateIcon("failed"));
+      assert.notEqual(canvasNodeStateIcon(state), canvasNodeStateIcon("running"));
+      assert.equal(
+        canvasNodeStateDescription(state),
+        executionStatusPresentation(state).description,
+      );
+    }
+    assert.equal(
+      executionErrorNavLinks({
+        steps: [sampleStep({ nodeId: "seed", status: "skipped" })],
+      }).some((link) => link.tone === "failed"),
+      false,
+    );
+  });
+
+  it("shows a pending step as Not reached when the run failed", () => {
+    const graph = projectPinnedVersionGraph({
+      yaml: STARTER_WORKFLOW_YAML,
+      catalog,
+    });
+    assert.ok(graph);
+    const pending = sampleStep({ nodeId: "seed", status: "pending" });
+    const held = overlayExecutionOnGraph(
+      graph,
+      [pending],
+      {
+        runStatus: "failed",
+        jobs: [
+          {
+            executionStepId: pending.id,
+            status: "blocked",
+          },
+        ],
+      },
+    );
+    const node = held.nodes.find((item) => item.id === "seed");
+    assert.equal(node?.state, "not-reached");
+    assert.equal(canvasNodeStateLabel("not-reached"), "Not reached");
+    assert.equal(replayNodeStateLabel("not-reached").includes("Valid"), false);
+    assert.equal(replayNodeStateLabel("not-reached").includes("✓"), false);
+    assert.equal(canvasNodeStateIcon("not-reached"), "–");
+    assert.match(canvasNodeStateDescription("not-reached"), /inputs were ready/);
+    assert.match(canvasNodeStateDescription("not-reached"), /release it/);
+    const stillPending = overlayExecutionOnGraph(graph, [pending], {
+      runStatus: "running",
+      jobs: [{ executionStepId: pending.id, status: "blocked" }],
+    });
+    assert.equal(
+      stillPending.nodes.find((item) => item.id === "seed")?.state,
+      "pending",
+    );
+    const queued = sampleStep({
+      id: "99999999-9999-4999-8999-999999999999",
+      nodeId: "done",
+      status: "queued",
+    });
+    const fromJob = overlayExecutionOnGraph(graph, [queued], {
+      runStatus: "failed",
+      jobs: [{ executionStepId: queued.id, status: "blocked" }],
+    });
+    assert.equal(
+      fromJob.nodes.find((item) => item.id === "done")?.state,
+      "not-reached",
+    );
+    const skipped = overlayExecutionOnGraph(
+      graph,
+      [sampleStep({ nodeId: "seed", status: "skipped" })],
+      { runStatus: "failed" },
+    );
+    assert.equal(
+      skipped.nodes.find((item) => item.id === "seed")?.state,
+      "skipped",
+    );
   });
 
   it("never projects invalid YAML as a guessed graph", () => {

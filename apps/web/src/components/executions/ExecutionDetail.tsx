@@ -901,7 +901,13 @@ export function ExecutionDetail({
                           {step.nodeType || "node"} · attempt {step.attempt}
                         </p>
                       </div>
-                      <ExecutionStatusBadge status={step.status} />
+                      <ExecutionStatusBadge
+                        status={step.status}
+                        runStatus={view.header.status}
+                        siblingJobStatuses={view.jobs
+                          .filter((job) => job.executionStepId === step.id)
+                          .map((job) => job.status)}
+                      />
                     </div>
                     {step.workerId || step.leaseId || step.fencingToken != null ? (
                       <p className={`mt-2 font-mono text-xs ${FF_INBOX_MUTED_CLASS}`}>
@@ -1083,7 +1089,10 @@ export function ExecutionDetail({
                         {job.presentation.label}
                         {job.claimed ? " · lease/claim" : ""}
                       </p>
-                      <ExecutionStatusBadge status={job.status} />
+                      <ExecutionStatusBadge
+                        status={job.status}
+                        runStatus={view.header.status}
+                      />
                     </div>
                     <p className={`mt-1 font-mono text-xs break-all ${FF_INBOX_MUTED_CLASS}`}>
                       {job.id}

@@ -206,6 +206,22 @@ describe("V.7 Status + embed visual gate", () => {
     const globals = source("src/app/globals.css");
     assert.equal(statusUsesV1TokenClasses(globals), true);
     assert.match(globals, /\.ff-status-succeeded/);
+    assert.match(globals, /\.ff-status-blocked/);
+    assert.match(globals, /\.ff-status-pending/);
+    assert.match(globals, /\.ff-status-skipped/);
+    assert.match(globals, /\.ff-status-not-reached/);
+    assert.match(statusToneClass("not-reached"), /ff-status-not-reached/);
+    assert.doesNotMatch(
+      statusToneClass("not-reached"),
+      /ff-status-running|ff-status-pending|ff-status-blocked|ff-loud/,
+    );
+    assert.match(statusToneClass("skipped"), /ff-status-skipped/);
+    assert.doesNotMatch(
+      statusToneClass("skipped"),
+      /ff-status-running|ff-status-succeeded|ff-loud/,
+    );
+    assert.match(statusToneClass("blocked"), /ff-status-blocked/);
+    assert.match(statusToneClass("pending"), /ff-status-pending/);
     assert.match(globals, /\.ff-loud-indeterminate/);
     assert.match(globals, /var\(--ff-accent\)/);
     assert.match(globals, /var\(--ff-danger\)/);

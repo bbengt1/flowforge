@@ -36,6 +36,7 @@ import {
   LOUD_ERROR_SURFACE,
   LOUD_INDETERMINATE_SURFACE,
 } from "@/lib/aesthetic-usability-density";
+import { displaysAsNotReached, jobStatusesForStep } from "@/lib/execution";
 import { peakEndKind } from "@/lib/peak-end-operate-endings";
 
 export type LastRunIoPanelProps = {
@@ -74,10 +75,21 @@ export function LastRunIoPanel({
     embed,
   });
   const io = view.io;
-  const endingKind = peakEndKind(
-    io?.status || view.runStatus || detail?.status,
-    Boolean(io?.view?.waiting),
-  );
+  const siblingJobStatuses = detail
+    ? jobStatusesForStep(detail.jobs, io?.step?.id ?? "")
+    : [];
+  const notReached = displaysAsNotReached({
+    runStatus: detail?.status,
+    status: io?.status || view.runStatus,
+    siblingJobStatuses,
+  });
+  const endingKind = notReached
+    ? "not-reached"
+    : peakEndKind(
+        io?.status || view.runStatus || detail?.status,
+        Boolean(io?.view?.waiting),
+        detail?.status,
+      );
   const indeterminateCopy = io?.step
     ? isSshRunType(io.step.nodeType)
       ? sshIndeterminateCopy({
@@ -137,7 +149,11 @@ export function LastRunIoPanel({
             </span>
           ) : null}
           {detail || view.runStatus ? (
-            <ExecutionStatusBadge status={view.runStatus || detail?.status} />
+            <ExecutionStatusBadge
+              status={view.runStatus || detail?.status}
+              runStatus={detail?.status}
+              siblingJobStatuses={siblingJobStatuses}
+            />
           ) : null}
           {detail || view.runStatus ? (
             <PeakEndEnding kind={endingKind} surface="ndv" />

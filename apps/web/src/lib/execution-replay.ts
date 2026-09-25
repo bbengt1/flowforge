@@ -24,9 +24,12 @@ import {
   boundRedactedDisplay,
   canRetryExecution,
   canRetryExecutionStep,
+  displaysAsNotReached,
   executionStatusPresentation,
+  executionStatusPresentationInRun,
   isIndeterminateStatus,
   isSecretFieldName,
+  jobStatusesForStep,
   normalizeExecutionStatus,
   stripSecretFields,
 } from "./execution.ts";
@@ -262,6 +265,15 @@ export function canvasStateFromExecutionStatus(
   status: string | undefined,
 ): CanvasNodeState {
   const folded = normalizeExecutionStatus(status);
+  if (folded === "skipped") {
+    return "skipped";
+  }
+  if (folded === "pending") {
+    return "pending";
+  }
+  if (folded === "blocked") {
+    return "blocked";
+  }
   if (folded === "indeterminate") {
     return "indeterminate";
   }
@@ -299,10 +311,15 @@ export function latestStepsByNode(
 export function overlayExecutionOnGraph(
   graph: WorkflowGraph,
   steps: readonly ExecutionStep[],
-  options: { waitingApprovalNodeIds?: readonly string[] } = {},
+  options: {
+    waitingApprovalNodeIds?: readonly string[];
+    runStatus?: string;
+    jobs?: readonly { executionStepId?: string; status?: string }[];
+  } = {},
 ): WorkflowGraph {
   const latest = latestStepsByNode(steps);
   const waiting = new Set(options.waitingApprovalNodeIds ?? []);
+  const jobs = options.jobs ?? [];
   return {
     ...graph,
     nodes: graph.nodes.map((node) => {
@@ -310,6 +327,15 @@ export function overlayExecutionOnGraph(
       let state = node.state;
       if (waiting.has(node.id)) {
         state = "approval-required";
+      } else if (
+        step &&
+        displaysAsNotReached({
+          runStatus: options.runStatus,
+          status: step.status,
+          siblingJobStatuses: jobStatusesForStep(jobs, step.id),
+        })
+      ) {
+        state = "not-reached";
       } else if (step) {
         state = canvasStateFromExecutionStatus(step.status);
       }
@@ -391,17 +417,26 @@ export function waitingApprovalNodeIds(
 
 export function replayStepViews(
   steps: readonly ExecutionStep[],
-  options: { waitingApprovalNodeIds?: readonly string[] } = {},
+  options: {
+    waitingApprovalNodeIds?: readonly string[];
+    runStatus?: string;
+    jobs?: readonly { executionStepId?: string; status?: string }[];
+  } = {},
 ): ReplayStepView[] {
   const current = currentReplayNodeId(steps, options.waitingApprovalNodeIds);
   const waiting = new Set(options.waitingApprovalNodeIds ?? []);
+  const jobs = options.jobs ?? [];
   return steps.map((step) => {
     const durationMs = stepDurationMs(step);
     return {
       step,
       nodeId: step.nodeId,
       status: step.status,
-      presentation: executionStatusPresentation(step.status),
+      presentation: executionStatusPresentationInRun(
+        step.status,
+        options.runStatus,
+        jobStatusesForStep(jobs, step.id),
+      ),
       durationMs,
       durationLabel: formatDuration(durationMs),
       attempts: step.attempt,
