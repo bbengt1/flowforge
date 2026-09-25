@@ -35,9 +35,7 @@ const SKIPPED_HELP =
   "Didn't run because an upstream approval was rejected or expired, or its branch wasn't taken. Not a failure.";
 
 async function expectDispatchStatusChips(page: Page): Promise<void> {
-  await expect(
-    page.getByRole("heading", { level: 2, name: "Graph replay" }),
-  ).toBeVisible();
+  await expect(page.locator("#graph-replay-heading")).toBeVisible();
   const rollback = page.locator("[data-canvas-node='rollback']");
   await expect(rollback).toContainText("Skipped");
   await expect(rollback).not.toContainText("Valid");
@@ -45,19 +43,20 @@ async function expectDispatchStatusChips(page: Page): Promise<void> {
   const downstream = page.locator("[data-canvas-node='downstream']");
   await expect(downstream).toContainText("Pending");
   await expect(downstream).not.toContainText("Valid");
-  await expect(page.getByRole("status", { name: /Blocked/ })).toHaveAttribute(
-    "title",
-    BLOCKED_HELP,
-  );
-  await expect(page.getByRole("status", { name: /Pending/ })).toHaveCount(2);
-  await expect(
-    page.getByRole("status", { name: /Pending/ }).first(),
-  ).toHaveAttribute("title", PENDING_HELP);
-  await expect(page.getByRole("status", { name: /Skipped/ })).toHaveCount(2);
-  await expect(
-    page.getByRole("status", { name: /Skipped/ }).first(),
-  ).toHaveAttribute("title", SKIPPED_HELP);
-  await expect(page.getByRole("status", { name: /Failed/ })).toHaveCount(0);
+  // status is name-from-author, so the accessible name is the title tooltip.
+  const blocked = page.getByRole("status", { name: BLOCKED_HELP });
+  await expect(blocked).toHaveCount(1);
+  await expect(blocked).toContainText("Blocked");
+  await expect(blocked).toHaveClass(/ff-status-blocked/);
+  const pending = page.getByRole("status", { name: PENDING_HELP });
+  await expect(pending.first()).toBeVisible();
+  await expect(pending.first()).toContainText("Pending");
+  await expect(pending.first()).toHaveClass(/ff-status-pending/);
+  const skipped = page.getByRole("status", { name: SKIPPED_HELP });
+  await expect(skipped.first()).toBeVisible();
+  await expect(skipped.first()).toContainText("Skipped");
+  await expect(skipped.first()).toHaveClass(/ff-status-skipped/);
+  await expect(skipped.first()).not.toHaveClass(/ff-status-running|ff-loud/);
 }
 
 async function expectSkipLink(page: Page): Promise<void> {

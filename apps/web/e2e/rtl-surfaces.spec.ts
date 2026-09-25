@@ -212,18 +212,28 @@ test.describe("RTL primary surfaces", () => {
     const rollback = page.locator("[data-canvas-node='rollback']");
     await expect(rollback).toContainText("Skipped");
     await expect(rollback).not.toContainText("Valid");
-    await expect(page.getByRole("status", { name: /Blocked/ })).toBeVisible();
-    await expect(page.getByRole("status", { name: /Pending/ }).first()).toBeVisible();
-    await expect(page.getByRole("status", { name: /Skipped/ }).first()).toBeVisible();
-    const blockedEdges = await page
-      .getByRole("status", { name: /Blocked/ })
-      .evaluate((element) => {
-        const style = getComputedStyle(element);
-        return {
-          inlineStart: style.borderInlineStartWidth,
-          inlineEnd: style.borderInlineEndWidth,
-        };
-      });
+    const blocked = page.getByRole("status", {
+      name: "Waiting for upstream steps to finish.",
+    });
+    await expect(blocked).toBeVisible();
+    await expect(blocked).toContainText("Blocked");
+    await expect(
+      page.getByRole("status", { name: "Not started yet. Waiting on inputs." }).first(),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByRole("status", {
+          name: "Didn't run because an upstream approval was rejected or expired, or its branch wasn't taken. Not a failure.",
+        })
+        .first(),
+    ).toBeVisible();
+    const blockedEdges = await blocked.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        inlineStart: style.borderInlineStartWidth,
+        inlineEnd: style.borderInlineEndWidth,
+      };
+    });
     expect(blockedEdges.inlineStart).toBe("3px");
     expect(blockedEdges.inlineEnd).toBe("1px");
     await expectHugsInlineStart(page.getByRole("heading", { level: 1 }));
