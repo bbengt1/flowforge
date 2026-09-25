@@ -35,6 +35,50 @@ func approvalWaitYAMLNamed(name string) string {
 	return strings.Replace(approvalWaitYAML, "e103-wait", name, 1)
 }
 
+func TestMemoryCancelClosesPendingApproval(t *testing.T) {
+	h, admin := seededWorkspace(t)
+	ws, tenant := currentWorkspace(t, h, admin)
+	wf := createWorkflow(t, h, admin, tenant, ws, approvalWaitYAMLNamed("memory-cancel-close"))
+	pub := publishWorkflow(t, h, admin, tenant, ws, wf.Workflow.ID, wf.Draft.Revision, "wait")
+	exec := startExecution(t, h, admin, tenant, ws, wf.Workflow.ID, pub.Version.ID)
+
+	rec := httptest.NewRecorder()
+	req := workspaceJSON(http.MethodPost, "/api/v1/jobs/claim", []byte(`{"workerId":"memory-cancel","leaseSeconds":5}`), admin, tenant, ws)
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("claim: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	req = workspaceRequest(http.MethodGet, "/api/v1/approvals?executionId="+exec.ID, nil, admin, tenant, ws)
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list: %d %s", rec.Code, rec.Body.String())
+	}
+	var listed listResponse[approval.Record]
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil || len(listed.Items) != 1 || listed.Items[0].Status != approval.StatusPending {
+		t.Fatalf("pending = %s %v", rec.Body.String(), err)
+	}
+	rec = httptest.NewRecorder()
+	req = workspaceJSON(http.MethodPost, "/api/v1/executions/"+exec.ID+"/cancel", []byte(`{}`), admin, tenant, ws)
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("cancel: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	req = workspaceRequest(http.MethodGet, "/api/v1/approvals/"+listed.Items[0].ID, nil, admin, tenant, ws)
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get: %d %s", rec.Code, rec.Body.String())
+	}
+	var got approval.Record
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != approval.StatusCanceled || got.CloseReason != approval.ReasonRunCanceled || got.DecidedBy != "" {
+		t.Fatalf("approval = %+v", got)
+	}
+}
+
 func TestDurableApprovalWaitResumeExpirySoDAndInvalidate(t *testing.T) {
 	var frozen atomic.Int64
 	base := time.Now().UTC().Add(time.Second)

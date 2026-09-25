@@ -32,12 +32,21 @@ var (
 	ErrJobExpired            = errors.New("authenticated job expired")
 	// ErrJobBindingSecret is a boot-fail: JOB_BINDING_SECRET is missing
 	// or not a 32-byte HMAC key. Loaders never invent a process key.
-	ErrJobBindingSecret           = errors.New("JOB_BINDING_SECRET is missing or malformed")
-	ErrNotClaimable               = errors.New("job is not in a claimable or writable state")
-	ErrAlreadyTerminal            = errors.New("execution is already terminal")
-	ErrRetryNotAllowed            = errors.New("retry is not allowed")
-	ErrRetryDenied                = errors.New("retry-denied")
-	ErrCanceled                   = errors.New("execution or job was canceled")
+	ErrJobBindingSecret = errors.New("JOB_BINDING_SECRET is missing or malformed")
+	ErrNotClaimable     = errors.New("job is not in a claimable or writable state")
+	ErrAlreadyTerminal  = errors.New("execution is already terminal")
+	ErrRetryNotAllowed  = errors.New("retry is not allowed")
+	ErrRetryDenied      = errors.New("retry-denied")
+	ErrCanceled         = errors.New("execution or job was canceled")
+	// ErrExecutionNotRetryable refuses a retry that is not on the latest
+	// failed or indeterminate attempt of a failed or indeterminate run.
+	ErrExecutionNotRetryable = errors.New("execution is not retryable")
+	// ErrStepAttemptSuperseded refuses a retry of an attempt that is no
+	// longer the latest for its node.
+	ErrStepAttemptSuperseded = errors.New("step attempt was superseded")
+	// ErrConstraint is a unique violation that is not a workflow slug,
+	// an execution idempotency key, or a folder sibling name.
+	ErrConstraint                 = errors.New("constraint")
 	ErrEmergencyStopNotApplicable = errors.New("emergency stop applies only to an open script execution")
 	ErrUnsafeArtifact             = errors.New("artifact content cannot be safely retained")
 	ErrArtifactExpired            = errors.New("artifact has expired")
@@ -54,9 +63,10 @@ var (
 	ErrActiveExecutions = errors.New("workflow has active executions")
 	// ErrSlugReserved is a tombstone holding the slug. A live slug is ErrConflict.
 	ErrSlugReserved = errors.New("workflow slug is reserved")
-	// ErrWorkflowDeleted means a resume, retry, requeue, or claim found
-	// deleted_at set. The run is failed with ReasonWorkflowDeleted and
-	// must not continue.
+	// ErrWorkflowDeleted means a resume, requeue, or claim found deleted_at
+	// set. The run is failed with ReasonWorkflowDeleted and must not
+	// continue. Step retry reports that tombstone as
+	// execution_not_retryable with reason workflow_deleted.
 	ErrWorkflowDeleted = errors.New("workflow was deleted")
 )
 
@@ -90,6 +100,19 @@ const (
 	// waiting or about to resume when its workflow was soft-deleted.
 	// It is stored on the step error and on execution detail statusReason.
 	ReasonWorkflowDeleted = "workflow_deleted"
+
+	// Retry refusal codes and reasons. The same values are written on
+	// capabilities.retry and on the retry 409. SSH and script policy
+	// denial is execution_not_retryable with reason retry_not_allowed.
+	// A soft-deleted workflow uses reason workflow_deleted.
+	CodeExecutionNotRetryable = "execution_not_retryable"
+	CodeStepAttemptSuperseded = "step_attempt_superseded"
+	ReasonRunCanceled         = "run_canceled"
+	ReasonRunNotFailed        = "run_not_failed"
+	ReasonStepNotStarted      = "step_not_started"
+	ReasonStepNotFailed       = "step_not_failed"
+	ReasonIncomingUnresolved  = "incoming_unresolved"
+	ReasonRetryNotAllowed     = "retry_not_allowed"
 )
 
 // Job statuses. claimed/running are reserved for E5.2 leases.
@@ -179,25 +202,26 @@ type Version struct {
 
 // Execution is a durable run pinned to a published version and digest.
 type Execution struct {
-	ID                string         `json:"id"`
-	WorkflowID        string         `json:"workflowId"`
-	WorkflowSlug      string         `json:"workflowSlug,omitempty"`
-	WorkflowName      string         `json:"workflowName,omitempty"`
-	WorkflowVersionID string         `json:"workflowVersionId"`
-	WorkflowDigest    string         `json:"workflowDigest"`
-	TriggerID         string         `json:"triggerId,omitempty"`
-	Status            string         `json:"status"`
-	IdempotencyKey    string         `json:"idempotencyKey,omitempty"`
-	Input             map[string]any `json:"input"`
-	PolicySnapshot    map[string]any `json:"policySnapshot"`
-	CorrelationID     string         `json:"correlationId,omitempty"`
-	RequestedBy       string         `json:"requestedBy,omitempty"`
-	CreatedAt         time.Time      `json:"createdAt"`
-	StartedAt         *time.Time     `json:"startedAt,omitempty"`
-	FinishedAt        *time.Time     `json:"finishedAt,omitempty"`
-	UpdatedAt         time.Time      `json:"updatedAt"`
-	RetentionUntil    time.Time      `json:"retentionUntil"`
-	Replayed          bool           `json:"replayed"`
+	ID                string                 `json:"id"`
+	WorkflowID        string                 `json:"workflowId"`
+	WorkflowSlug      string                 `json:"workflowSlug,omitempty"`
+	WorkflowName      string                 `json:"workflowName,omitempty"`
+	WorkflowVersionID string                 `json:"workflowVersionId"`
+	WorkflowDigest    string                 `json:"workflowDigest"`
+	TriggerID         string                 `json:"triggerId,omitempty"`
+	Status            string                 `json:"status"`
+	IdempotencyKey    string                 `json:"idempotencyKey,omitempty"`
+	Input             map[string]any         `json:"input"`
+	PolicySnapshot    map[string]any         `json:"policySnapshot"`
+	CorrelationID     string                 `json:"correlationId,omitempty"`
+	RequestedBy       string                 `json:"requestedBy,omitempty"`
+	CreatedAt         time.Time              `json:"createdAt"`
+	StartedAt         *time.Time             `json:"startedAt,omitempty"`
+	FinishedAt        *time.Time             `json:"finishedAt,omitempty"`
+	UpdatedAt         time.Time              `json:"updatedAt"`
+	RetentionUntil    time.Time              `json:"retentionUntil"`
+	Replayed          bool                   `json:"replayed"`
+	Capabilities      *ExecutionCapabilities `json:"capabilities,omitempty"`
 	fingerprint       string
 }
 
@@ -224,7 +248,38 @@ type ExecutionStep struct {
 	UpdatedAt       time.Time      `json:"updatedAt"`
 	// UnresolvedIncoming is the number of incoming edges that have not
 	// resolved yet. It is a claim backstop, not an API field.
-	UnresolvedIncoming int `json:"-"`
+	UnresolvedIncoming int                    `json:"-"`
+	Capabilities       *ExecutionCapabilities `json:"capabilities,omitempty"`
+}
+
+// RetryCapability is the read-only retry eligibility for one run or step.
+// Allowed steps omit code and reason. The code and reason match the 409
+// RetryStep returns for the same inputs, without the request-time SSH or
+// script pin hint.
+type RetryCapability struct {
+	Allowed bool   `json:"allowed"`
+	Code    string `json:"code,omitempty"`
+	Reason  string `json:"reason,omitempty"`
+}
+
+// ExecutionCapabilities is the read-only action set on an execution and
+// on each step. Both use the same object.
+type ExecutionCapabilities struct {
+	Retry RetryCapability `json:"retry"`
+}
+
+// NotRetryableError is a 409 execution_not_retryable refusal. Reason is
+// the machine-readable cause.
+type NotRetryableError struct {
+	Reason string
+}
+
+func (e *NotRetryableError) Error() string {
+	return "This execution cannot be retried."
+}
+
+func (e *NotRetryableError) Unwrap() error {
+	return ErrExecutionNotRetryable
 }
 
 // Artifact is redacted, encrypted-at-rest execution output metadata.
@@ -636,6 +691,10 @@ type Store interface {
 	GetDownloadGrant(ctx context.Context, scope isolation.Scope, grantID string, now time.Time) (DownloadGrant, Artifact, error)
 	PlanRetentionPurge(ctx context.Context, scope isolation.Scope, now time.Time) (RetentionPlan, error)
 	FindCredentialRefs(ctx context.Context, scope isolation.Scope, credentialID string) ([]CredentialRef, error)
+	// AnnotateRetryCapabilities fills capabilities.retry on exec and steps
+	// from the same eligibility function RetryStep uses. steps is updated
+	// in place. The pin hint used by POST retry is not applied.
+	AnnotateRetryCapabilities(ctx context.Context, scope isolation.Scope, exec *Execution, steps []ExecutionStep) error
 }
 
 // Credential reference kinds returned to the vault for usage/deletion impact.

@@ -143,6 +143,9 @@ func guardLiveWorkflowTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, 
 // stopExecutionWorkflowDeletedTx fails every open job and step. An already
 // terminal run (other than pinned) is left as it is.
 func stopExecutionWorkflowDeletedTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now time.Time, executionID string) error {
+	if err := lockExecutionTx(ctx, tx, executionID); err != nil {
+		return err
+	}
 	exec, err := getExecutionTx(ctx, tx, executionID)
 	if err != nil {
 		return err
@@ -176,12 +179,16 @@ func stopExecutionWorkflowDeletedTx(ctx context.Context, tx pgx.Tx, scope isolat
 	if err := applyExecutionStatusTx(ctx, tx, executionID, ExecutionFailed, now); err != nil {
 		return err
 	}
+	closed, err := closePendingApprovalsTx(ctx, tx, executionID, ReasonWorkflowDeleted, now)
+	if err != nil {
+		return err
+	}
 	_, err = insertAuditTx(ctx, tx, scope, AuditWrite{
 		Action:       "execution.stop",
 		ResourceType: "execution",
 		ResourceID:   executionID,
 		Outcome:      ReasonWorkflowDeleted,
-		Details:      map[string]any{"reason": ReasonWorkflowDeleted},
+		Details:      map[string]any{"reason": ReasonWorkflowDeleted, "approvalsClosed": closed},
 	})
 	return err
 }

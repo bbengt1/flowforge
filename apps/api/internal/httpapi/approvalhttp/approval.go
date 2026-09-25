@@ -228,7 +228,16 @@ func decideApproval(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(rec.ExecutionID) != "" && s.Workflows != nil {
 		if err := s.Workflows.AbandonIfWorkflowDeleted(r.Context(), scope, s.Clock().UTC(), rec.ExecutionID); err != nil {
 			if errors.Is(err, wfstore.ErrWorkflowDeleted) {
-				core.WriteProblem(w, r, http.StatusConflict, core.CodeWorkflowDeleted, "Conflict", "This workflow was deleted. The run will not continue.")
+				// The stop closed pending approvals in that transaction on
+				// Postgres. Memory has no shared transaction, so close here
+				// too. A second close is a no-op once the row is canceled.
+				if s.Approvals != nil {
+					if closeErr := s.Approvals.ClosePendingForExecution(r.Context(), scope, rec.ExecutionID, approval.ReasonWorkflowDeleted, s.Clock().UTC()); closeErr != nil {
+						core.WriteProblem(w, r, http.StatusInternalServerError, core.CodeInternalError, "Internal Server Error", "An unexpected error occurred.")
+						return
+					}
+				}
+				WriteApprovalError(w, r, approval.ErrClosed)
 				return
 			}
 			if errors.Is(err, wfstore.ErrNotFound) {
@@ -639,6 +648,8 @@ func WriteApprovalError(w http.ResponseWriter, r *http.Request, err error) {
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeConflict, "Conflict", "Approval has expired.")
 	case errors.Is(err, approval.ErrInvalidated):
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeConflict, "Conflict", "Approval is bound to a previous workflow version, target, or policy revision.")
+	case errors.Is(err, approval.ErrClosed):
+		core.WriteProblem(w, r, http.StatusConflict, core.CodeApprovalClosed, "Conflict", "This approval is closed and can no longer be decided.")
 	case errors.Is(err, approval.ErrNotPending):
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeConflict, "Conflict", "Approval is not pending.")
 	case errors.Is(err, approval.ErrConflict):

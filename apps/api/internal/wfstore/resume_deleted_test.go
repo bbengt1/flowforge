@@ -177,7 +177,9 @@ func TestRetryAndClaimAfterDeleteDoNotContinue(t *testing.T) {
 	if _, err := store.Delete(ctx, scope, wf.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.RetryStep(ctx, scope, now, exec.ID, claimed.Step.ID); !errors.Is(err, ErrWorkflowDeleted) {
+	_, err = store.RetryStep(ctx, scope, now, exec.ID, claimed.Step.ID)
+	var refused *NotRetryableError
+	if !errors.As(err, &refused) || refused.Reason != ReasonWorkflowDeleted {
 		t.Fatalf("retry = %v", err)
 	}
 	jobs, err := store.ListJobs(ctx, scope, exec.ID)

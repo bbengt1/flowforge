@@ -66,6 +66,14 @@ BEGIN
         REVOKE ALL ON FUNCTION app.backfill_execution_dependencies() FROM PUBLIC;
         REVOKE ALL ON FUNCTION app.backfill_execution_dependencies() FROM flowforge_app;
     END IF;
+    IF to_regprocedure('app.backfill_execution_edge_resolution()') IS NOT NULL THEN
+        REVOKE ALL ON FUNCTION app.backfill_execution_edge_resolution() FROM PUBLIC;
+        REVOKE ALL ON FUNCTION app.backfill_execution_edge_resolution() FROM flowforge_app;
+    END IF;
+    IF to_regprocedure('app.backfill_close_stale_approvals()') IS NOT NULL THEN
+        REVOKE ALL ON FUNCTION app.backfill_close_stale_approvals() FROM PUBLIC;
+        REVOKE ALL ON FUNCTION app.backfill_close_stale_approvals() FROM flowforge_app;
+    END IF;
 END
 $$;
 `

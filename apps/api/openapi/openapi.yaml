@@ -3179,7 +3179,7 @@ paths:
         workflow.delete cannot be minted on an embed assertion (ErrCapability, the same rejection as platform.administer). It stays on the editor and admin workspace roles.
         The browser identity proxy refuses DELETE /workflows/{workflowId} for an embed session with 403. First-party browser DELETE stays allowlisted.
         Queued or running executions return 409 workflow_has_active_executions and are not canceled. Waiting and pinned executions do not block.
-        A waiting run that later resumes, is retried, or is requeued after the workflow is deleted is failed with reason workflow_deleted. No further steps run. Approval decide on that run returns 409 workflow_deleted and does not record the decision when the pre-check wins.
+        A waiting run that later resumes or is requeued after the workflow is deleted is failed with reason workflow_deleted. No further steps run. Step retry returns 409 execution_not_retryable with reason workflow_deleted. Approval decide on that run returns 409 approval_closed and does not record the decision.
         Auth class: authenticated. Identity proxy: browser.
         Responses never include secrets, credentials, tokens, private keys, or vault material.
       responses:
@@ -6405,7 +6405,11 @@ components:
         policyRevision: {type: integer}
         bindingFingerprint: {type: string}
         approverRole: {type: string}
-        status: {type: string, enum: [pending, approved, rejected, expired, invalidated]}
+        status: {type: string, enum: [pending, approved, rejected, expired, invalidated, canceled]}
+        closeReason:
+          type: string
+          description: Set only when status is canceled. run_canceled or workflow_deleted. No decider is recorded.
+          enum: [run_canceled, workflow_deleted]
         expiresAt: {type: string, format: date-time}
         requestedBy: {type: string, format: uuid}
         decidedBy: {type: string, format: uuid}
@@ -6468,7 +6472,7 @@ components:
       properties:
         id: {type: string, format: uuid}
         approvalId: {type: string, format: uuid}
-        eventType: {type: string, enum: [created, approved, rejected, expired, invalidated]}
+        eventType: {type: string, enum: [created, approved, rejected, expired, invalidated, canceled]}
         actorId: {type: string, format: uuid}
         details: {type: object, additionalProperties: true}
         occurredAt: {type: string, format: date-time}
@@ -6721,8 +6725,14 @@ components:
             - workflow_has_active_executions
             - workflow_slug_reserved
             - workflow_deleted
+            - execution_not_retryable
+            - step_attempt_superseded
+            - approval_closed
         request_id:
           type: string
+        reason:
+          type: string
+          description: Machine-readable cause. Set on execution_not_retryable (run_canceled, run_not_failed, step_not_started, step_not_failed, incoming_unresolved, retry_not_allowed, workflow_deleted).
         errors:
           type: array
           description: Field-level workflow validation errors (invalid-workflow only).
@@ -8123,6 +8133,27 @@ components:
         triggerId:
           type: string
           format: uuid
+    RetryCapability:
+      type: object
+      required: [allowed]
+      description: Read-only retry eligibility. allowed true omits code and reason. Computed by the same function as POST retry, without the request-time SSH or script pin hint.
+      properties:
+        allowed:
+          type: boolean
+        code:
+          type: string
+          description: execution_not_retryable or step_attempt_superseded when allowed is false.
+          enum: [execution_not_retryable, step_attempt_superseded]
+        reason:
+          type: string
+          description: Set when code is execution_not_retryable.
+          enum: [run_canceled, run_not_failed, step_not_started, step_not_failed, incoming_unresolved, retry_not_allowed, workflow_deleted]
+    ExecutionCapabilities:
+      type: object
+      required: [retry]
+      properties:
+        retry:
+          $ref: "#/components/schemas/RetryCapability"
     WorkflowExecution:
       type: object
       required: [id, workflowId, workflowVersionId, workflowDigest, status, createdAt, input, policySnapshot, replayed]
@@ -8176,6 +8207,9 @@ components:
           format: date-time
         replayed:
           type: boolean
+        capabilities:
+          $ref: "#/components/schemas/ExecutionCapabilities"
+          description: Present on execution detail. Omitted from list rows.
         statusReason:
           type: string
           enum: [no-worker, workflow_deleted]
@@ -8367,6 +8401,9 @@ components:
         startedAt: {type: string, format: date-time}
         finishedAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
+        capabilities:
+          $ref: "#/components/schemas/ExecutionCapabilities"
+          description: Present on step reads. The execution object uses the same shape.
     ExecutionStepList:
       type: object
       required: [items]

@@ -82,8 +82,18 @@ func listExecutionSteps(s *core.Server, w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	items, err := s.Workflows.ListSteps(r.Context(), scope, strings.TrimSpace(r.PathValue("executionId")))
+	executionID := strings.TrimSpace(r.PathValue("executionId"))
+	exec, err := s.Workflows.GetExecutionByID(r.Context(), scope, executionID)
 	if err != nil {
+		WriteWorkflowStoreError(w, r, err)
+		return
+	}
+	items, err := s.Workflows.ListSteps(r.Context(), scope, executionID)
+	if err != nil {
+		WriteWorkflowStoreError(w, r, err)
+		return
+	}
+	if err := s.Workflows.AnnotateRetryCapabilities(r.Context(), scope, &exec, items); err != nil {
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
@@ -95,12 +105,29 @@ func getExecutionStep(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	step, err := s.Workflows.GetStep(r.Context(), scope, strings.TrimSpace(r.PathValue("executionId")), strings.TrimSpace(r.PathValue("stepId")))
+	executionID := strings.TrimSpace(r.PathValue("executionId"))
+	stepID := strings.TrimSpace(r.PathValue("stepId"))
+	exec, err := s.Workflows.GetExecutionByID(r.Context(), scope, executionID)
 	if err != nil {
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
-	core.WriteJSON(w, http.StatusOK, wfstore.BoundStep(step))
+	steps, err := s.Workflows.ListSteps(r.Context(), scope, executionID)
+	if err != nil {
+		WriteWorkflowStoreError(w, r, err)
+		return
+	}
+	if err := s.Workflows.AnnotateRetryCapabilities(r.Context(), scope, &exec, steps); err != nil {
+		WriteWorkflowStoreError(w, r, err)
+		return
+	}
+	for _, step := range steps {
+		if step.ID == stepID {
+			core.WriteJSON(w, http.StatusOK, wfstore.BoundStep(step))
+			return
+		}
+	}
+	WriteWorkflowStoreError(w, r, wfstore.ErrNotFound)
 }
 
 func listExecutionJobs(s *core.Server, w http.ResponseWriter, r *http.Request) {
@@ -205,6 +232,10 @@ func WriteExecutionDetail(s *core.Server, w http.ResponseWriter, r *http.Request
 	}
 	if steps == nil {
 		steps = []wfstore.ExecutionStep{}
+	}
+	if err := s.Workflows.AnnotateRetryCapabilities(r.Context(), scope, &exec, steps); err != nil {
+		WriteWorkflowStoreError(w, r, err)
+		return
 	}
 	if jobs == nil {
 		jobs = []wfstore.ExecutionJob{}
