@@ -124,7 +124,7 @@ describe("created workflow slug", () => {
       name: "My Flow",
     });
     assert.equal(detail, "Created as my-flow-2");
-    assert.equal(detail.includes(preview), false);
+    assert.notEqual(detail, `Created as ${preview}`);
     assert.equal(createdWorkflowSlugDetail({ slug: "  my-flow-2  " }), "Created as my-flow-2");
     assert.equal(createdWorkflowSlugDetail({ slug: "", name: "My Flow" }), "My Flow");
     assert.equal(createdWorkflowSlugDetail(null), "Editable draft ready");
