@@ -247,9 +247,7 @@ spec:
 			req := workspaceJSON(http.MethodPost, "/api/v1/workflows", body, admin, tenant, ws)
 			h.ServeHTTP(rec, req)
 			p := assertProblem(t, rec, http.StatusBadRequest, CodeInvalidWorkflow, "")
-			if len(p.Errors) != 1 || p.Errors[0].Code != "invalid-name" || p.Errors[0].Path != "metadata.name" {
-				t.Fatalf("yaml name errors = %+v", p.Errors)
-			}
+			assertDisplayNameField(t, p, "metadata.name")
 
 			body, _ = json.Marshal(map[string]string{
 				"definitionYaml": yamlFor("Deploy API"),
@@ -259,9 +257,7 @@ spec:
 			req = workspaceJSON(http.MethodPost, "/api/v1/workflows", body, admin, tenant, ws)
 			h.ServeHTTP(rec, req)
 			p = assertProblem(t, rec, http.StatusBadRequest, CodeInvalidWorkflow, "")
-			if len(p.Errors) != 1 || p.Errors[0].Code != "invalid-name" || p.Errors[0].Path != "name" {
-				t.Fatalf("json name errors = %+v", p.Errors)
-			}
+			assertDisplayNameField(t, p, "name")
 		})
 	}
 
@@ -274,9 +270,7 @@ spec:
 	req := workspaceJSON(http.MethodPut, "/api/v1/workflows/"+created.Workflow.ID+"/draft", body, admin, tenant, ws)
 	h.ServeHTTP(rec, req)
 	p := assertProblem(t, rec, http.StatusBadRequest, CodeInvalidWorkflow, "")
-	if len(p.Errors) != 1 || p.Errors[0].Code != "invalid-name" {
-		t.Fatalf("save errors = %+v", p.Errors)
-	}
+	assertDisplayNameField(t, p, "metadata.name")
 }
 
 func TestWorkflowMethodNotAllowedOnPersistRoutes(t *testing.T) {

@@ -44,10 +44,16 @@ var forbiddenWithByType = map[string][]string{
 	"script.go":                {"env", "environment", "secrets", "credentials", "privateKey", "token", "password", "kubeconfig", "command", "shell"},
 }
 
-// displayNameInvalidMessage is the client-facing metadata.name failure.
+// displayNameInvalidSuffix is the client-facing invalid-name rule.
 // Format (Cf), line (Zl), and paragraph (Zp) separators are rejected
 // with control characters so the title stays one YAML scalar.
-const displayNameInvalidMessage = "metadata.name must be 1-200 characters with no surrounding space and no control, format, or line/paragraph separator characters."
+const displayNameInvalidSuffix = " must be 1-200 characters with no surrounding space and no control, format, or line/paragraph separator characters."
+
+// displayNameInvalidMessage names the field the client sent. JSON create
+// passes "name". YAML validate and draft save pass "metadata.name".
+func displayNameInvalidMessage(field string) string {
+	return field + displayNameInvalidSuffix
+}
 
 // ValidDisplayName reports whether s can be stored as a workflow display
 // name. DNS shape is not required. Create and save both use this check.
@@ -55,13 +61,14 @@ func ValidDisplayName(s string) bool {
 	return validWorkflowDisplayName(s)
 }
 
-// InvalidDisplayName is the same invalid-name field error YAML validation
-// returns. path defaults to metadata.name.
+// InvalidDisplayName is the invalid-name field error for a workflow display
+// name. path is the field the client sent ("name" or "metadata.name").
+// An empty path fails closed to metadata.name. The message uses that same field.
 func InvalidDisplayName(path string) FieldError {
 	if strings.TrimSpace(path) == "" {
 		path = "metadata.name"
 	}
-	return fieldError(path, 0, 0, CodeInvalidName, displayNameInvalidMessage)
+	return fieldError(path, 0, 0, CodeInvalidName, displayNameInvalidMessage(path))
 }
 
 // validWorkflowDisplayName matches workflow create (1–200 bytes and

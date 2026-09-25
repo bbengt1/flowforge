@@ -493,7 +493,7 @@ spec:
 	for _, line := range rejects {
 		src := strings.Replace(base, "name: NAME", line, 1)
 		_, errs := Parse([]byte(src))
-		assertHasCode(t, errs, CodeInvalidName)
+		assertDisplayNameError(t, errs, "metadata.name")
 	}
 }
 
@@ -531,12 +531,34 @@ spec:
 			}
 			src := strings.Replace(base, "name: NAME", "name: "+strconv.Quote(title), 1)
 			_, errs := Parse([]byte(src))
-			assertHasCode(t, errs, CodeInvalidName)
-			if len(errs) != 1 || errs[0].Path != "metadata.name" || errs[0].Message == "" {
-				t.Fatalf("errors = %+v", errs)
-			}
+			assertDisplayNameError(t, errs, "metadata.name")
 		})
 	}
+}
+
+func TestInvalidDisplayNameMessageUsesSentField(t *testing.T) {
+	for _, path := range []string{"name", "metadata.name"} {
+		err := InvalidDisplayName(path)
+		if err.Code != CodeInvalidName || err.Path != path || err.Message != displayNameErrorMessage(path) {
+			t.Fatalf("InvalidDisplayName(%q) = %+v", path, err)
+		}
+	}
+	err := InvalidDisplayName("  ")
+	if err.Path != "metadata.name" || err.Message != displayNameErrorMessage("metadata.name") || err.Code != CodeInvalidName {
+		t.Fatalf("empty path = %+v", err)
+	}
+}
+
+func assertDisplayNameError(t *testing.T, errs ErrorList, path string) {
+	t.Helper()
+	assertHasCode(t, errs, CodeInvalidName)
+	if len(errs) != 1 || errs[0].Path != path || errs[0].Code != CodeInvalidName || errs[0].Message != displayNameErrorMessage(path) {
+		t.Fatalf("errors = %+v, want path %s", errs, path)
+	}
+}
+
+func displayNameErrorMessage(field string) string {
+	return field + " must be 1-200 characters with no surrounding space and no control, format, or line/paragraph separator characters."
 }
 
 func nodeYAML(typ string) string {
