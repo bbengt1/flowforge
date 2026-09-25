@@ -17,6 +17,7 @@ Adapted from affaan-m/ECC (MIT)
 - The first-run wizard, Login, and change-password never mount on `/embed/v1`.
 - Embed chrome comes only from `GET /session` `session.embed` (ADV-021). Host query params are display-only. A missing bind is a visible alert, not a guessed shell.
 - Membership and isolation stay grant-gated (ADV-024). Isolation success is a denial.
+- Workspace-owned Postgres tables use `ENABLE` and `FORCE ROW LEVEL SECURITY` through `app.enable_workspace_isolation`. Policies allow a row only when `workspace_id` equals `app.current_workspace_id()` (session setting `app.workspace_id`). New workspace-owned tables must do the same in their migration. Do not add a `BYPASSRLS` role, disable RLS, or query outside that workspace scope. Identity tables stay unscoped on purpose.
 - YAML is the only persisted workflow definition.
 
 ## Before committing
