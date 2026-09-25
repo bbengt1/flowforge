@@ -1,0 +1,20 @@
+---
+description: Fail-closed authz, secrets, SQL, TLS, and embed limits for the API
+globs:
+  - apps/api/**
+  - apps/api/**/*.go
+alwaysApply: false
+---
+
+Adapted from affaan-m/ECC (MIT).
+
+# Go security
+
+Fail closed. Missing or malformed config, authz, allowlists, and unknown fields deny. Membership and isolation stay grant-gated (ADV-024). Drafts never run. YAML is the only persisted workflow definition.
+
+- Never log or return secrets, `Authorization`, cookies, query strings, or request bodies. Vault responses are display name and UUID only. Problem details must not echo the body.
+- Bind query values with pgx placeholders (`$1`, …). User input stays in arguments. Static SQL fragments stay in code.
+- Leave `tls.Config.InsecureSkipVerify` unset. A config flag with that name is a hard denial (`internal/kubernetes`).
+- Every `http.Server` sets `ReadHeaderTimeout`, `ReadTimeout`, `WriteTimeout`, and `IdleTimeout` (`cmd/api`: 5s, 15s, 15s, 60s). Outbound calls take a `context` with a deadline.
+- Required secrets (`JOB_BINDING_SECRET`, `SCRIPT_SIGNING_KEY`, production `EMBED_SIGNING_KEY`) refuse startup in `config.Load` when missing or malformed.
+- `/embed/v1` stays locked. Add nothing new on that mount or on the embed exchange contract. Bootstrap, login, and the first-run wizard never apply there. Embed chrome authority stays `GET /session` `session.embed` (ADV-021).

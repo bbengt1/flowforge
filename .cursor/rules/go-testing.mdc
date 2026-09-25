@@ -1,0 +1,23 @@
+---
+description: Tests required for changed Flowforge API behavior
+globs:
+  - apps/api/**
+  - apps/api/**/*.go
+alwaysApply: false
+---
+
+Adapted from affaan-m/ECC (MIT).
+
+# Go testing
+
+Tests are required for changed behavior. Use the standard `testing` package and table-driven cases (`t.Run` per case).
+
+From `apps/api`:
+
+```bash
+go test ./...
+```
+
+Run `go test -race ./...` when the change touches shared state (goroutines, pools, caches, locks). There is no numeric coverage target. CI publishes a coverage artifact with no gate.
+
+Live PostgreSQL tests stay skipped unless `TEST_DATABASE_URL` or `DATABASE_URL` is set. `config.Load` and `cmd/*` need `JOB_BINDING_SECRET` and `SCRIPT_SIGNING_KEY` (32-byte base64 or 64 hex). Logs and `t.Fatal` / `t.Error` text must not echo those values or any other secret.
