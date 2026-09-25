@@ -127,6 +127,9 @@ func (m *Memory) Decide(_ context.Context, scope isolation.Scope, id string, in 
 		return Record{}, ErrNotFound
 	}
 	rec := row.record
+	if rec.Status == StatusCanceled {
+		return Record{}, ErrClosed
+	}
 	if scope.ActorID() != "" && rec.RequestedBy != "" && scope.ActorID() == rec.RequestedBy {
 		return Record{}, ErrSelfApproval
 	}
@@ -153,6 +156,40 @@ func (m *Memory) Decide(_ context.Context, scope isolation.Scope, id string, in 
 	m.rows[id] = memRow{workspaceID: scope.WorkspaceID(), record: rec}
 	m.appendEventLocked(scope, rec.ID, decision, scope.ActorID(), map[string]any{"noteLength": len(rec.DecisionNote)})
 	return cloneRecord(rec), nil
+}
+
+func (m *Memory) ClosePendingForExecution(_ context.Context, scope isolation.Scope, executionID, reason string, now time.Time) error {
+	if scope.Zero() {
+		return ErrNoScope
+	}
+	executionID = strings.TrimSpace(executionID)
+	if !authz.ValidUUID(executionID) {
+		return nil
+	}
+	if reason != ReasonRunCanceled && reason != ReasonWorkflowDeleted {
+		return ErrInvalid
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, row := range m.rows {
+		if row.workspaceID != scope.WorkspaceID() || row.record.ExecutionID != executionID || row.record.Status != StatusPending {
+			continue
+		}
+		rec := row.record
+		rec.Status = StatusCanceled
+		rec.CloseReason = reason
+		rec.DecidedBy = ""
+		rec.DecidedAt = nil
+		rec.UpdatedAt = now
+		m.rows[id] = memRow{workspaceID: scope.WorkspaceID(), record: rec}
+		m.appendEventLocked(scope, rec.ID, EventCanceled, "", map[string]any{"reason": reason})
+	}
+	return nil
 }
 
 func (m *Memory) Refresh(_ context.Context, scope isolation.Scope, id string, heads CurrentHeads, now time.Time) (Record, error) {

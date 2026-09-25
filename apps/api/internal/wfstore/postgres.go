@@ -103,6 +103,10 @@ func (p *Postgres) Create(ctx context.Context, scope isolation.Scope, in CreateI
 			&wf.CreatedBy, &wf.UpdatedBy, &wf.CreatedAt, &wf.UpdatedAt,
 		)
 		if err != nil {
+			// Retry only workflows_slug_unique, matched by constraint name.
+			// mapDBErr turns that constraint into ErrConflict, shared with
+			// other unique indexes, and every other unique violation into
+			// ErrConstraint. Neither of those is the retry signal.
 			if workflowSlugUnique(err) {
 				if _, rbErr := tx.Exec(ctx, "ROLLBACK TO SAVEPOINT workflow_slug"); rbErr != nil {
 					return Workflow{}, Draft{}, mapDBErr(rbErr)
@@ -1062,13 +1066,16 @@ func mapDBErr(err error) error {
 	if errors.As(err, &pgErr) {
 		switch pgErr.Code {
 		case "23505":
-			if pgErr.ConstraintName == "workflow_versions_digest_unique" {
+			switch pgErr.ConstraintName {
+			case "workflow_versions_digest_unique":
 				return ErrDuplicateVersion
-			}
-			if pgErr.ConstraintName == "executions_idempotency_uidx" {
+			case "executions_idempotency_uidx", "workflows_slug_unique", "workflow_folders_sibling_name_uidx":
 				return ErrConflict
+			case "execution_steps_attempt_unique":
+				return ErrStepAttemptSuperseded
+			default:
+				return ErrConstraint
 			}
-			return ErrConflict
 		case "23503", "22P02", "42501":
 			return ErrNotFound
 		case "23514":

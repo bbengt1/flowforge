@@ -10,7 +10,7 @@ func TestEvaluateCondition(t *testing.T) {
 	if len(errs) > 0 {
 		t.Fatalf("%+v", errs)
 	}
-	if res.Outputs["true"] != "ready" || res.Outputs["false"] != nil {
+	if res.Outputs["true"] != "ready" || res.Outputs["false"] != nil || res.Outputs["port"] != "true" {
 		t.Fatalf("route = %+v", res.Outputs)
 	}
 
@@ -33,6 +33,11 @@ func TestEvaluateCondition(t *testing.T) {
 	res, errs = Evaluate("flow.condition", map[string]any{"op": "contains", "compare": "oper"}, map[string]any{"value": "operations"})
 	if len(errs) > 0 || res.Outputs["true"] == nil {
 		t.Fatalf("contains: %+v %+v", res, errs)
+	}
+
+	res, errs = Evaluate("flow.condition", map[string]any{"op": "exists"}, map[string]any{"value": nil})
+	if len(errs) > 0 || res.Outputs["port"] != "false" || res.Outputs["false"] != nil || res.Outputs["true"] != nil {
+		t.Fatalf("null exists: %+v %+v", res, errs)
 	}
 }
 

@@ -55,13 +55,16 @@ import {
   executionDetailText,
   executionListDisplay,
   executionListText,
+  displaysAsNotReached,
   executionStatusLabel,
   executionStatusPresentation,
+  executionStatusPresentationInRun,
   filterExecutionList,
   isExecutionForbidden,
   isIdempotencyConflict,
   isIdempotentCancel,
   isIndeterminateStatus,
+  isTerminalStepStatus,
   isSecretFieldName,
   jobDispatchView,
   artifactStateHasDurableUrl,
@@ -80,7 +83,19 @@ import {
   stripSecretFields,
   wipeDownloadGrant,
 } from "./execution.ts";
-import type { ExecutionDetail, ExecutionRecord } from "./execution-types.ts";
+import { executionInboxStatuses } from "./execution-inbox.ts";
+import {
+  CANCELABLE_STATUSES,
+  EXECUTION_STATUSES,
+  JOB_STATUSES,
+  NOT_REACHED_STATUS_HELP,
+  NOT_REACHED_STATUS_ICON,
+  NOT_REACHED_STATUS_LABEL,
+  RETRYABLE_STATUSES,
+  STEP_STATUSES,
+  type ExecutionDetail,
+  type ExecutionRecord,
+} from "./execution-types.ts";
 
 const EXECUTION_ID = "33333333-3333-4333-8333-333333333333";
 const WORKFLOW_ID = "11111111-1111-4111-8111-111111111111";
@@ -417,6 +432,265 @@ describe("execution redaction and list/detail rendering", () => {
     assert.match(rendered, /⚠/);
     assert.match(rendered, /Indeterminate/);
     assert.match(rendered, /indeterminate/);
+  });
+
+  it("presents blocked, pending, and skipped without the generic chip", () => {
+    const blocked = executionStatusPresentation("blocked");
+    const pending = executionStatusPresentation("pending");
+    const skipped = executionStatusPresentation("skipped");
+    assert.equal(blocked.label, "Blocked");
+    assert.equal(blocked.icon, "‖");
+    assert.equal(blocked.tone, "blocked");
+    assert.match(blocked.description, /upstream steps/);
+    assert.equal(pending.label, "Pending");
+    assert.equal(pending.icon, "…");
+    assert.equal(pending.tone, "pending");
+    assert.match(pending.description, /not started yet/i);
+    assert.equal(skipped.label, "Skipped");
+    assert.equal(skipped.icon, "⊘");
+    assert.equal(skipped.tone, "skipped");
+    assert.match(skipped.description, /not a failure/i);
+    for (const presentation of [blocked, pending, skipped]) {
+      assert.notEqual(presentation.label, presentation.status);
+      assert.notEqual(presentation.icon, "•");
+      assert.notEqual(presentation.icon, "✓");
+      assert.notEqual(presentation.icon, "▶");
+      assert.notEqual(presentation.icon, "✕");
+      assert.notEqual(presentation.description, "Status reported by the API.");
+      assert.notEqual(presentation.tone, "other");
+      assert.notEqual(presentation.tone, "failed");
+      assert.notEqual(presentation.tone, "running");
+      assert.notEqual(presentation.tone, "succeeded");
+      assert.equal(presentation.indeterminate, false);
+    }
+    assert.equal(isTerminalStepStatus("skipped"), true);
+    assert.equal(isTerminalStepStatus("pending"), false);
+    assert.equal(isTerminalStepStatus("blocked"), false);
+    assert.equal(isTerminalStepStatus("running"), false);
+    assert.equal(isTerminalStepStatus("succeeded"), true);
+    const steps = STEP_STATUSES as readonly string[];
+    const jobStatuses = JOB_STATUSES as readonly string[];
+    const runs = EXECUTION_STATUSES as readonly string[];
+    assert.ok(steps.includes("pending"));
+    assert.ok(steps.includes("skipped"));
+    assert.equal(steps.includes("blocked"), false);
+    assert.ok(jobStatuses.includes("blocked"));
+    assert.ok(jobStatuses.includes("skipped"));
+    assert.equal(jobStatuses.includes("pending"), false);
+    assert.equal(runs.includes("blocked"), false);
+    assert.equal(runs.includes("pending"), false);
+    assert.equal(runs.includes("skipped"), false);
+    assert.deepEqual([...CANCELABLE_STATUSES], ["queued", "running"]);
+    assert.deepEqual([...RETRYABLE_STATUSES], ["failed", "canceled"]);
+    assert.equal(executionInboxStatuses().includes("blocked"), false);
+    assert.equal(executionInboxStatuses().includes("pending"), false);
+    assert.equal(executionInboxStatuses().includes("skipped"), false);
+    assert.equal(
+      canCancelExecution({
+        status: "skipped",
+        permissions: ["execution.cancel"],
+      }),
+      false,
+    );
+    assert.equal(
+      canCancelExecution({
+        status: "blocked",
+        permissions: ["execution.cancel"],
+      }),
+      false,
+    );
+    assert.equal(
+      canCancelExecution({
+        status: "pending",
+        permissions: ["execution.cancel"],
+      }),
+      false,
+    );
+    assert.equal(
+      canRetryExecution({
+        status: "canceled",
+        permissions: ["workflow.execute"],
+        steps: [
+          { status: "canceled", nodeType: "data.set" },
+          { status: "skipped", nodeType: "data.set" },
+        ],
+      }),
+      true,
+    );
+    assert.equal(
+      canRetryExecution({
+        status: "skipped",
+        permissions: ["workflow.execute"],
+        steps: [{ status: "skipped", nodeType: "data.set" }],
+      }),
+      false,
+    );
+    assert.equal(
+      canRetryExecutionStep({
+        permissions: ["workflow.execute"],
+        executionStatus: "running",
+        stepStatus: "skipped",
+        nodeType: "data.set",
+      }),
+      false,
+    );
+    const detail = parseExecutionDetail({
+      id: EXECUTION_ID,
+      workflowId: WORKFLOW_ID,
+      workflowVersionId: VERSION_ID,
+      status: "running",
+      steps: [
+        {
+          id: "44444444-4444-4444-8444-444444444444",
+          nodeId: "wait",
+          nodeType: "data.set",
+          status: "pending",
+          attempt: 1,
+        },
+        {
+          id: "99999999-9999-4999-8999-999999999999",
+          nodeId: "skip",
+          nodeType: "data.set",
+          status: "skipped",
+          attempt: 1,
+        },
+      ],
+      jobs: [
+        {
+          id: "55555555-5555-4555-8555-555555555555",
+          executionStepId: "44444444-4444-4444-8444-444444444444",
+          status: "blocked",
+        },
+      ],
+    });
+    assert.ok(detail);
+    const text = executionDetailText(detail);
+    assert.match(text, /‖ Blocked/);
+    assert.equal(executionStatusLabel(detail.steps[0]?.status), "Pending");
+    assert.equal(executionStatusLabel(detail.steps[1]?.status), "Skipped");
+    assert.equal(text.includes("Status reported by the API."), false);
+  });
+
+  it("shows pending and blocked as Not reached only when the run failed", () => {
+    const runningPending = executionStatusPresentationInRun("pending", "running");
+    const runningBlocked = executionStatusPresentationInRun("blocked", "running");
+    assert.equal(runningPending.label, "Pending");
+    assert.equal(runningPending.tone, "pending");
+    assert.equal(runningBlocked.label, "Blocked");
+    assert.equal(runningBlocked.tone, "blocked");
+    assert.equal(displaysAsNotReached({ runStatus: "running", status: "pending" }), false);
+    assert.equal(displaysAsNotReached({ runStatus: "canceled", status: "blocked" }), false);
+
+    const notReachedPending = executionStatusPresentationInRun("pending", "failed");
+    const notReachedBlocked = executionStatusPresentationInRun("blocked", "failed");
+    for (const presentation of [notReachedPending, notReachedBlocked]) {
+      assert.equal(presentation.label, NOT_REACHED_STATUS_LABEL);
+      assert.equal(presentation.icon, NOT_REACHED_STATUS_ICON);
+      assert.equal(presentation.tone, "not-reached");
+      assert.equal(presentation.description, NOT_REACHED_STATUS_HELP);
+      assert.equal(presentation.indeterminate, false);
+      assert.notEqual(presentation.tone, "failed");
+      assert.notEqual(presentation.tone, "running");
+      assert.notEqual(presentation.tone, "pending");
+      assert.notEqual(presentation.tone, "blocked");
+      assert.notEqual(presentation.icon, "✓");
+      assert.notEqual(presentation.icon, "▶");
+      assert.notEqual(presentation.icon, "✕");
+    }
+    assert.equal(notReachedPending.status, "pending");
+    assert.equal(notReachedBlocked.status, "blocked");
+    assert.equal(
+      executionStatusPresentationInRun("skipped", "failed").label,
+      "Skipped",
+    );
+    assert.equal(
+      executionStatusPresentationInRun("failed", "failed").label,
+      "Failed",
+    );
+    assert.equal(
+      displaysAsNotReached({
+        runStatus: "failed",
+        status: "queued",
+        siblingJobStatuses: ["blocked"],
+      }),
+      true,
+    );
+    assert.equal(
+      executionStatusPresentationInRun("queued", "failed", ["blocked"]).label,
+      NOT_REACHED_STATUS_LABEL,
+    );
+    assert.equal(isTerminalStepStatus("pending"), false);
+    assert.equal(isTerminalStepStatus("blocked"), false);
+    assert.deepEqual([...RETRYABLE_STATUSES], ["failed", "canceled"]);
+    assert.equal(
+      canRetryExecution({
+        status: "failed",
+        permissions: ["workflow.execute"],
+        steps: [
+          { status: "failed", nodeType: "data.set" },
+          { status: "pending", nodeType: "data.set" },
+        ],
+      }),
+      true,
+    );
+    assert.equal(
+      canRetryExecutionStep({
+        permissions: ["workflow.execute"],
+        executionStatus: "failed",
+        stepStatus: "pending",
+        nodeType: "data.set",
+      }),
+      false,
+    );
+    assert.equal(
+      canRetryExecutionStep({
+        permissions: ["workflow.execute"],
+        executionStatus: "failed",
+        stepStatus: "failed",
+        nodeType: "data.set",
+      }),
+      true,
+    );
+    const detail = parseExecutionDetail({
+      id: EXECUTION_ID,
+      workflowId: WORKFLOW_ID,
+      workflowVersionId: VERSION_ID,
+      status: "failed",
+      steps: [
+        {
+          id: "44444444-4444-4444-8444-444444444444",
+          nodeId: "upstream",
+          nodeType: "data.set",
+          status: "failed",
+          attempt: 1,
+        },
+        {
+          id: "99999999-9999-4999-8999-999999999999",
+          nodeId: "wait",
+          nodeType: "data.set",
+          status: "pending",
+          attempt: 1,
+        },
+      ],
+      jobs: [
+        {
+          id: "55555555-5555-4555-8555-555555555555",
+          executionStepId: "99999999-9999-4999-8999-999999999999",
+          status: "blocked",
+        },
+      ],
+    });
+    assert.ok(detail);
+    const text = executionDetailText(detail);
+    assert.match(text, /Not reached/);
+    assert.match(text, /pending/);
+    assert.match(text, /blocked/);
+    assert.equal(text.includes("‖ Blocked"), false);
+    assert.equal(text.includes("Status reported by the API."), false);
+    const view = executionDetailDisplay(detail);
+    assert.equal(view.jobViews[0]?.status, "blocked");
+    assert.equal(view.jobViews[0]?.presentation.label, NOT_REACHED_STATUS_LABEL);
+    assert.equal(view.header.status, "failed");
   });
 
   it("surfaces lease/claim/heartbeat metadata and gates retry to #53", () => {

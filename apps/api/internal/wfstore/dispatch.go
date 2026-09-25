@@ -319,7 +319,8 @@ func jobIsWritable(status string) bool {
 	return status == JobClaimed || status == JobRunning
 }
 
-func rollupExecutionStatus(jobs []ExecutionJob) string {
+func rollupExecutionStatus(jobs []ExecutionJob, steps []ExecutionStep) string {
+	jobs = latestAttemptJobs(jobs, steps)
 	if len(jobs) == 0 {
 		return ExecutionQueued
 	}

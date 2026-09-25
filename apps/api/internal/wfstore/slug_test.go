@@ -9,6 +9,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestSlugifyWorkflowName(t *testing.T) {
@@ -73,6 +74,20 @@ func TestSlugifyWorkflowName(t *testing.T) {
 	got, ok = workflowSlugCandidate(cut, 2)
 	if !ok || got != strings.Repeat("b", 60)+"-2" || strings.Contains(got, "--") || !validDerivedWorkflowSlug(got) {
 		t.Fatalf("hyphen cut suffix = %q", got)
+	}
+}
+
+func TestWorkflowSlugUniqueMatchesConstraintName(t *testing.T) {
+	slugErr := &pgconn.PgError{Code: "23505", ConstraintName: "workflows_slug_unique"}
+	if !workflowSlugUnique(slugErr) {
+		t.Fatal("workflows_slug_unique was not detected")
+	}
+	other := &pgconn.PgError{Code: "23505", ConstraintName: "execution_steps_attempt_unique"}
+	if workflowSlugUnique(other) {
+		t.Fatal("another unique constraint was treated as a slug clash")
+	}
+	if workflowSlugUnique(ErrConstraint) || workflowSlugUnique(ErrConflict) {
+		t.Fatal("mapped unique errors were treated as a slug clash")
 	}
 }
 

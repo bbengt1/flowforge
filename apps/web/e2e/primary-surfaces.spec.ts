@@ -1,9 +1,13 @@
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { expectNoBlockingAxeViolations } from "./axe";
 import {
   expectNoSecretsInBrowserStorage,
   installOperatorApi,
   installSignedOutApi,
+  OPERATOR_EXECUTION_ID,
+  OPERATOR_FAILED_EXECUTION_ID,
   OPERATOR_FOLDER_NAME,
   OPERATOR_WORKFLOW_ID,
 } from "./operator-api";
@@ -24,6 +28,38 @@ async function selectLightTheme(page: Page): Promise<void> {
       sameSite: "Lax",
     },
   ]);
+}
+
+const BLOCKED_HELP = "Waiting for upstream steps to finish.";
+const PENDING_HELP = "Not started yet. Waiting on inputs.";
+const SKIPPED_HELP =
+  "Didn't run because an upstream approval was rejected or expired, or its branch wasn't taken. Not a failure.";
+const NOT_REACHED_HELP =
+  "The run failed before this step's inputs were ready. Retrying the failed upstream step can still release it.";
+
+async function expectDispatchStatusChips(page: Page): Promise<void> {
+  await expect(page.locator("#graph-replay-heading")).toBeVisible();
+  const rollback = page.locator("[data-canvas-node='rollback']");
+  await expect(rollback).toContainText("Skipped");
+  await expect(rollback).not.toContainText("Valid");
+  await expect(rollback).not.toContainText("✓");
+  const downstream = page.locator("[data-canvas-node='downstream']");
+  await expect(downstream).toContainText("Pending");
+  await expect(downstream).not.toContainText("Valid");
+  // status is name-from-author, so the accessible name is the title tooltip.
+  const blocked = page.getByRole("status", { name: BLOCKED_HELP });
+  await expect(blocked).toHaveCount(1);
+  await expect(blocked).toContainText("Blocked");
+  await expect(blocked).toHaveClass(/ff-status-blocked/);
+  const pending = page.getByRole("status", { name: PENDING_HELP });
+  await expect(pending.first()).toBeVisible();
+  await expect(pending.first()).toContainText("Pending");
+  await expect(pending.first()).toHaveClass(/ff-status-pending/);
+  const skipped = page.getByRole("status", { name: SKIPPED_HELP });
+  await expect(skipped.first()).toBeVisible();
+  await expect(skipped.first()).toContainText("Skipped");
+  await expect(skipped.first()).toHaveClass(/ff-status-skipped/);
+  await expect(skipped.first()).not.toHaveClass(/ff-status-running|ff-loud/);
 }
 
 async function expectSkipLink(page: Page): Promise<void> {
@@ -93,6 +129,71 @@ test.describe("primary surfaces", () => {
     ).toBeVisible();
     await expectOneMain(page);
     await expectNoBlockingAxeViolations(page);
+  });
+
+  test("run view shows blocked, pending, and skipped", async ({ page }) => {
+    await installOperatorApi(page);
+    await page.goto(
+      `/executions/${OPERATOR_EXECUTION_ID}?workflowId=${OPERATOR_WORKFLOW_ID}`,
+    );
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Execution" }),
+    ).toBeVisible();
+    await expectDispatchStatusChips(page);
+    await expectOneMain(page);
+    await expectNoBlockingAxeViolations(page);
+    await expectNoSecretsInBrowserStorage(page);
+    const shot = process.env.FF_STATUS_SCREENSHOT;
+    if (shot) {
+      mkdirSync(dirname(shot), { recursive: true });
+      // The shell scrolls inside #main-content, so a document full-page
+      // shot stops at the viewport. Grow the viewport to fit the run.
+      await page.setViewportSize({ width: 1280, height: 3600 });
+      await expect(page.getByRole("heading", { name: "Jobs", level: 2 })).toBeVisible();
+      await page.screenshot({ path: shot });
+    }
+  });
+
+  test("failed run shows pending and blocked as Not reached", async ({ page }) => {
+    await installOperatorApi(page);
+    await page.goto(
+      `/executions/${OPERATOR_FAILED_EXECUTION_ID}?workflowId=${OPERATOR_WORKFLOW_ID}`,
+    );
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Execution" }),
+    ).toBeVisible();
+    await expect(page.locator("#graph-replay-heading")).toBeVisible();
+    const notify = page.locator("[data-canvas-node='notify']");
+    const downstream = page.locator("[data-canvas-node='downstream']");
+    const rollback = page.locator("[data-canvas-node='rollback']");
+    await expect(notify).toContainText("Not reached");
+    await expect(notify).not.toContainText("Pending");
+    await expect(notify).not.toContainText("Valid");
+    await expect(downstream).toContainText("Not reached");
+    await expect(downstream).not.toContainText("Pending");
+    await expect(downstream).not.toContainText("Blocked");
+    await expect(rollback).toContainText("Skipped");
+    await expect(rollback).not.toContainText("Valid");
+    const notReached = page.getByRole("status", { name: NOT_REACHED_HELP });
+    await expect(notReached.first()).toBeVisible();
+    await expect(notReached.first()).toContainText("Not reached");
+    await expect(notReached.first()).toHaveClass(/ff-status-not-reached/);
+    await expect(notReached.first()).not.toHaveClass(/ff-loud|ff-status-running|ff-status-pending|ff-status-blocked/);
+    await expect(page.getByRole("status", { name: PENDING_HELP })).toHaveCount(0);
+    await expect(page.getByRole("status", { name: BLOCKED_HELP })).toHaveCount(0);
+    await expect(page.getByRole("status", { name: SKIPPED_HELP }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry execution" })).toBeVisible();
+    await expectOneMain(page);
+    await expectNoBlockingAxeViolations(page);
+    await expectNoSecretsInBrowserStorage(page);
+    const shot = process.env.FF_STATUS_SCREENSHOT;
+    if (shot) {
+      mkdirSync(dirname(shot), { recursive: true });
+      const notReachedShot = shot.replace(/\.png$/, "") + "-not-reached.png";
+      await page.setViewportSize({ width: 1280, height: 3600 });
+      await expect(page.getByRole("heading", { name: "Jobs", level: 2 })).toBeVisible();
+      await page.screenshot({ path: notReachedShot });
+    }
   });
 
   test("approvals list settles before axe", async ({ page }) => {

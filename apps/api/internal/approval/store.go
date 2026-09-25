@@ -23,6 +23,7 @@ var (
 	ErrStoreUnavailable = errors.New("approval store is unavailable")
 	ErrSelfApproval     = errors.New("requester cannot decide their own approval")
 	ErrNotPending       = errors.New("approval is not pending")
+	ErrClosed           = errors.New("approval is closed")
 	ErrExpired          = errors.New("approval has expired")
 	ErrInvalidated      = errors.New("approval binding is no longer valid")
 	ErrStaleAuth        = errors.New("authorization is no longer valid")
@@ -35,6 +36,13 @@ const (
 	StatusRejected    = "rejected"
 	StatusExpired     = "expired"
 	StatusInvalidated = "invalidated"
+	StatusCanceled    = "canceled"
+)
+
+// Close reasons recorded when a run ends before a decision. No decider is stored.
+const (
+	ReasonRunCanceled     = "run_canceled"
+	ReasonWorkflowDeleted = "workflow_deleted"
 )
 
 // Decision values accepted by Decide.
@@ -50,6 +58,7 @@ const (
 	EventRejected    = "rejected"
 	EventExpired     = "expired"
 	EventInvalidated = "invalidated"
+	EventCanceled    = "canceled"
 )
 
 // Record is a workspace-owned approval requirement.
@@ -78,6 +87,7 @@ type Record struct {
 	DecidedBy          string     `json:"decidedBy,omitempty"`
 	DecidedAt          *time.Time `json:"decidedAt,omitempty"`
 	DecisionNote       string     `json:"decisionNote,omitempty"`
+	CloseReason        string     `json:"closeReason,omitempty"`
 	CreatedAt          time.Time  `json:"createdAt"`
 	UpdatedAt          time.Time  `json:"updatedAt"`
 }
@@ -154,7 +164,7 @@ type Catalog struct {
 // TypeCatalog returns stable status/decision names.
 func TypeCatalog() Catalog {
 	return Catalog{
-		Statuses:               []string{StatusPending, StatusApproved, StatusRejected, StatusExpired, StatusInvalidated},
+		Statuses:               []string{StatusPending, StatusApproved, StatusRejected, StatusExpired, StatusInvalidated, StatusCanceled},
 		Decisions:              []string{DecisionApproved, DecisionRejected},
 		DefaultExpiry:          "PT1H",
 		WaitResumeEnabled:      true,
@@ -172,6 +182,9 @@ type Store interface {
 	List(ctx context.Context, scope isolation.Scope, filter Filter) ([]Record, error)
 	Get(ctx context.Context, scope isolation.Scope, id string) (Record, error)
 	Decide(ctx context.Context, scope isolation.Scope, id string, in DecideInput) (Record, error)
+	// ClosePendingForExecution cancels approvals still pending on a run.
+	// No decider is recorded. reason is run_canceled or workflow_deleted.
+	ClosePendingForExecution(ctx context.Context, scope isolation.Scope, executionID, reason string, now time.Time) error
 	Refresh(ctx context.Context, scope isolation.Scope, id string, heads CurrentHeads, now time.Time) (Record, error)
 	InvalidateMatching(ctx context.Context, scope isolation.Scope, in InvalidateInput) (int, error)
 	Events(ctx context.Context, scope isolation.Scope, id string) ([]Event, error)
@@ -201,7 +214,7 @@ func BindingFingerprint(workspaceID, workflowVersionID, workflowDigest, targetVe
 
 // Freshness reports whether a record is still usable against current heads.
 func Freshness(rec Record, heads CurrentHeads, now time.Time) (status, reason string) {
-	if rec.Status == StatusRejected || rec.Status == StatusExpired || rec.Status == StatusInvalidated {
+	if rec.Status == StatusRejected || rec.Status == StatusExpired || rec.Status == StatusInvalidated || rec.Status == StatusCanceled {
 		return rec.Status, ""
 	}
 	if !rec.ExpiresAt.IsZero() && !now.Before(rec.ExpiresAt) {

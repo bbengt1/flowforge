@@ -135,6 +135,10 @@ export const FF_STATUS_QUEUED_CLASS = "ff-status-queued";
 export const FF_STATUS_CLAIMED_CLASS = "ff-status-claimed";
 export const FF_STATUS_OTHER_CLASS = "ff-status-other";
 export const FF_STATUS_WAITING_CLASS = "ff-status-waiting";
+export const FF_STATUS_BLOCKED_CLASS = "ff-status-blocked";
+export const FF_STATUS_PENDING_CLASS = "ff-status-pending";
+export const FF_STATUS_SKIPPED_CLASS = "ff-status-skipped";
+export const FF_STATUS_NOT_REACHED_CLASS = "ff-status-not-reached";
 
 export const STATUS_TONE_CLASSES = {
   indeterminate: LOUD_INDETERMINATE_CLASS,
@@ -146,6 +150,10 @@ export const STATUS_TONE_CLASSES = {
   claimed: FF_STATUS_CLAIMED_CLASS,
   other: FF_STATUS_OTHER_CLASS,
   waiting: `${FF_STATUS_WAITING_CLASS} font-semibold`,
+  blocked: FF_STATUS_BLOCKED_CLASS,
+  pending: FF_STATUS_PENDING_CLASS,
+  skipped: FF_STATUS_SKIPPED_CLASS,
+  "not-reached": FF_STATUS_NOT_REACHED_CLASS,
   warning: LOUD_WARNING_CLASS,
   denial: LOUD_ADV024_DENIAL_CLASS,
   leak: LOUD_ADV024_LEAK_CLASS,
@@ -250,6 +258,18 @@ export function lastRunStatusClassName(kind: string): string {
   if (kind === "running") {
     return FF_STATUS_RUNNING_CLASS;
   }
+  if (kind === "blocked") {
+    return FF_STATUS_BLOCKED_CLASS;
+  }
+  if (kind === "pending") {
+    return FF_STATUS_PENDING_CLASS;
+  }
+  if (kind === "skipped") {
+    return FF_STATUS_SKIPPED_CLASS;
+  }
+  if (kind === "not-reached") {
+    return FF_STATUS_NOT_REACHED_CLASS;
+  }
   return STATUS_TONE_CLASSES.other;
 }
 
@@ -290,6 +310,9 @@ export function everyExecutionStatusIsIconPlusText(): boolean {
     "claimed",
     "succeeded",
     "waiting",
+    "blocked",
+    "pending",
+    "skipped",
   ] as const;
   return statuses.every((status) =>
     statusPresentationIsIconPlusText(executionStatusPresentation(status)),
