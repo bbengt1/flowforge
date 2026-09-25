@@ -6,9 +6,11 @@ globs:
 alwaysApply: false
 ---
 
-Adapted from affaan-m/ECC (MIT).
+Adapted from affaan-m/ECC (MIT)
 
 # Go style
+
+`CONTRIBUTING.md` wins if this rule disagrees with it.
 
 Module `github.com/bbengt1/flowforge/apps/api`, Go 1.26. Processes live in `cmd/`. Libraries live in `internal/`.
 

@@ -6,9 +6,11 @@ globs:
 alwaysApply: false
 ---
 
-Adapted from affaan-m/ECC (MIT).
+Adapted from affaan-m/ECC (MIT)
 
 # Go testing
+
+`CONTRIBUTING.md` wins if this rule disagrees with it.
 
 Tests are required for changed behavior. Use the standard `testing` package and table-driven cases (`t.Run` per case).
 

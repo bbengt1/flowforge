@@ -6,9 +6,11 @@ globs:
 alwaysApply: false
 ---
 
-Adapted from affaan-m/ECC (MIT).
+Adapted from affaan-m/ECC (MIT)
 
 # Go security
+
+`CONTRIBUTING.md` wins if this rule disagrees with it.
 
 Repo hard lines are in `common-security.mdc`.
 
