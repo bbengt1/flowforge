@@ -1,0 +1,38 @@
+---
+description: Go formatting, errors, and constructors for the Flowforge API
+globs:
+  - apps/api/**
+  - apps/api/**/*.go
+alwaysApply: false
+---
+
+Adapted from affaan-m/ECC (MIT)
+
+# Go style
+
+`CONTRIBUTING.md` wins if this rule disagrees with it.
+
+Module `github.com/bbengt1/flowforge/apps/api`, Go 1.26. Processes live in `cmd/`. Libraries live in `internal/`.
+
+From `apps/api`, formatting and static checks are:
+
+```bash
+gofmt -l .          # must print nothing (CI: gofmt -l)
+go vet ./...
+golangci-lint run --timeout=5m
+```
+
+`golangci-lint` is v2 with `.golangci.yml` (`linters.default: standard`). `errcheck` allows an unchecked `Close` or `Rollback` only when that function is listed there. Check every other error.
+
+Changing routes in `internal/httpapi` requires a regenerate and a clean check:
+
+```bash
+go run ./cmd/genroutes
+go run ./cmd/genroutes -check
+```
+
+That writes `openapi/openapi.yaml` and `apps/web/src/lib/identity-proxy-allowlist.gen.ts` from `Routes`. Leave `openapi/document.yaml` and `openapi/components.yaml` as the hand-edited inputs.
+
+- Wrap errors callers compare: `fmt.Errorf("doing x: %w", err)`, and keep sentinels for `errors.Is` / `errors.As`.
+- Constructors take a config struct and return a concrete type (`NewX(cfg) (*X, error)`). Define small interfaces next to the consumer.
+- Reuse problem codes in `internal/httpapi/core`. Pass `context.Context` as the first argument of a call that can block.

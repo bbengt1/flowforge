@@ -1,0 +1,22 @@
+---
+description: Go SQL, TLS, process, and path rules for the Flowforge API
+globs:
+  - apps/api/**
+  - apps/api/**/*.go
+alwaysApply: false
+---
+
+Adapted from affaan-m/ECC (MIT)
+
+# Go security
+
+`CONTRIBUTING.md` wins if this rule disagrees with it.
+
+Repo hard lines are in `common-security.mdc`.
+
+- Bind query values with pgx placeholders (`$1`, …). User input stays in arguments. Static SQL fragments stay in code.
+- Leave `tls.Config.InsecureSkipVerify` unset. A config flag with that name is a hard denial (`internal/kubernetes`).
+- Every `http.Server` sets `ReadHeaderTimeout`, `ReadTimeout`, `WriteTimeout`, and `IdleTimeout` (`cmd/api`: 5s, 15s, 15s, 60s). Outbound calls take a `context` with a deadline.
+- Start processes with `exec.CommandContext(ctx, name, args...)`. The binary and argv stay separate. Do not build a shell string (`sh -c`).
+- Keep file paths inside a dedicated root. Script entrypoints are a single base name (`cleanEntrypoint` in `internal/scriptrun`). Artifact object keys are three UUIDs under that root (`scopedObjectKey`).
+- Draw keys, tokens, and nonces from `crypto/rand`.
