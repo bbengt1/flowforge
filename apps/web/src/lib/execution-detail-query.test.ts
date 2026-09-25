@@ -3,15 +3,23 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import type { ApprovalClientFailure } from "./approval-client.ts";
+import type { ApprovalRequest } from "./approval-types.ts";
 import {
+  executionDetailDisplayedProblem,
   forbiddenPollCache,
   loadExecutionContextCache,
   loadExecutionHistoryCache,
   loadWorkspacePermissionsCache,
   mergePolledExecution,
+  type ExecutionContextCache,
   type ExecutionHistoryCache,
 } from "./execution-detail-query.ts";
-import type { ExecutionDetail } from "./execution-types.ts";
+import {
+  WORKFLOW_DELETED_GRAPH_MESSAGE,
+  graphReplayMessage,
+  replayStepViews,
+} from "./execution-replay.ts";
+import type { ExecutionDetail, ExecutionStep } from "./execution-types.ts";
 import { emptyDevIdentity, type DevIdentity } from "./identity-headers.ts";
 import type { ProblemDetails } from "./problem.ts";
 import type { WorkflowClientFailure } from "./workflow-client.ts";
@@ -282,27 +290,179 @@ describe("execution detail query cache", () => {
       "wf-1",
       "exec-1",
       "ver-1",
-      {
-        version: {
-          id: "ver-1",
-          workflowId: "wf-1",
-          versionNumber: 3,
-          digest: "sha256:abc",
-          publishNote: "",
-          publishedAt: "",
-        },
-        catalog: null,
-        approvals: [],
-        requestId: "req-old",
-        strippedKeys: [],
-      },
+      previousContext(),
       {
         getVersion: async () => workflowFailure,
         fetchCatalog: async () => workflowFailure,
         listApprovals: async () => approvalFailure,
       },
     );
+    assert.equal(context.version, null);
+    assert.equal(context.workflowDeleted, true);
+    assert.equal(context.versionProblem, null);
+    assert.equal(context.catalog, null);
+    assert.deepEqual(context.approvals, []);
+  });
+
+  it("renders a deleted workflow as a graph message and keeps steps", async () => {
+    const approval = {
+      id: "appr-1",
+      status: "pending",
+      executionId: "exec-1",
+      binding: { nodeId: "gate" },
+    } as ApprovalRequest;
+    const context = await loadExecutionContextCache(
+      identity,
+      "wf-1",
+      "exec-1",
+      "ver-1",
+      previousContext(),
+      {
+        getVersion: async () => ({
+          ok: false,
+          statusCode: 404,
+          requestId: "req-404",
+          problem: problem(404, "not-found", "workflow version not found"),
+          errors: [],
+          conflict: false,
+        }),
+        fetchCatalog: async () => ({
+          ok: false,
+          statusCode: 404,
+          requestId: "req-cat",
+          problem: problem(404, "not-found"),
+          errors: [],
+          conflict: false,
+        }),
+        listApprovals: async () => ({
+          ok: true,
+          statusCode: 200,
+          requestId: "req-appr",
+          items: [approval],
+          limit: 1,
+          cursor: "",
+          next: "",
+          strippedKeys: [],
+        }),
+      },
+    );
+    assert.equal(context.workflowDeleted, true);
+    assert.equal(context.version, null);
+    assert.equal(context.versionProblem, null);
+    assert.equal(context.approvals[0]?.id, "appr-1");
+    assert.equal(
+      executionDetailDisplayedProblem({ historyProblem: null, context }),
+      null,
+    );
+
+    const detail = execution({
+      status: "waiting",
+      steps: [step({ nodeId: "gate", status: "waiting", nodeType: "flow.approval" })],
+    });
+    const views = replayStepViews(detail.steps, { runStatus: detail.status });
+    assert.equal(views.length, 1);
+    assert.equal(views[0]?.nodeId, "gate");
+    assert.equal(views[0]?.status, "waiting");
+    const message = graphReplayMessage({
+      graphAvailable: false,
+      workflowDeleted: context.workflowDeleted,
+    });
+    assert.equal(message, WORKFLOW_DELETED_GRAPH_MESSAGE);
+    assert.match(message ?? "", /deleted/);
+    assert.match(message ?? "", /graph is no longer available/);
+    assert.doesNotMatch(message ?? "", /retry-denied/);
+  });
+
+  it("keeps a version 500 as an error and does not call the workflow deleted", async () => {
+    const serverError: WorkflowClientFailure = {
+      ok: false,
+      statusCode: 500,
+      requestId: "req-500",
+      problem: problem(500, "upstream-error", "version lookup failed"),
+      errors: [],
+      conflict: false,
+    };
+    const context = await loadExecutionContextCache(
+      identity,
+      "wf-1",
+      "exec-1",
+      "ver-1",
+      previousContext(),
+      {
+        getVersion: async () => serverError,
+        fetchCatalog: async () => serverError,
+        listApprovals: async () => ({
+          ok: true,
+          statusCode: 200,
+          requestId: "req-appr",
+          items: [],
+          limit: 0,
+          cursor: "",
+          next: "",
+          strippedKeys: [],
+        }),
+      },
+    );
+    assert.equal(context.workflowDeleted, false);
     assert.equal(context.version?.id, "ver-1");
+    assert.equal(context.versionProblem?.status, 500);
+    assert.equal(context.versionProblem?.detail, "version lookup failed");
+    const shown = executionDetailDisplayedProblem({
+      historyProblem: null,
+      context,
+    });
+    assert.equal(shown?.status, 500);
+    assert.equal(shown?.detail, "version lookup failed");
+    assert.notEqual(
+      graphReplayMessage({
+        graphAvailable: context.version != null,
+        workflowDeleted: context.workflowDeleted,
+      }),
+      WORKFLOW_DELETED_GRAPH_MESSAGE,
+    );
+
+    const forbidden: WorkflowClientFailure = {
+      ...serverError,
+      statusCode: 403,
+      requestId: "req-403",
+      problem: problem(403, "forbidden", "version lookup forbidden"),
+    };
+    const denied = await loadExecutionContextCache(
+      identity,
+      "wf-1",
+      "exec-1",
+      "ver-1",
+      undefined,
+      {
+        getVersion: async () => forbidden,
+        fetchCatalog: async () => forbidden,
+        listApprovals: async () => ({
+          ok: false,
+          statusCode: 403,
+          requestId: "req-403",
+          problem: problem(403, "forbidden"),
+          expired: false,
+          invalidated: false,
+          selfApproval: false,
+          strippedKeys: [],
+        }),
+      },
+    );
+    assert.equal(denied.workflowDeleted, false);
+    assert.equal(denied.version, null);
+    assert.equal(denied.versionProblem?.status, 403);
+    assert.equal(
+      executionDetailDisplayedProblem({ historyProblem: null, context: denied })
+        ?.detail,
+      "version lookup forbidden",
+    );
+    assert.equal(
+      graphReplayMessage({
+        graphAvailable: false,
+        workflowDeleted: denied.workflowDeleted,
+      })?.includes("deleted"),
+      false,
+    );
   });
 
   it("leaves execution chrome on the query hook without taking run or embed doors", () => {
@@ -319,11 +479,60 @@ describe("execution detail query cache", () => {
     assert.doesNotMatch(chrome, /fetchWorkflowCatalog/);
     assert.match(chrome, /canCancelExecution/);
     assert.match(chrome, /retryCapabilityAffordance/);
+    assert.match(chrome, /retryFailureCopy/);
+    assert.match(chrome, /workflowDeleted/);
+    assert.doesNotMatch(chrome, /retry-denied/);
+    const replay = readFileSync(
+      `${here}../components/executions/ExecutionReplay.tsx`,
+      "utf8",
+    );
+    assert.match(replay, /graphReplayMessage/);
+    assert.match(replay, /workflowDeleted/);
     assert.match(chrome, /downloadGrantFailureMessage/);
     assert.match(chrome, /canOfferScriptEmergencyStop/);
     assert.doesNotMatch(cache, /localStorage|sessionStorage|publishDraft|runPublished/);
     assert.doesNotMatch(chrome, /LoginChrome|ChangePasswordChrome|FirstRunWizard/);
   });
 });
+
+function previousContext(): ExecutionContextCache {
+  return {
+    version: {
+      id: "ver-1",
+      workflowId: "wf-1",
+      versionNumber: 3,
+      digest: "sha256:abc",
+      publishNote: "",
+      publishedAt: "",
+    },
+    workflowDeleted: false,
+    versionProblem: null,
+    catalog: null,
+    approvals: [],
+    requestId: "req-old",
+    strippedKeys: [],
+  };
+}
+
+function step(overrides: Partial<ExecutionStep> = {}): ExecutionStep {
+  return {
+    id: "55555555-5555-4555-8555-555555555555",
+    executionId: "exec-1",
+    nodeId: "gate",
+    nodeType: "flow.approval",
+    attempt: 1,
+    status: "waiting",
+    startedAt: "",
+    finishedAt: "",
+    createdAt: "",
+    input: null,
+    output: null,
+    error: null,
+    fencingToken: null,
+    workerId: "",
+    leaseId: "",
+    ...overrides,
+  };
+}
 
 const asyncIdentity = identity;

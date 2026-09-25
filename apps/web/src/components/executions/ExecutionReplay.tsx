@@ -23,6 +23,7 @@ import {
 } from "@/lib/script-io-contract";
 import {
   currentReplayNodeId,
+  graphReplayMessage,
   overlayExecutionOnGraph,
   projectPinnedVersionGraph,
   replayStepViews,
@@ -47,6 +48,8 @@ import {
 type ExecutionReplayProps = {
   detail: ExecutionDetail;
   version: WorkflowVersion | null;
+  /** True only when the pinned version lookup returned 404. */
+  workflowDeleted?: boolean;
   catalog: WorkflowCatalog | null;
   entries: ActionLibraryEntry[];
   approvals: ApprovalRequest[];
@@ -59,6 +62,7 @@ type ExecutionReplayProps = {
 export function ExecutionReplay({
   detail,
   version,
+  workflowDeleted = false,
   catalog,
   entries,
   approvals,
@@ -126,8 +130,10 @@ export function ExecutionReplay({
         />
       ) : (
         <p className={`text-sm ${FF_INBOX_EMPTY_CLASS}`}>
-          Pinned version YAML is not available, so this page does not guess a
-          graph. Step status, duration, and redacted output are listed below.
+          {graphReplayMessage({
+            graphAvailable: false,
+            workflowDeleted,
+          })}
         </p>
       )}
 

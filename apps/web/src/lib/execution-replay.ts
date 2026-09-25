@@ -240,6 +240,26 @@ export function summaryFromPublishedYaml(yaml: string): WorkflowSummary | null {
   };
 }
 
+export const WORKFLOW_DELETED_GRAPH_MESSAGE =
+  "This workflow was deleted, so its graph is no longer available.";
+
+export const GRAPH_UNAVAILABLE_MESSAGE =
+  "Pinned version YAML is not available, so this page does not guess a graph. Step status, duration, and redacted output are listed below.";
+
+/** Copy for the graph slot. Steps stay listed either way. */
+export function graphReplayMessage(input: {
+  graphAvailable: boolean;
+  workflowDeleted: boolean;
+}): string | null {
+  if (input.graphAvailable) {
+    return null;
+  }
+  if (input.workflowDeleted) {
+    return WORKFLOW_DELETED_GRAPH_MESSAGE;
+  }
+  return GRAPH_UNAVAILABLE_MESSAGE;
+}
+
 /** Project the pinned published version only. Invalid YAML never becomes a graph. */
 export function projectPinnedVersionGraph(input: {
   yaml?: string;

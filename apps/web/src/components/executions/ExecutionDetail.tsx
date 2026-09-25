@@ -28,7 +28,6 @@ import {
   INDETERMINATE_STATUS_HELP,
   REDACTED_HELP,
   RETENTION_HELP,
-  RETRY_CONFLICT_MESSAGE,
   RETRY_CSRF_HELP,
   RETRY_FORBIDDEN_MESSAGE,
   RETRY_INDETERMINATE_MESSAGE,
@@ -47,8 +46,8 @@ import {
 } from "@/lib/execution";
 import {
   retryCapabilityAffordance,
+  retryFailureCopy,
   retryHiddenCopy,
-  retryProblemMessage,
   retryProblemShouldRefetch,
 } from "@/lib/execution-retry";
 import {
@@ -74,7 +73,6 @@ import {
 } from "@/lib/kubernetes-rollout-contract";
 import {
   SSH_NO_BLIND_RETRY_HELP,
-  SSH_RETRY_DENIED_MESSAGE,
   executionHasSshIndeterminate,
   executionHasSshRun,
   isSshRunType,
@@ -167,6 +165,7 @@ export function ExecutionDetail({
     stepLogs,
     approvals,
     version,
+    workflowDeleted,
     catalog,
     denied,
     refresh,
@@ -327,17 +326,11 @@ export function ExecutionDetail({
     setRetryPending(null);
     if (!result.ok) {
       reportProblem(result.problem);
-      const conflict = retryProblemMessage(result.problem);
+      const conflict = retryFailureCopy(result.problem, result.statusCode);
       if (result.forbidden) {
         setRetryMessage(RETRY_FORBIDDEN_MESSAGE);
       } else if (conflict) {
         setRetryMessage(conflict);
-      } else if (result.statusCode === 409) {
-        setRetryMessage(
-          result.problem.code === "retry-denied"
-            ? result.problem.detail || SSH_RETRY_DENIED_MESSAGE
-            : RETRY_CONFLICT_MESSAGE,
-        );
       }
       if (retryProblemShouldRefetch(result.problem)) {
         await refresh();
@@ -706,7 +699,7 @@ export function ExecutionDetail({
                 {boundRedactedDisplay(view.input).text}
               </pre>
             </div>
-            {detail?.workflowId ? (
+            {detail?.workflowId && !workflowDeleted ? (
               <p className="mt-4 flex flex-wrap gap-3 text-sm">
                 <Link
                   href={manualStartHref(detail.workflowId)}
@@ -727,6 +720,7 @@ export function ExecutionDetail({
           <ExecutionReplay
             detail={detail}
             version={version}
+            workflowDeleted={workflowDeleted}
             catalog={catalog}
             entries={adaptActionLibrary(catalog)}
             approvals={approvals}

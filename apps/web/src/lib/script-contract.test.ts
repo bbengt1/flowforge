@@ -256,7 +256,8 @@ describe("script contract adapter", () => {
       timeoutSeconds: 30,
       retryPolicy: { maxAttempts: 2 },
     });
-    assert.ok(retryDenied.some((error) => /retry-denied|retrySafe/i.test(error)));
+    assert.ok(retryDenied.some((error) => /retrySafe/i.test(error)));
+    assert.ok(retryDenied.every((error) => !/retry-denied/.test(error)));
 
     const retryOk = validateScriptNodeConfig("script.python", {
       runtimeProfileId: PROFILE_ID,
