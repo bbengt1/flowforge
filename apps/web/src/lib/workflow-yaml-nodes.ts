@@ -45,6 +45,7 @@ export type YamlWorkflowNode = {
   id: string;
   type: string;
   name: string;
+  join?: "all" | "any";
   with: Record<string, unknown>;
   startLine: number;
   endLine: number;
@@ -281,7 +282,7 @@ export function updateYamlNode(
     return null;
   }
   const block = serializeNodeBlock(
-    { id: next.id, type: next.type, name: next.name, with: next.with },
+    { id: next.id, type: next.type, name: next.name, join: existing.join, with: next.with },
     4,
   );
   const lines = yaml.split("\n");
@@ -536,7 +537,7 @@ export function configFromNode(node: YamlWorkflowNode): CoreNodeWith | null {
 }
 
 export function serializeNodeBlock(
-  node: { id: string; type: string; name: string; with: Record<string, unknown> },
+  node: { id: string; type: string; name: string; join?: "all" | "any"; with: Record<string, unknown> },
   indent = 4,
 ): string {
   const pad = " ".repeat(indent);
@@ -546,6 +547,9 @@ export function serializeNodeBlock(
     `${field}type: ${formatScalar(node.type)}`,
     `${field}name: ${formatScalar(node.name)}`,
   ];
+  if (node.join === "all" || node.join === "any") {
+    lines.push(`${field}join: ${node.join}`);
+  }
   if (Object.keys(node.with).length > 0) {
     lines.push(`${field}with:`);
     lines.push(formatYamlValue(node.with, indent + 4));
@@ -893,10 +897,13 @@ function parseNodeItem(yaml: string, item: ListItemRange): YamlWorkflowNode {
     mapping.with && typeof mapping.with === "object" && !Array.isArray(mapping.with)
       ? (mapping.with as Record<string, unknown>)
       : {};
+  const joinRaw = stringField(mapping.join);
+  const join = joinRaw === "all" || joinRaw === "any" ? joinRaw : undefined;
   return {
     id: stringField(mapping.id),
     type: stringField(mapping.type),
     name: stringField(mapping.name),
+    ...(join ? { join } : {}),
     with: withValue,
     startLine: item.startLine,
     endLine: item.endLine,

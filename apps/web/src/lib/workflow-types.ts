@@ -211,6 +211,8 @@ export type NodeSummary = {
   id: string;
   type: string;
   name: string;
+  /** Omitted and `all` are AND. `any` is OR. */
+  join?: "all" | "any";
 };
 
 export type EdgeSummary = {

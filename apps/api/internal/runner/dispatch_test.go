@@ -140,17 +140,78 @@ func TestFlowDelayAndDataSet(t *testing.T) {
 	if _, err := r.loop.Drain(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	dJob := r.onlyJob(t, delay.ID)
 	dStep := r.onlyStep(t, delay.ID)
-	if r.onlyJob(t, delay.ID).Status != wfstore.JobFailed || dStep.Error["code"] != CodeUnsupported {
-		t.Fatalf("delay=%v", dStep.Error)
+	if dJob.Status != wfstore.JobWaiting || dStep.Status != wfstore.ExecutionWaiting {
+		t.Fatalf("delay job=%s step=%s err=%v", dJob.Status, dStep.Status, dStep.Error)
 	}
-	msg, _ := dStep.Error["message"].(string)
-	if strings.Contains(msg, localMsg) {
-		t.Fatal(msg)
+	if dStep.Error["code"] == CodeUnsupported {
+		t.Fatalf("delay should park, err=%v", dStep.Error)
 	}
 	if r.onlyJob(t, set.ID).Status != wfstore.JobSucceeded {
 		t.Fatalf("data.set %s %v", r.onlyJob(t, set.ID).Status, r.onlyStep(t, set.ID).Error)
 	}
+}
+
+func TestFlowDelayHoldsDownstreamUntilTimer(t *testing.T) {
+	r, _ := newRig(t, authz.ExpandRoles([]string{authz.RoleOperator}))
+	exec := r.start(t, r.publish(t, delayThenStopYAML))
+	now := time.Now().UTC().Add(time.Second)
+	r.loop.now = func() time.Time { return now }
+	r.queue.Now = func() time.Time { return now }
+	if _, err := r.loop.Drain(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	wait, after := jobsByNode(t, r, exec.ID)
+	if wait.Status != wfstore.JobWaiting {
+		t.Fatalf("delay status=%s", wait.Status)
+	}
+	if after.Status != wfstore.JobBlocked {
+		t.Fatalf("downstream status=%s", after.Status)
+	}
+	now = now.Add(6 * time.Second)
+	if _, err := r.loop.Drain(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	wait, after = jobsByNode(t, r, exec.ID)
+	if wait.Status != wfstore.JobSucceeded || after.Status != wfstore.JobSucceeded {
+		t.Fatalf("after timer delay=%s downstream=%s", wait.Status, after.Status)
+	}
+	got, err := r.wf.GetExecutionByID(context.Background(), r.scope, exec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != wfstore.ExecutionSucceeded {
+		t.Fatalf("run status=%s", got.Status)
+	}
+}
+
+func jobsByNode(t *testing.T, r *rig, executionID string) (wait, after wfstore.ExecutionJob) {
+	t.Helper()
+	steps, err := r.wf.ListSteps(context.Background(), r.scope, executionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := r.wf.ListJobs(context.Background(), r.scope, executionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stepNode := map[string]string{}
+	for _, step := range steps {
+		stepNode[step.ID] = step.NodeID
+	}
+	for _, job := range jobs {
+		switch stepNode[job.ExecutionStepID] {
+		case "wait":
+			wait = job
+		case "after":
+			after = job
+		}
+	}
+	if wait.ID == "" || after.ID == "" {
+		t.Fatalf("jobs=%+v", jobs)
+	}
+	return wait, after
 }
 
 func TestApprovalIsParked(t *testing.T) {
@@ -762,6 +823,30 @@ func ed25519PEM(t *testing.T) string {
 	}
 	return string(pem.EncodeToMemory(block))
 }
+
+const delayThenStopYAML = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: delay-then-stop
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: wait
+      type: flow.delay
+      name: Wait
+      with:
+        duration: PT5S
+    - id: after
+      type: flow.stop
+      name: After
+      with:
+        status: success
+  edges:
+    - from: wait.result
+      to: after.input
+`
 
 func coreYAML(id, typ, with string) string {
 	return `apiVersion: flowforge/v1

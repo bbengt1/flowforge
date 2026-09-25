@@ -87,6 +87,9 @@ func encodeSpec(spec Spec) *yaml.Node {
 		appendKV(item, "id", plainScalar(node.ID))
 		appendKV(item, "type", plainScalar(node.Type))
 		appendKV(item, "name", stringScalar(node.Name))
+		if node.Join != "" {
+			appendKV(item, "join", plainScalar(node.Join))
+		}
 		if len(node.With) > 0 {
 			appendKV(item, "with", encodeMap(node.With))
 		}

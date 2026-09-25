@@ -705,7 +705,11 @@ func (p *Postgres) StartExecution(ctx context.Context, scope isolation.Scope, wo
 		return Execution{}, err
 	}
 
-	if err := insertPlanTx(ctx, tx, scope, exec.ID, planNodes(ver.DefinitionYAML, ver.Summary)); err != nil {
+	nodes, edges, err := planGraph(ver.DefinitionYAML, ver.Summary)
+	if err != nil {
+		return Execution{}, err
+	}
+	if err := insertPlanTx(ctx, tx, scope, exec.ID, nodes, edges); err != nil {
 		return Execution{}, err
 	}
 	if _, err := insertAuditTx(ctx, tx, scope, AuditWrite{

@@ -248,15 +248,20 @@ func QueuedUnclaimedReason(exec wfstore.Execution, jobs []wfstore.ExecutionJob, 
 		return ""
 	}
 	var oldest time.Time
+	sawQueued := false
 	for _, job := range jobs {
+		if job.Status == wfstore.JobBlocked || job.Status == wfstore.JobSkipped {
+			continue
+		}
 		if job.Status != wfstore.JobQueued || strings.TrimSpace(job.WorkerID) != "" {
 			return ""
 		}
+		sawQueued = true
 		if oldest.IsZero() || job.AvailableAt.Before(oldest) {
 			oldest = job.AvailableAt
 		}
 	}
-	if oldest.IsZero() {
+	if !sawQueued || oldest.IsZero() {
 		return ""
 	}
 	if now.IsZero() {

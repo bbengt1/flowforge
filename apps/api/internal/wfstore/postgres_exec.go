@@ -493,9 +493,9 @@ func lookupIdempotentTx(ctx context.Context, tx pgx.Tx, workflowID, versionID, k
 	return exec, true, nil
 }
 
-func insertPlanTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, executionID string, nodes []plannedNode) error {
+func insertPlanTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, executionID string, nodes []plannedNode, edges []execEdge) error {
 	now := time.Now().UTC()
-	steps, jobs := materializePlan(executionID, nodes, now)
+	steps, jobs := materializePlan(executionID, nodes, edges, now)
 	for _, step := range steps {
 		inputRaw, err := marshalObject(step.Input)
 		if err != nil {
@@ -504,9 +504,9 @@ func insertPlanTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, executi
 		_, err = tx.Exec(ctx, `
 			INSERT INTO execution_steps (
 				workspace_id, id, execution_id, node_id, node_type, attempt, status,
-				input_redacted, created_at, updated_at
-			) VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8::jsonb, $9, $9)
-		`, scope.WorkspaceID(), step.ID, executionID, step.NodeID, step.NodeType, step.Attempt, step.Status, inputRaw, now)
+				input_redacted, unresolved_incoming, created_at, updated_at
+			) VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8::jsonb, $9, $10, $10)
+		`, scope.WorkspaceID(), step.ID, executionID, step.NodeID, step.NodeType, step.Attempt, step.Status, inputRaw, step.UnresolvedIncoming, now)
 		if err != nil {
 			return mapDBErr(err)
 		}
@@ -523,7 +523,17 @@ func insertPlanTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, executi
 			return mapDBErr(err)
 		}
 	}
-	observability.NoteJobEnqueued(ctx, len(jobs))
+	for _, edge := range edges {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO execution_edges (
+				workspace_id, execution_id, from_node, from_port, to_node, to_port, required
+			) VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7)
+		`, scope.WorkspaceID(), executionID, edge.FromNode, edge.FromPort, edge.ToNode, edge.ToPort, edge.Required)
+		if err != nil {
+			return mapDBErr(err)
+		}
+	}
+	observability.NoteJobEnqueued(ctx, countQueuedJobs(jobs))
 	return nil
 }
 
@@ -565,7 +575,7 @@ const stepColumns = `
 	id::text, execution_id::text, node_id, node_type, attempt, status,
 	COALESCE(lease_id::text, ''), fencing_token, COALESCE(idempotency_key, ''),
 	policy_snapshot, target_snapshot, input_redacted, output_redacted, error_redacted,
-	created_at, started_at, finished_at, updated_at
+	created_at, started_at, finished_at, updated_at, unresolved_incoming
 `
 
 const jobColumns = `
@@ -607,7 +617,7 @@ func scanStep(row rowScanner) (ExecutionStep, error) {
 		&step.ID, &step.ExecutionID, &step.NodeID, &step.NodeType, &step.Attempt, &step.Status,
 		&step.LeaseID, &step.FencingToken, &step.IdempotencyKey,
 		&policyRaw, &targetRaw, &inputRaw, &outputRaw, &errorRaw,
-		&step.CreatedAt, &started, &finished, &step.UpdatedAt,
+		&step.CreatedAt, &started, &finished, &step.UpdatedAt, &step.UnresolvedIncoming,
 	); err != nil {
 		return ExecutionStep{}, mapDBErr(err)
 	}

@@ -56,6 +56,7 @@ var nodeKeys = map[string]bool{
 	"id":     true,
 	"type":   true,
 	"name":   true,
+	"join":   true,
 	"with":   true,
 	"inputs": true,
 }
@@ -456,6 +457,13 @@ func decodeNode(n *yaml.Node, path string) (Node, ErrorList) {
 		}
 	} else {
 		errs = append(errs, fieldError(path+".name", n.Line, n.Column, CodeMissingField, "Node name is required."))
+	}
+	if v, ok := mappingValue(n, "join"); ok {
+		if s, err := scalarString(v, path+".join"); err != nil {
+			errs = append(errs, *err)
+		} else {
+			node.Join = s
+		}
 	}
 	if v, ok := mappingValue(n, "with"); ok {
 		m, mErrs := decodeAnyMap(v, path+".with")

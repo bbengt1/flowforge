@@ -58,30 +58,42 @@ func prepareStart(scope isolation.Scope, workflowID string, in StartInput) (prep
 	return preparedStart{key: key, fingerprint: fp, input: input, policy: policy}, nil
 }
 
-func materializePlan(executionID string, nodes []plannedNode, now time.Time) ([]ExecutionStep, []ExecutionJob) {
+func materializePlan(executionID string, nodes []plannedNode, edges []execEdge, now time.Time) ([]ExecutionStep, []ExecutionJob) {
+	incoming := map[string]int{}
+	for _, edge := range edges {
+		incoming[edge.ToNode]++
+	}
 	steps := make([]ExecutionStep, 0, len(nodes))
 	jobs := make([]ExecutionJob, 0, len(nodes))
 	for _, node := range nodes {
+		unresolved := incoming[node.ID]
+		stepStatus := ExecutionQueued
+		jobStatus := JobQueued
+		if unresolved > 0 {
+			stepStatus = ExecutionPending
+			jobStatus = JobBlocked
+		}
 		step := ExecutionStep{
-			ID:             newID(),
-			ExecutionID:    executionID,
-			NodeID:         node.ID,
-			NodeType:       node.Type,
-			Attempt:        1,
-			Status:         ExecutionQueued,
-			PolicySnapshot: retrySnapshotFromNode(node.Type, node.With),
-			TargetSnapshot: map[string]any{},
-			Input:          redactObject(node.With),
-			Output:         map[string]any{},
-			Error:          map[string]any{},
-			CreatedAt:      now,
-			UpdatedAt:      now,
+			ID:                 newID(),
+			ExecutionID:        executionID,
+			NodeID:             node.ID,
+			NodeType:           node.Type,
+			Attempt:            1,
+			Status:             stepStatus,
+			PolicySnapshot:     retrySnapshotFromNode(node.Type, node.With),
+			TargetSnapshot:     map[string]any{},
+			Input:              redactObject(node.With),
+			Output:             map[string]any{},
+			Error:              map[string]any{},
+			CreatedAt:          now,
+			UpdatedAt:          now,
+			UnresolvedIncoming: unresolved,
 		}
 		job := ExecutionJob{
 			ID:              newID(),
 			ExecutionID:     executionID,
 			ExecutionStepID: step.ID,
-			Status:          JobQueued,
+			Status:          jobStatus,
 			AvailableAt:     now,
 			Attempt:         1,
 			CreatedAt:       now,

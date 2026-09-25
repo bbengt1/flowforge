@@ -431,7 +431,7 @@ job id, node type, and error code only.
 | --- | --- |
 | Core `data.set` / `data.map` / `data.validate` / `flow.condition` / `flow.stop` / `flow.fail` | Same in-process evaluate as the compose worker. |
 | `flow.approval` | Parked with `WaitJob` until `expiresIn`. Not executed. |
-| `flow.delay` | Fail-closed (`runner-unsupported`). Not an in-process sleep. |
+| `flow.delay` | Parked with `WaitJob` until the duration elapses. Downstream steps stay blocked until that timer resolves. Not an in-process sleep. |
 | `kubernetes.*` / `ssh.run` / `script.python` / `script.go` / `http.request` / `notification.webhook` | Existing engine packages, published pins only. |
 | `notification.email` | `ExecuteEmail`. No mailer configured → `delivery-failed`. |
 | `INTEGRATION_ACTIONS_ENABLED=false` | HTTP and notification nodes fail `integration-disabled` before `Execute`. |

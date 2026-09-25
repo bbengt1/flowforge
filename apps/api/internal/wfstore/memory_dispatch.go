@@ -56,7 +56,11 @@ func (m *Memory) ClaimJob(ctx context.Context, scope isolation.Scope, now time.T
 			continue
 		}
 		for i, job := range exec.jobs {
-			if job.Status != JobQueued || job.AvailableAt.After(now) {
+			if job.Status != JobQueued || job.Status == JobBlocked || job.AvailableAt.After(now) {
+				continue
+			}
+			stepIdx := indexStep(exec.steps, job.ExecutionStepID)
+			if stepIdx < 0 || exec.steps[stepIdx].UnresolvedIncoming != 0 {
 				continue
 			}
 			if hasActiveClaim(exec.jobs, job.ExecutionStepID, i) {
@@ -92,6 +96,10 @@ func (m *Memory) ClaimJob(ctx context.Context, scope isolation.Scope, now time.T
 	chosen = &chosenRow
 	jobIdx = indexJob(chosen.jobs, pickedJobID)
 	if jobIdx < 0 || chosen.jobs[jobIdx].Status != JobQueued {
+		observability.NoteLeaseClaim(ctx, "empty", 0)
+		return DispatchResult{Recovered: recovered}, ErrEmptyClaim
+	}
+	if stepIdx := indexStep(chosen.steps, chosen.jobs[jobIdx].ExecutionStepID); stepIdx < 0 || chosen.steps[stepIdx].UnresolvedIncoming != 0 {
 		observability.NoteLeaseClaim(ctx, "empty", 0)
 		return DispatchResult{Recovered: recovered}, ErrEmptyClaim
 	}
@@ -213,6 +221,7 @@ func (m *Memory) CompleteJob(_ context.Context, scope isolation.Scope, now time.
 			step.Output = map[string]any{}
 		}
 		applyStepStatus(step, ExecutionSucceeded, now)
+		releaseFrom(exec.steps, exec.jobs, exec.edges, step.NodeID, emittedPorts(step.Output), now)
 		return nil
 	}, "job.complete", "succeeded")
 }
@@ -275,7 +284,8 @@ func (m *Memory) CancelExecution(ctx context.Context, scope isolation.Scope, now
 	observability.NoteQueueLeft(ctx, queued)
 	observability.NoteExecutionOutcome(ctx, "canceled")
 	for i := range exec.steps {
-		if exec.steps[i].Status == ExecutionQueued || exec.steps[i].Status == ExecutionRunning || exec.steps[i].Status == ExecutionWaiting {
+		switch exec.steps[i].Status {
+		case ExecutionPending, ExecutionQueued, ExecutionRunning, ExecutionWaiting:
 			applyStepStatus(&exec.steps[i], ExecutionCanceled, now)
 		}
 	}
@@ -450,6 +460,7 @@ func (m *Memory) RetryStep(ctx context.Context, scope isolation.Scope, now time.
 	next.UpdatedAt = now
 	next.StartedAt = nil
 	next.FinishedAt = nil
+	next.UnresolvedIncoming = 0
 	job := ExecutionJob{
 		ID:              newID(),
 		ExecutionID:     executionID,
@@ -549,6 +560,7 @@ func (m *Memory) ResumeWait(ctx context.Context, scope isolation.Scope, now time
 			step.Output = waitOutput(port, nil)
 		}
 		applyStepStatus(step, ExecutionSucceeded, now)
+		releaseFrom(exec.steps, exec.jobs, exec.edges, step.NodeID, emittedPorts(step.Output), now)
 		return nil
 	}, "job.resume", port)
 }
@@ -690,15 +702,22 @@ func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope
 		for i, job := range exec.jobs {
 			stepIdx := indexStep(exec.steps, job.ExecutionStepID)
 			if job.Status == JobWaiting && !job.AvailableAt.After(now) {
+				port := "expired"
+				nodeID := ""
+				if stepIdx >= 0 {
+					port = waitExpiryPort(exec.steps[stepIdx].NodeType)
+					nodeID = exec.steps[stepIdx].NodeID
+				}
 				job.Status = JobSucceeded
 				job.UpdatedAt = now
 				exec.jobs[i] = job
 				if stepIdx >= 0 {
-					exec.steps[stepIdx].Output = waitOutput("expired", nil)
+					exec.steps[stepIdx].Output = waitOutput(port, nil)
 					applyStepStatus(&exec.steps[stepIdx], ExecutionSucceeded, now)
+					releaseFrom(exec.steps, exec.jobs, exec.edges, nodeID, emittedPorts(exec.steps[stepIdx].Output), now)
 				}
 				changed = true
-				outcome = "expired"
+				outcome = port
 				n++
 				continue
 			}
