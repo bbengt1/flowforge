@@ -149,6 +149,27 @@ func assertDerivedSlugBehavior(t *testing.T, ctx context.Context, store Store, s
 		assertYAMLSlug(t, draft.DefinitionYAML, "from-body")
 	})
 
+	t.Run("63-character derived slug is trimmed before -2", func(t *testing.T) {
+		name := strings.Repeat("a", 63)
+		first := createNamed(t, ctx, store, scope, name, "")
+		second := createNamed(t, ctx, store, scope, name, "")
+		assertCappedSuffix(t, first.Slug, second.Slug, strings.Repeat("a", 61)+"-2")
+		assertStoredSlug(t, ctx, store, scope, second.ID, second.Slug)
+	})
+
+	t.Run("suffix trim drops a hyphen left at the cut", func(t *testing.T) {
+		// 60 letters, a hyphen, then two letters: 63 characters. Cutting
+		// room for "-2" lands on that hyphen, which must be removed.
+		name := strings.Repeat("b", 60) + "-cd"
+		first := createNamed(t, ctx, store, scope, name, "")
+		second := createNamed(t, ctx, store, scope, name, "")
+		assertCappedSuffix(t, first.Slug, second.Slug, strings.Repeat("b", 60)+"-2")
+		if strings.Contains(second.Slug, "--") {
+			t.Fatalf("suffix kept the cut hyphen: %q", second.Slug)
+		}
+		assertStoredSlug(t, ctx, store, scope, second.ID, second.Slug)
+	})
+
 	t.Run("derived suffixes stop after the attempt cap", func(t *testing.T) {
 		for i := 0; i < maxDerivedSlugAttempts; i++ {
 			row := createNamed(t, ctx, store, scope, "Quota", "")
@@ -208,6 +229,19 @@ func assertDerivedSlugUniqueRetry(t *testing.T, ctx context.Context, store Store
 	}
 	assertStoredSlug(t, ctx, store, scope, winner.ID, "race")
 	assertStoredSlug(t, ctx, store, scope, retried.ID, "race-2")
+}
+
+func assertCappedSuffix(t *testing.T, first, second, wantSecond string) {
+	t.Helper()
+	if len(first) != maxWorkflowSlugLen || !workflow.ValidWorkflowSlug(first) {
+		t.Fatalf("first slug = %q", first)
+	}
+	if second != wantSecond || len(second) > maxWorkflowSlugLen || !strings.HasSuffix(second, "-2") || !workflow.ValidWorkflowSlug(second) {
+		t.Fatalf("second slug = %q, want %q", second, wantSecond)
+	}
+	if strings.HasSuffix(strings.TrimSuffix(second, "-2"), "-") {
+		t.Fatalf("base kept a trailing hyphen: %q", second)
+	}
 }
 
 func createNamed(t *testing.T, ctx context.Context, store Store, scope isolation.Scope, name, slug string) Workflow {

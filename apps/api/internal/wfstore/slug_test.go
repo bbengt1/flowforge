@@ -66,8 +66,13 @@ func TestSlugifyWorkflowName(t *testing.T) {
 		t.Fatalf("reserved candidates = %v %v", cands, err)
 	}
 	long, ok := workflowSlugCandidate(strings.Repeat("a", 63), 2)
-	if !ok || len(long) > 63 || strings.HasSuffix(long, "-") || !strings.HasSuffix(long, "-2") {
+	if !ok || long != strings.Repeat("a", 61)+"-2" || len(long) > 63 || !validDerivedWorkflowSlug(long) {
 		t.Fatalf("capped suffix = %q", long)
+	}
+	cut := strings.Repeat("b", 60) + "-cd"
+	got, ok = workflowSlugCandidate(cut, 2)
+	if !ok || got != strings.Repeat("b", 60)+"-2" || strings.Contains(got, "--") || !validDerivedWorkflowSlug(got) {
+		t.Fatalf("hyphen cut suffix = %q", got)
 	}
 }
 
