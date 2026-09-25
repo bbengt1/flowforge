@@ -34,3 +34,13 @@ Adapted from affaan-m/ECC (MIT)
 - Missing required secrets fail closed at startup.
 - Values prefixed for the client bundle are public. Never put a secret in `NEXT_PUBLIC_*`.
 - If a secret may have been exposed, stop and rotate it. Then look for the same pattern elsewhere.
+
+## Cookie and session posture (repo override, intentional)
+
+The session cookie `ff_session` is always HttpOnly. On a first-party session, `Secure` is set only when the request is HTTPS, `REQUIRE_TLS` is on, or the process is production-locked. Local, dev, and test over cleartext HTTP omit `Secure` on purpose so Login can bootstrap without TLS. Do not add unconditional `Secure`.
+
+The CSRF cookie `ff_csrf` is deliberately readable from JavaScript (`HttpOnly` false) so the browser can double-submit it. Do not flip it to HttpOnly.
+
+First-party `SameSite` stays Lax on `ff_session` and Strict on `ff_csrf`. Embed uses CHIPS: `SameSite=None`, `Secure`, and `Partitioned` on both cookies. `SameSite=None` is never sent without `Partitioned`, and `Secure` is never dropped on the embed path. Do not tighten these.
+
+Generic checklists that demand `Secure` and HttpOnly on every cookie should report this posture as INFO, not as a finding. This repo's conventions override those checklist defaults.
