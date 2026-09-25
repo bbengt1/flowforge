@@ -76,11 +76,15 @@ export function ExecutionReplay({
   const graph = base
     ? overlayExecutionOnGraph(base, detail.steps, {
         waitingApprovalNodeIds: waitingIds,
+        runStatus: detail.status,
+        jobs: detail.jobs,
       })
     : null;
   const currentNodeId = currentReplayNodeId(detail.steps, waitingIds);
   const views = replayStepViews(detail.steps, {
     waitingApprovalNodeIds: waitingIds,
+    runStatus: detail.status,
+    jobs: detail.jobs,
   });
   const selectedId =
     selection.kind === "node" ? selection.id : currentNodeId;
@@ -142,7 +146,13 @@ export function ExecutionReplay({
                 {selected.durationLabel}
               </p>
             </div>
-            <ExecutionStatusBadge status={selected.status} />
+            <ExecutionStatusBadge
+              status={selected.status}
+              runStatus={detail.status}
+              siblingJobStatuses={detail.jobs
+                .filter((job) => job.executionStepId === selected.step.id)
+                .map((job) => job.status)}
+            />
           </div>
           {selected.presentation.indeterminate ? (
             <p className="mt-3 text-sm font-medium">
@@ -276,7 +286,13 @@ export function ExecutionReplay({
                     {item.waiting ? " · waiting" : ""}
                   </span>
                 </span>
-                <ExecutionStatusBadge status={item.status} />
+                <ExecutionStatusBadge
+                  status={item.status}
+                  runStatus={detail.status}
+                  siblingJobStatuses={detail.jobs
+                    .filter((job) => job.executionStepId === item.step.id)
+                    .map((job) => job.status)}
+                />
               </button>
             </li>
           ))}

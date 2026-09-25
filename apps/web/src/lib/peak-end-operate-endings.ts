@@ -58,10 +58,12 @@ import { INDETERMINATE_STATUS_HELP } from "./execution-contract.ts";
 import { EXECUTION_DECIDE } from "./execution-decide.ts";
 import { EXECUTION_OPERATE } from "./execution-operate.ts";
 import {
+  displaysAsNotReached,
   executionStatusPresentation,
   isIndeterminateStatus,
   normalizeExecutionStatus,
 } from "./execution.ts";
+import { NOT_REACHED_STATUS_HELP } from "./execution-types.ts";
 import { workflowEditorHref } from "./product-home.ts";
 import { R7_HARD_LINE } from "./rewrite-embed-mount.ts";
 
@@ -88,7 +90,8 @@ export type PeakEndKind =
   | "queued"
   | "blocked"
   | "pending"
-  | "skipped";
+  | "skipped"
+  | "not-reached";
 
 export type PeakEndHandoff = {
   workflowId: string;
@@ -108,6 +111,7 @@ export const PEAK_END_KINDS = [
   "blocked",
   "pending",
   "skipped",
+  "not-reached",
 ] as const satisfies readonly PeakEndKind[];
 
 export const PEAK_END_LABELS = {
@@ -122,6 +126,7 @@ export const PEAK_END_LABELS = {
   pending: "Pending — not started yet, waiting on inputs.",
   skipped:
     "Skipped — didn't run because an upstream approval was rejected or expired, or its branch wasn't taken. Not a failure.",
+  "not-reached": `Not reached — ${NOT_REACHED_STATUS_HELP}`,
 } as const satisfies Record<PeakEndKind, string>;
 
 export const PEAK_END_INBOX_LABELS = {
@@ -135,6 +140,7 @@ export const PEAK_END_INBOX_LABELS = {
   blocked: "Blocked — waiting for upstream steps to finish.",
   pending: "Pending — not started yet, waiting on inputs.",
   skipped: "Skipped — didn't run. Not a failure.",
+  "not-reached": `Not reached — ${NOT_REACHED_STATUS_HELP}`,
 } as const satisfies Record<PeakEndKind, string>;
 
 export const PEAK_END_NDV_LABELS = {
@@ -148,6 +154,7 @@ export const PEAK_END_NDV_LABELS = {
   blocked: "Blocked — waiting for upstream steps to finish.",
   pending: "Pending — not started yet, waiting on inputs.",
   skipped: "Skipped — didn't run. Not a failure.",
+  "not-reached": `Not reached — ${NOT_REACHED_STATUS_HELP}`,
 } as const satisfies Record<PeakEndKind, string>;
 
 export const PEAK_END_HEADLINES = {
@@ -161,6 +168,7 @@ export const PEAK_END_HEADLINES = {
   blocked: "Blocked",
   pending: "Pending",
   skipped: "Skipped",
+  "not-reached": "Not reached",
 } as const satisfies Record<PeakEndKind, string>;
 
 export const PEAK_END_OPERATE = {
@@ -224,7 +232,11 @@ export const INVENTED_PEAK_END_SURFACES = [
 export function peakEndKind(
   status?: string,
   waiting = false,
+  runStatus?: string,
 ): PeakEndKind {
+  if (displaysAsNotReached({ runStatus, status })) {
+    return "not-reached";
+  }
   if (isIndeterminateStatus(status)) {
     return "indeterminate";
   }
@@ -291,6 +303,8 @@ export function peakEndSurfaceClassName(kind: PeakEndKind): string {
       return "ff-status-pending";
     case "skipped":
       return "ff-status-skipped";
+    case "not-reached":
+      return "ff-status-not-reached";
     default:
       return "ff-status-other";
   }

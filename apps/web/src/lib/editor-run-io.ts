@@ -122,9 +122,15 @@ export function editorRunOverlayGraph(
   graph: WorkflowGraph,
   steps: readonly ExecutionStep[],
   waitingApprovalIds: readonly string[] = [],
+  run?: {
+    status?: string;
+    jobs?: readonly { executionStepId?: string; status?: string }[];
+  },
 ): WorkflowGraph {
   return overlayExecutionOnGraph(graph, steps, {
     waitingApprovalNodeIds: waitingApprovalIds,
+    runStatus: run?.status,
+    jobs: run?.jobs,
   });
 }
 
@@ -184,6 +190,8 @@ export function editorRunIoForNode(
   const step = latest.get(nodeId) ?? null;
   const views = replayStepViews(detail.steps, {
     waitingApprovalNodeIds: options.waitingApprovalNodeIds,
+    runStatus: detail.status,
+    jobs: detail.jobs,
   });
   const view = views.find((item) => item.nodeId === nodeId && item.step.id === step?.id)
     ?? views.find((item) => item.nodeId === nodeId)

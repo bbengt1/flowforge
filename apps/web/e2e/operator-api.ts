@@ -12,11 +12,13 @@ const WORKFLOW_ID = "33333333-3333-4333-8333-333333333333";
 const VERSION_ID = "44444444-4444-4444-8444-444444444444";
 const CREDENTIAL_ID = "55555555-5555-4555-8555-555555555555";
 const EXECUTION_ID = "66666666-6666-4666-8666-666666666666";
+const FAILED_EXECUTION_ID = "6a6a6a6a-6a6a-4a6a-8a6a-6a6a6a6a6a6a";
 const APPROVAL_ID = "77777777-7777-4777-8777-777777777777";
 const USER_ID = "88888888-8888-4888-8888-888888888888";
 
 export const OPERATOR_WORKFLOW_ID = WORKFLOW_ID;
 export const OPERATOR_EXECUTION_ID = EXECUTION_ID;
+export const OPERATOR_FAILED_EXECUTION_ID = FAILED_EXECUTION_ID;
 export const OPERATOR_FOLDER_NAME = "Runbooks";
 
 const FOLDER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -242,6 +244,66 @@ const executionDetail = {
   artifacts: [],
 };
 
+const failedExecutionDetail = {
+  ...execution,
+  id: FAILED_EXECUTION_ID,
+  status: "failed",
+  finishedAt: "2026-09-01T12:00:06.000Z",
+  steps: [
+    {
+      id: STEP_GATE,
+      nodeId: "gate",
+      nodeType: "data.set",
+      attempt: 1,
+      status: "failed",
+      startedAt: "2026-09-01T12:00:00.000Z",
+      finishedAt: "2026-09-01T12:00:05.000Z",
+    },
+    {
+      id: STEP_NOTIFY,
+      nodeId: "notify",
+      nodeType: "data.set",
+      attempt: 1,
+      status: "pending",
+    },
+    {
+      id: STEP_ROLLBACK,
+      nodeId: "rollback",
+      nodeType: "data.set",
+      attempt: 1,
+      status: "skipped",
+      finishedAt: "2026-09-01T12:00:05.000Z",
+    },
+    {
+      id: STEP_DOWNSTREAM,
+      nodeId: "downstream",
+      nodeType: "data.set",
+      attempt: 1,
+      status: "pending",
+    },
+  ],
+  jobs: [
+    {
+      id: "16161616-1616-4616-8616-161616161616",
+      executionStepId: STEP_DOWNSTREAM,
+      status: "blocked",
+    },
+    {
+      id: "17171717-1717-4717-8717-171717171717",
+      executionStepId: STEP_ROLLBACK,
+      status: "skipped",
+    },
+  ],
+  auditEvents: [
+    {
+      id: "19191919-1919-4919-8919-191919191919",
+      action: "execution.failed",
+      outcome: "error",
+    },
+  ],
+  artifacts: [],
+};
+
 const approval = {
   id: APPROVAL_ID,
   status: "pending",
@@ -376,6 +438,12 @@ function bodyFor(
     return ok(executionDetail);
   }
   if (path.startsWith(`/executions/${EXECUTION_ID}/`)) {
+    return ok({ items: [] });
+  }
+  if (path === `/executions/${FAILED_EXECUTION_ID}`) {
+    return ok(failedExecutionDetail);
+  }
+  if (path.startsWith(`/executions/${FAILED_EXECUTION_ID}/`)) {
     return ok({ items: [] });
   }
   if (path === "/approvals/catalog") {

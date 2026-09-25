@@ -123,6 +123,19 @@ describe("UXL.4 peak-end operate endings", () => {
     assert.equal(peakEndKind("blocked"), "blocked");
     assert.equal(peakEndKind("pending"), "pending");
     assert.equal(peakEndKind("skipped"), "skipped");
+    assert.equal(peakEndKind("pending", false, "failed"), "not-reached");
+    assert.equal(peakEndKind("blocked", false, "failed"), "not-reached");
+    assert.equal(peakEndKind("pending", false, "running"), "pending");
+    assert.equal(peakEndKind("failed", false, "failed"), "failed");
+    assert.equal(peakEndKind("skipped", false, "failed"), "skipped");
+    assert.match(peakEndLabel("not-reached"), /not reached/i);
+    assert.match(peakEndLabel("not-reached"), /inputs were ready/i);
+    assert.doesNotMatch(peakEndLabel("not-reached"), /in progress/i);
+    assert.match(peakEndSurfaceClassName("not-reached"), /ff-status-not-reached/);
+    assert.doesNotMatch(
+      peakEndSurfaceClassName("not-reached"),
+      /ff-status-running|ff-status-pending|ff-status-blocked|ff-loud/,
+    );
     assert.notEqual(peakEndKind("skipped"), "running");
     assert.notEqual(peakEndKind("skipped"), "failed");
     assert.doesNotMatch(peakEndLabel("skipped"), /failed|running|in progress/i);

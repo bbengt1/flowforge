@@ -366,6 +366,66 @@ describe("graph replay overlay", () => {
     );
   });
 
+  it("shows a pending step as Not reached when the run failed", () => {
+    const graph = projectPinnedVersionGraph({
+      yaml: STARTER_WORKFLOW_YAML,
+      catalog,
+    });
+    assert.ok(graph);
+    const pending = sampleStep({ nodeId: "seed", status: "pending" });
+    const held = overlayExecutionOnGraph(
+      graph,
+      [pending],
+      {
+        runStatus: "failed",
+        jobs: [
+          {
+            executionStepId: pending.id,
+            status: "blocked",
+          },
+        ],
+      },
+    );
+    const node = held.nodes.find((item) => item.id === "seed");
+    assert.equal(node?.state, "not-reached");
+    assert.equal(canvasNodeStateLabel("not-reached"), "Not reached");
+    assert.equal(replayNodeStateLabel("not-reached").includes("Valid"), false);
+    assert.equal(replayNodeStateLabel("not-reached").includes("✓"), false);
+    assert.equal(canvasNodeStateIcon("not-reached"), "–");
+    assert.match(canvasNodeStateDescription("not-reached"), /inputs were ready/);
+    assert.match(canvasNodeStateDescription("not-reached"), /release it/);
+    const stillPending = overlayExecutionOnGraph(graph, [pending], {
+      runStatus: "running",
+      jobs: [{ executionStepId: pending.id, status: "blocked" }],
+    });
+    assert.equal(
+      stillPending.nodes.find((item) => item.id === "seed")?.state,
+      "pending",
+    );
+    const queued = sampleStep({
+      id: "99999999-9999-4999-8999-999999999999",
+      nodeId: "done",
+      status: "queued",
+    });
+    const fromJob = overlayExecutionOnGraph(graph, [queued], {
+      runStatus: "failed",
+      jobs: [{ executionStepId: queued.id, status: "blocked" }],
+    });
+    assert.equal(
+      fromJob.nodes.find((item) => item.id === "done")?.state,
+      "not-reached",
+    );
+    const skipped = overlayExecutionOnGraph(
+      graph,
+      [sampleStep({ nodeId: "seed", status: "skipped" })],
+      { runStatus: "failed" },
+    );
+    assert.equal(
+      skipped.nodes.find((item) => item.id === "seed")?.state,
+      "skipped",
+    );
+  });
+
   it("never projects invalid YAML as a guessed graph", () => {
     assert.equal(summaryFromPublishedYaml(INVALID_WORKFLOW_YAML), null);
     assert.equal(

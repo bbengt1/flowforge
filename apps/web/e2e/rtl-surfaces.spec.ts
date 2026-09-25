@@ -5,6 +5,7 @@ import {
   installOperatorApi,
   installSignedOutApi,
   OPERATOR_EXECUTION_ID,
+  OPERATOR_FAILED_EXECUTION_ID,
   OPERATOR_FOLDER_NAME,
   OPERATOR_WORKFLOW_ID,
 } from "./operator-api";
@@ -236,6 +237,37 @@ test.describe("RTL primary surfaces", () => {
     });
     expect(blockedEdges.inlineStart).toBe("3px");
     expect(blockedEdges.inlineEnd).toBe("1px");
+    await expectHugsInlineStart(page.getByRole("heading", { level: 1 }));
+    await expectRtlShell(page);
+    await expectNoBlockingAxeViolations(page);
+    await expectNoSecretsInBrowserStorage(page);
+  });
+
+  test("failed run keeps Not reached neutral under rtl", async ({ page }) => {
+    await installOperatorApi(page);
+    await page.goto(
+      `/executions/${OPERATOR_FAILED_EXECUTION_ID}?workflowId=${OPERATOR_WORKFLOW_ID}`,
+    );
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Execution" }),
+    ).toBeVisible();
+    const notify = page.locator("[data-canvas-node='notify']");
+    await expect(notify).toContainText("Not reached");
+    await expect(notify).not.toContainText("Valid");
+    await expect(notify).not.toContainText("Pending");
+    const notReached = page.getByRole("status", {
+      name: "The run failed before this step's inputs were ready. Retrying the failed upstream step can still release it.",
+    });
+    await expect(notReached.first()).toBeVisible();
+    const edges = await notReached.first().evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        inlineStart: style.borderInlineStartWidth,
+        inlineEnd: style.borderInlineEndWidth,
+      };
+    });
+    expect(edges.inlineStart).toBe("1px");
+    expect(edges.inlineEnd).toBe("1px");
     await expectHugsInlineStart(page.getByRole("heading", { level: 1 }));
     await expectRtlShell(page);
     await expectNoBlockingAxeViolations(page);

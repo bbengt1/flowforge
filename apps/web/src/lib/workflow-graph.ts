@@ -7,6 +7,9 @@ import {
   BLOCKED_STATUS_HELP,
   BLOCKED_STATUS_ICON,
   BLOCKED_STATUS_LABEL,
+  NOT_REACHED_STATUS_HELP,
+  NOT_REACHED_STATUS_ICON,
+  NOT_REACHED_STATUS_LABEL,
   PENDING_STATUS_HELP,
   PENDING_STATUS_ICON,
   PENDING_STATUS_LABEL,
@@ -59,7 +62,8 @@ export type CanvasNodeState =
   | "indeterminate"
   | "blocked"
   | "pending"
-  | "skipped";
+  | "skipped"
+  | "not-reached";
 
 export type GraphNode = {
   id: string;
@@ -514,6 +518,8 @@ export function canvasNodeStateLabel(state: CanvasNodeState): string {
       return PENDING_STATUS_LABEL;
     case "skipped":
       return SKIPPED_STATUS_LABEL;
+    case "not-reached":
+      return NOT_REACHED_STATUS_LABEL;
     default:
       return state.replace(/^\w/, (letter) => letter.toUpperCase());
   }
@@ -527,6 +533,8 @@ export function canvasNodeStateDescription(state: CanvasNodeState): string {
       return PENDING_STATUS_HELP;
     case "skipped":
       return SKIPPED_STATUS_HELP;
+    case "not-reached":
+      return NOT_REACHED_STATUS_HELP;
     default:
       return "";
   }
@@ -558,6 +566,8 @@ export function canvasNodeStateIcon(state: CanvasNodeState): string {
       return PENDING_STATUS_ICON;
     case "skipped":
       return SKIPPED_STATUS_ICON;
+    case "not-reached":
+      return NOT_REACHED_STATUS_ICON;
     default:
       return "○";
   }

@@ -1221,6 +1221,12 @@ html[dir="rtl"] .ff-explorer-row.ff-explorer-row-selected {
   color: var(--ff-text);
 }
 
+.ff-status-not-reached {
+  border: 1px solid var(--ff-border);
+  background: var(--ff-canvas);
+  color: var(--ff-muted);
+}
+
 .ff-theme-option[aria-pressed="true"] {
   background: var(--ff-accent);
   color: var(--ff-accent-foreground);

@@ -209,6 +209,12 @@ describe("V.7 Status + embed visual gate", () => {
     assert.match(globals, /\.ff-status-blocked/);
     assert.match(globals, /\.ff-status-pending/);
     assert.match(globals, /\.ff-status-skipped/);
+    assert.match(globals, /\.ff-status-not-reached/);
+    assert.match(statusToneClass("not-reached"), /ff-status-not-reached/);
+    assert.doesNotMatch(
+      statusToneClass("not-reached"),
+      /ff-status-running|ff-status-pending|ff-status-blocked|ff-loud/,
+    );
     assert.match(statusToneClass("skipped"), /ff-status-skipped/);
     assert.doesNotMatch(
       statusToneClass("skipped"),

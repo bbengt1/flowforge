@@ -3,16 +3,28 @@ import {
   LOUD_ERROR_CLASS,
   LOUD_INDETERMINATE_CLASS,
 } from "@/lib/aesthetic-usability-density";
-import { executionStatusPresentation } from "@/lib/execution";
+import { executionStatusPresentationInRun } from "@/lib/execution";
 import type { ExecutionStatus } from "@/lib/execution-types";
 import { executionStatusToneClass } from "@/lib/status-embed-visual";
 
 type ExecutionStatusBadgeProps = {
   status: ExecutionStatus | undefined;
+  /** Parent run status. Presentation-only; does not change retry or cancel. */
+  runStatus?: ExecutionStatus;
+  /** Jobs for this step. A blocked job on a failed run displays as Not reached. */
+  siblingJobStatuses?: readonly string[];
 };
 
-export function ExecutionStatusBadge({ status }: ExecutionStatusBadgeProps) {
-  const presentation = executionStatusPresentation(status);
+export function ExecutionStatusBadge({
+  status,
+  runStatus,
+  siblingJobStatuses,
+}: ExecutionStatusBadgeProps) {
+  const presentation = executionStatusPresentationInRun(
+    status,
+    runStatus,
+    siblingJobStatuses,
+  );
   const toneClass =
     presentation.tone === "indeterminate"
       ? LOUD_INDETERMINATE_CLASS

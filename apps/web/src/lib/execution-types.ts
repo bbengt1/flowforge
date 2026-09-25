@@ -75,15 +75,19 @@ export const RETRYABLE_STATUSES = ["failed", "canceled"] as const;
 export const BLOCKED_STATUS_LABEL = "Blocked";
 export const PENDING_STATUS_LABEL = "Pending";
 export const SKIPPED_STATUS_LABEL = "Skipped";
+export const NOT_REACHED_STATUS_LABEL = "Not reached";
 
 export const BLOCKED_STATUS_ICON = "‖";
 export const PENDING_STATUS_ICON = "…";
 export const SKIPPED_STATUS_ICON = "⊘";
+export const NOT_REACHED_STATUS_ICON = "–";
 
 export const BLOCKED_STATUS_HELP = "Waiting for upstream steps to finish.";
 export const PENDING_STATUS_HELP = "Not started yet. Waiting on inputs.";
 export const SKIPPED_STATUS_HELP =
   "Didn't run because an upstream approval was rejected or expired, or its branch wasn't taken. Not a failure.";
+export const NOT_REACHED_STATUS_HELP =
+  "The run failed before this step's inputs were ready. Retrying the failed upstream step can still release it.";
 
 export const REDACTED_MARKER = "[redacted]";
 
@@ -311,6 +315,7 @@ export type ExecutionStatusPresentation = {
     | "blocked"
     | "pending"
     | "skipped"
+    | "not-reached"
     | "other";
 };
 
