@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { WORKFLOW_TEMPLATES, workflowTemplateById } from "./workflow-templates.ts";
+import { rememberCreatedWorkflow, takeCreatedWorkflow } from "./created-workflow.ts";
 import {
   WORKFLOW_SLUG_PREVIEW_FALLBACK,
+  WORKFLOW_SLUG_PREVIEW_HINT,
+  WORKFLOW_SLUG_PREVIEW_LABEL,
   WORKFLOW_SLUG_PREVIEW_MAX_LEN,
+  createdWorkflowSlugDetail,
   previewCreateFormSlug,
   previewWorkflowSlug,
   workflowCreateRequestFields,
@@ -106,6 +110,71 @@ describe("workflowCreateRequestFields", () => {
       }),
       { name: "Redeploy" },
     );
+  });
+});
+
+describe("created workflow slug", () => {
+  it("labels the preview as an estimate and confirms the server slug", () => {
+    assert.equal(WORKFLOW_SLUG_PREVIEW_LABEL, "Suggested slug");
+    assert.match(WORKFLOW_SLUG_PREVIEW_HINT, /may add a number/);
+    const preview = previewWorkflowSlug("My Flow");
+    assert.equal(preview, "my-flow");
+    const detail = createdWorkflowSlugDetail({
+      slug: "my-flow-2",
+      name: "My Flow",
+    });
+    assert.equal(detail, "Created as my-flow-2");
+    assert.equal(detail.includes(preview), false);
+    assert.equal(createdWorkflowSlugDetail({ slug: "  my-flow-2  " }), "Created as my-flow-2");
+    assert.equal(createdWorkflowSlugDetail({ slug: "", name: "My Flow" }), "My Flow");
+    assert.equal(createdWorkflowSlugDetail(null), "Editable draft ready");
+  });
+
+  it("hands the create response to the editor once", () => {
+    const id = "33333333-3333-4333-8333-333333333333";
+    const draft = {
+      workflowId: id,
+      revision: 1,
+      definitionYaml: "apiVersion: flowforge/v1\nkind: Workflow\n",
+      digest: "sha256:handoff",
+      summary: {
+        apiVersion: "flowforge/v1",
+        name: "My Flow",
+        triggers: [],
+        nodes: [],
+        edges: [],
+        outputs: [],
+      },
+      warnings: [],
+      validationState: "valid",
+      updatedAt: "2026-09-25T00:00:00Z",
+    };
+    const workflow = {
+      id,
+      slug: "my-flow-2",
+      name: "My Flow",
+      status: "draft",
+      draftRevision: 1,
+      draftDigest: draft.digest,
+      latestVersionNumber: 0,
+      createdAt: "2026-09-25T00:00:00Z",
+      updatedAt: "2026-09-25T00:00:00Z",
+    };
+    rememberCreatedWorkflow({ workflow, draft });
+    assert.equal(takeCreatedWorkflow("other"), null);
+    const taken = takeCreatedWorkflow(id);
+    assert.equal(taken?.workflow.slug, "my-flow-2");
+    assert.equal(takeCreatedWorkflow(id), null);
+    rememberCreatedWorkflow({
+      workflow: { ...workflow, slug: "   " },
+      draft,
+    });
+    assert.equal(takeCreatedWorkflow(id), null);
+    rememberCreatedWorkflow({
+      workflow,
+      draft: { ...draft, workflowId: "44444444-4444-4444-8444-444444444444" },
+    });
+    assert.equal(takeCreatedWorkflow(id), null);
   });
 });
 

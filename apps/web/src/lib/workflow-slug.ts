@@ -8,14 +8,17 @@
  * trim hyphens, prefix a leading digit with w-, cap at 63 bytes and
  * drop a trailing hyphen after the cap, then fall back to workflow.
  * Reserved words stay in the preview. The server may add -2, -3, …
+ * after trimming the base to the length cap, so the preview is an estimate.
  */
 
 export const WORKFLOW_SLUG_PREVIEW_MAX_LEN = 63;
 
 export const WORKFLOW_SLUG_PREVIEW_FALLBACK = "workflow";
 
+export const WORKFLOW_SLUG_PREVIEW_LABEL = "Suggested slug";
+
 export const WORKFLOW_SLUG_PREVIEW_HINT =
-  "Preview from the name. The server chooses the final slug and may add a suffix.";
+  "Slug will be about this. The server may add a number.";
 
 export const WORKFLOW_SLUG_EXPLICIT_HINT =
   "This slug will be sent as typed. The server will not add a suffix.";
@@ -85,6 +88,22 @@ export function workflowCreateRequestFields(input: {
     }
   }
   return fields;
+}
+
+/**
+ * Confirmation copy after create. Uses only the slug on the create
+ * response. Does not accept a preview, so a suffix the server added
+ * cannot be replaced by the estimate.
+ */
+export function createdWorkflowSlugDetail(
+  workflow: { slug?: string | null; name?: string | null } | null | undefined,
+): string {
+  const slug = workflow?.slug?.trim() ?? "";
+  if (slug) {
+    return `Created as ${slug}`;
+  }
+  const name = workflow?.name?.trim() ?? "";
+  return name || "Editable draft ready";
 }
 
 function trimHyphens(value: string): string {

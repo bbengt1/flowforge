@@ -186,6 +186,7 @@ export function EditorTopBar({
           {context.slug ? (
             <p
               className={`truncate font-mono text-xs ${FF_EDITOR_MUTED_CLASS}`}
+              data-editor-slug={context.slug}
               title={context.slug}
             >
               {context.slug}

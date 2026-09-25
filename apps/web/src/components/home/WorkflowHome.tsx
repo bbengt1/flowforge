@@ -46,9 +46,12 @@ import { workspaceLookupKey, type DevIdentity } from "@/lib/identity-headers";
 import type { ProblemDetails } from "@/lib/problem";
 import { createGenerationGate } from "@/lib/request-generation";
 import { shortDigest } from "@/lib/workflow";
+import { rememberCreatedWorkflow } from "@/lib/created-workflow";
 import {
   WORKFLOW_SLUG_EXPLICIT_HINT,
   WORKFLOW_SLUG_PREVIEW_HINT,
+  WORKFLOW_SLUG_PREVIEW_LABEL,
+  createdWorkflowSlugDetail,
   previewCreateFormSlug,
   workflowCreateRequestFields,
 } from "@/lib/workflow-slug";
@@ -1534,10 +1537,13 @@ function WorkflowHomeSession() {
         return;
       }
       const created = result.workflow;
+      if (created && result.draft) {
+        rememberCreatedWorkflow({ workflow: created, draft: result.draft });
+      }
       pushNotification({
         kind: "info",
         title: "Draft created",
-        detail: created?.name || "Editable draft ready",
+        detail: createdWorkflowSlugDetail(created),
         href: templateCreatedEditorHref(created?.id),
       });
       if (created) {
@@ -1749,10 +1755,13 @@ function WorkflowHomeSession() {
           return;
         }
         const created = result.workflow;
+        if (created && result.draft) {
+          rememberCreatedWorkflow({ workflow: created, draft: result.draft });
+        }
         pushNotification({
           kind: "info",
           title: "Draft imported",
-          detail: created?.name || "Validated YAML created a draft",
+          detail: createdWorkflowSlugDetail(created),
           href: templateCreatedEditorHref(created?.id),
         });
         if (created) {
@@ -2541,7 +2550,7 @@ function WorkflowHomeSession() {
             />
             <FilterInput
               id="home-create-slug"
-              label="Slug"
+              label={showSlugPreview ? WORKFLOW_SLUG_PREVIEW_LABEL : "Slug"}
               value={slugFieldValue}
               hint={showSlugPreview ? WORKFLOW_SLUG_PREVIEW_HINT : WORKFLOW_SLUG_EXPLICIT_HINT}
               preview={showSlugPreview}

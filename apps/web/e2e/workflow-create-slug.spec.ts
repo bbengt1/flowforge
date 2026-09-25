@@ -7,12 +7,15 @@ import {
   WORKFLOW_SLUG_CONFLICT_MESSAGE,
   WORKFLOW_SLUG_RESERVED_SLUG_MESSAGE,
 } from "../src/lib/workflow-delete.ts";
-import { WORKFLOW_SLUG_PREVIEW_HINT } from "../src/lib/workflow-slug.ts";
+import {
+  WORKFLOW_SLUG_PREVIEW_HINT,
+  WORKFLOW_SLUG_PREVIEW_LABEL,
+} from "../src/lib/workflow-slug.ts";
 
 const SHOTS = "/opt/cursor/artifacts/screenshots";
 const CREATED_ID = "33333333-3333-4333-8333-333333333333";
 
-type CreateMode = "created" | "reserved" | "conflict";
+type CreateMode = "created" | "reserved" | "conflict" | "suffixed";
 
 function problem(path: string, code: string, detail: string) {
   return {
@@ -27,11 +30,11 @@ function problem(path: string, code: string, detail: string) {
   };
 }
 
-function createdBody(name: string) {
+function createdBody(name: string, slug = "from-server") {
   return {
     workflow: {
       id: CREATED_ID,
-      slug: "from-server",
+      slug,
       name,
       status: "draft",
       draftRevision: 1,
@@ -39,7 +42,7 @@ function createdBody(name: string) {
     draft: {
       workflowId: CREATED_ID,
       revision: 1,
-      definitionYaml: `apiVersion: flowforge/v1\nkind: Workflow\nmetadata:\n  name: ${name}\n  slug: from-server\n`,
+      definitionYaml: `apiVersion: flowforge/v1\nkind: Workflow\nmetadata:\n  name: ${name}\n  slug: ${slug}\n`,
       digest: "sha256:e2e-draft",
       summary: {
         apiVersion: "flowforge/v1",
@@ -89,10 +92,11 @@ async function installCreateApi(page: Page, mode: CreateMode): Promise<Record<st
       return;
     }
     const name = typeof bodies.at(-1)?.name === "string" ? bodies.at(-1)?.name : "Workflow";
+    const slug = mode === "suffixed" ? "my-flow-2" : "from-server";
     await route.fulfill({
       status: 201,
       contentType: "application/json",
-      body: JSON.stringify(createdBody(String(name))),
+      body: JSON.stringify(createdBody(String(name), slug)),
     });
   });
   return bodies;
@@ -133,6 +137,7 @@ test.describe("workflow create slug preview", () => {
     const slug = page.locator("#home-create-slug");
     await expect(slug).toHaveValue("redeploy-api");
     await expect(slug).toHaveAttribute("data-slug-preview", "true");
+    await expect(page.getByText(WORKFLOW_SLUG_PREVIEW_LABEL)).toBeVisible();
     await expect(page.getByText(WORKFLOW_SLUG_PREVIEW_HINT)).toBeVisible();
     mkdirSync(SHOTS, { recursive: true });
     await page.locator("[data-workflow-create-form]").screenshot({
@@ -184,6 +189,28 @@ test.describe("workflow create slug preview", () => {
     expect(conflictBodies).toHaveLength(1);
     assertNameOnlyBody(conflictBodies[0]!, "Second Name");
     await expectNoBlockingAxeViolations(page);
+  });
+
+  test("a suffixed create response is what the UI shows", async ({ page }) => {
+    const bodies = await installCreateApi(page, "suffixed");
+    await openCreateForm(page);
+    await page.locator("#home-create-name").fill("My Flow");
+    const slug = page.locator("#home-create-slug");
+    await expect(slug).toHaveValue("my-flow");
+    await expect(page.getByText(WORKFLOW_SLUG_PREVIEW_LABEL)).toBeVisible();
+    await expect(page.getByText(WORKFLOW_SLUG_PREVIEW_HINT)).toBeVisible();
+    await expectNoBlockingAxeViolations(page);
+    await expectNoSecretsInBrowserStorage(page);
+
+    await page.locator("[data-o1='create']").click();
+    await expect(page).toHaveURL(new RegExp(`/workflows/${CREATED_ID}$`));
+    expect(bodies).toHaveLength(1);
+    assertNameOnlyBody(bodies[0]!, "My Flow");
+    await expect(page.locator("[data-editor-slug]")).toHaveText("my-flow-2");
+    await expect(page.getByText("Created as my-flow-2")).toBeVisible();
+    await expect(page.locator("[data-editor-slug]")).not.toHaveText("my-flow");
+    await expectNoBlockingAxeViolations(page);
+    await expectNoSecretsInBrowserStorage(page);
   });
 
   test("rtl keeps the slug preview labeled and axe-clean", async ({ page, baseURL }) => {
