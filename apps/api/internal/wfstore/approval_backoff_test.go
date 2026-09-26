@@ -9,31 +9,16 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 )
 
-func TestApprovalBackoffGrowsToCap(t *testing.T) {
-	bands := [][2]time.Duration{
-		{4 * time.Second, 5 * time.Second},
-		{8 * time.Second, 10 * time.Second},
-		{16 * time.Second, 20 * time.Second},
-		{32 * time.Second, 40 * time.Second},
-		{48 * time.Second, 60 * time.Second},
-		{48 * time.Second, 60 * time.Second},
+func TestApprovalRetryWaitIsFlat(t *testing.T) {
+	if d := approvalRetryWait(0); d != 25*time.Second {
+		t.Fatalf("low = %s", d)
 	}
-	prior := 0
-	var prevLo time.Duration
-	for i, band := range bands {
-		lo, n := approvalBackoff(prior, 0)
-		hi, nHi := approvalBackoff(prior, 1)
-		if n != i+1 || nHi != i+1 {
-			t.Fatalf("count = %d/%d want %d", n, nHi, i+1)
-		}
-		if lo < band[0]-time.Millisecond || hi > band[1]+time.Millisecond || lo > hi {
-			t.Fatalf("retry %d delay %s..%s want %s..%s", i+1, lo, hi, band[0], band[1])
-		}
-		if lo+time.Millisecond < prevLo && band[0] < approvalBackoffCap {
-			t.Fatalf("retry %d shrank %s -> %s", i+1, prevLo, lo)
-		}
-		prevLo = lo
-		prior = n
+	if d := approvalRetryWait(1); d != 35*time.Second {
+		t.Fatalf("high = %s", d)
+	}
+	mid := approvalRetryWait(0.5)
+	if mid < 30*time.Second-time.Millisecond || mid > 30*time.Second+time.Millisecond {
+		t.Fatalf("mid = %s", mid)
 	}
 }
 
@@ -71,7 +56,7 @@ func TestMemoryApprovalTransientBackoff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plain.Job.Status != JobQueued || plain.Job.TransientRetries != 0 || plain.Job.Attempt != attempt || plain.Job.AvailableAt.After(now) {
+	if plain.Job.Status != JobQueued || plain.Job.Attempt != attempt || plain.Job.AvailableAt.After(now) {
 		t.Fatalf("plain release = %+v", plain.Job)
 	}
 	claimed, err = store.ClaimJob(ctx, scope, now, ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
@@ -79,8 +64,7 @@ func TestMemoryApprovalTransientBackoff(t *testing.T) {
 		t.Fatal(err)
 	}
 	clock := now
-	var delays []time.Duration
-	for i := 0; i < 6; i++ {
+	for i := 0; i < 2; i++ {
 		released, err := store.ReleaseJob(ctx, scope, clock, JobActionInput{
 			JobID: claimed.Job.ID, WorkerID: "edge-worker", FencingToken: claimed.Job.FencingToken,
 			ApprovalTransientRetry: true,
@@ -88,20 +72,28 @@ func TestMemoryApprovalTransientBackoff(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if released.Job.Status != JobQueued || released.Job.Attempt != attempt || released.Job.TransientRetries != i+1 {
+		if released.Job.Status != JobQueued || released.Job.Attempt != attempt {
 			t.Fatalf("release %d = %+v", i, released.Job)
 		}
-		delays = append(delays, released.Job.AvailableAt.Sub(clock))
-		if _, err := store.ClaimJob(ctx, scope, clock.Add(time.Second), ClaimInput{WorkerID: "edge-worker", Lease: time.Minute}); !errors.Is(err, ErrEmptyClaim) {
-			t.Fatalf("claimed inside backoff %d: %v", i, err)
+		assertFlatDelay(t, released.Job.AvailableAt.Sub(clock))
+		early := clock.Add(25*time.Second - time.Millisecond)
+		if _, err := store.ClaimJob(ctx, scope, early, ClaimInput{WorkerID: "edge-worker", Lease: time.Minute}); !errors.Is(err, ErrEmptyClaim) {
+			t.Fatalf("claimed before 25s on retry %d: %v", i, err)
 		}
-		clock = released.Job.AvailableAt
+		clock = clock.Add(35 * time.Second)
 		claimed, err = store.ClaimJob(ctx, scope, clock, ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
 		if err != nil || claimed.Job.Attempt != attempt {
 			t.Fatalf("reclaim %d = %+v %v", i, claimed.Job, err)
 		}
 	}
-	assertBackoffBands(t, delays)
+	// The gate deadline is PT1H. A sweep before that must not take expired.
+	if _, err := store.RecoverExpiredLeases(ctx, scope, now.Add(50*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	job := gateJob(t, ctx, store, scope, exec.ID)
+	if job.Status != JobQueued || job.Attempt != attempt {
+		t.Fatalf("before deadline = %+v", job)
+	}
 	assertNotExpired(t, ctx, store, scope, exec.ID)
 }
 
@@ -138,52 +130,33 @@ func TestMemoryApprovalRecoveryBackoff(t *testing.T) {
 		t.Fatal(err)
 	}
 	job := gateJob(t, ctx, store, scope, exec.ID)
-	if job.Status != JobQueued || job.Attempt != attempt || job.TransientRetries != 1 {
+	if job.Status != JobQueued || job.Attempt != attempt {
 		t.Fatalf("requeue = %+v", job)
 	}
-	delay := job.AvailableAt.Sub(recoverAt)
-	if delay < 4*time.Second-time.Millisecond || delay > 5*time.Second+time.Millisecond {
-		t.Fatalf("first recovery delay = %s", delay)
+	assertFlatDelay(t, job.AvailableAt.Sub(recoverAt))
+	if _, err := store.ClaimJob(ctx, scope, recoverAt.Add(25*time.Second-time.Millisecond), ClaimInput{WorkerID: "edge-worker", Lease: time.Minute}); !errors.Is(err, ErrEmptyClaim) {
+		t.Fatalf("claimed before 25s: %v", err)
 	}
-	if _, err := store.ClaimJob(ctx, scope, recoverAt.Add(time.Second), ClaimInput{WorkerID: "edge-worker", Lease: time.Minute}); !errors.Is(err, ErrEmptyClaim) {
-		t.Fatalf("claimed inside recovery backoff: %v", err)
-	}
-	claimed, err = store.ClaimJob(ctx, scope, job.AvailableAt, ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
+	claimed, err = store.ClaimJob(ctx, scope, recoverAt.Add(35*time.Second), ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
 	if err != nil || claimed.Job.Attempt != attempt {
 		t.Fatalf("reclaim = %+v %v", claimed.Job, err)
 	}
-	second := job.AvailableAt.Add(2 * time.Minute)
-	if _, err := store.RecoverExpiredLeases(ctx, scope, second); err != nil {
+	beforeDeadline := now.Add(50 * time.Minute)
+	if _, err := store.RecoverExpiredLeases(ctx, scope, beforeDeadline); err != nil {
 		t.Fatal(err)
 	}
 	job = gateJob(t, ctx, store, scope, exec.ID)
-	if job.Status != JobQueued || job.Attempt != attempt || job.TransientRetries != 2 {
-		t.Fatalf("second requeue = %+v", job)
+	if job.Status != JobQueued || job.Attempt != attempt {
+		t.Fatalf("before deadline = %+v", job)
 	}
-	delay = job.AvailableAt.Sub(second)
-	if delay < 8*time.Second-time.Millisecond || delay > 10*time.Second+time.Millisecond {
-		t.Fatalf("second recovery delay = %s", delay)
-	}
+	assertFlatDelay(t, job.AvailableAt.Sub(beforeDeadline))
 	assertNotExpired(t, ctx, store, scope, exec.ID)
 }
 
-func assertBackoffBands(t *testing.T, delays []time.Duration) {
+func assertFlatDelay(t *testing.T, delay time.Duration) {
 	t.Helper()
-	bands := [][2]time.Duration{
-		{4 * time.Second, 5 * time.Second},
-		{8 * time.Second, 10 * time.Second},
-		{16 * time.Second, 20 * time.Second},
-		{32 * time.Second, 40 * time.Second},
-		{48 * time.Second, 60 * time.Second},
-		{48 * time.Second, 60 * time.Second},
-	}
-	if len(delays) != len(bands) {
-		t.Fatalf("delays = %v", delays)
-	}
-	for i, band := range bands {
-		if delays[i] < band[0]-time.Millisecond || delays[i] > band[1]+time.Millisecond {
-			t.Fatalf("delay %d = %s want %s..%s", i+1, delays[i], band[0], band[1])
-		}
+	if delay < 25*time.Second-time.Millisecond || delay > 35*time.Second+time.Millisecond {
+		t.Fatalf("delay = %s want 25s..35s", delay)
 	}
 }
 

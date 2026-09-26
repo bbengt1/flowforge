@@ -23,47 +23,43 @@ func TestPersistentPrivilegeSpacesClaims(t *testing.T) {
 	defer cancel()
 	store, scope, exec := startBackoffRun(t, ctx, "bo")
 	clock := time.Now().UTC()
+	start := clock
 	srv := &core.Server{Workflows: privilegeVersions{Postgres: store}, Clock: func() time.Time { return clock }}
-	var delays []time.Duration
-	deadline := clock.Add(3 * time.Minute)
-	claims := 0
-	for len(delays) < 6 {
-		if clock.After(deadline) {
-			t.Fatalf("claims=%d delays=%v", claims, delays)
-		}
+	for round := 0; round < 2; round++ {
 		got, err := store.ClaimJob(ctx, scope, clock, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
-		if errors.Is(err, wfstore.ErrEmptyClaim) {
-			clock = clock.Add(time.Second)
-			continue
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		claims++
-		if got.Step.NodeID != "gate" || got.Job.Attempt != 1 {
-			t.Fatalf("claim = %s attempt %d", got.Step.NodeID, got.Job.Attempt)
+		if err != nil || got.Step.NodeID != "gate" || got.Job.Attempt != 1 {
+			t.Fatalf("claim %d = %s attempt %d %v", round, got.Step.NodeID, got.Job.Attempt, err)
 		}
 		if _, err := ParkApprovalClaim(srv, ctx, scope, got); !errors.Is(err, approval.ErrBindingTransient) {
 			t.Fatalf("park = %v", err)
 		}
 		job := postgresGateJob(t, ctx, store, scope, exec.ID)
-		if job.Status != wfstore.JobQueued || job.Attempt != 1 || job.TransientRetries != len(delays)+1 {
+		if job.Status != wfstore.JobQueued || job.Attempt != 1 {
 			t.Fatalf("released = %+v", job)
 		}
-		delays = append(delays, job.AvailableAt.Sub(clock))
-		clock = clock.Add(time.Second)
+		assertFlatDelay(t, job.AvailableAt.Sub(clock))
+		early := clock.Add(25*time.Second - time.Millisecond)
+		if _, err := store.ClaimJob(ctx, scope, early, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute}); !errors.Is(err, wfstore.ErrEmptyClaim) {
+			t.Fatalf("claimed before 25s on round %d: %v", round, err)
+		}
+		clock = clock.Add(35 * time.Second)
 	}
-	if claims != 6 {
-		t.Fatalf("claims = %d", claims)
-	}
-	assertDelayBands(t, delays)
-	if _, err := store.RecoverExpiredLeases(ctx, scope, clock.Add(3*time.Hour)); err != nil {
+	if _, err := store.ClaimJob(ctx, scope, clock, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute}); err != nil {
 		t.Fatal(err)
+	}
+	// expiresIn is PT1H. Recovery before that deadline must not take expired.
+	beforeDeadline := start.Add(50 * time.Minute)
+	if _, err := store.RecoverExpiredLeases(ctx, scope, beforeDeadline); err != nil {
+		t.Fatal(err)
+	}
+	job := postgresGateJob(t, ctx, store, scope, exec.ID)
+	if job.Status != wfstore.JobQueued || job.Attempt != 1 {
+		t.Fatalf("before deadline = %+v", job)
 	}
 	assertPostgresNotExpired(t, ctx, store, scope, exec.ID)
 }
 
-func TestLeaseRecoveryBackoffGrows(t *testing.T) {
+func TestLeaseRecoveryBackoff(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	store, scope, exec := startBackoffRun(t, ctx, "rb")
@@ -78,7 +74,7 @@ func TestLeaseRecoveryBackoffGrows(t *testing.T) {
 		t.Fatalf("park = %v", err)
 	}
 	held := postgresGateJob(t, ctx, store, scope, exec.ID)
-	if held.Status != wfstore.JobClaimed || held.TransientRetries != 0 || held.Attempt != attempt {
+	if held.Status != wfstore.JobClaimed || held.Attempt != attempt {
 		t.Fatalf("still claimed = %+v", held)
 	}
 	recoverAt := frozen.Add(2 * time.Minute)
@@ -86,39 +82,26 @@ func TestLeaseRecoveryBackoffGrows(t *testing.T) {
 		t.Fatal(err)
 	}
 	job := postgresGateJob(t, ctx, store, scope, exec.ID)
-	if job.Status != wfstore.JobQueued || job.Attempt != attempt || job.TransientRetries != 1 {
+	if job.Status != wfstore.JobQueued || job.Attempt != attempt {
 		t.Fatalf("requeue = %+v", job)
 	}
-	delay := job.AvailableAt.Sub(recoverAt)
-	if delay < 4*time.Second-time.Millisecond || delay > 5*time.Second+time.Millisecond {
-		t.Fatalf("first recovery delay = %s", delay)
+	assertFlatDelay(t, job.AvailableAt.Sub(recoverAt))
+	if _, err := store.ClaimJob(ctx, scope, recoverAt.Add(25*time.Second-time.Millisecond), wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute}); !errors.Is(err, wfstore.ErrEmptyClaim) {
+		t.Fatalf("claimed before 25s: %v", err)
 	}
-	if _, err := store.ClaimJob(ctx, scope, recoverAt.Add(time.Second), wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute}); !errors.Is(err, wfstore.ErrEmptyClaim) {
-		t.Fatalf("claimed inside recovery backoff: %v", err)
-	}
-	claimed, err = store.ClaimJob(ctx, scope, job.AvailableAt, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
+	claimed, err = store.ClaimJob(ctx, scope, recoverAt.Add(35*time.Second), wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
 	if err != nil || claimed.Job.Attempt != attempt {
 		t.Fatalf("reclaim = %+v %v", claimed.Job, err)
 	}
-	second := job.AvailableAt.Add(2 * time.Minute)
-	srv = &core.Server{Workflows: privilegeNoRelease{Postgres: store}, Clock: func() time.Time { return second }}
-	if _, err := ParkApprovalClaim(srv, ctx, scope, claimed); !errors.Is(err, approval.ErrBindingTransient) {
-		t.Fatalf("second park = %v", err)
-	}
-	if _, err := store.RecoverExpiredLeases(ctx, scope, second); err != nil {
+	beforeDeadline := frozen.Add(50 * time.Minute)
+	if _, err := store.RecoverExpiredLeases(ctx, scope, beforeDeadline); err != nil {
 		t.Fatal(err)
 	}
 	job = postgresGateJob(t, ctx, store, scope, exec.ID)
-	if job.Status != wfstore.JobQueued || job.Attempt != attempt || job.TransientRetries != 2 {
-		t.Fatalf("second requeue = %+v", job)
+	if job.Status != wfstore.JobQueued || job.Attempt != attempt {
+		t.Fatalf("before deadline = %+v", job)
 	}
-	delay = job.AvailableAt.Sub(second)
-	if delay < 8*time.Second-time.Millisecond || delay > 10*time.Second+time.Millisecond {
-		t.Fatalf("second recovery delay = %s", delay)
-	}
-	if _, err := store.RecoverExpiredLeases(ctx, scope, second.Add(3*time.Hour)); err != nil {
-		t.Fatal(err)
-	}
+	assertFlatDelay(t, job.AvailableAt.Sub(beforeDeadline))
 	assertPostgresNotExpired(t, ctx, store, scope, exec.ID)
 }
 
@@ -250,23 +233,10 @@ func postgresGateJob(t *testing.T, ctx context.Context, store *wfstore.Postgres,
 	return wfstore.ExecutionJob{}
 }
 
-func assertDelayBands(t *testing.T, delays []time.Duration) {
+func assertFlatDelay(t *testing.T, delay time.Duration) {
 	t.Helper()
-	bands := [][2]time.Duration{
-		{4 * time.Second, 5 * time.Second},
-		{8 * time.Second, 10 * time.Second},
-		{16 * time.Second, 20 * time.Second},
-		{32 * time.Second, 40 * time.Second},
-		{48 * time.Second, 60 * time.Second},
-		{48 * time.Second, 60 * time.Second},
-	}
-	if len(delays) != len(bands) {
-		t.Fatalf("delays = %v", delays)
-	}
-	for i, band := range bands {
-		if delays[i] < band[0]-time.Millisecond || delays[i] > band[1]+time.Millisecond {
-			t.Fatalf("delay %d = %s want %s..%s", i+1, delays[i], band[0], band[1])
-		}
+	if delay < 25*time.Second-time.Millisecond || delay > 35*time.Second+time.Millisecond {
+		t.Fatalf("delay = %s want 25s..35s", delay)
 	}
 }
 

@@ -16,42 +16,22 @@ import (
 )
 
 const (
-	approvalBackoffBase = 5 * time.Second
-	approvalBackoffCap  = 60 * time.Second
+	approvalRetryBase   = 30 * time.Second
+	approvalRetryJitter = 5 * time.Second
 )
 
-// approvalBackoff is the wait before a transient approval rebuild may be
-// claimed again. prior is the stored count, and 0 is the first failure.
-// The returned count is prior+1. It is not the step attempt. jitter is in
-// [0, 1]. The delay is 80% to 100% of 5s, 10s, 20s, 40s, then 60s, and it
-// never exceeds the cap.
-func approvalBackoff(prior int, jitter float64) (time.Duration, int) {
-	if prior < 0 {
-		prior = 0
-	}
-	next := prior + 1
-	shift := prior
-	if shift > 3 {
-		shift = 3
-	}
-	base := approvalBackoffBase << shift
-	if prior >= 4 {
-		base = approvalBackoffCap
-	}
+// approvalRetryWait is the flat wait before a transient approval rebuild
+// may be claimed again. jitter is in [0, 1] and maps onto 30s ± 5s.
+// The gate deadline is the outer limit. This delay does not change attempt.
+func approvalRetryWait(jitter float64) time.Duration {
 	if jitter < 0 {
 		jitter = 0
 	}
 	if jitter > 1 {
 		jitter = 1
 	}
-	delay := time.Duration(float64(base) * (0.8 + 0.2*jitter))
-	if delay > approvalBackoffCap {
-		delay = approvalBackoffCap
-	}
-	if delay < time.Second {
-		delay = approvalBackoffBase
-	}
-	return delay, next
+	offset := time.Duration(float64(approvalRetryJitter*2) * jitter)
+	return approvalRetryBase - approvalRetryJitter + offset
 }
 
 func approvalJitter() float64 {

@@ -581,7 +581,6 @@ const stepColumns = `
 const jobColumns = `
 	id::text, execution_id::text, execution_step_id::text, status, available_at,
 	lease_expires_at, heartbeat_at, COALESCE(worker_id, ''), fencing_token, attempt,
-	approval_transient_retries,
 	created_at, updated_at, COALESCE(traceparent, ''), COALESCE(tracestate, '')
 `
 
@@ -637,7 +636,6 @@ func scanJob(row rowScanner) (ExecutionJob, error) {
 	if err := row.Scan(
 		&job.ID, &job.ExecutionID, &job.ExecutionStepID, &job.Status, &job.AvailableAt,
 		&job.LeaseExpiresAt, &job.HeartbeatAt, &job.WorkerID, &job.FencingToken, &job.Attempt,
-		&job.TransientRetries,
 		&job.CreatedAt, &job.UpdatedAt, &job.TraceParent, &job.TraceState,
 	); err != nil {
 		return ExecutionJob{}, mapDBErr(err)

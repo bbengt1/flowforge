@@ -1066,9 +1066,9 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 		    updated_at = $1`
 	args := []any{now, nextStatus, worker, leaseExp, hb}
 	if nextStatus == JobQueued && in.ApprovalTransientRetry {
-		delay, retries := approvalBackoff(job.TransientRetries, approvalJitter())
-		q += `, available_at = $6, approval_transient_retries = $7 WHERE id = $8::uuid RETURNING ` + jobColumns
-		args = append(args, now.Add(delay), retries, in.JobID)
+		delay := approvalRetryWait(approvalJitter())
+		q += `, available_at = $6 WHERE id = $7::uuid RETURNING ` + jobColumns
+		args = append(args, now.Add(delay), in.JobID)
 	} else {
 		q += ` WHERE id = $6::uuid RETURNING ` + jobColumns
 		args = append(args, in.JobID)
@@ -1202,14 +1202,17 @@ func recoverExpiredTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now
 	}
 	// A claimed approval whose rebuild failed, and whose release also
 	// failed, has no pending row. Put it back on the queue after the
-	// transient backoff. Do not burn the attempt and do not park it as
+	// flat retry delay. Do not burn the attempt and do not park it as
 	// waiting, or the deadline takes expired. A claim that still has a
 	// pending approval parks below.
+	delay := approvalRetryWait(approvalJitter())
 	requeued, err := tx.Query(ctx, `
-		SELECT j.id::text, j.execution_id::text, j.execution_step_id::text, j.approval_transient_retries
-		FROM execution_jobs j
-		JOIN execution_steps s ON s.workspace_id = j.workspace_id AND s.id = j.execution_step_id
-		WHERE j.execution_id = ANY($2::uuid[])
+		UPDATE execution_jobs j
+		SET status = 'queued', worker_id = NULL, lease_expires_at = NULL, heartbeat_at = NULL,
+		    available_at = $3, updated_at = $1
+		FROM execution_steps s
+		WHERE s.workspace_id = j.workspace_id AND s.id = j.execution_step_id
+		  AND j.execution_id = ANY($2::uuid[])
 		  AND j.status IN ('claimed', 'running')
 		  AND j.lease_expires_at IS NOT NULL
 		  AND j.lease_expires_at <= $1
@@ -1221,41 +1224,14 @@ func recoverExpiredTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now
 			  AND a.node_id = s.node_id
 			  AND a.status = 'pending'
 		  )
-		FOR UPDATE OF j
-	`, now, leaseIDs)
+		RETURNING j.execution_id::text, j.execution_step_id::text
+	`, now, leaseIDs, now.Add(delay))
 	if err != nil {
 		return 0, mapDBErr(err)
 	}
-	type requeueJob struct {
-		id, exec, step string
-		retries        int
-	}
-	var requeueJobs []requeueJob
-	for requeued.Next() {
-		var row requeueJob
-		if err := requeued.Scan(&row.id, &row.exec, &row.step, &row.retries); err != nil {
-			requeued.Close()
-			return 0, mapDBErr(err)
-		}
-		requeueJobs = append(requeueJobs, row)
-	}
-	if err := requeued.Err(); err != nil {
-		requeued.Close()
-		return 0, mapDBErr(err)
-	}
-	requeued.Close()
-	requeuePairs := make([]recoverPair, 0, len(requeueJobs))
-	for _, row := range requeueJobs {
-		delay, retries := approvalBackoff(row.retries, approvalJitter())
-		if _, err := tx.Exec(ctx, `
-			UPDATE execution_jobs
-			SET status = 'queued', worker_id = NULL, lease_expires_at = NULL, heartbeat_at = NULL,
-			    available_at = $2, approval_transient_retries = $3, updated_at = $1
-			WHERE id = $4::uuid
-		`, now, now.Add(delay), retries, row.id); err != nil {
-			return 0, mapDBErr(err)
-		}
-		requeuePairs = append(requeuePairs, recoverPair{exec: row.exec, step: row.step})
+	requeuePairs, err := collectRecoverPairs(requeued)
+	if err != nil {
+		return 0, err
 	}
 	for _, p := range requeuePairs {
 		if _, err := tx.Exec(ctx, `

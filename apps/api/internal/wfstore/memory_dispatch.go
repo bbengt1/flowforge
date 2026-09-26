@@ -195,9 +195,7 @@ func (m *Memory) ReleaseJob(ctx context.Context, scope isolation.Scope, now time
 		job.HeartbeatAt = nil
 		job.UpdatedAt = now
 		if in.ApprovalTransientRetry {
-			delay, retries := approvalBackoff(job.TransientRetries, approvalJitter())
-			job.AvailableAt = now.Add(delay)
-			job.TransientRetries = retries
+			job.AvailableAt = now.Add(approvalRetryWait(approvalJitter()))
 		}
 		step.LeaseID = ""
 		applyStepStatus(step, ExecutionQueued, now)
@@ -741,13 +739,11 @@ func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope
 			if stepIdx >= 0 && exec.steps[stepIdx].NodeType == "flow.approval" {
 				pending := m.approvalPending != nil && m.approvalPending(exec.record.ID, exec.steps[stepIdx].NodeID)
 				if !pending {
-					delay, retries := approvalBackoff(job.TransientRetries, approvalJitter())
 					job.Status = JobQueued
 					job.WorkerID = ""
 					job.LeaseExpiresAt = nil
 					job.HeartbeatAt = nil
-					job.AvailableAt = now.Add(delay)
-					job.TransientRetries = retries
+					job.AvailableAt = now.Add(approvalRetryWait(approvalJitter()))
 					job.UpdatedAt = now
 					exec.jobs[i] = job
 					exec.steps[stepIdx].LeaseID = ""

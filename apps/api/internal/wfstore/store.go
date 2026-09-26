@@ -388,11 +388,8 @@ type ExecutionJob struct {
 	WorkerID        string     `json:"workerId,omitempty"`
 	FencingToken    int64      `json:"fencingToken"`
 	Attempt         int        `json:"attempt"`
-	// TransientRetries counts approval rebuild releases. It is not the
-	// step attempt and it is not part of the browser JSON contract.
-	TransientRetries int       `json:"-"`
-	CreatedAt        time.Time `json:"createdAt"`
-	UpdatedAt        time.Time `json:"updatedAt"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	UpdatedAt       time.Time  `json:"updatedAt"`
 	// TraceParent and TraceState are W3C trace-context captured when the
 	// job was queued. They are not part of the browser JSON contract.
 	TraceParent string `json:"-"`
@@ -598,9 +595,9 @@ type JobActionInput struct {
 	Output       map[string]any
 	Error        map[string]any
 	// ApprovalTransientRetry delays a release that returns the job to
-	// queued. Leave it false for every other release, including worker
-	// releases and other job types. An indeterminate release ignores it.
-	// The delay does not change attempt.
+	// queued by a flat 30s ± 5s. Leave it false for every other release,
+	// including worker releases and other job types. An indeterminate
+	// release ignores it. The delay does not change attempt.
 	ApprovalTransientRetry bool `json:"-"`
 }
 
