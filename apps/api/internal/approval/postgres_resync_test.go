@@ -893,7 +893,7 @@ spec:
 	}
 }
 
-func TestPostgresResyncKeepsPinnedPolicyRole(t *testing.T) {
+func TestPostgresResyncKeepsStepRoleOnPinnedPolicy(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	dsn := testDatabaseURL(t)
@@ -992,7 +992,7 @@ spec:
 		t.Fatal(err)
 	}
 	stats, err := resyncWorkspace(ctx, app, store, ops, scope.WorkspaceID(), now)
-	if err != nil || stats.Closed != 0 || stats.Corrected != 1 {
+	if err != nil || stats.Closed != 0 || stats.Corrected != 0 {
 		t.Fatalf("stats = %+v %v", stats, err)
 	}
 	rows, err := approvals.List(ctx, scope, Filter{ExecutionID: exec.ID})
@@ -1000,7 +1000,7 @@ spec:
 		t.Fatalf("rows = %+v %v", rows, err)
 	}
 	got := rows[0]
-	if got.Status != StatusPending || got.ApproverRole != "admin" || got.PolicyVersionID != ver1.ID || got.PolicyVersionID == ver2.ID {
+	if got.Status != StatusPending || got.ApproverRole != "approver" || got.PolicyVersionID != ver1.ID || got.PolicyVersionID == ver2.ID {
 		t.Fatalf("row = %+v newer %s", got, ver2.ID)
 	}
 }

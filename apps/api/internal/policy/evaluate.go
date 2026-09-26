@@ -248,13 +248,13 @@ func requirementFromNode(node workflow.Node, target, policyPin opsconfig.Pin, no
 	if policyPin.Spec != nil {
 		_, rules = policyRules(policyPin.Spec)
 	}
-	expiresIn := stringField(rules, "expiresIn")
+	expiresIn := stringField(node.With, "expiresIn")
 	if expiresIn == "" {
-		expiresIn = stringField(node.With, "expiresIn")
+		expiresIn = stringField(rules, "expiresIn")
 	}
-	role := stringField(rules, "approverRole")
+	role := stringField(node.With, "approverRole")
 	if role == "" {
-		role = stringField(node.With, "approverRole")
+		role = stringField(rules, "approverRole")
 	}
 	return finishRequirement(node, target, policyPin, role, expiresIn, now, reason)
 }

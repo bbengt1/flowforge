@@ -11,7 +11,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
 
-func TestMemoryResyncKeepsPinnedPolicyRole(t *testing.T) {
+func TestMemoryResyncKeepsStepRoleOnPinnedPolicy(t *testing.T) {
 	ctx := context.Background()
 	approvals := NewMemory()
 	ops := opsconfig.NewMemory()
@@ -82,11 +82,8 @@ spec:
 		t.Fatalf("stats = %+v", stats)
 	}
 	got, err := approvals.Get(ctx, scope, rec.ID)
-	if err != nil || got.Status != StatusPending || got.ApproverRole != "admin" || got.PolicyVersionID != ver1.ID {
-		t.Fatalf("row = %+v %v", got, err)
-	}
-	if got.PolicyVersionID == ver2.ID || got.ApproverRole == "auditor" {
-		t.Fatalf("row followed the newer revision: %+v", got)
+	if err != nil || got.Status != StatusPending || got.ApproverRole != "approver" || got.PolicyVersionID != ver1.ID || got.PolicyVersionID == ver2.ID {
+		t.Fatalf("row = %+v %v newer %s", got, err, ver2.ID)
 	}
 }
 
