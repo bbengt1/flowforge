@@ -6485,7 +6485,7 @@ components:
       properties:
         id: {type: string, format: uuid}
         approvalId: {type: string, format: uuid}
-        eventType: {type: string, enum: [created, approved, rejected, expired, invalidated, canceled]}
+        eventType: {type: string, enum: [created, approved, rejected, expired, invalidated, canceled, corrected]}
         actorId: {type: string, format: uuid}
         details: {type: object, additionalProperties: true}
         occurredAt: {type: string, format: date-time}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/policy"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
@@ -283,7 +284,12 @@ func TestPostgresDeleteClosesParkedRuns(t *testing.T) {
 			rec := onePending(t, ctx, approvals, scope, exec.ID)
 			var decideErr, deleteErr error
 			assertNoDeadlock(t, func() error {
-				_, decideErr = approvals.Decide(ctx, approver, rec.ID, DecideInput{Decision: DecisionApproved, Now: now()})
+				_, decideErr = approvals.Decide(ctx, approver, rec.ID, DecideInput{
+					Decision: DecisionApproved, Now: now(), Roles: []string{"approver"},
+					Resolve: func(context.Context, isolation.Scope, Record) (policy.Requirement, error) {
+						return StoredRequirement(rec), nil
+					},
+				})
 				return decideErr
 			}, func() error {
 				_, deleteErr = store.Delete(ctx, scope, exec.WorkflowID)

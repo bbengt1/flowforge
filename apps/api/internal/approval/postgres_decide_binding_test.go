@@ -77,6 +77,13 @@ func TestPostgresDecideRederivesStaleApproverRole(t *testing.T) {
 	if got.Status != StatusPending || got.ApproverRole != "admin" || got.DecidedBy != "" || got.BindingFingerprint == rec.BindingFingerprint {
 		t.Fatalf("after deny = %+v", got)
 	}
+	events, err := approvals.Events(ctx, scope, rec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if from, to := correctedPair(t, events, "approverRole"); from != "approver" || to != "admin" {
+		t.Fatalf("correction = %s -> %s", from, to)
+	}
 	assertExec(t, ctx, store, scope, exec.ID, wfstore.ExecutionWaiting)
 	assertStepJob(t, ctx, store, scope, exec.ID, "gate", wfstore.ExecutionWaiting, wfstore.JobWaiting)
 

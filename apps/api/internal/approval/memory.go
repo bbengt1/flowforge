@@ -34,6 +34,7 @@ type Memory struct {
 	mu      sync.Mutex
 	rows    map[string]memRow
 	events  map[string][]Event
+	runPins map[string]runPin
 	gate    GateWaiting
 	failRun UnresolvableRun
 }
@@ -49,8 +50,23 @@ func (m *Memory) SetGateWaiting(fn GateWaiting) {
 	m.gate = fn
 }
 
+// SetRunPin records the workflow and policy revision a run was started with.
+// Resync uses it to invalidate a pending row that is no longer that pin.
+func (m *Memory) SetRunPin(executionID string, pin runPin) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.runPins == nil {
+		m.runPins = map[string]runPin{}
+	}
+	m.runPins[executionID] = pin
+}
+
 // SetUnresolvableRun installs the run-fail used when a pending row cannot
-// be rebuilt. A nil func only cancels the approval.
+// be rebuilt. A nil func only cancels the approval. A transient rebuild
+// does not call it.
 func (m *Memory) SetUnresolvableRun(fn UnresolvableRun) {
 	if m == nil {
 		return
@@ -165,7 +181,7 @@ func (m *Memory) Decide(ctx context.Context, scope isolation.Scope, id string, i
 		return Record{}, ErrNotFound
 	}
 	rec := row.record
-	if rec.Status == StatusCanceled {
+	if rec.Status == StatusCanceled || rec.Status == StatusExpired {
 		return Record{}, ErrClosed
 	}
 	if rec.ExecutionID != "" && rec.NodeID != "" && m.gate != nil {
@@ -198,24 +214,30 @@ func (m *Memory) Decide(ctx context.Context, scope isolation.Scope, id string, i
 	if rec.Status != StatusPending {
 		return Record{}, ErrNotPending
 	}
+	note := strings.TrimSpace(in.Note)
+	if len(note) > 2000 {
+		return Record{}, ErrInvalid
+	}
 	next, changed, err := authorizeDerived(ctx, scope, rec, in)
 	if err != nil {
+		if errors.Is(err, ErrBindingTransient) || errors.Is(err, ErrBindingUnresolved) {
+			return Record{}, err
+		}
 		if errors.Is(err, ErrForbidden) && changed {
 			next.UpdatedAt = now
 			m.rows[id] = memRow{workspaceID: scope.WorkspaceID(), record: next}
+			m.appendEventLocked(scope, next.ID, EventCorrected, scope.ActorID(), correctionDetails(rec, next))
 		}
 		return Record{}, err
 	}
 	if changed {
+		m.appendEventLocked(scope, rec.ID, EventCorrected, scope.ActorID(), correctionDetails(rec, next))
 		rec = next
 	}
 	rec.Status = decision
 	rec.DecidedBy = scope.ActorID()
 	rec.DecidedAt = &now
-	rec.DecisionNote = strings.TrimSpace(in.Note)
-	if len(rec.DecisionNote) > 2000 {
-		return Record{}, ErrInvalid
-	}
+	rec.DecisionNote = note
 	rec.UpdatedAt = now
 	m.rows[id] = memRow{workspaceID: scope.WorkspaceID(), record: rec}
 	m.appendEventLocked(scope, rec.ID, decision, scope.ActorID(), map[string]any{"noteLength": len(rec.DecisionNote)})
@@ -416,10 +438,12 @@ func recordFromCreate(scope isolation.Scope, in CreateInput, now time.Time) (Rec
 }
 
 // ResyncPending rebuilds every pending row with ResolveGateRequirement.
-// A difference is stored. A rebuild failure cancels the row with
-// requirement_unresolvable and, when a run hook is set, settles that
-// waiting gate through the normal failed-step roll-up. A hook error
-// leaves the row pending. A second call changes nothing.
+// A difference is stored and recorded. A definitive rebuild failure
+// cancels the row with requirement_unresolvable and, when a run hook is
+// set, settles that waiting gate through the normal failed-step roll-up.
+// A transient failure leaves the row pending and does not call the hook.
+// A row whose bound version is not the run pin is invalidated. A hook
+// error leaves the row pending. A second call changes nothing.
 func (m *Memory) ResyncPending(ctx context.Context, versions VersionSource, ops PinSource, now time.Time) ResyncStats {
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -465,6 +489,11 @@ func (m *Memory) ResyncPending(ctx context.Context, versions VersionSource, ops 
 			continue
 		}
 		if err != nil {
+			if errors.Is(err, ErrBindingTransient) {
+				stats.Skipped++
+				m.mu.Unlock()
+				continue
+			}
 			failRun := m.failRun
 			rec := row.record
 			m.mu.Unlock()
@@ -493,6 +522,15 @@ func (m *Memory) ResyncPending(ctx context.Context, versions VersionSource, ops 
 			m.mu.Unlock()
 			continue
 		}
+		pin := m.runPins[row.record.ExecutionID]
+		if bindingStale(row.record, pin, req) {
+			rec := m.applyStatusLocked(scope, row.record, StatusInvalidated, "bound version is not the run pin", now)
+			m.rows[item.rec.ID] = memRow{workspaceID: item.workspaceID, record: rec}
+			stats.Skipped++
+			m.mu.Unlock()
+			continue
+		}
+		req = overlayRunPolicy(req, pin)
 		next, changed := ProjectRequirement(row.record, item.workspaceID, req)
 		if !changed {
 			stats.Skipped++
@@ -501,6 +539,7 @@ func (m *Memory) ResyncPending(ctx context.Context, versions VersionSource, ops 
 		}
 		next.UpdatedAt = now
 		m.rows[item.rec.ID] = memRow{workspaceID: item.workspaceID, record: next}
+		m.appendEventLocked(scope, next.ID, EventCorrected, "", correctionDetails(row.record, next))
 		stats.Corrected++
 		m.mu.Unlock()
 	}

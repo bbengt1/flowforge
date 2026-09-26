@@ -28,6 +28,10 @@ var (
 	ErrStaleAuth         = errors.New("authorization is no longer valid")
 	ErrForbidden         = errors.New("forbidden")
 	ErrBindingUnresolved = errors.New("approval binding is unresolved")
+	// ErrBindingTransient is a database, network, context, or timeout
+	// failure while rebuilding a requirement. It is not a missing version
+	// or a deterministic evaluation failure. Callers retry and record nothing.
+	ErrBindingTransient = errors.New("approval binding lookup failed temporarily")
 )
 
 // Status values.
@@ -61,6 +65,7 @@ const (
 	EventExpired     = "expired"
 	EventInvalidated = "invalidated"
 	EventCanceled    = "canceled"
+	EventCorrected   = "corrected"
 )
 
 // Record is a workspace-owned approval requirement.
@@ -132,7 +137,9 @@ type CreateInput struct {
 // DecideInput is a fresh-authorization decision.
 // Resolve, when set, re-derives the gate inside Decide. Postgres and memory
 // both authorize against that requirement, not the stored role. The API
-// always sets it. A resolve error denies the decision and writes nothing.
+// always sets it. A nil Resolve denies the decision. A definitive resolve
+// error denies and writes nothing. A transient resolve error writes nothing
+// and is returned for the caller to retry.
 type DecideInput struct {
 	Decision string
 	Note     string

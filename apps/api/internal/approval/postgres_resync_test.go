@@ -2,14 +2,19 @@ package approval
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/policy"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestPostgresResyncCorrectsClosesAndFreesSlot(t *testing.T) {
@@ -65,6 +70,14 @@ func TestPostgresResyncCorrectsClosesAndFreesSlot(t *testing.T) {
 	got, err := approvals.Get(ctx, scope, rec.ID)
 	if err != nil || got.ApproverRole != "admin" || got.Status != StatusPending {
 		t.Fatalf("corrected = %+v %v", got, err)
+	}
+	events, err := approvals.Events(ctx, scope, rec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	from, to := correctedPair(t, events, "approverRole")
+	if from != "approver" || to != "admin" {
+		t.Fatalf("correction = %s -> %s", from, to)
 	}
 	hidden, err := approvals.List(ctx, approver, Filter{
 		Status: StatusPending, ExecutionID: exec.ID, Actionable: true,
@@ -416,6 +429,143 @@ spec:
     - from: gate.expired
       to: late.input
 `
+}
+
+func TestPostgresResyncSkipsTransient(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	app, store, approvals, scope, exec, rec := parkFallback(t, ctx, "tr")
+	defer app.Close()
+	stats, err := resyncWorkspace(ctx, app, staticVersion{err: context.DeadlineExceeded}, nil, scope.WorkspaceID(), time.Now().UTC())
+	if err != nil || stats.Closed != 0 || stats.Corrected != 0 {
+		t.Fatalf("stats = %+v %v", stats, err)
+	}
+	got, err := approvals.Get(ctx, scope, rec.ID)
+	if err != nil || got.Status != StatusPending || got.CloseReason != "" || got.DecidedBy != "" {
+		t.Fatalf("row = %+v %v", got, err)
+	}
+	assertExec(t, ctx, store, scope, exec.ID, wfstore.ExecutionWaiting)
+	events, err := approvals.Events(ctx, scope, rec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range events {
+		if ev.EventType == EventCanceled || ev.EventType == EventCorrected {
+			t.Fatalf("event = %+v", ev)
+		}
+	}
+}
+
+func TestPostgresDecideTransientRecordsNothing(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	app, _, approvals, scope, _, rec := parkFallback(t, ctx, "td")
+	defer app.Close()
+	approver, err := isolation.Authorize(scope.WorkspaceID(), "33333333-3333-4333-8333-333333333333")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := approvals.Decide(ctx, approver, rec.ID, DecideInput{
+		Decision: DecisionApproved, Now: time.Now().UTC(), Roles: []string{"admin"},
+		Resolve: func(context.Context, isolation.Scope, Record) (policy.Requirement, error) {
+			return policy.Requirement{}, fmt.Errorf("%w: dropped connection", ErrBindingTransient)
+		},
+	}); !errors.Is(err, ErrBindingTransient) {
+		t.Fatalf("decide = %v", err)
+	}
+	got, err := approvals.Get(ctx, scope, rec.ID)
+	if err != nil || got.Status != StatusPending || got.DecidedBy != "" || got.ApproverRole != rec.ApproverRole || got.BindingFingerprint != rec.BindingFingerprint {
+		t.Fatalf("row = %+v %v", got, err)
+	}
+	events, err := approvals.Events(ctx, scope, rec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range events {
+		if ev.EventType == EventCorrected || ev.EventType == EventApproved || ev.EventType == EventCanceled {
+			t.Fatalf("event = %+v", ev)
+		}
+	}
+}
+
+func TestPostgresResyncInvalidatesStaleDigest(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	app, store, approvals, scope, exec, rec := parkFallback(t, ctx, "st")
+	defer app.Close()
+	stale := "sha256:" + strings.Repeat("f", 64)
+	tx, err := postgres.BeginScoped(ctx, app, scope.WorkspaceID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE approvals SET workflow_digest = $2 WHERE id = $1::uuid`, rec.ID, stale); err != nil {
+		tx.Rollback(ctx)
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	stats, err := resyncWorkspace(ctx, app, store, nil, scope.WorkspaceID(), time.Now().UTC())
+	if err != nil || stats.Corrected != 0 || stats.Closed != 0 {
+		t.Fatalf("stats = %+v %v", stats, err)
+	}
+	got, err := approvals.Get(ctx, scope, rec.ID)
+	if err != nil || got.Status != StatusInvalidated || got.ApproverRole != "approver" || got.WorkflowDigest != stale {
+		t.Fatalf("row = %+v %v", got, err)
+	}
+	assertExec(t, ctx, store, scope, exec.ID, wfstore.ExecutionWaiting)
+	step, job := stepAndJob(t, ctx, store, scope, exec.ID, "gate")
+	if step.Status != wfstore.ExecutionWaiting || job.Status != wfstore.JobWaiting {
+		t.Fatalf("gate step=%s job=%s", step.Status, job.Status)
+	}
+	if code, _ := step.Error["code"].(string); code == wfstore.ReasonRequirementUnresolvable {
+		t.Fatalf("gate error = %+v", step.Error)
+	}
+}
+
+func parkFallback(t *testing.T, ctx context.Context, tag string) (*pgxpool.Pool, *wfstore.Postgres, *Postgres, isolation.Scope, wfstore.Execution, Record) {
+	t.Helper()
+	dsn := testDatabaseURL(t)
+	admin, err := postgres.OpenAdmin(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(admin.Close)
+	app, err := postgres.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := identity.NewPostgres(admin)
+	suffix := time.Now().UnixNano()
+	tenant, err := ids.CreateTenant(ctx, formatSlug(tag, suffix), "T")
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := ids.UpsertUser(ctx, "https://idp.example", formatSlug(tag+"u", suffix), "Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	approverUser, err := ids.UpsertUser(ctx, "https://idp.example", formatSlug(tag+"a", suffix), "Approver")
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := wfstore.NewPostgres(app)
+	approvals := NewPostgres(app)
+	now := func() time.Time { return time.Now().UTC().Add(time.Second) }
+	scope, _ := desk(t, ctx, ids, tenant.ID, user.ID, approverUser.ID, suffix)
+	exec := publishRun(t, ctx, store, scope, adminGateSrc(suffix), "v1")
+	gate := claimStep(t, ctx, store, scope, now(), "gate")
+	if _, err := store.WaitJob(ctx, scope, now(), wfstore.WaitJobInput{
+		JobID: gate.Job.ID, AvailableAt: now().Add(time.Hour),
+		Approval: &wfstore.ParkedApproval{
+			WorkflowID: exec.WorkflowID, WorkflowVersionID: exec.WorkflowVersionID, WorkflowDigest: exec.WorkflowDigest,
+			ExecutionID: exec.ID, RequestedBy: exec.RequestedBy,
+			NodeID: "gate", NodeName: "Gate", Operation: "flow.approval", ApproverRole: "approver",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return app, store, approvals, scope, exec, onePending(t, ctx, approvals, scope, exec.ID)
 }
 
 func stopOnlySrc(n int64) string {

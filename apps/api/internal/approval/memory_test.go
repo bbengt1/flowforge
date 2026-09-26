@@ -52,7 +52,12 @@ func TestMemoryCreateDecideAndInvalidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	approved, err := store.Decide(ctx, decider, rec.ID, DecideInput{Decision: "approve", Now: now.Add(time.Minute)})
+	approved, err := store.Decide(ctx, decider, rec.ID, DecideInput{
+		Decision: "approve", Now: now.Add(time.Minute), Roles: []string{"approver"},
+		Resolve: func(context.Context, isolation.Scope, Record) (policy.Requirement, error) {
+			return StoredRequirement(rec), nil
+		},
+	})
 	if err != nil || approved.Status != StatusApproved {
 		t.Fatalf("decide: %+v %v", approved, err)
 	}

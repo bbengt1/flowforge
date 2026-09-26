@@ -174,6 +174,15 @@ func (q *StoreQueue) Complete(ctx context.Context, ws Workspace, job Job, output
 	return err
 }
 
+func (q *StoreQueue) Release(ctx context.Context, ws Workspace, job Job) error {
+	scope, err := scopeFor(ws)
+	if err != nil {
+		return err
+	}
+	_, err = q.Workflows.ReleaseJob(ctx, scope, q.now(), action(q, job))
+	return err
+}
+
 func (q *StoreQueue) Fail(ctx context.Context, ws Workspace, job Job, failure map[string]any) error {
 	scope, err := scopeFor(ws)
 	if err != nil {

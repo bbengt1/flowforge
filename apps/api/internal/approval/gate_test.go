@@ -3,6 +3,7 @@ package approval
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -120,6 +121,14 @@ func TestMemoryDecideRederivesStaleApproverRole(t *testing.T) {
 	}
 	if got.Status != StatusPending || got.ApproverRole != "admin" || got.DecidedBy != "" || got.BindingFingerprint == rec.BindingFingerprint {
 		t.Fatalf("after deny = %+v", got)
+	}
+	events, err := store.Events(ctx, owner, rec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	from, to := correctedPair(t, events, "approverRole")
+	if from != "approver" || to != "admin" {
+		t.Fatalf("role correction = %s -> %s", from, to)
 	}
 
 	approved, err := store.Decide(ctx, approver, rec.ID, DecideInput{
@@ -244,6 +253,16 @@ func TestMemoryDecidePersistsPolicyPinOnDeny(t *testing.T) {
 		got.BindingFingerprint == rec.BindingFingerprint {
 		t.Fatalf("after deny = %+v", got)
 	}
+	events, err := store.Events(ctx, owner, rec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if from, to := correctedPair(t, events, "approverRole"); from != "approver" || to != "admin" {
+		t.Fatalf("role correction = %s -> %s", from, to)
+	}
+	if from, to := correctedPair(t, events, "policyVersionId"); from != "" || to != policyVersion {
+		t.Fatalf("policy correction = %s -> %s", from, to)
+	}
 	approved, err := store.Decide(ctx, approver, rec.ID, DecideInput{
 		Decision: DecisionApproved, Now: now, Roles: []string{"admin"}, Resolve: resolve,
 	})
@@ -302,4 +321,251 @@ func TestMemoryResyncCorrectsAndCloses(t *testing.T) {
 	if err != nil || !still.UpdatedAt.Equal(got.UpdatedAt) || still.BindingFingerprint != got.BindingFingerprint {
 		t.Fatalf("second pass changed %+v", still)
 	}
+	events, err := store.Events(ctx, owner, rec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if from, to := correctedPair(t, events, "approverRole"); from != "approver" || to != "admin" {
+		t.Fatalf("resync correction = %s -> %s", from, to)
+	}
+}
+
+func TestResolveGateRequirementClassifiesTransient(t *testing.T) {
+	ctx := context.Background()
+	scope, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 26, 1, 0, 0, 0, time.UTC)
+	ver := wfstore.Version{ID: "55555555-5555-4555-8555-555555555555", DefinitionYAML: adminGateDefinition, Digest: "sha256:" + strings.Repeat("a", 64)}
+	if _, err := ResolveGateRequirement(ctx, scope, staticVersion{err: context.DeadlineExceeded}, nil, "44444444-4444-4444-8444-444444444444", ver.ID, "gate", now); !errors.Is(err, ErrBindingTransient) {
+		t.Fatalf("timeout = %v", err)
+	}
+	if _, err := ResolveGateRequirement(ctx, scope, staticVersion{err: wfstore.ErrNotFound}, nil, ver.WorkflowID, ver.ID, "gate", now); !errors.Is(err, ErrBindingUnresolved) || errors.Is(err, ErrBindingTransient) {
+		t.Fatalf("not found = %v", err)
+	}
+}
+
+func TestMemoryDecideDeniesWhenResolveMissing(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	owner, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	decider, err := isolation.Authorize(owner.WorkspaceID(), "33333333-3333-4333-8333-333333333333")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 26, 1, 0, 0, 0, time.UTC)
+	rec, err := store.Create(ctx, owner, CreateInput{
+		WorkflowID: "44444444-4444-4444-8444-444444444444", WorkflowVersionID: "55555555-5555-4555-8555-555555555555",
+		WorkflowDigest: "sha256:" + strings.Repeat("a", 64),
+		Requirement:    policy.Requirement{NodeID: "gate", Operation: "flow.approval", ApproverRole: "approver", ExpiresAt: now.Add(time.Hour)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Decide(ctx, decider, rec.ID, DecideInput{Decision: DecisionApproved, Now: now, Roles: []string{"admin"}}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("nil resolve = %v", err)
+	}
+	got, err := store.Get(ctx, owner, rec.ID)
+	if err != nil || got.Status != StatusPending || got.DecidedBy != "" || got.ApproverRole != "approver" {
+		t.Fatalf("row = %+v %v", got, err)
+	}
+}
+
+func TestProjectRequirementKeepsNodeAndTarget(t *testing.T) {
+	rec := Record{
+		NodeID: "gate", NodeName: "Keep", Operation: "flow.approval",
+		TargetKind: "cluster_target", TargetID: "66666666-6666-4666-8666-666666666666",
+		TargetVersionID: "77777777-7777-4777-8777-777777777777", TargetDigest: "sha256:" + strings.Repeat("d", 64),
+		WorkflowVersionID: "55555555-5555-4555-8555-555555555555", WorkflowDigest: "sha256:" + strings.Repeat("a", 64),
+		ApproverRole: "approver",
+	}
+	req := policy.Requirement{
+		NodeID: "other", NodeName: "Rewritten", Operation: "kubernetes.apply",
+		TargetKind: "ssh_target", TargetID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+		TargetVersionID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", TargetDigest: "sha256:" + strings.Repeat("e", 64),
+		ApproverRole: "admin", PolicyResourceID: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+		PolicyVersionID: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", PolicyDigest: "sha256:" + strings.Repeat("f", 64), PolicyRevision: 3,
+	}
+	next, changed := ProjectRequirement(rec, "11111111-1111-4111-8111-111111111111", req)
+	if !changed {
+		t.Fatal("expected a role change")
+	}
+	if next.NodeID != rec.NodeID || next.NodeName != rec.NodeName || next.Operation != rec.Operation ||
+		next.TargetKind != rec.TargetKind || next.TargetID != rec.TargetID ||
+		next.TargetVersionID != rec.TargetVersionID || next.TargetDigest != rec.TargetDigest {
+		t.Fatalf("rewrote stored fields: %+v", next)
+	}
+	if next.ApproverRole != "admin" || next.PolicyResourceID != req.PolicyResourceID || next.PolicyVersionID != req.PolicyVersionID || next.PolicyRevision != 3 {
+		t.Fatalf("pin = %+v", next)
+	}
+}
+
+func TestMemoryDecideTransientRecordsNothing(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	owner, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	decider, err := isolation.Authorize(owner.WorkspaceID(), "33333333-3333-4333-8333-333333333333")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 26, 1, 0, 0, 0, time.UTC)
+	rec, err := store.Create(ctx, owner, CreateInput{
+		WorkflowID: "44444444-4444-4444-8444-444444444444", WorkflowVersionID: "55555555-5555-4555-8555-555555555555",
+		WorkflowDigest: "sha256:" + strings.Repeat("a", 64),
+		Requirement:    policy.Requirement{NodeID: "gate", Operation: "flow.approval", ApproverRole: "approver", ExpiresAt: now.Add(time.Hour)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Decide(ctx, decider, rec.ID, DecideInput{
+		Decision: DecisionApproved, Now: now, Roles: []string{"admin"},
+		Resolve: func(context.Context, isolation.Scope, Record) (policy.Requirement, error) {
+			return policy.Requirement{}, fmt.Errorf("%w: deadline", ErrBindingTransient)
+		},
+	}); !errors.Is(err, ErrBindingTransient) {
+		t.Fatalf("decide = %v", err)
+	}
+	got, err := store.Get(ctx, owner, rec.ID)
+	if err != nil || got.Status != StatusPending || got.DecidedBy != "" || got.ApproverRole != "approver" || got.BindingFingerprint != rec.BindingFingerprint {
+		t.Fatalf("row = %+v %v", got, err)
+	}
+	events, err := store.Events(ctx, owner, rec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range events {
+		if ev.EventType == EventCorrected || ev.EventType == EventApproved || ev.EventType == EventCanceled {
+			t.Fatalf("event = %+v", ev)
+		}
+	}
+}
+
+func TestMemoryResyncSkipsTransient(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	owner, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 26, 1, 0, 0, 0, time.UTC)
+	rec, err := store.Create(ctx, owner, CreateInput{
+		WorkflowID: "44444444-4444-4444-8444-444444444444", WorkflowVersionID: "55555555-5555-4555-8555-555555555555",
+		WorkflowDigest: "sha256:" + strings.Repeat("a", 64), ExecutionID: "66666666-6666-4666-8666-666666666666",
+		Requirement: policy.Requirement{NodeID: "gate", Operation: "flow.approval", ApproverRole: "approver", ExpiresAt: now.Add(time.Hour)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.SetUnresolvableRun(func(context.Context, isolation.Scope, string, string, string, time.Time) error {
+		t.Fatal("transient resync settled the run")
+		return nil
+	})
+	stats := store.ResyncPending(ctx, staticVersion{err: context.DeadlineExceeded}, nil, now)
+	if stats.Closed != 0 || stats.Corrected != 0 || stats.Skipped != 1 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	got, err := store.Get(ctx, owner, rec.ID)
+	if err != nil || got.Status != StatusPending || got.CloseReason != "" || got.ApproverRole != "approver" {
+		t.Fatalf("row = %+v %v", got, err)
+	}
+}
+
+func TestMemoryResyncInvalidatesStalePolicy(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	owner, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 26, 1, 0, 0, 0, time.UTC)
+	versionID := "55555555-5555-4555-8555-555555555555"
+	bound := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	pinned := "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+	digest := "sha256:" + strings.Repeat("ab", 32)
+	execID := "66666666-6666-4666-8666-666666666666"
+	rec, err := store.Create(ctx, owner, CreateInput{
+		WorkflowID: "44444444-4444-4444-8444-444444444444", WorkflowVersionID: versionID, WorkflowDigest: digest,
+		ExecutionID: execID,
+		Requirement: policy.Requirement{
+			NodeID: "gate", Operation: "flow.approval", ApproverRole: "approver", ExpiresAt: now.Add(time.Hour),
+			PolicyVersionID: bound, PolicyDigest: "sha256:" + strings.Repeat("c", 64), PolicyRevision: 1,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.SetRunPin(execID, runPin{
+		WorkflowVersionID: versionID, WorkflowDigest: digest, PolicyVersionID: pinned,
+		PolicyDigest: "sha256:" + strings.Repeat("d", 64), PolicyRevision: 2,
+	})
+	ver := wfstore.Version{ID: versionID, DefinitionYAML: adminGateDefinition, Digest: digest}
+	stats := store.ResyncPending(ctx, staticVersion{ver: ver}, nil, now)
+	if stats.Corrected != 0 || stats.Closed != 0 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	got, err := store.Get(ctx, owner, rec.ID)
+	if err != nil || got.Status != StatusInvalidated || got.ApproverRole != "approver" || got.PolicyVersionID != bound {
+		t.Fatalf("row = %+v %v", got, err)
+	}
+}
+
+func TestMemoryExpiredStatusReturnsClosed(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	owner, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	decider, err := isolation.Authorize(owner.WorkspaceID(), "33333333-3333-4333-8333-333333333333")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 26, 1, 0, 0, 0, time.UTC)
+	rec, err := store.Create(ctx, owner, CreateInput{
+		WorkflowID: "44444444-4444-4444-8444-444444444444", WorkflowVersionID: "55555555-5555-4555-8555-555555555555",
+		WorkflowDigest: "sha256:" + strings.Repeat("a", 64),
+		Requirement:    policy.Requirement{NodeID: "gate", Operation: "flow.approval", ApproverRole: "approver", ExpiresAt: now.Add(time.Minute)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	refreshed, err := store.Refresh(ctx, owner, rec.ID, CurrentHeads{}, now.Add(time.Hour))
+	if err != nil || refreshed.Status != StatusExpired {
+		t.Fatalf("refresh = %+v %v", refreshed, err)
+	}
+	if _, err := store.Decide(ctx, decider, rec.ID, DecideInput{
+		Decision: DecisionApproved, Now: now.Add(time.Hour), Roles: []string{"admin"},
+		Resolve: func(context.Context, isolation.Scope, Record) (policy.Requirement, error) {
+			return StoredRequirement(rec), nil
+		},
+	}); !errors.Is(err, ErrClosed) {
+		t.Fatalf("decide = %v", err)
+	}
+	got, err := store.Get(ctx, owner, rec.ID)
+	if err != nil || got.Status != StatusExpired || got.DecidedBy != "" {
+		t.Fatalf("row = %+v %v", got, err)
+	}
+}
+
+func correctedPair(t *testing.T, events []Event, key string) (string, string) {
+	t.Helper()
+	for _, ev := range events {
+		if ev.EventType != EventCorrected {
+			continue
+		}
+		raw, ok := ev.Details[key].(map[string]any)
+		if !ok {
+			t.Fatalf("corrected %s = %+v", key, ev.Details)
+		}
+		return fmt.Sprint(raw["from"]), fmt.Sprint(raw["to"])
+	}
+	t.Fatal("missing corrected event")
+	return "", ""
 }

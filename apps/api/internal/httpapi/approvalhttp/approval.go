@@ -264,7 +264,7 @@ func decideApproval(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	}
 	derived, err := approval.ResolveGateRequirement(r.Context(), scope, s.Workflows, s.Ops, rec.WorkflowID, rec.WorkflowVersionID, rec.NodeID, s.Clock().UTC())
 	if err != nil {
-		core.WriteForbidden(w, r)
+		WriteApprovalError(w, r, err)
 		return
 	}
 	projected, _ := approval.ProjectRequirement(rec, scope.WorkspaceID(), derived)
@@ -466,6 +466,16 @@ func ParkApprovalClaim(s *core.Server, ctx context.Context, scope isolation.Scop
 	}
 	req, err := approval.ResolveGateRequirement(ctx, scope, s.Workflows, s.Ops, result.Execution.WorkflowID, result.Execution.WorkflowVersionID, result.Step.NodeID, s.Clock().UTC())
 	if err != nil {
+		if errors.Is(err, approval.ErrBindingTransient) {
+			_, _ = s.Workflows.ReleaseJob(ctx, scope, s.Clock().UTC(), claimAction(result))
+			return result, err
+		}
+		if errors.Is(err, approval.ErrBindingUnresolved) {
+			if _, failErr := s.Workflows.FailJob(ctx, scope, s.Clock().UTC(), unresolvableClaim(result)); failErr != nil {
+				return result, failErr
+			}
+			return result, err
+		}
 		return result, err
 	}
 	expires := req.ExpiresAt
@@ -496,6 +506,23 @@ func ParkApprovalClaim(s *core.Server, ctx context.Context, scope isolation.Scop
 	}
 	waited.Recovered = result.Recovered
 	return waited, nil
+}
+
+func claimAction(result wfstore.DispatchResult) wfstore.JobActionInput {
+	return wfstore.JobActionInput{
+		JobID:        result.Job.ID,
+		WorkerID:     result.Job.WorkerID,
+		FencingToken: result.Job.FencingToken,
+	}
+}
+
+func unresolvableClaim(result wfstore.DispatchResult) wfstore.JobActionInput {
+	in := claimAction(result)
+	in.Error = map[string]any{
+		"code":    wfstore.ReasonRequirementUnresolvable,
+		"message": "The approval requirement could not be rebuilt.",
+	}
+	return in
 }
 
 func SyncWaitingApprovals(s *core.Server, ctx context.Context, scope isolation.Scope) {
@@ -640,6 +667,8 @@ func DenyDetail(eval policy.Result) string {
 
 func WriteApprovalEvalError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, approval.ErrBindingTransient):
+		core.WriteProblem(w, r, http.StatusServiceUnavailable, core.CodeDependencyUnavailable, "Dependency Unavailable", "The approval requirement could not be rebuilt. Retry.")
 	case errors.Is(err, approval.ErrBindingUnresolved):
 		core.WriteForbidden(w, r)
 	case errors.Is(err, wfstore.ErrNotFound), errors.Is(err, opsconfig.ErrNotFound), errors.Is(err, opsconfig.ErrCrossWorkspace):
@@ -665,6 +694,8 @@ func WriteApprovalError(w http.ResponseWriter, r *http.Request, err error) {
 		core.WriteProblem(w, r, http.StatusNotFound, core.CodeNotFound, "Not Found", "The requested resource was not found.")
 	case errors.Is(err, approval.ErrSelfApproval):
 		core.WriteProblem(w, r, http.StatusForbidden, core.CodeForbidden, "Forbidden", "The requester cannot approve or reject their own request.")
+	case errors.Is(err, approval.ErrBindingTransient):
+		core.WriteProblem(w, r, http.StatusServiceUnavailable, core.CodeDependencyUnavailable, "Dependency Unavailable", "The approval requirement could not be rebuilt. Retry.")
 	case errors.Is(err, approval.ErrForbidden), errors.Is(err, approval.ErrBindingUnresolved):
 		core.WriteForbidden(w, r)
 	case errors.Is(err, approval.ErrExpired):

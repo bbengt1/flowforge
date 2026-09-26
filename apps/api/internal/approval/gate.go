@@ -71,21 +71,29 @@ func ResolvePins(ctx context.Context, scope isolation.Scope, ops PinSource, yaml
 // ResolveGateRequirement re-derives the requirement for one node from the
 // pinned workflow version. A gate matches its wait requirement. A pre-run
 // approval matches the non-wait requirement for that same node. The
-// requirement is the approver role and the policy pin for that node. A
-// missing loader, a version lookup error, an evaluate error, or no matching
-// requirement returns ErrBindingUnresolved. The caller denies the decision
-// and does not record one.
+// requirement is the approver role and the policy pin for that node.
+// ErrBindingUnresolved is only a definitive miss: the loader is absent,
+// the pinned version is not found, pin resolution failed deterministically,
+// policy evaluation failed, or no requirement matches. A database, network,
+// context, or timeout failure returns ErrBindingTransient. The caller
+// retries that and does not cancel or correct the row.
 func ResolveGateRequirement(ctx context.Context, scope isolation.Scope, versions VersionSource, ops PinSource, workflowID, versionID, nodeID string, now time.Time) (policy.Requirement, error) {
 	if versions == nil {
 		return policy.Requirement{}, fmt.Errorf("%w: workflow version is not available", ErrBindingUnresolved)
 	}
 	ver, err := versions.GetVersion(ctx, scope, workflowID, versionID)
 	if err != nil {
-		return policy.Requirement{}, fmt.Errorf("%w: version lookup failed", ErrBindingUnresolved)
+		if errors.Is(err, wfstore.ErrNotFound) {
+			return policy.Requirement{}, fmt.Errorf("%w: version lookup failed", ErrBindingUnresolved)
+		}
+		return policy.Requirement{}, fmt.Errorf("%w: version lookup failed", ErrBindingTransient)
 	}
 	pins, err := ResolvePins(ctx, scope, ops, ver.DefinitionYAML)
 	if err != nil {
-		return policy.Requirement{}, fmt.Errorf("%w: pin resolve failed", ErrBindingUnresolved)
+		if pinFailureDefinitive(err) {
+			return policy.Requirement{}, fmt.Errorf("%w: pin resolve failed", ErrBindingUnresolved)
+		}
+		return policy.Requirement{}, fmt.Errorf("%w: pin resolve failed", ErrBindingTransient)
 	}
 	eval, err := policy.Evaluate(policy.Input{
 		YAML:              ver.DefinitionYAML,
@@ -118,8 +126,9 @@ func ResolveGateRequirement(ctx context.Context, scope isolation.Scope, versions
 	return policy.Requirement{}, fmt.Errorf("%w: approval requirement is missing", ErrBindingUnresolved)
 }
 
-// ProjectRequirement copies the re-derived role and binding onto rec and
-// recomputes the fingerprint. changed is false when the stored row already
+// ProjectRequirement copies the re-derived approver role and policy pin
+// onto rec and recomputes the fingerprint. Node, operation, and target
+// fields stay as stored. changed is false when the stored row already
 // matches. ExpiresAt is left alone: it is the wait deadline, not a new evaluation.
 func ProjectRequirement(rec Record, workspaceID string, req policy.Requirement) (Record, bool) {
 	next := rec
@@ -127,29 +136,13 @@ func ProjectRequirement(rec Record, workspaceID string, req policy.Requirement) 
 	if role == "" {
 		role = "approver"
 	}
-	op := strings.TrimSpace(req.Operation)
-	if op == "" {
-		op = rec.Operation
-	}
 	next.ApproverRole = role
-	next.NodeName = req.NodeName
-	next.Operation = op
-	next.TargetKind = req.TargetKind
-	next.TargetID = req.TargetID
-	next.TargetVersionID = req.TargetVersionID
-	next.TargetDigest = req.TargetDigest
 	next.PolicyResourceID = req.PolicyResourceID
 	next.PolicyVersionID = req.PolicyVersionID
 	next.PolicyDigest = req.PolicyDigest
 	next.PolicyRevision = req.PolicyRevision
-	next.BindingFingerprint = BindingFingerprint(workspaceID, rec.WorkflowVersionID, rec.WorkflowDigest, req.TargetVersionID, req.PolicyVersionID, req.PolicyDigest, op, rec.NodeID, role, rec.ExecutionID)
+	next.BindingFingerprint = BindingFingerprint(workspaceID, rec.WorkflowVersionID, rec.WorkflowDigest, rec.TargetVersionID, req.PolicyVersionID, req.PolicyDigest, rec.Operation, rec.NodeID, role, rec.ExecutionID)
 	changed := next.ApproverRole != rec.ApproverRole ||
-		next.NodeName != rec.NodeName ||
-		next.Operation != rec.Operation ||
-		next.TargetKind != rec.TargetKind ||
-		next.TargetID != rec.TargetID ||
-		next.TargetVersionID != rec.TargetVersionID ||
-		next.TargetDigest != rec.TargetDigest ||
 		next.PolicyResourceID != rec.PolicyResourceID ||
 		next.PolicyVersionID != rec.PolicyVersionID ||
 		next.PolicyDigest != rec.PolicyDigest ||
@@ -158,20 +151,111 @@ func ProjectRequirement(rec Record, workspaceID string, req policy.Requirement) 
 	return next, changed
 }
 
-// authorizeDerived re-derives the full requirement. A resolve error returns
-// ErrBindingUnresolved and the caller records nothing. When the caller may
+// StoredRequirement echoes the stored approver role and policy pin so a
+// decision that is not a correction leaves those fields unchanged.
+func StoredRequirement(rec Record) policy.Requirement {
+	return policy.Requirement{
+		NodeID:           rec.NodeID,
+		NodeName:         rec.NodeName,
+		Operation:        rec.Operation,
+		ApproverRole:     rec.ApproverRole,
+		TargetKind:       rec.TargetKind,
+		TargetID:         rec.TargetID,
+		TargetVersionID:  rec.TargetVersionID,
+		TargetDigest:     rec.TargetDigest,
+		PolicyResourceID: rec.PolicyResourceID,
+		PolicyVersionID:  rec.PolicyVersionID,
+		PolicyDigest:     rec.PolicyDigest,
+		PolicyRevision:   rec.PolicyRevision,
+		ExpiresAt:        rec.ExpiresAt,
+	}
+}
+
+// runPin is the workflow version and policy revision the run was started with.
+type runPin struct {
+	WorkflowVersionID string
+	WorkflowDigest    string
+	PolicyResourceID  string
+	PolicyVersionID   string
+	PolicyDigest      string
+	PolicyRevision    int
+}
+
+// bindingStale reports that rec is not bound to the run's pinned version.
+// A stored policy version that evaluation would replace, when the run has
+// no pin to confirm it, is stale too. An empty stored policy is a fallback
+// row and is not stale.
+func bindingStale(rec Record, pin runPin, resolved policy.Requirement) bool {
+	if pin.WorkflowVersionID != "" && rec.WorkflowVersionID != "" && rec.WorkflowVersionID != pin.WorkflowVersionID {
+		return true
+	}
+	if pin.WorkflowDigest != "" && rec.WorkflowDigest != "" && rec.WorkflowDigest != pin.WorkflowDigest {
+		return true
+	}
+	if pin.PolicyVersionID != "" {
+		return rec.PolicyVersionID != "" && rec.PolicyVersionID != pin.PolicyVersionID
+	}
+	if rec.PolicyVersionID != "" && resolved.PolicyVersionID != rec.PolicyVersionID {
+		return true
+	}
+	return false
+}
+
+// overlayRunPolicy keeps the run's pinned policy on the rebuilt requirement
+// so a newer published revision is not written onto the pending row.
+func overlayRunPolicy(req policy.Requirement, pin runPin) policy.Requirement {
+	if pin.PolicyVersionID == "" {
+		return req
+	}
+	req.PolicyResourceID = pin.PolicyResourceID
+	req.PolicyVersionID = pin.PolicyVersionID
+	req.PolicyDigest = pin.PolicyDigest
+	req.PolicyRevision = pin.PolicyRevision
+	return req
+}
+
+func correctionDetails(before, after Record) map[string]any {
+	return map[string]any{
+		"approverRole":     map[string]any{"from": before.ApproverRole, "to": after.ApproverRole},
+		"policyResourceId": map[string]any{"from": before.PolicyResourceID, "to": after.PolicyResourceID},
+		"policyVersionId":  map[string]any{"from": before.PolicyVersionID, "to": after.PolicyVersionID},
+		"policyDigest":     map[string]any{"from": before.PolicyDigest, "to": after.PolicyDigest},
+		"policyRevision":   map[string]any{"from": before.PolicyRevision, "to": after.PolicyRevision},
+	}
+}
+
+func pinFailureDefinitive(err error) bool {
+	return errors.Is(err, opsconfig.ErrNotFound) ||
+		errors.Is(err, opsconfig.ErrNotPublished) ||
+		errors.Is(err, opsconfig.ErrDraftNotUsable) ||
+		errors.Is(err, opsconfig.ErrDisabled) ||
+		errors.Is(err, opsconfig.ErrCrossWorkspace) ||
+		errors.Is(err, opsconfig.ErrInvalid) ||
+		errors.Is(err, opsconfig.ErrNoScope) ||
+		errors.Is(err, opsconfig.ErrImmutable) ||
+		errors.Is(err, opsconfig.ErrConflict) ||
+		errors.Is(err, opsconfig.ErrRevisionConflict)
+}
+
+// authorizeDerived re-derives the approver role and policy pin. A nil
+// Resolve denies. ErrBindingUnresolved and ErrBindingTransient are returned
+// as-is and the caller records nothing. Any other resolve error is transient
+// unless it is a definitive pin or not-found failure. When the caller may
 // not decide the rebuilt requirement, next is still returned with
 // ErrForbidden so the caller can commit that correction before the denial.
 func authorizeDerived(ctx context.Context, scope isolation.Scope, rec Record, in DecideInput) (Record, bool, error) {
 	if in.Resolve == nil {
-		return rec, false, nil
+		return Record{}, false, ErrForbidden
 	}
 	req, err := in.Resolve(ctx, scope, rec)
 	if err != nil {
-		if errors.Is(err, ErrBindingUnresolved) {
+		if errors.Is(err, ErrBindingUnresolved) || errors.Is(err, ErrBindingTransient) {
 			return Record{}, false, err
 		}
-		return Record{}, false, fmt.Errorf("%w: %v", ErrBindingUnresolved, err)
+		if errors.Is(err, wfstore.ErrNotFound) || pinFailureDefinitive(err) {
+			return Record{}, false, fmt.Errorf("%w: %v", ErrBindingUnresolved, err)
+		}
+		return Record{}, false, fmt.Errorf("%w: %v", ErrBindingTransient, err)
 	}
 	next, changed := ProjectRequirement(rec, scope.WorkspaceID(), req)
 	if !MayAct(in.Roles, next) {

@@ -60,6 +60,9 @@ func (r *Runner) approvalSeed(ctx context.Context, ws Workspace, job Job, until 
 	}
 	req, err := approval.ResolveGateRequirement(ctx, scope, q.Workflows, ops, job.Execution.WorkflowID, job.Execution.WorkflowVersionID, job.Step.NodeID, r.now())
 	if err != nil {
+		if errors.Is(err, approval.ErrBindingTransient) {
+			return approval.CreateInput{}, err
+		}
 		return approval.CreateInput{}, bindingUnresolved(err)
 	}
 	req.ExpiresAt = until

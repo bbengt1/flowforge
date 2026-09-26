@@ -290,9 +290,16 @@ func (p *Postgres) Decide(ctx context.Context, scope isolation.Scope, id string,
 	}
 	next, changed, err := authorizeDerived(ctx, scope, rec, in)
 	if err != nil {
+		if errors.Is(err, ErrBindingTransient) || errors.Is(err, ErrBindingUnresolved) {
+			return Record{}, err
+		}
 		if errors.Is(err, ErrForbidden) && changed {
-			if _, uerr := updateBinding(ctx, tx, next, now); uerr != nil {
+			updated, uerr := updateBinding(ctx, tx, next, now)
+			if uerr != nil {
 				return Record{}, uerr
+			}
+			if ierr := insertEvent(ctx, tx, scope, updated.ID, EventCorrected, scope.ActorID(), correctionDetails(rec, updated)); ierr != nil {
+				return Record{}, ierr
 			}
 			if cerr := tx.Commit(ctx); cerr != nil {
 				return Record{}, mapDBErr(cerr)
@@ -301,7 +308,11 @@ func (p *Postgres) Decide(ctx context.Context, scope isolation.Scope, id string,
 		return Record{}, err
 	}
 	if changed {
+		before := rec
 		if rec, err = updateBinding(ctx, tx, next, now); err != nil {
+			return Record{}, err
+		}
+		if err := insertEvent(ctx, tx, scope, rec.ID, EventCorrected, scope.ActorID(), correctionDetails(before, rec)); err != nil {
 			return Record{}, err
 		}
 	}
@@ -527,23 +538,16 @@ func updateBinding(ctx context.Context, tx pgx.Tx, rec Record, now time.Time) (R
 	var out Record
 	err := scanRecord(tx.QueryRow(ctx, `
 		UPDATE approvals SET
-			node_name = $2,
-			operation = $3,
-			target_kind = $4,
-			target_id = $5::uuid,
-			target_version_id = $6::uuid,
-			target_digest = $7,
-			policy_resource_id = $8::uuid,
-			policy_version_id = $9::uuid,
-			policy_digest = $10,
-			policy_revision = $11,
-			binding_fingerprint = $12,
-			approver_role = $13,
-			updated_at = $14
+			policy_resource_id = $2::uuid,
+			policy_version_id = $3::uuid,
+			policy_digest = $4,
+			policy_revision = $5,
+			binding_fingerprint = $6,
+			approver_role = $7,
+			updated_at = $8
 		WHERE id = $1::uuid
 		RETURNING `+recordColumns,
-		rec.ID, rec.NodeName, rec.Operation, rec.TargetKind,
-		nullUUID(rec.TargetID), nullUUID(rec.TargetVersionID), rec.TargetDigest,
+		rec.ID,
 		nullUUID(rec.PolicyResourceID), nullUUID(rec.PolicyVersionID), rec.PolicyDigest, rec.PolicyRevision,
 		rec.BindingFingerprint, rec.ApproverRole, now,
 	), &out)

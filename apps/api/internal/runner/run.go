@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/approval"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
@@ -188,6 +189,14 @@ func (r *Runner) claimOne(ctx context.Context, ws Workspace) (bool, error) {
 			return true, nil
 		}
 		if err := r.parkApproval(ctx, ws, *job, until); err != nil {
+			if errors.Is(err, approval.ErrBindingTransient) {
+				if q, ok := r.queue.(*StoreQueue); ok {
+					if relErr := q.Release(ctx, ws, *job); relErr != nil && r.log != nil {
+						r.log.Warn("production runner left a transient approval claim", "job_id", job.Job.ID, "reason", "release failed")
+					}
+				}
+				return true, err
+			}
 			var unresolved approvalBindingError
 			if errors.As(err, &unresolved) {
 				failure := map[string]any{
