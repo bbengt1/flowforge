@@ -31,7 +31,12 @@ func TestMigrateAsRestrictedRole(t *testing.T) {
 	// Restore before the pool closes. t.Cleanup runs after this function's
 	// defers, so it cannot use admin.
 	defer func() {
-		_, _ = admin.Exec(context.Background(), `ALTER ROLE flowforge_app NOBYPASSRLS`)
+		ctx := context.Background()
+		_, _ = admin.Exec(ctx, `ALTER ROLE flowforge_app NOBYPASSRLS`)
+		// Membership in flowforge_app blocks DROP ROLE in the restore test.
+		_, _ = admin.Exec(ctx, `REVOKE flowforge_app FROM ff_migrate_check`)
+		_, _ = admin.Exec(ctx, `DROP OWNED BY ff_migrate_check`)
+		_, _ = admin.Exec(ctx, `DROP ROLE IF EXISTS ff_migrate_check`)
 	}()
 
 	var super bool

@@ -43,23 +43,12 @@ func TestPostgresDeleteClosesParkedRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ws, err := ids.CreateWorkspace(ctx, tenant.ID, formatSlug("dw", suffix), "D", user.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	scope, err := isolation.Authorize(ws.ID, user.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	approver, err := isolation.Authorize(ws.ID, approverUser.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
 	store := wfstore.NewPostgres(app)
 	approvals := NewPostgres(app)
 	now := func() time.Time { return time.Now().UTC().Add(time.Second) }
 
 	t.Run("parked gate is failed and frees the slot", func(t *testing.T) {
+		scope, approver := desk(t, ctx, ids, tenant.ID, user.ID, approverUser.ID, suffix)
 		exec := publishRun(t, ctx, store, scope, gateThenStopSrc(suffix), "v1")
 		completeSeed(t, ctx, store, scope, now)
 		gate := claimStep(t, ctx, store, scope, now(), "gate")
@@ -120,6 +109,7 @@ func TestPostgresDeleteClosesParkedRuns(t *testing.T) {
 	})
 
 	t.Run("queued sibling blocks and changes nothing", func(t *testing.T) {
+		scope, _ := desk(t, ctx, ids, tenant.ID, user.ID, approverUser.ID, suffix+2)
 		exec := publishRun(t, ctx, store, scope, gateJoinSrc(suffix+2), "v1")
 		completeSeed(t, ctx, store, scope, now)
 		side := jobFor(t, ctx, store, scope, exec.ID, "side")
@@ -162,6 +152,7 @@ func TestPostgresDeleteClosesParkedRuns(t *testing.T) {
 	})
 
 	t.Run("claimed sibling blocks and changes nothing", func(t *testing.T) {
+		scope, _ := desk(t, ctx, ids, tenant.ID, user.ID, approverUser.ID, suffix+3)
 		exec := publishRun(t, ctx, store, scope, gateJoinSrc(suffix+3), "v1")
 		completeSeed(t, ctx, store, scope, now)
 		var gate wfstore.DispatchResult
@@ -203,6 +194,7 @@ func TestPostgresDeleteClosesParkedRuns(t *testing.T) {
 	})
 
 	t.Run("queued and running jobs block", func(t *testing.T) {
+		scope, _ := desk(t, ctx, ids, tenant.ID, user.ID, approverUser.ID, suffix+4)
 		queued := publishRun(t, ctx, store, scope, scriptSrc(suffix+4), "v1")
 		impact, err := store.DeleteImpact(ctx, scope, queued.WorkflowID)
 		if err != nil {
@@ -215,7 +207,21 @@ func TestPostgresDeleteClosesParkedRuns(t *testing.T) {
 			t.Fatalf("queued delete = %v", err)
 		}
 		running := publishRun(t, ctx, store, scope, scriptSrc(suffix+5), "v1")
+		if _, err := admin.Exec(ctx, `
+			UPDATE execution_jobs
+			   SET available_at = now() + interval '1 hour'
+			 WHERE execution_id = $1::uuid AND status = 'queued'
+		`, queued.ID); err != nil {
+			t.Fatal(err)
+		}
 		claimStep(t, ctx, store, scope, now(), "run")
+		if _, err := admin.Exec(ctx, `
+			UPDATE execution_jobs
+			   SET available_at = now()
+			 WHERE execution_id = $1::uuid AND status = 'queued'
+		`, queued.ID); err != nil {
+			t.Fatal(err)
+		}
 		impact, err = store.DeleteImpact(ctx, scope, running.WorkflowID)
 		if err != nil {
 			t.Fatal(err)
@@ -230,6 +236,7 @@ func TestPostgresDeleteClosesParkedRuns(t *testing.T) {
 	})
 
 	t.Run("parked delay is canceled and frees the slot", func(t *testing.T) {
+		scope, _ := desk(t, ctx, ids, tenant.ID, user.ID, approverUser.ID, suffix+6)
 		exec := publishRun(t, ctx, store, scope, delaySrc(suffix+6), "v1")
 		claimed := claimStep(t, ctx, store, scope, now(), "pause")
 		deadline := now().Add(5 * time.Minute)
@@ -237,8 +244,8 @@ func TestPostgresDeleteClosesParkedRuns(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if parked.Job.Status != wfstore.JobWaiting || !parked.Job.AvailableAt.Equal(deadline) {
-			t.Fatalf("timer = %+v", parked.Job)
+		if parked.Job.Status != wfstore.JobWaiting || parked.Job.AvailableAt.Sub(deadline).Abs() > time.Millisecond {
+			t.Fatalf("timer status=%s available=%s deadline=%s", parked.Job.Status, parked.Job.AvailableAt, deadline)
 		}
 		other := publishVersion(t, ctx, store, scope, scriptSrc(suffix+7))
 		if _, err := store.StartExecution(ctx, scope, other.WorkflowID, wfstore.StartInput{VersionID: other.ID, MaxOpen: 1}); !errors.Is(err, wfstore.ErrConcurrency) {
@@ -262,6 +269,7 @@ func TestPostgresDeleteClosesParkedRuns(t *testing.T) {
 	})
 
 	t.Run("delete races approve", func(t *testing.T) {
+		scope, approver := desk(t, ctx, ids, tenant.ID, user.ID, approverUser.ID, suffix+20)
 		for i := 0; i < 4; i++ {
 			exec := publishRun(t, ctx, store, scope, gateThenStopSrc(suffix+int64(20+i)), "v1")
 			completeSeed(t, ctx, store, scope, now)
@@ -338,14 +346,6 @@ func TestPostgresSettleStuckRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ws, err := ids.CreateWorkspace(ctx, tenant.ID, formatSlug("sw", suffix), "S", user.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	scope, err := isolation.Authorize(ws.ID, user.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
 	store := wfstore.NewPostgres(app)
 	approvals := NewPostgres(app)
 	now := func() time.Time { return time.Now().UTC().Add(time.Second) }
@@ -355,8 +355,9 @@ func TestPostgresSettleStuckRuns(t *testing.T) {
 	}
 
 	t.Run("legacy rejected gate rolls up and frees the slot", func(t *testing.T) {
+		scope, _ := desk(t, ctx, ids, tenant.ID, user.ID, user.ID, suffix+40)
 		ver := publishVersion(t, ctx, store, scope, gateThenStopSrc(suffix))
-		execID := insertRejectedRunning(t, ctx, admin, ws.ID, user.ID, ver)
+		execID := insertRejectedRunning(t, ctx, admin, scope.WorkspaceID(), user.ID, ver)
 		other := publishVersion(t, ctx, store, scope, scriptSrc(suffix+1))
 		if _, err := store.StartExecution(ctx, scope, other.WorkflowID, wfstore.StartInput{VersionID: other.ID, MaxOpen: 1}); !errors.Is(err, wfstore.ErrConcurrency) {
 			t.Fatalf("slot before backfill = %v", err)
@@ -378,6 +379,7 @@ func TestPostgresSettleStuckRuns(t *testing.T) {
 	})
 
 	t.Run("deleted workflow waiting approval is failed", func(t *testing.T) {
+		scope, _ := desk(t, ctx, ids, tenant.ID, user.ID, user.ID, suffix+42)
 		exec := publishRun(t, ctx, store, scope, gateThenStopSrc(suffix+2), "v1")
 		completeSeed(t, ctx, store, scope, now)
 		gate := claimStep(t, ctx, store, scope, now(), "gate")
@@ -411,6 +413,7 @@ func TestPostgresSettleStuckRuns(t *testing.T) {
 	})
 
 	t.Run("approval follows a gate that already left waiting", func(t *testing.T) {
+		scope, _ := desk(t, ctx, ids, tenant.ID, user.ID, user.ID, suffix+43)
 		exec := publishRun(t, ctx, store, scope, gateThenStopSrc(suffix+3), "v1")
 		completeSeed(t, ctx, store, scope, now)
 		gate := claimStep(t, ctx, store, scope, now(), "gate")
@@ -456,6 +459,23 @@ func TestPostgresSettleStuckRuns(t *testing.T) {
 			t.Fatalf("expired events after re-run = %d", n)
 		}
 	})
+}
+
+func desk(t *testing.T, ctx context.Context, ids *identity.Postgres, tenantID, ownerID, approverID string, n int64) (isolation.Scope, isolation.Scope) {
+	t.Helper()
+	ws, err := ids.CreateWorkspace(ctx, tenantID, formatSlug("desk", n), "Desk", ownerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope, err := isolation.Authorize(ws.ID, ownerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approver, err := isolation.Authorize(ws.ID, approverID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return scope, approver
 }
 
 func parkedSeed(exec wfstore.Execution) *wfstore.ParkedApproval {

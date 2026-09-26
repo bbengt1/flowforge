@@ -174,12 +174,13 @@ BEGIN
                    updated_at = now()
               FROM latest_gate g
               JOIN executions e
-                ON e.workspace_id = a.workspace_id
+                ON e.workspace_id = app.current_workspace_id()
                AND e.id = g.execution_id
               JOIN workflows w
                 ON w.workspace_id = e.workspace_id
                AND w.id = e.workflow_id
              WHERE a.workspace_id = app.current_workspace_id()
+               AND a.workspace_id = e.workspace_id
                AND a.execution_id = g.execution_id
                AND a.node_id = g.node_id
                AND a.status = 'pending'
