@@ -20,7 +20,6 @@ func TestMemoryResyncFailsUnresolvableRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Date(2026, 9, 26, 2, 0, 0, 0, time.UTC)
 	ver := publishMemoryWorkflow(t, ctx, workflows, scope, expiredDownstreamDefinition)
 	exec, err := workflows.StartExecution(ctx, scope, ver.WorkflowID, wfstore.StartInput{VersionID: ver.ID})
 	if err != nil {
@@ -29,6 +28,7 @@ func TestMemoryResyncFailsUnresolvableRun(t *testing.T) {
 	if _, err := workflows.StartExecution(ctx, scope, ver.WorkflowID, wfstore.StartInput{VersionID: ver.ID, MaxOpen: 1}); !errors.Is(err, wfstore.ErrConcurrency) {
 		t.Fatalf("slot before close = %v", err)
 	}
+	now := time.Now().UTC().Add(time.Minute)
 	claimed, err := workflows.ClaimJob(ctx, scope, now, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
 	if err != nil || claimed.Step.NodeID != "gate" {
 		t.Fatalf("claim = %+v %v", claimed.Step.NodeID, err)

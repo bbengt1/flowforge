@@ -15,7 +15,7 @@ func TestMemorySettleMissingWorkflowFailsDeleted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Date(2026, 9, 26, 2, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Add(time.Minute)
 	norm := mustNormalize(t, expiredDownstreamYAML)
 	wf, _, err := store.Create(ctx, scope, CreateInput{
 		NormalizedYAML: norm.NormalizedYAML, Digest: norm.Digest, Summary: norm.Summary,
