@@ -470,15 +470,14 @@ func ParkApprovalClaim(s *core.Server, ctx context.Context, scope isolation.Scop
 	if err != nil {
 		if errors.Is(err, approval.ErrBindingTransient) {
 			now := s.Clock().UTC()
-			if wfstore.ApprovalPastLimit(result.Job.CreatedAt, result.Step.Input, now) {
-				if _, failErr := s.Workflows.FailJob(ctx, scope, now, unresolvableClaim(result)); failErr != nil {
-					return result, failErr
-				}
-				return result, fmt.Errorf("%w: gate deadline", approval.ErrBindingUnresolved)
-			}
 			release := claimAction(result)
 			release.ApprovalTransientRetry = true
-			_, _ = s.Workflows.ReleaseJob(ctx, scope, now, release)
+			// ReleaseJob reads a pending approval's expires_at in the job
+			// transaction and fails the gate when that limit has passed.
+			released, relErr := s.Workflows.ReleaseJob(ctx, scope, now, release)
+			if relErr == nil && released.Job.Status == wfstore.JobFailed {
+				return result, fmt.Errorf("%w: gate deadline", approval.ErrBindingUnresolved)
+			}
 			return result, err
 		}
 		if errors.Is(err, approval.ErrBindingUnresolved) {
@@ -496,7 +495,7 @@ func ParkApprovalClaim(s *core.Server, ctx context.Context, scope isolation.Scop
 	// that deadline with the PT1H fallback.
 	raw, _ := result.Step.Input["expiresIn"].(string)
 	if parsed, err := workflow.ParseISODuration(strings.TrimSpace(raw)); err == nil && parsed > 0 {
-		if limit, ok := wfstore.ApprovalRetryLimit(result.Job.CreatedAt, result.Step.Input); ok {
+		if limit, ok := wfstore.ApprovalRetryLimit(result.Job.CreatedAt, time.Time{}, result.Step.Input); ok {
 			expires = limit
 		}
 	}

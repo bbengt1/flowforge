@@ -130,18 +130,57 @@ func (m *Memory) PinnedVersion(executionID string) (string, bool) {
 
 // HasPending reports a pending approval for that execution and node.
 func (m *Memory) HasPending(executionID, nodeID string) bool {
+	_, ok := m.PendingExpiry(executionID, nodeID)
+	return ok
+}
+
+// PendingExpiry reports the expires_at of a pending approval for that
+// execution and node.
+func (m *Memory) PendingExpiry(executionID, nodeID string) (time.Time, bool) {
 	if m == nil {
-		return false
+		return time.Time{}, false
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, row := range m.rows {
 		rec := row.record
 		if rec.ExecutionID == executionID && rec.NodeID == nodeID && rec.Status == StatusPending {
-			return true
+			return rec.ExpiresAt, true
 		}
 	}
-	return false
+	return time.Time{}, false
+}
+
+// CancelUnresolvableGate closes a pending approval for that execution and
+// node with close_reason requirement_unresolvable and no decider.
+func (m *Memory) CancelUnresolvableGate(executionID, nodeID string, now time.Time) {
+	if m == nil || executionID == "" || nodeID == "" {
+		return
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, row := range m.rows {
+		rec := row.record
+		if rec.ExecutionID != executionID || rec.NodeID != nodeID || rec.Status != StatusPending {
+			continue
+		}
+		rec.Status = StatusCanceled
+		rec.CloseReason = ReasonRequirementUnresolvable
+		rec.DecidedBy = ""
+		rec.DecidedAt = nil
+		rec.UpdatedAt = now
+		m.rows[id] = memRow{workspaceID: row.workspaceID, record: rec}
+		scope, err := isolation.Authorize(row.workspaceID, "")
+		if err != nil {
+			continue
+		}
+		m.appendEventLocked(scope, rec.ID, EventCanceled, "", map[string]any{"reason": ReasonRequirementUnresolvable})
+	}
 }
 
 func (m *Memory) policyPinsLocked(executionID string) []runPin {

@@ -23,8 +23,9 @@ const (
 
 // approvalRetryWait is the flat wait before a transient approval rebuild
 // may be claimed again. jitter is in [0, 1] and maps onto 30s plus 0 to 5s.
-// The outer limit is the parked-approval wait duration anchored at the
-// first queued time. This delay does not change attempt.
+// The outer limit is the pending approval's expires_at, or created_at plus
+// the parked-approval wait duration when no approval is pending. This delay
+// does not change attempt.
 func approvalRetryWait(jitter float64) time.Duration {
 	if jitter < 0 {
 		jitter = 0
@@ -35,13 +36,19 @@ func approvalRetryWait(jitter float64) time.Duration {
 	return approvalRetryBase + time.Duration(float64(approvalRetryJitter)*jitter)
 }
 
-// ApprovalRetryLimit is the parked-approval wait deadline anchored at the
-// job's first queued time. queuedAt is the job created_at. That column is
-// written when the step is materialized and is not rewritten by release,
-// lease recovery, or reclaim. The duration is workflow.ApprovalWaitDuration:
+// ApprovalRetryLimit is the transient-retry deadline for one gate.
+// approvalExpiresAt is the pending approval's expires_at. When it is set,
+// it is the limit, including when queuedAt is zero. With no pending
+// approval, the limit is queuedAt plus workflow.ApprovalWaitDuration:
 // the step expiresIn, or PT1H when that field is missing or not a duration,
-// and never longer than the existing P7D ceiling. A zero queuedAt has no anchor.
-func ApprovalRetryLimit(queuedAt time.Time, input map[string]any) (time.Time, bool) {
+// and never longer than the existing P7D ceiling. queuedAt is the job
+// created_at. That column is written when the step is materialized and is
+// not rewritten by release, lease recovery, or reclaim. A zero queuedAt
+// with no approval expiry has no anchor.
+func ApprovalRetryLimit(queuedAt, approvalExpiresAt time.Time, input map[string]any) (time.Time, bool) {
+	if !approvalExpiresAt.IsZero() {
+		return approvalExpiresAt.UTC(), true
+	}
 	if queuedAt.IsZero() {
 		return time.Time{}, false
 	}
@@ -51,8 +58,8 @@ func ApprovalRetryLimit(queuedAt time.Time, input map[string]any) (time.Time, bo
 }
 
 // ApprovalPastLimit reports that now is at or after ApprovalRetryLimit.
-func ApprovalPastLimit(queuedAt time.Time, input map[string]any, now time.Time) bool {
-	limit, ok := ApprovalRetryLimit(queuedAt, input)
+func ApprovalPastLimit(queuedAt, approvalExpiresAt time.Time, input map[string]any, now time.Time) bool {
+	limit, ok := ApprovalRetryLimit(queuedAt, approvalExpiresAt, input)
 	if !ok {
 		return false
 	}

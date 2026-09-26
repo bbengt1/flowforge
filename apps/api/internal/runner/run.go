@@ -266,26 +266,21 @@ func (r *Runner) claimOne(ctx context.Context, ws Workspace) (bool, error) {
 }
 
 // leaveTransientApproval keeps one stuck gate from stopping the claim pass.
-// A rebuild that is still inside the first-queued wait deadline is
-// logged and released. The pass continues either way. Past that limit the
-// job fails with requirement_unresolvable and does not take expired.
+// Release reads a pending approval's expires_at inside the job transaction
+// and fails the gate when that limit has passed. Otherwise the claim is
+// logged and released. The pass continues either way. A past-limit failure
+// uses requirement_unresolvable and does not take expired.
 func (r *Runner) leaveTransientApproval(ctx context.Context, ws Workspace, job Job) (bool, error) {
-	if wfstore.ApprovalPastLimit(job.Job.CreatedAt, job.Step.Input, r.now()) {
-		failure := map[string]any{
-			"code":    wfstore.ReasonRequirementUnresolvable,
-			"message": "The approval requirement could not be rebuilt.",
-		}
-		if err := r.queue.Fail(ctx, ws, job, failure); err != nil {
-			return true, err
-		}
-		if r.log != nil {
-			r.log.Info("production runner failed job", "workspace_id", ws.ID, "job_id", job.Job.ID, "node_type", job.Step.NodeType, "code", wfstore.ReasonRequirementUnresolvable)
-		}
-		return true, nil
-	}
 	if q, ok := r.queue.(*StoreQueue); ok {
-		if relErr := q.Release(ctx, ws, job); relErr != nil && r.log != nil {
+		released, relErr := q.Release(ctx, ws, job)
+		if relErr != nil && r.log != nil {
 			r.log.Warn("production runner left a transient approval claim", "job_id", job.Job.ID, "reason", "release failed")
+		}
+		if relErr == nil && released.Job.Status == wfstore.JobFailed {
+			if r.log != nil {
+				r.log.Info("production runner failed job", "workspace_id", ws.ID, "job_id", job.Job.ID, "node_type", job.Step.NodeType, "code", wfstore.ReasonRequirementUnresolvable)
+			}
+			return true, nil
 		}
 	}
 	if r.log != nil {
@@ -310,7 +305,7 @@ func approvalDeadline(step wfstore.ExecutionStep, queuedAt time.Time) (time.Time
 		}
 		return time.Time{}, fail(code, errs[0].Message)
 	}
-	if limit, ok := wfstore.ApprovalRetryLimit(queuedAt, step.Input); ok {
+	if limit, ok := wfstore.ApprovalRetryLimit(queuedAt, time.Time{}, step.Input); ok {
 		return limit, Decision{}
 	}
 	secs := 0

@@ -174,17 +174,16 @@ func (q *StoreQueue) Complete(ctx context.Context, ws Workspace, job Job, output
 	return err
 }
 
-func (q *StoreQueue) Release(ctx context.Context, ws Workspace, job Job) error {
+func (q *StoreQueue) Release(ctx context.Context, ws Workspace, job Job) (wfstore.DispatchResult, error) {
 	scope, err := scopeFor(ws)
 	if err != nil {
-		return err
+		return wfstore.DispatchResult{}, err
 	}
 	in := action(q, job)
 	// This release is only the transient approval rebuild path. Other
 	// worker releases go through ReleaseJob with the flag left false.
 	in.ApprovalTransientRetry = true
-	_, err = q.Workflows.ReleaseJob(ctx, scope, q.now(), in)
-	return err
+	return q.Workflows.ReleaseJob(ctx, scope, q.now(), in)
 }
 
 func (q *StoreQueue) Fail(ctx context.Context, ws Workspace, job Job, failure map[string]any) error {

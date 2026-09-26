@@ -46,9 +46,12 @@ func (m *Memory) ClaimJob(ctx context.Context, scope isolation.Scope, now time.T
 	candidates := m.expiredApprovalCandidatesLocked(scope, now)
 	m.mu.Unlock()
 	pending := m.approvalPendingSnapshot(candidates)
+	var cancels []unresolvableGate
 	m.mu.Lock()
+	cancelFn := m.approvalUnresolvable
+	defer func() { invokeUnresolvable(cancelFn, cancels, now) }()
 	defer m.mu.Unlock()
-	recovered := m.recoverExpiredLocked(ctx, scope, now, pending)
+	recovered, cancels := m.recoverExpiredLocked(ctx, scope, now, pending)
 
 	var chosen *memExecution
 	jobIdx := -1
@@ -176,6 +179,28 @@ func (m *Memory) HeartbeatJob(_ context.Context, scope isolation.Scope, now time
 }
 
 func (m *Memory) ReleaseJob(ctx context.Context, scope isolation.Scope, now time.Time, in JobActionInput) (DispatchResult, error) {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if in.ApprovalTransientRetry {
+		if view, ok := m.approvalRetryView(scope, in.JobID); ok {
+			expires, pending := m.pendingExpiry(view.execID, view.nodeID)
+			if ApprovalPastLimit(view.created, expires, view.input, now) {
+				result, err := m.failApprovalPastLimit(ctx, scope, now, in)
+				if errors.Is(err, errApprovalStillRunning) {
+					return m.releaseJob(ctx, scope, now, in)
+				}
+				if err == nil && result.Job.Status == JobFailed && pending {
+					m.closeUnresolvable(view.execID, view.nodeID, now)
+				}
+				return result, err
+			}
+		}
+	}
+	return m.releaseJob(ctx, scope, now, in)
+}
+
+func (m *Memory) releaseJob(ctx context.Context, scope isolation.Scope, now time.Time, in JobActionInput) (DispatchResult, error) {
 	return m.mutateJob(scope, now, in, func(exec *memExecution, job *ExecutionJob, step *ExecutionStep) error {
 		if err := matchFence(*job, in); err != nil {
 			return err
@@ -518,23 +543,32 @@ func (m *Memory) RecoverExpiredLeases(ctx context.Context, scope isolation.Scope
 	m.mu.Lock()
 	candidates := m.expiredApprovalCandidatesLocked(scope, now)
 	m.mu.Unlock()
-	// HasPending takes the approval lock. Decide takes that lock and then
-	// this store's lock, so the pending check cannot run while this lock
-	// is held.
+	// The pending hook takes the approval lock. Decide takes that lock and
+	// then this store's lock, so the pending check cannot run while this
+	// lock is held.
 	pending := m.approvalPendingSnapshot(candidates)
+	var cancels []unresolvableGate
 	m.mu.Lock()
+	cancelFn := m.approvalUnresolvable
+	defer func() { invokeUnresolvable(cancelFn, cancels, now) }()
 	defer m.mu.Unlock()
-	return m.recoverExpiredLocked(ctx, scope, now, pending), nil
+	n, cancels := m.recoverExpiredLocked(ctx, scope, now, pending)
+	return n, nil
 }
 
-func (m *Memory) approvalPendingSnapshot(candidates []expiredApprovalCandidate) map[string]bool {
-	pending := map[string]bool{}
+func (m *Memory) approvalPendingSnapshot(candidates []expiredApprovalCandidate) map[string]approvalGateView {
+	pending := map[string]approvalGateView{}
 	for _, candidate := range candidates {
 		if m.approvalPending == nil {
-			pending[candidate.jobID] = false
+			pending[candidate.jobID] = approvalGateView{}
 			continue
 		}
-		pending[candidate.jobID] = m.approvalPending(candidate.execID, candidate.nodeID)
+		expires, ok := m.approvalPending(candidate.execID, candidate.nodeID)
+		if !ok {
+			pending[candidate.jobID] = approvalGateView{}
+			continue
+		}
+		pending[candidate.jobID] = approvalGateView{pending: true, expires: expires}
 	}
 	return pending
 }
@@ -735,9 +769,10 @@ func (m *Memory) mutateJob(scope isolation.Scope, now time.Time, in JobActionInp
 	}, nil
 }
 
-func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope, now time.Time, approvalPending map[string]bool) int {
+func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope, now time.Time, approvalPending map[string]approvalGateView) (int, []unresolvableGate) {
 	n := 0
 	expiredLeases := 0
+	var cancels []unresolvableGate
 	hooked := map[string]struct{}{}
 	for id, exec := range m.executions {
 		if exec.workspaceID != scope.WorkspaceID() {
@@ -790,11 +825,11 @@ func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope
 				continue
 			}
 			if stepIdx >= 0 && exec.steps[stepIdx].NodeType == "flow.approval" {
-				known, ok := approvalPending[job.ID]
+				gate, ok := approvalPending[job.ID]
 				if !ok {
 					continue
 				}
-				if ApprovalPastLimit(job.CreatedAt, exec.steps[stepIdx].Input, now) {
+				if ApprovalPastLimit(job.CreatedAt, gate.expires, exec.steps[stepIdx].Input, now) {
 					job.Status = JobFailed
 					job.WorkerID = ""
 					job.LeaseExpiresAt = nil
@@ -804,12 +839,15 @@ func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope
 					exec.steps[stepIdx].Error = requirementUnresolvableStepError()
 					exec.steps[stepIdx].LeaseID = ""
 					applyStepStatus(&exec.steps[stepIdx], ExecutionFailed, now)
+					if gate.pending {
+						cancels = append(cancels, unresolvableGate{execID: exec.record.ID, nodeID: exec.steps[stepIdx].NodeID})
+					}
 					changed = true
 					outcome = "failed"
 					n++
 					continue
 				}
-				if !known {
+				if !gate.pending {
 					job.Status = JobQueued
 					job.WorkerID = ""
 					job.LeaseExpiresAt = nil
@@ -864,7 +902,104 @@ func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope
 	for range expiredLeases {
 		observability.NoteExecutionOutcome(context.Background(), "indeterminate")
 	}
-	return n
+	return n, cancels
+}
+
+var errApprovalStillRunning = errors.New("approval release stays claimed")
+
+type approvalGateView struct {
+	pending bool
+	expires time.Time
+}
+
+type unresolvableGate struct {
+	execID string
+	nodeID string
+}
+
+type approvalRetrySnapshot struct {
+	execID  string
+	nodeID  string
+	created time.Time
+	input   map[string]any
+}
+
+func (m *Memory) approvalRetryView(scope isolation.Scope, jobID string) (approvalRetrySnapshot, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	execID, job, ok := m.lookupJobLocked(scope.WorkspaceID(), jobID)
+	if !ok {
+		return approvalRetrySnapshot{}, false
+	}
+	exec := m.executions[execID]
+	stepIdx := indexStep(exec.steps, job.ExecutionStepID)
+	if stepIdx < 0 || exec.steps[stepIdx].NodeType != "flow.approval" {
+		return approvalRetrySnapshot{}, false
+	}
+	step := exec.steps[stepIdx]
+	input := make(map[string]any, len(step.Input))
+	for k, v := range step.Input {
+		input[k] = v
+	}
+	return approvalRetrySnapshot{
+		execID:  exec.record.ID,
+		nodeID:  step.NodeID,
+		created: job.CreatedAt,
+		input:   input,
+	}, true
+}
+
+func (m *Memory) pendingExpiry(execID, nodeID string) (time.Time, bool) {
+	if m.approvalPending == nil {
+		return time.Time{}, false
+	}
+	expires, pending := m.approvalPending(execID, nodeID)
+	if !pending {
+		return time.Time{}, false
+	}
+	return expires, true
+}
+
+func (m *Memory) closeUnresolvable(execID, nodeID string, now time.Time) {
+	m.mu.Lock()
+	fn := m.approvalUnresolvable
+	m.mu.Unlock()
+	invokeUnresolvable(fn, []unresolvableGate{{execID: execID, nodeID: nodeID}}, now)
+}
+
+func invokeUnresolvable(fn func(string, string, time.Time), gates []unresolvableGate, now time.Time) {
+	if fn == nil {
+		return
+	}
+	for _, gate := range gates {
+		fn(gate.execID, gate.nodeID, now)
+	}
+}
+
+func (m *Memory) failApprovalPastLimit(ctx context.Context, scope isolation.Scope, now time.Time, in JobActionInput) (DispatchResult, error) {
+	return m.mutateJob(scope, now, in, func(exec *memExecution, job *ExecutionJob, step *ExecutionStep) error {
+		if err := matchFence(*job, in); err != nil {
+			return err
+		}
+		if err := requireActiveLease(*job, now); err != nil {
+			return err
+		}
+		if job.Status == JobRunning || job.HeartbeatAt != nil {
+			return errApprovalStillRunning
+		}
+		if err := m.guardLiveLocked(ctx, scope, now, exec.record.WorkflowID, exec.record.ID); err != nil {
+			return err
+		}
+		job.Status = JobFailed
+		job.WorkerID = ""
+		job.LeaseExpiresAt = nil
+		job.HeartbeatAt = nil
+		job.UpdatedAt = now
+		step.Error = requirementUnresolvableStepError()
+		step.LeaseID = ""
+		applyStepStatus(step, ExecutionFailed, now)
+		return nil
+	}, "job.fail", "failed")
 }
 
 func (m *Memory) rollupLocked(exec *memExecution, now time.Time) {
