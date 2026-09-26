@@ -52,7 +52,7 @@ func TestResolveGateRequirement(t *testing.T) {
 	now := time.Date(2026, 9, 26, 1, 0, 0, 0, time.UTC)
 	ver := wfstore.Version{ID: "55555555-5555-4555-8555-555555555555", DefinitionYAML: adminGateDefinition, Digest: "sha256:" + strings.Repeat("a", 64)}
 
-	req, err := ResolveGateRequirement(ctx, scope, staticVersion{ver: ver}, nil, nil, "44444444-4444-4444-8444-444444444444", ver.ID, "gate", now)
+	req, err := ResolveGateRequirement(ctx, scope, staticVersion{ver: ver}, nil, "44444444-4444-4444-8444-444444444444", ver.ID, "gate", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,15 +60,15 @@ func TestResolveGateRequirement(t *testing.T) {
 		t.Fatalf("requirement = %+v", req)
 	}
 
-	if _, err := ResolveGateRequirement(ctx, scope, staticVersion{err: wfstore.ErrNotFound}, nil, nil, ver.WorkflowID, ver.ID, "gate", now); !errors.Is(err, ErrBindingUnresolved) {
+	if _, err := ResolveGateRequirement(ctx, scope, staticVersion{err: wfstore.ErrNotFound}, nil, ver.WorkflowID, ver.ID, "gate", now); !errors.Is(err, ErrBindingUnresolved) {
 		t.Fatalf("version lookup = %v", err)
 	}
 	bad := ver
 	bad.DefinitionYAML = "kind: nope\n"
-	if _, err := ResolveGateRequirement(ctx, scope, staticVersion{ver: bad}, nil, nil, ver.WorkflowID, ver.ID, "gate", now); !errors.Is(err, ErrBindingUnresolved) {
+	if _, err := ResolveGateRequirement(ctx, scope, staticVersion{ver: bad}, nil, ver.WorkflowID, ver.ID, "gate", now); !errors.Is(err, ErrBindingUnresolved) {
 		t.Fatalf("evaluate = %v", err)
 	}
-	if _, err := ResolveGateRequirement(ctx, scope, staticVersion{ver: ver}, nil, nil, ver.WorkflowID, ver.ID, "other", now); !errors.Is(err, ErrBindingUnresolved) {
+	if _, err := ResolveGateRequirement(ctx, scope, staticVersion{ver: ver}, nil, ver.WorkflowID, ver.ID, "other", now); !errors.Is(err, ErrBindingUnresolved) {
 		t.Fatalf("missing requirement = %v", err)
 	}
 }
@@ -106,7 +106,7 @@ func TestMemoryDecideRederivesStaleApproverRole(t *testing.T) {
 	store.SetGateWaiting(func(string, string) (bool, bool) { return true, true })
 	ver := wfstore.Version{ID: versionID, DefinitionYAML: adminGateDefinition, Digest: rec.WorkflowDigest}
 	resolve := func(ctx context.Context, scope isolation.Scope, row Record) (policy.Requirement, error) {
-		return ResolveGateRequirement(ctx, scope, staticVersion{ver: ver}, nil, nil, row.WorkflowID, row.WorkflowVersionID, row.NodeID, now)
+		return ResolveGateRequirement(ctx, scope, staticVersion{ver: ver}, nil, row.WorkflowID, row.WorkflowVersionID, row.NodeID, now)
 	}
 
 	if _, err := store.Decide(ctx, approver, rec.ID, DecideInput{
@@ -146,7 +146,7 @@ func TestMemoryDecideRederivesStaleApproverRole(t *testing.T) {
 		t.Fatal(err)
 	}
 	failResolve := func(ctx context.Context, scope isolation.Scope, row Record) (policy.Requirement, error) {
-		return ResolveGateRequirement(ctx, scope, staticVersion{err: wfstore.ErrNotFound}, nil, nil, row.WorkflowID, row.WorkflowVersionID, row.NodeID, now)
+		return ResolveGateRequirement(ctx, scope, staticVersion{err: wfstore.ErrNotFound}, nil, row.WorkflowID, row.WorkflowVersionID, row.NodeID, now)
 	}
 	if _, err := store.Decide(ctx, approver, lookup.ID, DecideInput{
 		Decision: DecisionApproved, Now: now, Roles: []string{"admin"}, Resolve: failResolve,
@@ -162,10 +162,10 @@ func TestMemoryDecideRederivesStaleApproverRole(t *testing.T) {
 	}
 }
 
-const targetedGateDefinition = `apiVersion: flowforge/v1
+const pinnedGateDefinition = `apiVersion: flowforge/v1
 kind: Workflow
 metadata:
-  name: targeted-gate
+  name: pinned-gate
 spec:
   triggers:
     - id: manual
@@ -175,9 +175,7 @@ spec:
       type: flow.approval
       name: Gate
       with:
-        approverRole: approver
-        approverUserId: 33333333-3333-4333-8333-333333333333
-        approverGroupId: 99999999-9999-4999-8999-999999999999
+        approverRole: admin
         policyId: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
         expiresIn: PT1H
   edges: []
@@ -191,18 +189,14 @@ func (s staticPins) Resolve(context.Context, isolation.Scope, []opsconfig.Ref) (
 	return s.pins, nil
 }
 
-func TestMemoryDecidePersistsFullRequirementOnDeny(t *testing.T) {
+func TestMemoryDecidePersistsPolicyPinOnDeny(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemory()
 	owner, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "44444444-4444-4444-8444-444444444444")
-	if err != nil {
-		t.Fatal(err)
-	}
-	target, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "33333333-3333-4333-8333-333333333333")
+	approver, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "33333333-3333-4333-8333-333333333333")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,6 +204,7 @@ func TestMemoryDecidePersistsFullRequirementOnDeny(t *testing.T) {
 	versionID := "55555555-5555-4555-8555-555555555555"
 	policyID := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 	policyVersion := "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+	policyDigest := "sha256:" + strings.Repeat("c", 64)
 	rec, err := store.Create(ctx, owner, CreateInput{
 		WorkflowID:        "44444444-4444-4444-8444-444444444444",
 		WorkflowVersionID: versionID,
@@ -225,35 +220,38 @@ func TestMemoryDecidePersistsFullRequirementOnDeny(t *testing.T) {
 		t.Fatal(err)
 	}
 	store.SetGateWaiting(func(string, string) (bool, bool) { return true, true })
-	ver := wfstore.Version{ID: versionID, DefinitionYAML: targetedGateDefinition, Digest: rec.WorkflowDigest}
+	ver := wfstore.Version{ID: versionID, DefinitionYAML: pinnedGateDefinition, Digest: rec.WorkflowDigest}
 	pins := staticPins{pins: []opsconfig.Pin{{
 		Kind: opsconfig.KindPolicy, ResourceID: policyID, VersionID: policyVersion,
-		VersionNumber: 4, Digest: "sha256:" + strings.Repeat("c", 64),
+		VersionNumber: 4, Digest: policyDigest,
 		Spec: map[string]any{"kind": "approval", "policy": map[string]any{}},
 	}}}
 	resolve := func(ctx context.Context, scope isolation.Scope, row Record) (policy.Requirement, error) {
-		return ResolveGateRequirement(ctx, scope, staticVersion{ver: ver}, pins, nil, row.WorkflowID, row.WorkflowVersionID, row.NodeID, now)
+		return ResolveGateRequirement(ctx, scope, staticVersion{ver: ver}, pins, row.WorkflowID, row.WorkflowVersionID, row.NodeID, now)
 	}
-	if _, err := store.Decide(ctx, other, rec.ID, DecideInput{
+	if _, err := store.Decide(ctx, approver, rec.ID, DecideInput{
 		Decision: DecisionApproved, Now: now, Roles: []string{"approver"}, Resolve: resolve,
 	}); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("non-target decide = %v", err)
+		t.Fatalf("approver decide = %v", err)
 	}
 	got, err := store.Get(ctx, owner, rec.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != StatusPending || got.DecidedBy != "" || got.ApproverRole != "approver" ||
-		got.ApproverUserID != target.ActorID() || got.ApproverGroupID != "99999999-9999-4999-8999-999999999999" ||
-		got.PolicyResourceID != policyID || got.PolicyVersionID != policyVersion || got.PolicyRevision != 4 ||
+	if got.Status != StatusPending || got.DecidedBy != "" || got.ApproverRole != "admin" ||
+		got.PolicyResourceID != policyID || got.PolicyVersionID != policyVersion ||
+		got.PolicyDigest != policyDigest || got.PolicyRevision != 4 ||
 		got.BindingFingerprint == rec.BindingFingerprint {
 		t.Fatalf("after deny = %+v", got)
 	}
-	if _, err := store.Decide(ctx, target, rec.ID, DecideInput{
-		Decision: DecisionApproved, Now: now, Roles: []string{"approver"},
-		GroupIDs: []string{"99999999-9999-4999-8999-999999999999"}, Resolve: resolve,
-	}); err != nil {
+	approved, err := store.Decide(ctx, approver, rec.ID, DecideInput{
+		Decision: DecisionApproved, Now: now, Roles: []string{"admin"}, Resolve: resolve,
+	})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if approved.Status != StatusApproved || approved.ApproverRole != "admin" || approved.PolicyResourceID != policyID {
+		t.Fatalf("admin decide = %+v", approved)
 	}
 }
 

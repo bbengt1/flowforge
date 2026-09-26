@@ -30,8 +30,6 @@ var resourceUUIDFields = map[string]bool{
 	"templateId":        true,
 	"responseSchemaRef": true,
 	"policyId":          true,
-	"approverUserId":    true,
-	"approverGroupId":   true,
 }
 
 var forbiddenWithByType = map[string][]string{

@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bbengt1/flowforge/apps/api/internal/approval"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
@@ -26,22 +25,11 @@ type Config struct {
 
 // Runner claims jobs and dispatches them through Dispatcher.
 type Runner struct {
-	queue    Queue
-	disp     *Dispatcher
-	cfg      Config
-	log      *slog.Logger
-	now      func() time.Time
-	subjects approval.SubjectDirectory
-}
-
-// UseSubjects checks that a gate's target user or group record still
-// exists when the runner parks the approval. A nil directory skips that
-// check. Membership that is currently empty is not a missing record.
-func (r *Runner) UseSubjects(subjects approval.SubjectDirectory) {
-	if r == nil {
-		return
-	}
-	r.subjects = subjects
+	queue Queue
+	disp  *Dispatcher
+	cfg   Config
+	log   *slog.Logger
+	now   func() time.Time
 }
 
 // NewRunner returns a poll loop. now defaults to time.Now.

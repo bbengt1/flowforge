@@ -1177,8 +1177,6 @@ components:
         policyDigest: {type: string}
         policyRevision: {type: integer}
         approverRole: {type: string}
-        approverUserId: {type: string, format: uuid}
-        approverGroupId: {type: string, format: uuid}
         expiresIn: {type: string}
         expiresAt: {type: string, format: date-time}
         reason: {type: string}
@@ -1204,8 +1202,6 @@ components:
         policyRevision: {type: integer}
         bindingFingerprint: {type: string}
         approverRole: {type: string}
-        approverUserId: {type: string, format: uuid}
-        approverGroupId: {type: string, format: uuid}
         status: {type: string, enum: [pending, approved, rejected, expired, invalidated, canceled]}
         closeReason:
           type: string

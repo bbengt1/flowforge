@@ -63,7 +63,7 @@ func TestPostgresDecideRederivesStaleApproverRole(t *testing.T) {
 		t.Fatalf("seed = %+v", rec)
 	}
 	resolve := func(ctx context.Context, sc isolation.Scope, row Record) (policy.Requirement, error) {
-		return ResolveGateRequirement(ctx, sc, store, nil, nil, row.WorkflowID, row.WorkflowVersionID, row.NodeID, now())
+		return ResolveGateRequirement(ctx, sc, store, nil, row.WorkflowID, row.WorkflowVersionID, row.NodeID, now())
 	}
 	if _, err := approvals.Decide(ctx, approver, rec.ID, DecideInput{
 		Decision: DecisionApproved, Now: now(), Roles: []string{"approver"}, Resolve: resolve,
@@ -106,7 +106,7 @@ func TestPostgresDecideRederivesStaleApproverRole(t *testing.T) {
 	if _, err := approvals.Decide(ctx, approver, stale.ID, DecideInput{
 		Decision: DecisionApproved, Now: now(), Roles: []string{"admin"},
 		Resolve: func(ctx context.Context, sc isolation.Scope, row Record) (policy.Requirement, error) {
-			return ResolveGateRequirement(ctx, sc, staticVersion{err: wfstore.ErrNotFound}, nil, nil, row.WorkflowID, row.WorkflowVersionID, row.NodeID, now())
+			return ResolveGateRequirement(ctx, sc, staticVersion{err: wfstore.ErrNotFound}, nil, row.WorkflowID, row.WorkflowVersionID, row.NodeID, now())
 		},
 	}); !errors.Is(err, ErrBindingUnresolved) {
 		t.Fatalf("lookup decide = %v", err)

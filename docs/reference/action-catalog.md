@@ -35,7 +35,7 @@ There is no generic `start` action inside a workflow: a trigger starts it. A tri
 | `flow.forEach` | Next | `items` → item results | Maximum item count/concurrency and bounded aggregation. |
 | `flow.delay` | Core | `input` → `result` | ISO-8601 `duration` (weeks/days/time only, max `P7D`). Durable wake-up time; no worker sleeps or in-memory timers. |
 | `flow.waitForEvent` | Next | correlation input → event/timeout | Durable subscription, timeout, and source verification. |
-| `flow.approval` | Core | `request` → `approved`, `rejected`, `expired` | Required `approverRole` + `expiresIn` (max `P7D`). Optional `approverUserId`, `approverGroupId`, and `policyId`. Durable mid-run wait (no worker lease). Binding includes version/target/policy/operation/execution and the target user or group. Decide is resume; self-approval denied; a caller who is not a current member of the target is denied; a removed member or an empty group stays pending until expiry; a missing user or group record cannot be rebuilt; changed state invalidates; expiry emits `expired`. |
+| `flow.approval` | Core | `request` → `approved`, `rejected`, `expired` | Required `approverRole` + `expiresIn` (max `P7D`). Durable mid-run wait (no worker lease). Binding includes version/target/policy/operation/execution. Decide is resume; self-approval denied; changed state invalidates; expiry emits `expired`. |
 
 ## Data and artifacts
 

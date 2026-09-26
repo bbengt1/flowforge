@@ -384,7 +384,7 @@ func recordFromCreate(scope isolation.Scope, in CreateInput, now time.Time) (Rec
 	if role == "" {
 		role = "approver"
 	}
-	fp := BindingFingerprint(scope.WorkspaceID(), in.WorkflowVersionID, in.WorkflowDigest, req.TargetVersionID, req.PolicyVersionID, req.PolicyDigest, req.Operation, req.NodeID, role, in.ExecutionID, req.ApproverUserID, req.ApproverGroupID)
+	fp := BindingFingerprint(scope.WorkspaceID(), in.WorkflowVersionID, in.WorkflowDigest, req.TargetVersionID, req.PolicyVersionID, req.PolicyDigest, req.Operation, req.NodeID, role, in.ExecutionID)
 	requestedBy := strings.TrimSpace(in.RequestedBy)
 	if requestedBy == "" {
 		requestedBy = scope.ActorID()
@@ -407,8 +407,6 @@ func recordFromCreate(scope isolation.Scope, in CreateInput, now time.Time) (Rec
 		PolicyRevision:     req.PolicyRevision,
 		BindingFingerprint: fp,
 		ApproverRole:       role,
-		ApproverUserID:     strings.TrimSpace(req.ApproverUserID),
-		ApproverGroupID:    strings.TrimSpace(req.ApproverGroupID),
 		Status:             StatusPending,
 		ExpiresAt:          req.ExpiresAt.UTC(),
 		RequestedBy:        requestedBy,
@@ -419,9 +417,9 @@ func recordFromCreate(scope isolation.Scope, in CreateInput, now time.Time) (Rec
 
 // ResyncPending rebuilds every pending row with ResolveGateRequirement.
 // A difference is stored. A rebuild failure cancels the row with
-// requirement_unresolvable and, when a run hook is set, fails that
-// waiting run. A hook error leaves the row pending. A second call
-// changes nothing.
+// requirement_unresolvable and, when a run hook is set, settles that
+// waiting gate through the normal failed-step roll-up. A hook error
+// leaves the row pending. A second call changes nothing.
 func (m *Memory) ResyncPending(ctx context.Context, versions VersionSource, ops PinSource, now time.Time) ResyncStats {
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -458,7 +456,7 @@ func (m *Memory) ResyncPending(ctx context.Context, versions VersionSource, ops 
 			stats.Failed++
 			continue
 		}
-		req, err := ResolveGateRequirement(ctx, scope, versions, ops, nil, item.rec.WorkflowID, item.rec.WorkflowVersionID, item.rec.NodeID, now)
+		req, err := ResolveGateRequirement(ctx, scope, versions, ops, item.rec.WorkflowID, item.rec.WorkflowVersionID, item.rec.NodeID, now)
 		m.mu.Lock()
 		row, ok := m.rows[item.rec.ID]
 		if !ok || row.workspaceID != item.workspaceID || row.record.Status != StatusPending {
@@ -522,7 +520,7 @@ func matchFilter(rec Record, filter Filter) bool {
 	if filter.ExecutionID != "" && rec.ExecutionID != filter.ExecutionID {
 		return false
 	}
-	if filter.Actionable && !MayAct(filter.ActorID, filter.ActorRoles, filter.ActorGroups, rec) {
+	if filter.Actionable && !MayAct(filter.ActorRoles, rec) {
 		return false
 	}
 	return true

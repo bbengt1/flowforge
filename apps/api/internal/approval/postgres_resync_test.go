@@ -2,94 +2,15 @@ package approval
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
-	"github.com/bbengt1/flowforge/apps/api/internal/policy"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
-
-func TestPostgresDecidePersistsTargetOnDeny(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-	defer cancel()
-	dsn := testDatabaseURL(t)
-	admin, err := postgres.OpenAdmin(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer admin.Close()
-	app, err := postgres.Open(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer app.Close()
-	ids := identity.NewPostgres(admin)
-	suffix := time.Now().UnixNano()
-	tenant, err := ids.CreateTenant(ctx, formatSlug("tt", suffix), "TT")
-	if err != nil {
-		t.Fatal(err)
-	}
-	user, err := ids.UpsertUser(ctx, "https://idp.example", formatSlug("tu", suffix), "Owner")
-	if err != nil {
-		t.Fatal(err)
-	}
-	otherUser, err := ids.UpsertUser(ctx, "https://idp.example", formatSlug("to", suffix), "Other")
-	if err != nil {
-		t.Fatal(err)
-	}
-	targetUser, err := ids.UpsertUser(ctx, "https://idp.example", formatSlug("tg", suffix), "Target")
-	if err != nil {
-		t.Fatal(err)
-	}
-	store := wfstore.NewPostgres(app)
-	approvals := NewPostgres(app)
-	now := func() time.Time { return time.Now().UTC().Add(time.Second) }
-	scope, other := desk(t, ctx, ids, tenant.ID, user.ID, otherUser.ID, suffix)
-	target, err := isolation.Authorize(scope.WorkspaceID(), targetUser.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	exec := publishRun(t, ctx, store, scope, userGateSrc(suffix, targetUser.ID), "v1")
-	gate := claimStep(t, ctx, store, scope, now(), "gate")
-	if _, err := store.WaitJob(ctx, scope, now(), wfstore.WaitJobInput{
-		JobID: gate.Job.ID, AvailableAt: now().Add(time.Hour),
-		Approval: &wfstore.ParkedApproval{
-			WorkflowID: exec.WorkflowID, WorkflowVersionID: exec.WorkflowVersionID, WorkflowDigest: exec.WorkflowDigest,
-			ExecutionID: exec.ID, RequestedBy: exec.RequestedBy,
-			NodeID: "gate", NodeName: "Gate", Operation: "flow.approval", ApproverRole: "approver",
-		},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	rec := onePending(t, ctx, approvals, scope, exec.ID)
-	resolve := func(ctx context.Context, sc isolation.Scope, row Record) (policy.Requirement, error) {
-		return ResolveGateRequirement(ctx, sc, store, nil, nil, row.WorkflowID, row.WorkflowVersionID, row.NodeID, now())
-	}
-	if _, err := approvals.Decide(ctx, other, rec.ID, DecideInput{
-		Decision: DecisionApproved, Now: now(), Roles: []string{"approver"}, Resolve: resolve,
-	}); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("non-target = %v", err)
-	}
-	got, err := approvals.Get(ctx, scope, rec.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Status != StatusPending || got.DecidedBy != "" || got.ApproverUserID != targetUser.ID || got.ApproverRole != "approver" {
-		t.Fatalf("after deny = %+v", got)
-	}
-	assertExec(t, ctx, store, scope, exec.ID, wfstore.ExecutionWaiting)
-	approved, err := approvals.Decide(ctx, target, rec.ID, DecideInput{
-		Decision: DecisionApproved, Now: now(), Roles: []string{"approver"}, Resolve: resolve,
-	})
-	if err != nil || approved.Status != StatusApproved || approved.DecidedBy != targetUser.ID {
-		t.Fatalf("target decide = %+v %v", approved, err)
-	}
-}
 
 func TestPostgresResyncCorrectsClosesAndFreesSlot(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -137,7 +58,7 @@ func TestPostgresResyncCorrectsClosesAndFreesSlot(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := onePending(t, ctx, approvals, scope, exec.ID)
-	stats, err := resyncWorkspace(ctx, app, store, nil, nil, scope.WorkspaceID(), time.Now().UTC())
+	stats, err := resyncWorkspace(ctx, app, store, nil, scope.WorkspaceID(), time.Now().UTC())
 	if err != nil || stats.Corrected != 1 || stats.Closed != 0 {
 		t.Fatalf("stats = %+v %v", stats, err)
 	}
@@ -159,7 +80,7 @@ func TestPostgresResyncCorrectsClosesAndFreesSlot(t *testing.T) {
 	if err != nil || len(visible) != 1 || visible[0].ID != rec.ID {
 		t.Fatalf("admin pending = %+v %v", visible, err)
 	}
-	again, err := resyncWorkspace(ctx, app, store, nil, nil, scope.WorkspaceID(), time.Now().UTC())
+	again, err := resyncWorkspace(ctx, app, store, nil, scope.WorkspaceID(), time.Now().UTC())
 	if err != nil || again.Corrected != 0 || again.Closed != 0 {
 		t.Fatalf("second = %+v %v", again, err)
 	}
@@ -209,7 +130,7 @@ func TestPostgresResyncCorrectsClosesAndFreesSlot(t *testing.T) {
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
-	closedStats, err := resyncWorkspace(ctx, app, store, nil, nil, scope.WorkspaceID(), time.Now().UTC())
+	closedStats, err := resyncWorkspace(ctx, app, store, nil, scope.WorkspaceID(), time.Now().UTC())
 	if err != nil || closedStats.Closed != 1 || closedStats.Corrected != 0 {
 		t.Fatalf("close stats = %+v %v", closedStats, err)
 	}
@@ -246,7 +167,7 @@ func TestPostgresResyncCorrectsClosesAndFreesSlot(t *testing.T) {
 		t.Fatalf("slot still held: %d %v", active, err)
 	}
 	assertExec(t, ctx, store, scope, exec.ID, wfstore.ExecutionWaiting)
-	third, err := resyncWorkspace(ctx, app, store, nil, nil, scope.WorkspaceID(), time.Now().UTC())
+	third, err := resyncWorkspace(ctx, app, store, nil, scope.WorkspaceID(), time.Now().UTC())
 	if err != nil || third.Closed != 0 || third.Corrected != 0 {
 		t.Fatalf("third = %+v %v", third, err)
 	}
@@ -323,7 +244,7 @@ func TestPostgresResyncRollsUpAfterSiblingFinishes(t *testing.T) {
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
-	closedStats, err := resyncWorkspace(ctx, app, store, nil, nil, scope.WorkspaceID(), time.Now().UTC())
+	closedStats, err := resyncWorkspace(ctx, app, store, nil, scope.WorkspaceID(), time.Now().UTC())
 	if err != nil || closedStats.Closed != 1 {
 		t.Fatalf("close stats = %+v %v", closedStats, err)
 	}
@@ -467,27 +388,6 @@ spec:
       to: side.input
     - from: gate.expired
       to: late.input
-`
-}
-
-func userGateSrc(n int64, userID string) string {
-	return `apiVersion: flowforge/v1
-kind: Workflow
-metadata:
-  name: user-gate-` + formatSlug("ug", n) + `
-spec:
-  triggers:
-    - id: manual
-      type: manual
-  nodes:
-    - id: gate
-      type: flow.approval
-      name: Gate
-      with:
-        approverRole: approver
-        approverUserId: ` + userID + `
-        expiresIn: PT1H
-  edges: []
 `
 }
 

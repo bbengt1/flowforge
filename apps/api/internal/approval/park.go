@@ -39,10 +39,8 @@ func InsertParked(ctx context.Context, tx pgx.Tx, scope isolation.Scope, in Crea
 		PolicyVersionID:   req.PolicyVersionID,
 		PolicyDigest:      req.PolicyDigest,
 		PolicyRevision:    req.PolicyRevision,
-		ApproverRole:      req.ApproverRole,
-		ApproverUserID:    req.ApproverUserID,
-		ApproverGroupID:   req.ApproverGroupID,
-		ExpiresAt:         expiresAt,
+		ApproverRole: req.ApproverRole,
+		ExpiresAt:    expiresAt,
 	})
 	if errors.Is(err, parkedapproval.ErrInvalid) {
 		return ErrInvalid

@@ -83,8 +83,6 @@ type Record struct {
 	PolicyRevision     int        `json:"policyRevision,omitempty"`
 	BindingFingerprint string     `json:"bindingFingerprint"`
 	ApproverRole       string     `json:"approverRole"`
-	ApproverUserID     string     `json:"approverUserId,omitempty"`
-	ApproverGroupID    string     `json:"approverGroupId,omitempty"`
 	Status             string     `json:"status"`
 	ExpiresAt          time.Time  `json:"expiresAt"`
 	RequestedBy        string     `json:"requestedBy,omitempty"`
@@ -115,11 +113,10 @@ type Filter struct {
 	ExecutionID       string
 	Page              page.Query
 	// Actionable limits a pending list to rows this caller may decide
-	// from the stored role and target. It does not re-evaluate policy.
-	Actionable  bool
-	ActorID     string
-	ActorRoles  []string
-	ActorGroups []string
+	// from the stored role. It does not re-evaluate policy.
+	Actionable bool
+	ActorID    string
+	ActorRoles []string
 }
 
 // CreateInput materializes one evaluation requirement.
@@ -142,16 +139,7 @@ type DecideInput struct {
 	Now      time.Time
 	Heads    CurrentHeads
 	Resolve  func(ctx context.Context, scope isolation.Scope, rec Record) (policy.Requirement, error)
-	Roles    []string
-	// GroupIDs are the caller's group memberships. A gate with
-	// ApproverGroupID allows only a member of that group.
-	// When Subjects is set, group membership is read from that directory
-	// instead, so a caller cannot claim a group they are not in.
-	GroupIDs []string
-	// Subjects checks that a target user is still a workspace member and
-	// that a caller is a current member of a target group. Nil skips that
-	// live check and uses GroupIDs.
-	Subjects SubjectDirectory
+	Roles []string
 }
 
 // InvalidateInput marks matching pending/approved rows invalidated.
@@ -196,7 +184,7 @@ func TypeCatalog() Catalog {
 		WaitSurvivesWorkerLoss: true,
 		SelfApprovalDenied:     true,
 		FreshAuthRequired:      true,
-		Help:                   "Mid-run flow.approval parks a durable waiting job with no worker lease. Decide is resume: approved/rejected ports. Expiry and binding change resume on expired. Requester self-approval is denied. Decide rechecks approval.decide on the server and rebuilds the full requirement (role, target user or group, and policy pin) from the pinned workflow version.",
+		Help:                   "Mid-run flow.approval parks a durable waiting job with no worker lease. Decide is resume: approved/rejected ports. Expiry and binding change resume on expired. Requester self-approval is denied. Decide rechecks approval.decide on the server and rebuilds the requirement (approver role and policy pin) from the pinned workflow version.",
 	}
 }
 
@@ -217,8 +205,8 @@ type Store interface {
 // BindingFingerprint is the immutable bind of version + target + policy +
 // operation + approver role. Pass a non-empty executionID only for mid-run
 // waits so pre-run fingerprints stay stable.
-func BindingFingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID, approverRole, executionID, approverUserID, approverGroupID string) string {
-	return parkedapproval.Fingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID, approverRole, executionID, approverUserID, approverGroupID)
+func BindingFingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID, approverRole, executionID string) string {
+	return parkedapproval.Fingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID, approverRole, executionID)
 }
 
 // Freshness reports whether a record is still usable against current heads.
@@ -274,27 +262,8 @@ func HasApproverRole(roles []string, required string) bool {
 	return false
 }
 
-// MayAct reports whether actorID may decide rec from the stored role and
-// target. Admin satisfies any role. A target user or group is not satisfied
-// by admin: the caller must be that user or a member of that group.
-func MayAct(actorID string, roles, groups []string, rec Record) bool {
-	if !HasApproverRole(roles, rec.ApproverRole) {
-		return false
-	}
-	if id := strings.TrimSpace(rec.ApproverUserID); id != "" && id != strings.TrimSpace(actorID) {
-		return false
-	}
-	if id := strings.TrimSpace(rec.ApproverGroupID); id != "" && !containsID(groups, id) {
-		return false
-	}
-	return true
-}
-
-func containsID(ids []string, want string) bool {
-	for _, id := range ids {
-		if strings.TrimSpace(id) == want {
-			return true
-		}
-	}
-	return false
+// MayAct reports whether the caller may decide rec from the stored role.
+// Admin satisfies any role.
+func MayAct(roles []string, rec Record) bool {
+	return HasApproverRole(roles, rec.ApproverRole)
 }
