@@ -266,7 +266,7 @@ func (r *Runner) claimOne(ctx context.Context, ws Workspace) (bool, error) {
 }
 
 // leaveTransientApproval keeps one stuck gate from stopping the claim pass.
-// A rebuild that is still inside the first-queued plus expiresIn limit is
+// A rebuild that is still inside the first-queued wait deadline is
 // logged and released. The pass continues either way. Past that limit the
 // job fails with requirement_unresolvable and does not take expired.
 func (r *Runner) leaveTransientApproval(ctx context.Context, ws Workspace, job Job) (bool, error) {

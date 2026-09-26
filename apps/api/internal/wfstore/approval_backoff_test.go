@@ -15,11 +15,17 @@ func TestApprovalRetryLimitUsesStoredExpiresIn(t *testing.T) {
 	if !ok || !limit.Equal(queued.Add(time.Hour)) {
 		t.Fatalf("limit = %s ok=%v", limit, ok)
 	}
-	if _, ok := ApprovalRetryLimit(queued, map[string]any{}); ok {
-		t.Fatal("missing expiresIn invented a limit")
+	limit, ok = ApprovalRetryLimit(queued, map[string]any{})
+	if !ok || !limit.Equal(queued.Add(time.Hour)) {
+		t.Fatalf("missing expiresIn = %s ok=%v", limit, ok)
 	}
-	if _, ok := ApprovalRetryLimit(queued, map[string]any{"expiresIn": "later"}); ok {
-		t.Fatal("unparseable expiresIn invented a limit")
+	limit, ok = ApprovalRetryLimit(queued, map[string]any{"expiresIn": "later"})
+	if !ok || !limit.Equal(queued.Add(time.Hour)) {
+		t.Fatalf("unparseable expiresIn = %s ok=%v", limit, ok)
+	}
+	limit, ok = ApprovalRetryLimit(queued, map[string]any{"expiresIn": "P8D"})
+	if !ok || !limit.Equal(queued.Add(7*24*time.Hour)) {
+		t.Fatalf("capped = %s ok=%v", limit, ok)
 	}
 	if _, ok := ApprovalRetryLimit(time.Time{}, map[string]any{"expiresIn": "PT1H"}); ok {
 		t.Fatal("zero anchor invented a limit")

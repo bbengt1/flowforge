@@ -23,8 +23,8 @@ const (
 
 // approvalRetryWait is the flat wait before a transient approval rebuild
 // may be claimed again. jitter is in [0, 1] and maps onto 30s plus 0 to 5s.
-// The gate deadline, first queued plus expiresIn, is the outer limit.
-// This delay does not change attempt.
+// The outer limit is the parked-approval wait duration anchored at the
+// first queued time. This delay does not change attempt.
 func approvalRetryWait(jitter float64) time.Duration {
 	if jitter < 0 {
 		jitter = 0
@@ -35,22 +35,18 @@ func approvalRetryWait(jitter float64) time.Duration {
 	return approvalRetryBase + time.Duration(float64(approvalRetryJitter)*jitter)
 }
 
-// ApprovalRetryLimit is when the job was first queued plus the gate expiresIn.
-// queuedAt is the job created_at. That column is written when the step is
-// materialized and is not rewritten by release, lease recovery, or reclaim.
-// input is the step input. A published flow.approval requires expiresIn, and
-// evaluation fails a claim that has none. This does not substitute the
-// policy requirement builder's PT1H default. A missing or unparseable
-// duration has no limit.
+// ApprovalRetryLimit is the parked-approval wait deadline anchored at the
+// job's first queued time. queuedAt is the job created_at. That column is
+// written when the step is materialized and is not rewritten by release,
+// lease recovery, or reclaim. The duration is workflow.ApprovalWaitDuration:
+// the step expiresIn, or PT1H when that field is missing or not a duration,
+// and never longer than the existing P7D ceiling. A zero queuedAt has no anchor.
 func ApprovalRetryLimit(queuedAt time.Time, input map[string]any) (time.Time, bool) {
 	if queuedAt.IsZero() {
 		return time.Time{}, false
 	}
 	raw, _ := input["expiresIn"].(string)
-	d, err := workflow.ParseISODuration(strings.TrimSpace(raw))
-	if err != nil || d <= 0 {
-		return time.Time{}, false
-	}
+	d, _ := workflow.ApprovalWaitDuration(raw)
 	return queuedAt.UTC().Add(d), true
 }
 

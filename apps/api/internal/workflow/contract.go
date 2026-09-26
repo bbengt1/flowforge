@@ -773,3 +773,24 @@ func ParseISODuration(s string) (time.Duration, error) {
 	}
 	return time.Duration(sec) * time.Second, nil
 }
+
+// ApprovalWaitDuration is the wait length copied onto a parked approval.
+// A blank or unparseable expiresIn is PT1H. A longer value is capped at
+// MaxDelaySeconds (P7D). Callers add the duration to their own anchor.
+func ApprovalWaitDuration(expiresIn string) (time.Duration, string) {
+	const defaultExpiresIn = "PT1H"
+	if strings.TrimSpace(expiresIn) == "" {
+		expiresIn = defaultExpiresIn
+	}
+	exp, err := ParseISODuration(expiresIn)
+	if err != nil || exp <= 0 {
+		exp = time.Hour
+		expiresIn = defaultExpiresIn
+	}
+	maxExpiry := time.Duration(MaxDelaySeconds) * time.Second
+	if exp > maxExpiry {
+		exp = maxExpiry
+		expiresIn = "P7D"
+	}
+	return exp, expiresIn
+}

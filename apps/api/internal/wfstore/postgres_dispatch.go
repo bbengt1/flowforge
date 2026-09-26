@@ -1208,9 +1208,9 @@ func recoverExpiredTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now
 		return stopped + resumed, nil
 	}
 	// A claimed approval whose rebuild failed has no pending row. Inside
-	// created_at plus expiresIn, put it back on the queue after the flat
-	// retry delay. Do not burn the attempt and do not park it as waiting,
-	// or the deadline takes expired. Past that limit, fail the job and
+	// created_at plus the parked-approval wait duration, put it back on the
+	// queue after the flat retry delay. Do not burn the attempt and do not
+	// park it as waiting, or the deadline takes expired. Past that limit, fail the job and
 	// step with requirement_unresolvable, cancel a pending approval for
 	// that execution and node in this transaction, and roll the run up.
 	// A claim that still has a pending approval and is inside the limit
