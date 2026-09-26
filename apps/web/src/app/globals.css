@@ -240,6 +240,10 @@ body {
   font-size: var(--ff-type-body);
 }
 
+.ff-overview-control[data-slug-preview] {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 .ff-overview-muted {
   color: var(--ff-muted);
 }

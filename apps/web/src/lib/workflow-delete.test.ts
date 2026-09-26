@@ -11,6 +11,8 @@ import {
   WORKFLOW_DELETE_OTHER_MESSAGE,
   WORKFLOW_DELETE_PUBLISHED_NOTE,
   WORKFLOW_HAS_ACTIVE_EXECUTIONS_CODE,
+  WORKFLOW_SLUG_CONFLICT_MESSAGE,
+  WORKFLOW_SLUG_EXHAUSTED_MESSAGE,
   WORKFLOW_SLUG_RESERVED_CODE,
   WORKFLOW_SLUG_RESERVED_NAME_MESSAGE,
   WORKFLOW_SLUG_RESERVED_SLUG_MESSAGE,
@@ -174,26 +176,82 @@ describe("workflow delete error codes", () => {
     );
   });
 
-  it("puts a reserved slug on the slug field when one was sent, otherwise the name", () => {
-    const slug = workflowSlugReservedFromProblem(
-      { status: 409, code: WORKFLOW_SLUG_RESERVED_CODE },
+  it("puts reserved and slug-conflict errors on the slug field even when no slug was sent", () => {
+    const reservedSent = workflowSlugReservedFromProblem(
+      { status: 409, code: WORKFLOW_SLUG_RESERVED_CODE, detail: "ignored" },
       { slug: "deploy", name: "Deploy" },
     );
-    assert.deepEqual(slug, {
+    assert.deepEqual(reservedSent, {
       field: "slug",
       message: WORKFLOW_SLUG_RESERVED_SLUG_MESSAGE,
     });
-    const name = workflowSlugReservedFromProblem(
-      { status: 409, code: WORKFLOW_SLUG_RESERVED_CODE },
+    const reservedNameOnly = workflowSlugReservedFromProblem(
+      {
+        status: 409,
+        code: WORKFLOW_SLUG_RESERVED_CODE,
+        detail: "please parse this sentence instead of the code",
+      },
       { name: "Deploy" },
     );
-    assert.deepEqual(name, {
-      field: "name",
-      message: WORKFLOW_SLUG_RESERVED_NAME_MESSAGE,
+    assert.deepEqual(reservedNameOnly, {
+      field: "slug",
+      message: WORKFLOW_SLUG_RESERVED_SLUG_MESSAGE,
+    });
+    assert.notEqual(reservedNameOnly?.message, WORKFLOW_SLUG_RESERVED_NAME_MESSAGE);
+
+    const conflict = workflowSlugReservedFromProblem(
+      {
+        status: 409,
+        code: "conflict",
+        detail: "A workflow with this slug already exists.",
+      },
+      { name: "Deploy" },
+    );
+    assert.deepEqual(conflict, {
+      field: "slug",
+      message: WORKFLOW_SLUG_CONFLICT_MESSAGE,
+    });
+    const conflictOnPath = workflowSlugReservedFromProblem(
+      {
+        status: 409,
+        code: "conflict",
+        detail: "please parse this sentence instead of the code",
+        errors: [
+          {
+            path: "slug",
+            code: "conflict",
+            message: "A workflow with this slug already exists.",
+          },
+        ],
+      },
+      {},
+    );
+    assert.deepEqual(conflictOnPath, {
+      field: "slug",
+      message: WORKFLOW_SLUG_CONFLICT_MESSAGE,
+    });
+    const exhausted = workflowSlugReservedFromProblem(
+      {
+        status: 409,
+        code: "conflict",
+        detail: "A unique slug could not be allocated.",
+        errors: [
+          {
+            path: "slug",
+            code: "conflict",
+            message: "A unique slug could not be allocated.",
+          },
+        ],
+      },
+      { name: "Quota" },
+    );
+    assert.deepEqual(exhausted, {
+      field: "slug",
+      message: WORKFLOW_SLUG_EXHAUSTED_MESSAGE,
     });
     assert.equal(
       workflowSlugReservedFromProblem(
-        { status: 409, code: "conflict" },
+        { status: 409, code: "conflict", detail: "Draft revision mismatch." },
         { name: "Deploy" },
       ),
       null,
@@ -205,6 +263,60 @@ describe("workflow delete error codes", () => {
       ),
       null,
     );
+    assert.equal(
+      workflowSlugReservedFromProblem(
+        {
+          status: 409,
+          code: "conflict",
+          detail: "The request conflicts with an existing record.",
+          errors: [
+            {
+              path: "slug",
+              code: "conflict",
+              message: "The request conflicts with an existing record.",
+            },
+          ],
+        },
+        { name: "Deploy" },
+      ),
+      null,
+    );
+    assert.equal(
+      workflowSlugReservedFromProblem(
+        {
+          status: 409,
+          code: "conflict",
+          detail: "A unique identity already exists.",
+        },
+        {},
+      ),
+      null,
+    );
+    for (const code of [
+      "execution_not_retryable",
+      "step_attempt_superseded",
+      "approval_closed",
+    ]) {
+      assert.equal(
+        workflowSlugReservedFromProblem(
+          {
+            status: 409,
+            code,
+            detail: "A workflow with this slug already exists.",
+            errors: [
+              {
+                path: "slug",
+                code,
+                message: "A workflow with this slug already exists.",
+              },
+            ],
+          },
+          { name: "Deploy" },
+        ),
+        null,
+      );
+    }
+    assert.equal(workflowSlugReservedMessage("slug"), WORKFLOW_SLUG_RESERVED_SLUG_MESSAGE);
     assert.equal(workflowSlugReservedMessage("name"), WORKFLOW_SLUG_RESERVED_NAME_MESSAGE);
   });
 
