@@ -35,8 +35,9 @@ type ResyncStats struct {
 // workspace, as the caller (the app pool is flowforge_app, NOBYPASSRLS).
 // It rebuilds each requirement with ResolveGateRequirement. A difference
 // is corrected. A rebuild failure cancels the row with
-// requirement_unresolvable and, when that leaves a waiting gate, resumes
-// the gate on the expired port or fails the run if the workflow is gone.
+// requirement_unresolvable and, when that leaves a waiting gate, fails the
+// gate and the run with that reason. A missing workflow fails the run
+// with workflow_deleted. Outgoing edges, including expired, are not taken.
 // Errors are logged. The function returns after the budget or the walk.
 func ResyncOpenApprovals(ctx context.Context, db DB, versions VersionSource, ops PinSource, log *slog.Logger) ResyncStats {
 	if log == nil {

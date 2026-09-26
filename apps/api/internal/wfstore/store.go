@@ -102,6 +102,12 @@ const (
 	// It is stored on the step error and on execution detail statusReason.
 	ReasonWorkflowDeleted = "workflow_deleted"
 
+	// ReasonRequirementUnresolvable is the matchable end reason when a
+	// pending approval cannot be rebuilt from its pinned version. The gate
+	// step stores this code. Execution detail statusReason repeats it.
+	// It is a broken setup, not a wait that timed out.
+	ReasonRequirementUnresolvable = "requirement_unresolvable"
+
 	// Retry refusal codes and reasons. The same values are written on
 	// capabilities.retry and on the retry 409. SSH and script policy
 	// denial is execution_not_retryable with reason retry_not_allowed.

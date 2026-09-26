@@ -168,7 +168,7 @@ func TestPostgresResyncCorrectsClosesAndFreesSlot(t *testing.T) {
 		t.Fatalf("second pass changed %+v", still)
 	}
 
-	exec2 := publishRun(t, ctx, store, scope, adminGateSrc(suffix+1), "v1")
+	exec2 := publishRun(t, ctx, store, scope, expiredDownstreamSrc(suffix+1), "v1")
 	gate2 := claimStep(t, ctx, store, scope, now(), "gate")
 	if _, err := store.WaitJob(ctx, scope, now(), wfstore.WaitJobInput{
 		JobID: gate2.Job.ID, AvailableAt: now().Add(time.Hour),
@@ -217,10 +217,42 @@ func TestPostgresResyncCorrectsClosesAndFreesSlot(t *testing.T) {
 	if err != nil || closed.Status != StatusCanceled || closed.CloseReason != ReasonRequirementUnresolvable || closed.DecidedBy != "" {
 		t.Fatalf("closed = %+v %v", closed, err)
 	}
-	assertExec(t, ctx, store, scope, exec2.ID, wfstore.ExecutionSucceeded)
+	assertExec(t, ctx, store, scope, exec2.ID, wfstore.ExecutionFailed)
+	gateStep, gateJob := stepAndJob(t, ctx, store, scope, exec2.ID, "gate")
+	if gateStep.Status != wfstore.ExecutionFailed || gateJob.Status != wfstore.JobFailed {
+		t.Fatalf("gate step=%s job=%s", gateStep.Status, gateJob.Status)
+	}
+	if code, _ := gateStep.Error["code"].(string); code != wfstore.ReasonRequirementUnresolvable {
+		t.Fatalf("gate error = %+v", gateStep.Error)
+	}
+	if port, _ := gateStep.Output["port"].(string); port == "expired" {
+		t.Fatalf("gate took expired port: %+v", gateStep.Output)
+	}
+	lateStep, lateJob := stepAndJob(t, ctx, store, scope, exec2.ID, "late")
+	if lateStep.Status != wfstore.ExecutionCanceled || lateJob.Status != wfstore.JobCanceled || lateStep.StartedAt != nil {
+		t.Fatalf("late step=%s job=%s started=%v", lateStep.Status, lateJob.Status, lateStep.StartedAt)
+	}
+	if code, _ := lateStep.Error["code"].(string); code != wfstore.ReasonRequirementUnresolvable {
+		t.Fatalf("late error = %+v", lateStep.Error)
+	}
+	if port, _ := lateStep.Output["port"].(string); port != "" {
+		t.Fatalf("late ran: %+v", lateStep.Output)
+	}
+	var active int
+	if err := admin.QueryRow(ctx, `
+		SELECT count(*) FROM executions
+		 WHERE id = $1 AND status IN ('queued', 'running', 'waiting')
+	`, exec2.ID).Scan(&active); err != nil || active != 0 {
+		t.Fatalf("slot still held: %d %v", active, err)
+	}
+	assertExec(t, ctx, store, scope, exec.ID, wfstore.ExecutionWaiting)
 	third, err := resyncWorkspace(ctx, app, store, nil, scope.WorkspaceID(), time.Now().UTC())
 	if err != nil || third.Closed != 0 || third.Corrected != 0 {
 		t.Fatalf("third = %+v %v", third, err)
+	}
+	stillLate, stillLateJob := stepAndJob(t, ctx, store, scope, exec2.ID, "late")
+	if stillLate.Status != wfstore.ExecutionCanceled || stillLateJob.Status != wfstore.JobCanceled {
+		t.Fatalf("second pass released late step=%s job=%s", stillLate.Status, stillLateJob.Status)
 	}
 }
 
@@ -242,6 +274,33 @@ spec:
         approverUserId: ` + userID + `
         expiresIn: PT1H
   edges: []
+`
+}
+
+func expiredDownstreamSrc(n int64) string {
+	return `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: expired-down-` + formatSlug("ed", n) + `
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: gate
+      type: flow.approval
+      name: Gate
+      with:
+        approverRole: admin
+        expiresIn: PT1H
+    - id: late
+      type: flow.stop
+      name: Late
+      with:
+        status: success
+  edges:
+    - from: gate.expired
+      to: late.input
 `
 }
 

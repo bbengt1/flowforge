@@ -8278,12 +8278,15 @@ components:
           description: Present on execution detail. Omitted from list rows.
         statusReason:
           type: string
-          enum: [no-worker, workflow_deleted]
+          enum: [no-worker, workflow_deleted, requirement_unresolvable]
           description: >
             Additive operator hint. no-worker when status is still queued and
             no job has been claimed after 15s. workflow_deleted when a waiting
-            run was stopped because the workflow was deleted. Does not change
-            status or fencing. Chloe can show “no worker is claiming jobs”.
+            run was stopped because the workflow was deleted.
+            requirement_unresolvable when a pending approval could not be
+            rebuilt: the gate failed with that code and the run is failed.
+            That is not an expired wait. Does not change status or fencing.
+            Chloe can show “no worker is claiming jobs”.
         pins:
           type: array
           items: {$ref: "#/components/schemas/OpsPin"}

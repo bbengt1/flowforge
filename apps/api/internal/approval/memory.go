@@ -24,12 +24,18 @@ type memRow struct {
 // still waiting. found is false when that step does not exist.
 type GateWaiting func(executionID, nodeID string) (found, waiting bool)
 
+// UnresolvableRun fails the waiting run after its approval cannot be
+// rebuilt. A nil hook only cancels the approval row. A returned error
+// leaves that row pending.
+type UnresolvableRun func(ctx context.Context, scope isolation.Scope, workflowID, executionID, nodeID string, now time.Time) error
+
 // Memory is an in-process Store used by HTTP unit tests.
 type Memory struct {
-	mu     sync.Mutex
-	rows   map[string]memRow
-	events map[string][]Event
-	gate   GateWaiting
+	mu      sync.Mutex
+	rows    map[string]memRow
+	events  map[string][]Event
+	gate    GateWaiting
+	failRun UnresolvableRun
 }
 
 // SetGateWaiting installs the check Decide uses before it accepts a decision.
@@ -41,6 +47,17 @@ func (m *Memory) SetGateWaiting(fn GateWaiting) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.gate = fn
+}
+
+// SetUnresolvableRun installs the run-fail used when a pending row cannot
+// be rebuilt. A nil func only cancels the approval.
+func (m *Memory) SetUnresolvableRun(fn UnresolvableRun) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.failRun = fn
 }
 
 // NewMemory returns an empty approval store.
@@ -402,7 +419,9 @@ func recordFromCreate(scope isolation.Scope, in CreateInput, now time.Time) (Rec
 
 // ResyncPending rebuilds every pending row with ResolveGateRequirement.
 // A difference is stored. A rebuild failure cancels the row with
-// requirement_unresolvable. A second call changes nothing.
+// requirement_unresolvable and, when a run hook is set, fails that
+// waiting run. A hook error leaves the row pending. A second call
+// changes nothing.
 func (m *Memory) ResyncPending(ctx context.Context, versions VersionSource, ops PinSource, now time.Time) ResyncStats {
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -448,7 +467,23 @@ func (m *Memory) ResyncPending(ctx context.Context, versions VersionSource, ops 
 			continue
 		}
 		if err != nil {
+			failRun := m.failRun
 			rec := row.record
+			m.mu.Unlock()
+			if failRun != nil {
+				if settleErr := failRun(ctx, scope, rec.WorkflowID, rec.ExecutionID, rec.NodeID, now); settleErr != nil {
+					stats.Failed++
+					continue
+				}
+			}
+			m.mu.Lock()
+			row, ok = m.rows[item.rec.ID]
+			if !ok || row.workspaceID != item.workspaceID || row.record.Status != StatusPending {
+				m.mu.Unlock()
+				stats.Skipped++
+				continue
+			}
+			rec = row.record
 			rec.Status = StatusCanceled
 			rec.CloseReason = ReasonRequirementUnresolvable
 			rec.DecidedBy = ""
