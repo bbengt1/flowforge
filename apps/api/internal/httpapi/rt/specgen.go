@@ -266,6 +266,9 @@ func stubOperation(rt Route) (*yaml.Node, error) {
 	if rt.Method == "DELETE" && rt.Pattern == "/api/v1/workflows/{workflowId}" {
 		return workflowDeleteOperation(rt)
 	}
+	if rt.Method == "POST" && rt.Pattern == "/api/v1/approvals/{approvalId}/decide" {
+		return approvalDecideOperation(rt)
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "operationId: %s\n", operationID(rt.Method, rt.OpenAPIPath()))
 	fmt.Fprintf(&b, "summary: %s %s\n", rt.Method, rt.OpenAPIPath())
@@ -287,6 +290,32 @@ func stubOperation(rt Route) (*yaml.Node, error) {
 	b.WriteString("    $ref: \"#/components/responses/MethodNotAllowed\"\n")
 	b.WriteString("  \"500\":\n")
 	b.WriteString("    $ref: \"#/components/responses/InternalError\"\n")
+	return unmarshalNode(b.String())
+}
+
+func approvalDecideOperation(rt Route) (*yaml.Node, error) {
+	var b strings.Builder
+	fmt.Fprintf(&b, "operationId: %s\n", operationID(rt.Method, rt.OpenAPIPath()))
+	b.WriteString("summary: Decide an approval\n")
+	b.WriteString("description: |\n")
+	b.WriteString("  Records an approve or reject decision and resumes a waiting gate.\n")
+	b.WriteString("  A database, network, or timeout failure while rebuilding the pinned requirement returns 503 approval_requirement_unavailable.\n")
+	b.WriteString("  That response sets Retry-After to 5, records nothing, and changes nothing. The problem document has no errors array.\n")
+	fmt.Fprintf(&b, "  Auth class: %s. Identity proxy: %s.\n", rt.Auth, rt.Proxy)
+	b.WriteString("  Responses never include secrets, credentials, tokens, private keys, or vault material.\n")
+	b.WriteString("responses:\n")
+	b.WriteString("  \"200\":\n")
+	b.WriteString("    description: Decision recorded.\n")
+	b.WriteString("  \"401\":\n")
+	b.WriteString("    $ref: \"#/components/responses/Unauthenticated\"\n")
+	b.WriteString("  \"403\":\n")
+	b.WriteString("    $ref: \"#/components/responses/Forbidden\"\n")
+	b.WriteString("  \"405\":\n")
+	b.WriteString("    $ref: \"#/components/responses/MethodNotAllowed\"\n")
+	b.WriteString("  \"500\":\n")
+	b.WriteString("    $ref: \"#/components/responses/InternalError\"\n")
+	b.WriteString("  \"503\":\n")
+	b.WriteString("    $ref: \"#/components/responses/ApprovalRequirementUnavailable\"\n")
 	return unmarshalNode(b.String())
 }
 

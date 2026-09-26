@@ -1525,6 +1525,7 @@ components:
             - execution_not_retryable
             - step_attempt_superseded
             - approval_closed
+            - approval_requirement_unavailable
         request_id:
           type: string
         reason:
@@ -4228,6 +4229,31 @@ components:
             detail: An unexpected error occurred.
             instance: /api/v1/health
             code: internal-error
+            request_id: 0123456789abcdef0123456789abcdef
+    ApprovalRequirementUnavailable:
+      description: |
+        The pinned approval requirement could not be rebuilt because of a database, network, or timeout failure.
+        Retry-After is 5 seconds. Nothing is recorded and the approval is unchanged.
+        The problem document has no errors array.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying. Always 5 for this response.
+          schema:
+            type: integer
+            example: 5
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:approval_requirement_unavailable
+            title: Service Unavailable
+            status: 503
+            detail: The approval requirement could not be rebuilt. Retry.
+            instance: /api/v1/approvals/00000000-0000-4000-8000-000000000001/decide
+            code: approval_requirement_unavailable
             request_id: 0123456789abcdef0123456789abcdef
     DependencyUnavailable:
       description: Required dependency is not configured or reachable

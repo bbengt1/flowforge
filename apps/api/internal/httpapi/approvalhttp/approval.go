@@ -695,7 +695,8 @@ func WriteApprovalError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, approval.ErrSelfApproval):
 		core.WriteProblem(w, r, http.StatusForbidden, core.CodeForbidden, "Forbidden", "The requester cannot approve or reject their own request.")
 	case errors.Is(err, approval.ErrBindingTransient):
-		core.WriteProblem(w, r, http.StatusServiceUnavailable, core.CodeDependencyUnavailable, "Dependency Unavailable", "The approval requirement could not be rebuilt. Retry.")
+		w.Header().Set("Retry-After", "5")
+		core.WriteProblem(w, r, http.StatusServiceUnavailable, core.CodeApprovalRequirementUnavailable, "Service Unavailable", "The approval requirement could not be rebuilt. Retry.")
 	case errors.Is(err, approval.ErrForbidden), errors.Is(err, approval.ErrBindingUnresolved):
 		core.WriteForbidden(w, r)
 	case errors.Is(err, approval.ErrExpired):

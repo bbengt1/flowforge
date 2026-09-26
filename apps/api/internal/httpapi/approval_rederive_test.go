@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -131,6 +132,77 @@ func TestDecideRederivesStaleApproverRole(t *testing.T) {
 	}
 }
 
+func TestDecideTransientRequirementUnavailable(t *testing.T) {
+	versions := &transientVersions{Store: wfstore.NewMemory()}
+	h, admin, approvals := approvalRederiveServerWith(t, versions)
+	ws, tenant := currentWorkspace(t, h, admin)
+	wf := createWorkflow(t, h, admin, tenant, ws, rederiveAdminYAML)
+	pub := publishWorkflow(t, h, admin, tenant, ws, wf.Workflow.ID, wf.Draft.Revision, "v1")
+	scope, err := isolation.Authorize(ws.ID, admin.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, err := approvals.Create(context.Background(), scope, approval.CreateInput{
+		WorkflowID:        wf.Workflow.ID,
+		WorkflowVersionID: pub.Version.ID,
+		WorkflowDigest:    pub.Version.Digest,
+		RequestedBy:       "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+		Requirement: policy.Requirement{
+			NodeID: "gate", NodeName: "Gate", Operation: "flow.approval",
+			ApproverRole: "approver", ExpiresAt: time.Now().UTC().Add(time.Hour),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	versions.fail.Store(true)
+	body, _ := json.Marshal(map[string]string{"decision": "approved"})
+	httpRec := httptest.NewRecorder()
+	req := workspaceJSON(http.MethodPost, "/api/v1/approvals/"+rec.ID+"/decide", body, admin, tenant, ws)
+	h.ServeHTTP(httpRec, req)
+	if httpRec.Header().Get("Retry-After") != "5" {
+		t.Fatalf("Retry-After = %q body=%s", httpRec.Header().Get("Retry-After"), httpRec.Body.String())
+	}
+	assertProblem(t, httpRec, http.StatusServiceUnavailable, CodeApprovalRequirementUnavailable, "")
+	var raw map[string]any
+	if err := json.Unmarshal(httpRec.Body.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := raw["errors"]; ok {
+		t.Fatalf("errors field present: %s", httpRec.Body.String())
+	}
+	httpRec = httptest.NewRecorder()
+	req = workspaceRequest(http.MethodGet, "/api/v1/approvals/"+rec.ID, nil, admin, tenant, ws)
+	h.ServeHTTP(httpRec, req)
+	if httpRec.Code != http.StatusOK {
+		t.Fatalf("get: %d %s", httpRec.Code, httpRec.Body.String())
+	}
+	var still approval.Record
+	if err := json.Unmarshal(httpRec.Body.Bytes(), &still); err != nil {
+		t.Fatal(err)
+	}
+	if still.Status != approval.StatusPending || still.DecidedBy != "" || still.ApproverRole != rec.ApproverRole || still.BindingFingerprint != rec.BindingFingerprint || still.CloseReason != "" {
+		t.Fatalf("lookup row = %+v", still)
+	}
+	httpRec = httptest.NewRecorder()
+	req = workspaceRequest(http.MethodGet, "/api/v1/approvals/"+rec.ID+"/events", nil, admin, tenant, ws)
+	h.ServeHTTP(httpRec, req)
+	if httpRec.Code != http.StatusOK {
+		t.Fatalf("events: %d %s", httpRec.Code, httpRec.Body.String())
+	}
+	var events struct {
+		Items []approval.Event `json:"items"`
+	}
+	if err := json.Unmarshal(httpRec.Body.Bytes(), &events); err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range events.Items {
+		if ev.EventType == approval.EventCorrected || ev.EventType == approval.EventApproved || ev.EventType == approval.EventCanceled {
+			t.Fatalf("event = %+v", ev)
+		}
+	}
+}
+
 func TestDecideDeniesWhenVersionLookupFails(t *testing.T) {
 	h, admin, approvals := approvalRederiveServer(t)
 	ws, tenant := currentWorkspace(t, h, admin)
@@ -189,12 +261,28 @@ spec:
 	}
 }
 
+type transientVersions struct {
+	wfstore.Store
+	fail atomic.Bool
+}
+
+func (v *transientVersions) GetVersion(ctx context.Context, scope isolation.Scope, workflowID, versionID string) (wfstore.Version, error) {
+	if v.fail.Load() {
+		return wfstore.Version{}, context.DeadlineExceeded
+	}
+	return v.Store.GetVersion(ctx, scope, workflowID, versionID)
+}
+
 func approvalRederiveServer(t *testing.T) (http.Handler, identity.User, *approval.Memory) {
+	t.Helper()
+	return approvalRederiveServerWith(t, wfstore.NewMemory())
+}
+
+func approvalRederiveServerWith(t *testing.T, workflows wfstore.Store) (http.Handler, identity.User, *approval.Memory) {
 	t.Helper()
 	approvals := approval.NewMemory()
 	idStore := identity.NewMemory()
 	keys := vault.TestKeys()
-	workflows := wfstore.NewMemory()
 	ops := opsconfig.NewMemory()
 	hooks := webhook.NewMemory()
 	h := NewWithDeps(withHTTPTestIdentity(Deps{
