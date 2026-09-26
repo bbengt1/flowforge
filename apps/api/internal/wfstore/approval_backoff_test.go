@@ -695,6 +695,102 @@ func TestMemoryRetryLimitFollowsGateReadyTime(t *testing.T) {
 		}
 		assertUnresolvableGate(t, ctx, store, scope, exec.ID)
 	})
+	t.Run("retried upstream follows the successful attempt", func(t *testing.T) {
+		store, scope, exec := startMemoryRun(t, ctx, workThenGateYAML())
+		created := nodeJob(t, ctx, store, scope, exec.ID, "gate").CreatedAt
+		failed := claimMemoryNode(t, ctx, store, scope, "work", created, time.Minute)
+		if _, err := store.FailJob(ctx, scope, created, JobActionInput{
+			JobID: failed.Job.ID, WorkerID: "edge-worker", FencingToken: failed.Job.FencingToken,
+			Error: map[string]any{"code": "boom"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.RetryStep(ctx, scope, created, exec.ID, failed.Step.ID); err != nil {
+			t.Fatal(err)
+		}
+		success := created.Add(2 * time.Hour)
+		completeMemoryNode(t, ctx, store, scope, "work", success)
+		// A later stamp on the failed attempt must not extend the limit.
+		later := success.Add(3 * time.Hour)
+		setMemoryFinishedAt(t, store, exec.ID, "work", 1, &later)
+		claimMemoryNode(t, ctx, store, scope, "gate", success, time.Minute)
+		if _, err := store.RecoverExpiredLeases(ctx, scope, success.Add(2*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		job := nodeJob(t, ctx, store, scope, exec.ID, "gate")
+		if job.Status != JobQueued || !job.CreatedAt.Equal(created) {
+			t.Fatalf("inside successful attempt = %+v", job)
+		}
+		_ = claimMemoryNode(t, ctx, store, scope, "gate", success.Add(time.Hour-2*time.Minute), time.Minute)
+		if _, err := store.RecoverExpiredLeases(ctx, scope, success.Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		job = nodeJob(t, ctx, store, scope, exec.ID, "gate")
+		if job.Status != JobFailed || !job.CreatedAt.Equal(created) {
+			t.Fatalf("at successful attempt = %+v", job)
+		}
+		assertUnresolvableGate(t, ctx, store, scope, exec.ID)
+	})
+	for _, tc := range []struct {
+		name string
+		at   *time.Time
+	}{
+		{name: "skipped branch has no finished_at", at: nil},
+		{name: "skipped branch has an old finished_at", at: func() *time.Time {
+			old := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+			return &old
+		}()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store, scope, exec := startMemoryRun(t, ctx, skippedBranchGateYAML())
+			created := nodeJob(t, ctx, store, scope, exec.ID, "gate").CreatedAt
+			completeMemoryNode(t, ctx, store, scope, "seed", created)
+			choose := claimMemoryNode(t, ctx, store, scope, "choose", created, time.Minute)
+			if _, err := store.CompleteJob(ctx, scope, created, JobActionInput{
+				JobID: choose.Job.ID, WorkerID: "edge-worker", FencingToken: choose.Job.FencingToken,
+				Output: map[string]any{"port": "true"},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			setMemoryFinishedAt(t, store, exec.ID, "dropped", 1, tc.at)
+			success := created.Add(2 * time.Hour)
+			completeMemoryNode(t, ctx, store, scope, "kept", success)
+			claimMemoryNode(t, ctx, store, scope, "gate", success, time.Minute)
+			if _, err := store.RecoverExpiredLeases(ctx, scope, success.Add(2*time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			job := nodeJob(t, ctx, store, scope, exec.ID, "gate")
+			if job.Status != JobQueued || !job.CreatedAt.Equal(created) {
+				t.Fatalf("inside unblocking upstream = %+v", job)
+			}
+			_ = claimMemoryNode(t, ctx, store, scope, "gate", success.Add(time.Hour-2*time.Minute), time.Minute)
+			if _, err := store.RecoverExpiredLeases(ctx, scope, success.Add(time.Hour)); err != nil {
+				t.Fatal(err)
+			}
+			job = nodeJob(t, ctx, store, scope, exec.ID, "gate")
+			if job.Status != JobFailed || !job.CreatedAt.Equal(created) {
+				t.Fatalf("at unblocking upstream = %+v", job)
+			}
+			assertUnresolvableGate(t, ctx, store, scope, exec.ID)
+		})
+	}
+}
+
+func setMemoryFinishedAt(t *testing.T, store *Memory, executionID, node string, attempt int, at *time.Time) {
+	t.Helper()
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	exec, ok := store.executions[executionID]
+	if !ok {
+		t.Fatalf("missing execution %s", executionID)
+	}
+	for i := range exec.steps {
+		if exec.steps[i].NodeID == node && exec.steps[i].Attempt == attempt {
+			exec.steps[i].FinishedAt = at
+			return
+		}
+	}
+	t.Fatalf("missing %s attempt %d", node, attempt)
 }
 
 func startMemoryRun(t *testing.T, ctx context.Context, src string) (*Memory, isolation.Scope, Execution) {
@@ -773,6 +869,86 @@ func nodeStep(t *testing.T, ctx context.Context, store *Memory, scope isolation.
 		}
 	}
 	return ExecutionStep{}, false
+}
+
+func workThenGateYAML() string {
+	return `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: work-then-gate
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: work
+      type: data.set
+      name: Work
+      with:
+        value:
+          ok: true
+    - id: gate
+      type: flow.approval
+      name: Gate
+      with:
+        approverRole: approver
+        expiresIn: PT1H
+  edges:
+    - from: work.result
+      to: gate.request
+`
+}
+
+func skippedBranchGateYAML() string {
+	return `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: skipped-branch-gate
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: seed
+      type: data.set
+      name: Seed
+      with:
+        value:
+          ready: true
+    - id: choose
+      type: flow.condition
+      name: Choose
+      with:
+        op: exists
+    - id: kept
+      type: flow.delay
+      name: Kept
+      with:
+        duration: PT1S
+    - id: dropped
+      type: flow.stop
+      name: Dropped
+      with:
+        status: success
+    - id: gate
+      type: flow.approval
+      name: Gate
+      join: any
+      with:
+        approverRole: approver
+        expiresIn: PT1H
+  edges:
+    - from: seed.result
+      to: choose.value
+    - from: choose.true
+      to: kept.input
+    - from: choose.false
+      to: dropped.input
+    - from: kept.result
+      to: gate.request
+    - from: dropped.result
+      to: gate.request
+`
 }
 
 func delayThenGateYAML(expires string) string {

@@ -42,9 +42,15 @@ func approvalRetryWait(jitter float64) time.Duration {
 // approval, the limit is readyAt plus workflow.ApprovalWaitDuration:
 // the step expiresIn, or PT1H when that field is missing or not a duration,
 // and never longer than the existing P7D ceiling. readyAt is the gate-ready
-// time: the latest finished_at among satisfied upstream steps, or the run
-// insert time for a root gate (executions.started_at, which Postgres stamps
-// at insert and does not move). Those columns are not rewritten by release,
+// time. A gate job's available_at and updated_at change when it leaves
+// blocked, and both are rewritten by a later claim, release, or recovery,
+// so neither is that time. It is the latest usable settle among satisfied
+// upstream edges: the final attempt's finished_at when that attempt
+// succeeded, or a skip's finished_at only when it is set and not earlier
+// than the run insert. A failed earlier attempt is ignored. The result is
+// never earlier than the run insert (executions.started_at, which Postgres
+// stamps at insert and does not move), and that insert time is the anchor
+// when nothing qualifies. Those columns are not rewritten by release,
 // lease recovery, or reclaim. A zero readyAt with no approval expiry has
 // no anchor. This is not the park deadline. A parked approval expires at
 // claim time plus the same wait duration.

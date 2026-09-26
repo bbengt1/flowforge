@@ -1229,9 +1229,11 @@ func recoverExpiredTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now
 	// A claimed approval whose rebuild failed has no pending row. Inside
 	// the gate-ready time plus the parked-approval wait duration, put it
 	// back on the queue after the flat retry delay. The gate-ready time is
-	// the latest finished_at among satisfied upstream steps, or the run's
-	// started_at for a root gate. Do not burn the attempt and do not park
-	// it as waiting, or the deadline takes expired. A pending approval uses
+	// the latest usable settle of satisfied upstream edges: the final
+	// attempt when it succeeded, or a skip only when its finished_at is
+	// set and not earlier than the run's started_at. A failed earlier
+	// attempt is ignored. Do not burn the attempt and do not park it
+	// as waiting, or the deadline takes expired. A pending approval uses
 	// that row's expires_at as the limit instead. Past the limit, fail
 	// the job and step with requirement_unresolvable, cancel a pending
 	// approval for that execution and node in this transaction, and roll the
@@ -1296,28 +1298,59 @@ type transientApprovalRow struct {
 }
 
 // gateReadyAtSQL is the gate-ready time for the step aliased as s.
-// execution_jobs has no finished_at. The finish time of a satisfied
-// upstream job is that step's finished_at, and the latest of those is
-// when the gate became ready. A root gate uses the execution started_at.
-// The expression takes no row lock.
+// execution_jobs.available_at and updated_at are set when a job leaves
+// blocked, then rewritten by claim, release, and recovery, so they are
+// not this time. execution_jobs has no finished_at. Each satisfied
+// incoming edge contributes only its final attempt: a success uses that
+// attempt's finished_at, and a skip counts only when finished_at is set
+// and not earlier than the run's started_at. A failed earlier attempt is
+// ignored. The latest of those times is the ready time, never earlier
+// than started_at. A root gate, or a gate whose upstream left no usable
+// settle time, uses started_at. The expression takes no row lock.
 const gateReadyAtSQL = `
-COALESCE(
-  (SELECT max(up.finished_at)
-     FROM execution_edges e
-     JOIN execution_steps up
-       ON up.workspace_id = e.workspace_id
-      AND up.execution_id = e.execution_id
-      AND up.node_id = e.from_node
-    WHERE e.workspace_id = s.workspace_id
-      AND e.execution_id = s.execution_id
-      AND e.to_node = s.node_id
-      AND e.satisfied
-      AND up.finished_at IS NOT NULL),
-  (SELECT ex.started_at
-     FROM executions ex
-    WHERE ex.workspace_id = s.workspace_id
-      AND ex.id = s.execution_id)
-)`
+(SELECT CASE
+    WHEN best IS NULL THEN run_start
+    WHEN run_start IS NOT NULL AND best < run_start THEN run_start
+    ELSE best
+  END
+  FROM (
+    SELECT (
+      SELECT max(candidate.ready_at)
+        FROM (
+          SELECT CASE
+            WHEN latest.status = 'succeeded' AND latest.finished_at IS NOT NULL THEN latest.finished_at
+            WHEN latest.status = 'skipped'
+                 AND latest.finished_at IS NOT NULL
+                 AND (run.started_at IS NULL OR latest.finished_at >= run.started_at)
+              THEN latest.finished_at
+            ELSE NULL
+          END AS ready_at
+            FROM execution_edges e
+            JOIN LATERAL (
+              SELECT up.status, up.finished_at
+                FROM execution_steps up
+               WHERE up.workspace_id = e.workspace_id
+                 AND up.execution_id = e.execution_id
+                 AND up.node_id = e.from_node
+               ORDER BY up.attempt DESC
+               LIMIT 1
+            ) latest ON true
+            JOIN executions run
+              ON run.workspace_id = e.workspace_id
+             AND run.id = e.execution_id
+           WHERE e.workspace_id = s.workspace_id
+             AND e.execution_id = s.execution_id
+             AND e.to_node = s.node_id
+             AND e.satisfied
+        ) candidate
+    ) AS best,
+    (
+      SELECT ex.started_at
+        FROM executions ex
+       WHERE ex.workspace_id = s.workspace_id
+         AND ex.id = s.execution_id
+    ) AS run_start
+  ) ready)`
 
 // pendingApprovalExpiresTx reads a pending approval's expires_at and the
 // gate-ready time for the step. Neither select locks the approval row.

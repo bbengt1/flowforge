@@ -817,6 +817,215 @@ func TestPostgresGateReadyRetryLimit(t *testing.T) {
 		}
 		assertRequirementUnresolvable(t, ctx, store, scope, exec.ID)
 	})
+	t.Run("retried upstream follows the successful attempt", func(t *testing.T) {
+		store, scope, exec := startBackoffWorkflow(t, ctx, "ru", workThenGatePostgresYAML("ru"))
+		created := postgresNodeJob(t, ctx, store, scope, exec.ID, "gate").CreatedAt
+		failed, err := store.ClaimJob(ctx, scope, created, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
+		if err != nil || failed.Step.NodeID != "work" {
+			t.Fatalf("work claim = %s %v", failed.Step.NodeID, err)
+		}
+		if _, err := store.FailJob(ctx, scope, created, wfstore.JobActionInput{
+			JobID: failed.Job.ID, WorkerID: "edge-worker", FencingToken: failed.Job.FencingToken,
+			Error: map[string]any{"code": "boom"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.RetryStep(ctx, scope, created, exec.ID, failed.Step.ID); err != nil {
+			t.Fatal(err)
+		}
+		success := created.Add(2 * time.Hour)
+		completePostgresNode(t, ctx, store, scope, "work", success)
+		later := success.Add(3 * time.Hour)
+		setPostgresFinishedAt(t, ctx, exec.ID, "work", 1, &later)
+		if _, err := store.ClaimJob(ctx, scope, success, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.RecoverExpiredLeases(ctx, scope, success.Add(2*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		job := postgresNodeJob(t, ctx, store, scope, exec.ID, "gate")
+		if job.Status != wfstore.JobQueued || !job.CreatedAt.Equal(created) {
+			t.Fatalf("inside successful attempt = %+v", job)
+		}
+		if _, err := store.ClaimJob(ctx, scope, success.Add(time.Hour-2*time.Minute), wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.RecoverExpiredLeases(ctx, scope, success.Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		job = postgresNodeJob(t, ctx, store, scope, exec.ID, "gate")
+		if job.Status != wfstore.JobFailed || !job.CreatedAt.Equal(created) {
+			t.Fatalf("at successful attempt = %+v", job)
+		}
+		assertRequirementUnresolvable(t, ctx, store, scope, exec.ID)
+	})
+	for _, tc := range []struct {
+		name string
+		tag  string
+		at   *time.Time
+	}{
+		{name: "skipped branch has no finished_at", tag: "skn", at: nil},
+		{name: "skipped branch has an old finished_at", tag: "sko", at: func() *time.Time {
+			old := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+			return &old
+		}()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store, scope, exec := startBackoffWorkflow(t, ctx, tc.tag, skippedBranchGatePostgresYAML(tc.tag))
+			created := postgresNodeJob(t, ctx, store, scope, exec.ID, "gate").CreatedAt
+			completePostgresNode(t, ctx, store, scope, "seed", created)
+			choose, err := store.ClaimJob(ctx, scope, created, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
+			if err != nil || choose.Step.NodeID != "choose" {
+				t.Fatalf("choose claim = %s %v", choose.Step.NodeID, err)
+			}
+			if _, err := store.CompleteJob(ctx, scope, created, wfstore.JobActionInput{
+				JobID: choose.Job.ID, WorkerID: "edge-worker", FencingToken: choose.Job.FencingToken,
+				Output: map[string]any{"port": "true"},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			setPostgresFinishedAt(t, ctx, exec.ID, "dropped", 1, tc.at)
+			success := created.Add(2 * time.Hour)
+			completePostgresNode(t, ctx, store, scope, "kept", success)
+			if _, err := store.ClaimJob(ctx, scope, success, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.RecoverExpiredLeases(ctx, scope, success.Add(2*time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			job := postgresNodeJob(t, ctx, store, scope, exec.ID, "gate")
+			if job.Status != wfstore.JobQueued || !job.CreatedAt.Equal(created) {
+				t.Fatalf("inside unblocking upstream = %+v", job)
+			}
+			if _, err := store.ClaimJob(ctx, scope, success.Add(time.Hour-2*time.Minute), wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.RecoverExpiredLeases(ctx, scope, success.Add(time.Hour)); err != nil {
+				t.Fatal(err)
+			}
+			job = postgresNodeJob(t, ctx, store, scope, exec.ID, "gate")
+			if job.Status != wfstore.JobFailed || !job.CreatedAt.Equal(created) {
+				t.Fatalf("at unblocking upstream = %+v", job)
+			}
+			assertRequirementUnresolvable(t, ctx, store, scope, exec.ID)
+		})
+	}
+}
+
+func setPostgresFinishedAt(t *testing.T, ctx context.Context, executionID, node string, attempt int, at *time.Time) {
+	t.Helper()
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		dsn = os.Getenv("DATABASE_URL")
+	}
+	if dsn == "" {
+		t.Fatal("TEST_DATABASE_URL / DATABASE_URL not set")
+	}
+	admin, err := postgres.OpenAdmin(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(admin.Close)
+	var tag pgconn.CommandTag
+	if at == nil {
+		tag, err = admin.Exec(ctx, `
+			UPDATE execution_steps
+			SET finished_at = NULL
+			WHERE execution_id = $1::uuid AND node_id = $2 AND attempt = $3
+		`, executionID, node, attempt)
+	} else {
+		tag, err = admin.Exec(ctx, `
+			UPDATE execution_steps
+			SET finished_at = $4
+			WHERE execution_id = $1::uuid AND node_id = $2 AND attempt = $3
+		`, executionID, node, attempt, *at)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tag.RowsAffected() != 1 {
+		t.Fatalf("finished_at update = %s", tag)
+	}
+}
+
+func workThenGatePostgresYAML(tag string) string {
+	return `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: backoff-` + tag + `
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: work
+      type: data.set
+      name: Work
+      with:
+        value:
+          ok: true
+    - id: gate
+      type: flow.approval
+      name: Gate
+      with:
+        approverRole: approver
+        expiresIn: PT1H
+  edges:
+    - from: work.result
+      to: gate.request
+`
+}
+
+func skippedBranchGatePostgresYAML(tag string) string {
+	return `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: backoff-` + tag + `
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: seed
+      type: data.set
+      name: Seed
+      with:
+        value:
+          ready: true
+    - id: choose
+      type: flow.condition
+      name: Choose
+      with:
+        op: exists
+    - id: kept
+      type: flow.delay
+      name: Kept
+      with:
+        duration: PT1S
+    - id: dropped
+      type: flow.stop
+      name: Dropped
+      with:
+        status: success
+    - id: gate
+      type: flow.approval
+      name: Gate
+      join: any
+      with:
+        approverRole: approver
+        expiresIn: PT1H
+  edges:
+    - from: seed.result
+      to: choose.value
+    - from: choose.true
+      to: kept.input
+    - from: choose.false
+      to: dropped.input
+    - from: kept.result
+      to: gate.request
+    - from: dropped.result
+      to: gate.request
+`
 }
 
 func delayThenGateYAML(expires string) string {

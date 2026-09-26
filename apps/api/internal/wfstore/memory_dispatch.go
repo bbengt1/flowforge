@@ -924,39 +924,79 @@ type approvalRetrySnapshot struct {
 	input  map[string]any
 }
 
-// gateReadyAt is the latest finished_at among satisfied upstream steps.
-// execution jobs have no finished_at column, so the upstream step's
-// finished_at is the finish time of that work. A root gate uses the run
-// insert time. Postgres stores that in executions.started_at and does not
-// move it when the run later becomes running. Memory's StartedAt is that
-// later stamp, so the insert time is CreatedAt. A zero time means there
-// is no anchor.
+// gateReadyAt is when the gate became ready. A job's available_at and
+// updated_at are set when it leaves blocked, then rewritten by claim,
+// release, and recovery, so they are not this time. Each satisfied
+// incoming edge contributes only its final attempt. A success uses that
+// attempt's finished_at. A skip counts only when finished_at is set and
+// not earlier than the run insert; a missing or earlier stamp is ignored.
+// A failed earlier attempt is ignored. The latest remaining time is the
+// ready time, and it is never earlier than the run insert. Nothing usable
+// uses that insert time. Postgres stores the insert in executions.started_at
+// and does not move it. Memory's StartedAt is the later running stamp, so
+// the insert time is CreatedAt. A zero time means there is no anchor.
 func gateReadyAt(exec memExecution, nodeID string) time.Time {
+	runStart := time.Time{}
+	if !exec.record.CreatedAt.IsZero() {
+		runStart = exec.record.CreatedAt.UTC()
+	}
 	var latest time.Time
 	found := false
 	for _, edge := range exec.edges {
 		if edge.ToNode != nodeID || !edge.Satisfied {
 			continue
 		}
-		for i := range exec.steps {
-			step := exec.steps[i]
-			if step.NodeID != edge.FromNode || step.FinishedAt == nil {
-				continue
-			}
-			at := step.FinishedAt.UTC()
-			if !found || at.After(latest) {
-				latest = at
-				found = true
-			}
+		step, ok := latestAttempt(exec.steps, edge.FromNode)
+		if !ok {
+			continue
+		}
+		at, ok := usableUpstreamSettle(step, runStart)
+		if !ok {
+			continue
+		}
+		if !found || at.After(latest) {
+			latest = at
+			found = true
 		}
 	}
-	if found {
-		return latest
+	if !found || (!runStart.IsZero() && latest.Before(runStart)) {
+		return runStart
 	}
-	if !exec.record.CreatedAt.IsZero() {
-		return exec.record.CreatedAt.UTC()
+	return latest
+}
+
+func latestAttempt(steps []ExecutionStep, nodeID string) (ExecutionStep, bool) {
+	best := -1
+	for i := range steps {
+		if steps[i].NodeID != nodeID {
+			continue
+		}
+		if best < 0 || steps[i].Attempt >= steps[best].Attempt {
+			best = i
+		}
 	}
-	return time.Time{}
+	if best < 0 {
+		return ExecutionStep{}, false
+	}
+	return steps[best], true
+}
+
+func usableUpstreamSettle(step ExecutionStep, runStart time.Time) (time.Time, bool) {
+	if step.FinishedAt == nil {
+		return time.Time{}, false
+	}
+	at := step.FinishedAt.UTC()
+	switch step.Status {
+	case ExecutionSucceeded:
+		return at, true
+	case ExecutionSkipped:
+		if !runStart.IsZero() && at.Before(runStart) {
+			return time.Time{}, false
+		}
+		return at, true
+	default:
+		return time.Time{}, false
+	}
 }
 
 func (m *Memory) approvalRetryView(scope isolation.Scope, jobID string) (approvalRetrySnapshot, bool) {
