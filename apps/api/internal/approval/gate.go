@@ -68,10 +68,12 @@ func ResolvePins(ctx context.Context, scope isolation.Scope, ops PinSource, yaml
 	return append(pins, more...), nil
 }
 
-// ResolveGateRequirement re-derives the wait requirement for one gate from
-// the pinned workflow version. A missing loader, a version lookup error, an
-// evaluate error, or no matching wait requirement returns ErrBindingUnresolved.
-// The caller denies the decision and does not record one.
+// ResolveGateRequirement re-derives the requirement for one node from the
+// pinned workflow version. A gate matches its wait requirement. A pre-run
+// approval matches the non-wait requirement for that same node. A missing
+// loader, a version lookup error, an evaluate error, or no matching
+// requirement returns ErrBindingUnresolved. The caller denies the decision
+// and does not record one.
 func ResolveGateRequirement(ctx context.Context, scope isolation.Scope, versions VersionSource, ops PinSource, workflowID, versionID, nodeID string, now time.Time) (policy.Requirement, error) {
 	if versions == nil {
 		return policy.Requirement{}, fmt.Errorf("%w: workflow version is not available", ErrBindingUnresolved)
@@ -95,10 +97,22 @@ func ResolveGateRequirement(ctx context.Context, scope isolation.Scope, versions
 		return policy.Requirement{}, fmt.Errorf("%w: policy evaluation failed", ErrBindingUnresolved)
 	}
 	nodeID = strings.TrimSpace(nodeID)
-	for _, item := range eval.Requirements {
-		if item.NodeID == nodeID && item.Wait {
+	var matched *policy.Requirement
+	for i := range eval.Requirements {
+		item := eval.Requirements[i]
+		if item.NodeID != nodeID {
+			continue
+		}
+		if item.Wait {
 			return item, nil
 		}
+		if matched == nil {
+			copied := item
+			matched = &copied
+		}
+	}
+	if matched != nil {
+		return *matched, nil
 	}
 	return policy.Requirement{}, fmt.Errorf("%w: approval requirement is missing", ErrBindingUnresolved)
 }
