@@ -13,6 +13,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/bbengt1/flowforge/apps/api/internal/ssh"
+	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
 const (
@@ -21,8 +22,9 @@ const (
 )
 
 // approvalRetryWait is the flat wait before a transient approval rebuild
-// may be claimed again. jitter is in [0, 1] and maps onto 30s ± 5s.
-// The gate deadline is the outer limit. This delay does not change attempt.
+// may be claimed again. jitter is in [0, 1] and maps onto 30s plus 0 to 5s.
+// The gate deadline, first queued plus expiresIn, is the outer limit.
+// This delay does not change attempt.
 func approvalRetryWait(jitter float64) time.Duration {
 	if jitter < 0 {
 		jitter = 0
@@ -30,8 +32,30 @@ func approvalRetryWait(jitter float64) time.Duration {
 	if jitter > 1 {
 		jitter = 1
 	}
-	offset := time.Duration(float64(approvalRetryJitter*2) * jitter)
-	return approvalRetryBase - approvalRetryJitter + offset
+	return approvalRetryBase + time.Duration(float64(approvalRetryJitter)*jitter)
+}
+
+// ApprovalRetryLimit is when the job was first queued plus the gate expiresIn.
+// queuedAt is the job created_at. input is the step input, which holds expiresIn.
+func ApprovalRetryLimit(queuedAt time.Time, input map[string]any) (time.Time, bool) {
+	if queuedAt.IsZero() {
+		return time.Time{}, false
+	}
+	raw, _ := input["expiresIn"].(string)
+	d, err := workflow.ParseISODuration(strings.TrimSpace(raw))
+	if err != nil || d <= 0 {
+		return time.Time{}, false
+	}
+	return queuedAt.UTC().Add(d), true
+}
+
+// ApprovalPastLimit reports that now is at or after ApprovalRetryLimit.
+func ApprovalPastLimit(queuedAt time.Time, input map[string]any, now time.Time) bool {
+	limit, ok := ApprovalRetryLimit(queuedAt, input)
+	if !ok {
+		return false
+	}
+	return !now.Before(limit)
 }
 
 func approvalJitter() float64 {

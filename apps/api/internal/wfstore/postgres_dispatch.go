@@ -1201,51 +1201,17 @@ func recoverExpiredTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now
 		return stopped + resumed, nil
 	}
 	// A claimed approval whose rebuild failed, and whose release also
-	// failed, has no pending row. Put it back on the queue after the
-	// flat retry delay. Do not burn the attempt and do not park it as
-	// waiting, or the deadline takes expired. A claim that still has a
-	// pending approval parks below.
-	delay := approvalRetryWait(approvalJitter())
-	requeued, err := tx.Query(ctx, `
-		UPDATE execution_jobs j
-		SET status = 'queued', worker_id = NULL, lease_expires_at = NULL, heartbeat_at = NULL,
-		    available_at = $3, updated_at = $1
-		FROM execution_steps s
-		WHERE s.workspace_id = j.workspace_id AND s.id = j.execution_step_id
-		  AND j.execution_id = ANY($2::uuid[])
-		  AND j.status IN ('claimed', 'running')
-		  AND j.lease_expires_at IS NOT NULL
-		  AND j.lease_expires_at <= $1
-		  AND s.node_type = 'flow.approval'
-		  AND NOT EXISTS (
-			SELECT 1 FROM approvals a
-			WHERE a.workspace_id = j.workspace_id
-			  AND a.execution_id = j.execution_id
-			  AND a.node_id = s.node_id
-			  AND a.status = 'pending'
-		  )
-		RETURNING j.execution_id::text, j.execution_step_id::text
-	`, now, leaseIDs, now.Add(delay))
-	if err != nil {
-		return 0, mapDBErr(err)
-	}
-	requeuePairs, err := collectRecoverPairs(requeued)
+	// failed, has no pending row. Inside the first-queued plus expiresIn
+	// limit, put it back on the queue after the flat retry delay. Do not
+	// burn the attempt and do not park it as waiting, or the deadline
+	// takes expired. Past that limit, fail the job and step with
+	// requirement_unresolvable and roll the run up. A claim that still
+	// has a pending approval parks below.
+	settled, err := requeueOrFailTransientApprovals(ctx, tx, scope, now, leaseIDs)
 	if err != nil {
 		return 0, err
 	}
-	for _, p := range requeuePairs {
-		if _, err := tx.Exec(ctx, `
-			UPDATE execution_steps
-			SET status = 'queued', lease_id = NULL, finished_at = NULL, updated_at = $1
-			WHERE id = $2::uuid
-		`, now, p.step); err != nil {
-			return 0, mapDBErr(err)
-		}
-		n++
-	}
-	if err := finishRecoverPairs(ctx, tx, scope, now, requeuePairs, "requeued"); err != nil {
-		return 0, err
-	}
+	n += settled
 	parked, err := tx.Query(ctx, `
 		UPDATE execution_jobs j
 		SET status = 'waiting', worker_id = NULL, lease_expires_at = NULL, heartbeat_at = NULL, updated_at = $1
@@ -1325,6 +1291,115 @@ func recoverExpiredTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now
 		return 0, err
 	}
 	return n + stopped + resumed, nil
+}
+
+type transientApprovalRow struct {
+	jobID   string
+	exec    string
+	step    string
+	created time.Time
+	input   map[string]any
+}
+
+// requeueOrFailTransientApprovals locks each expired approval claim that
+// has no pending row, then either delays it or fails it. Jobs are locked
+// before their steps. Outgoing edges are not resolved.
+func requeueOrFailTransientApprovals(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now time.Time, leaseIDs []string) (int, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT j.id::text, j.execution_id::text, j.execution_step_id::text, j.created_at, s.input_redacted
+		FROM execution_jobs j
+		JOIN execution_steps s
+		  ON s.workspace_id = j.workspace_id AND s.id = j.execution_step_id
+		WHERE j.execution_id = ANY($2::uuid[])
+		  AND j.status IN ('claimed', 'running')
+		  AND j.lease_expires_at IS NOT NULL
+		  AND j.lease_expires_at <= $1
+		  AND s.node_type = 'flow.approval'
+		  AND NOT EXISTS (
+			SELECT 1 FROM approvals a
+			WHERE a.workspace_id = j.workspace_id
+			  AND a.execution_id = j.execution_id
+			  AND a.node_id = s.node_id
+			  AND a.status = 'pending'
+		  )
+		FOR UPDATE OF j
+	`, now, leaseIDs)
+	if err != nil {
+		return 0, mapDBErr(err)
+	}
+	defer rows.Close()
+	var items []transientApprovalRow
+	for rows.Next() {
+		var row transientApprovalRow
+		var raw []byte
+		if err := rows.Scan(&row.jobID, &row.exec, &row.step, &row.created, &raw); err != nil {
+			return 0, mapDBErr(err)
+		}
+		row.input = unmarshalObject(raw)
+		items = append(items, row)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, mapDBErr(err)
+	}
+	errRaw, err := marshalObject(requirementUnresolvableStepError())
+	if err != nil {
+		return 0, ErrInvalid
+	}
+	delay := approvalRetryWait(approvalJitter())
+	available := now.Add(delay)
+	var requeuePairs, failPairs []recoverPair
+	for _, row := range items {
+		if ApprovalPastLimit(row.created, row.input, now) {
+			tag, err := tx.Exec(ctx, `
+				UPDATE execution_jobs
+				SET status = 'failed', worker_id = NULL, lease_expires_at = NULL, heartbeat_at = NULL, updated_at = $1
+				WHERE id = $2::uuid AND status IN ('claimed', 'running')
+			`, now, row.jobID)
+			if err != nil {
+				return 0, mapDBErr(err)
+			}
+			if tag.RowsAffected() == 0 {
+				continue
+			}
+			if _, err := tx.Exec(ctx, `
+				UPDATE execution_steps
+				SET status = 'failed', error_redacted = $2::jsonb, lease_id = NULL,
+				    finished_at = COALESCE(finished_at, $1), updated_at = $1
+				WHERE id = $3::uuid
+			`, now, errRaw, row.step); err != nil {
+				return 0, mapDBErr(err)
+			}
+			failPairs = append(failPairs, recoverPair{exec: row.exec, step: row.step})
+			continue
+		}
+		tag, err := tx.Exec(ctx, `
+			UPDATE execution_jobs
+			SET status = 'queued', worker_id = NULL, lease_expires_at = NULL, heartbeat_at = NULL,
+			    available_at = $3, updated_at = $1
+			WHERE id = $2::uuid AND status IN ('claimed', 'running')
+		`, now, row.jobID, available)
+		if err != nil {
+			return 0, mapDBErr(err)
+		}
+		if tag.RowsAffected() == 0 {
+			continue
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE execution_steps
+			SET status = 'queued', lease_id = NULL, finished_at = NULL, updated_at = $1
+			WHERE id = $2::uuid
+		`, now, row.step); err != nil {
+			return 0, mapDBErr(err)
+		}
+		requeuePairs = append(requeuePairs, recoverPair{exec: row.exec, step: row.step})
+	}
+	if err := finishRecoverPairs(ctx, tx, scope, now, failPairs, "failed"); err != nil {
+		return 0, err
+	}
+	if err := finishRecoverPairs(ctx, tx, scope, now, requeuePairs, "requeued"); err != nil {
+		return 0, err
+	}
+	return len(failPairs) + len(requeuePairs), nil
 }
 
 func expiredLeaseExecutions(ctx context.Context, tx pgx.Tx, now time.Time) (execIDs, workflowIDs []string, err error) {

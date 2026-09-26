@@ -3,6 +3,7 @@ package approvalhttp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -467,9 +468,16 @@ func ParkApprovalClaim(s *core.Server, ctx context.Context, scope isolation.Scop
 	req, err := approval.ResolveGateRequirement(ctx, scope, s.Workflows, s.Ops, result.Execution.WorkflowID, result.Execution.WorkflowVersionID, result.Step.NodeID, s.Clock().UTC())
 	if err != nil {
 		if errors.Is(err, approval.ErrBindingTransient) {
+			now := s.Clock().UTC()
+			if wfstore.ApprovalPastLimit(result.Job.CreatedAt, result.Step.Input, now) {
+				if _, failErr := s.Workflows.FailJob(ctx, scope, now, unresolvableClaim(result)); failErr != nil {
+					return result, failErr
+				}
+				return result, fmt.Errorf("%w: gate deadline", approval.ErrBindingUnresolved)
+			}
 			release := claimAction(result)
 			release.ApprovalTransientRetry = true
-			_, _ = s.Workflows.ReleaseJob(ctx, scope, s.Clock().UTC(), release)
+			_, _ = s.Workflows.ReleaseJob(ctx, scope, now, release)
 			return result, err
 		}
 		if errors.Is(err, approval.ErrBindingUnresolved) {
@@ -481,6 +489,9 @@ func ParkApprovalClaim(s *core.Server, ctx context.Context, scope isolation.Scop
 		return result, err
 	}
 	expires := req.ExpiresAt
+	if limit, ok := wfstore.ApprovalRetryLimit(result.Job.CreatedAt, result.Step.Input); ok {
+		expires = limit
+	}
 	if expires.IsZero() {
 		expires = s.Clock().UTC().Add(time.Hour)
 	}

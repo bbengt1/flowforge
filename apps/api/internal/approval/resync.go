@@ -240,7 +240,12 @@ func resyncOne(ctx context.Context, tx pgx.Tx, scope isolation.Scope, versions V
 		_, _ = tx.Exec(ctx, `RELEASE SAVEPOINT approval_resync`)
 		return 0, 0, 0
 	}
-	req, err := ResolveGateRequirement(ctx, scope, versions, ops, rec.WorkflowID, rec.WorkflowVersionID, rec.NodeID, now)
+	pins, err := loadExecutionPolicyPins(ctx, tx, rec.ExecutionID)
+	if err != nil {
+		slog.Warn("approval resync skipped", "approval", id, "reason", "transient")
+		return 0, 0, 0
+	}
+	req, err := resolveGateRequirement(ctx, scope, versions, ops, rec.WorkflowID, rec.WorkflowVersionID, rec.NodeID, now, pins)
 	if err != nil {
 		if errors.Is(err, ErrBindingTransient) {
 			slog.Warn("approval resync skipped", "approval", id, "reason", "transient")
@@ -280,6 +285,36 @@ func resyncOne(ctx context.Context, tx pgx.Tx, scope isolation.Scope, versions V
 	rollback = false
 	_, _ = tx.Exec(ctx, `RELEASE SAVEPOINT approval_resync`)
 	return 1, 0, 0
+}
+
+func loadExecutionPolicyPins(ctx context.Context, tx pgx.Tx, executionID string) ([]runPin, error) {
+	if !authz.ValidUUID(executionID) {
+		return nil, nil
+	}
+	rows, err := tx.Query(ctx, `
+		SELECT resource_id::text, version_id::text, digest, version_number
+		  FROM ops_pins
+		 WHERE owner_kind = 'execution'
+		   AND owner_id = $1::uuid
+		   AND resource_kind = 'policy'
+		   AND workspace_id = app.current_workspace_id()
+	`, executionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []runPin
+	for rows.Next() {
+		var pin runPin
+		if err := rows.Scan(&pin.PolicyResourceID, &pin.PolicyVersionID, &pin.PolicyDigest, &pin.PolicyRevision); err != nil {
+			return nil, err
+		}
+		out = append(out, pin)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func loadRunPin(ctx context.Context, tx pgx.Tx, executionID, policyResourceID string) (runPin, error) {

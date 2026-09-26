@@ -595,9 +595,9 @@ type JobActionInput struct {
 	Output       map[string]any
 	Error        map[string]any
 	// ApprovalTransientRetry delays a release that returns the job to
-	// queued by a flat 30s ± 5s. Leave it false for every other release,
-	// including worker releases and other job types. An indeterminate
-	// release ignores it. The delay does not change attempt.
+	// queued by a flat 30s plus up to 5s. Leave it false for every other
+	// release, including worker releases and other job types. An
+	// indeterminate release ignores it. The delay does not change attempt.
 	ApprovalTransientRetry bool `json:"-"`
 }
 

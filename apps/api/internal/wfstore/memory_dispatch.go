@@ -43,8 +43,12 @@ func (m *Memory) ClaimJob(ctx context.Context, scope isolation.Scope, now time.T
 	ttl := normalizeBindingTTL(in.BindingTTL)
 
 	m.mu.Lock()
+	candidates := m.expiredApprovalCandidatesLocked(scope, now)
+	m.mu.Unlock()
+	pending := m.approvalPendingSnapshot(candidates)
+	m.mu.Lock()
 	defer m.mu.Unlock()
-	recovered := m.recoverExpiredLocked(ctx, scope, now)
+	recovered := m.recoverExpiredLocked(ctx, scope, now, pending)
 
 	var chosen *memExecution
 	jobIdx := -1
@@ -512,8 +516,57 @@ func (m *Memory) RecoverExpiredLeases(ctx context.Context, scope isolation.Scope
 		now = time.Now().UTC()
 	}
 	m.mu.Lock()
+	candidates := m.expiredApprovalCandidatesLocked(scope, now)
+	m.mu.Unlock()
+	// HasPending takes the approval lock. Decide takes that lock and then
+	// this store's lock, so the pending check cannot run while this lock
+	// is held.
+	pending := m.approvalPendingSnapshot(candidates)
+	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.recoverExpiredLocked(ctx, scope, now), nil
+	return m.recoverExpiredLocked(ctx, scope, now, pending), nil
+}
+
+func (m *Memory) approvalPendingSnapshot(candidates []expiredApprovalCandidate) map[string]bool {
+	pending := map[string]bool{}
+	for _, candidate := range candidates {
+		if m.approvalPending == nil {
+			pending[candidate.jobID] = false
+			continue
+		}
+		pending[candidate.jobID] = m.approvalPending(candidate.execID, candidate.nodeID)
+	}
+	return pending
+}
+
+type expiredApprovalCandidate struct {
+	jobID  string
+	execID string
+	nodeID string
+}
+
+func (m *Memory) expiredApprovalCandidatesLocked(scope isolation.Scope, now time.Time) []expiredApprovalCandidate {
+	var out []expiredApprovalCandidate
+	for _, exec := range m.executions {
+		if exec.workspaceID != scope.WorkspaceID() {
+			continue
+		}
+		for _, job := range exec.jobs {
+			if !jobIsWritable(job.Status) || job.LeaseExpiresAt == nil || now.Before(*job.LeaseExpiresAt) {
+				continue
+			}
+			stepIdx := indexStep(exec.steps, job.ExecutionStepID)
+			if stepIdx < 0 || exec.steps[stepIdx].NodeType != "flow.approval" {
+				continue
+			}
+			out = append(out, expiredApprovalCandidate{
+				jobID:  job.ID,
+				execID: exec.record.ID,
+				nodeID: exec.steps[stepIdx].NodeID,
+			})
+		}
+	}
+	return out
 }
 
 func (m *Memory) WaitJob(_ context.Context, scope isolation.Scope, now time.Time, in WaitJobInput) (DispatchResult, error) {
@@ -682,7 +735,7 @@ func (m *Memory) mutateJob(scope isolation.Scope, now time.Time, in JobActionInp
 	}, nil
 }
 
-func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope, now time.Time) int {
+func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope, now time.Time, approvalPending map[string]bool) int {
 	n := 0
 	expiredLeases := 0
 	hooked := map[string]struct{}{}
@@ -737,8 +790,26 @@ func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope
 				continue
 			}
 			if stepIdx >= 0 && exec.steps[stepIdx].NodeType == "flow.approval" {
-				pending := m.approvalPending != nil && m.approvalPending(exec.record.ID, exec.steps[stepIdx].NodeID)
-				if !pending {
+				known, ok := approvalPending[job.ID]
+				if !ok {
+					continue
+				}
+				if !known {
+					if ApprovalPastLimit(job.CreatedAt, exec.steps[stepIdx].Input, now) {
+						job.Status = JobFailed
+						job.WorkerID = ""
+						job.LeaseExpiresAt = nil
+						job.HeartbeatAt = nil
+						job.UpdatedAt = now
+						exec.jobs[i] = job
+						exec.steps[stepIdx].Error = requirementUnresolvableStepError()
+						exec.steps[stepIdx].LeaseID = ""
+						applyStepStatus(&exec.steps[stepIdx], ExecutionFailed, now)
+						changed = true
+						outcome = "failed"
+						n++
+						continue
+					}
 					job.Status = JobQueued
 					job.WorkerID = ""
 					job.LeaseExpiresAt = nil

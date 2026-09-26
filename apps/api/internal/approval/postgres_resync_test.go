@@ -794,3 +794,213 @@ spec:
   edges: []
 `
 }
+
+func TestPostgresPolicyVersionPrivilegeStaysPending(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	dsn := testDatabaseURL(t)
+	admin, err := postgres.OpenAdmin(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	app, err := postgres.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+	ids := identity.NewPostgres(admin)
+	suffix := time.Now().UnixNano()
+	tenant, err := ids.CreateTenant(ctx, formatSlug("vg", suffix), "VG")
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := ids.UpsertUser(ctx, "https://idp.example", formatSlug("vu", suffix), "Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	approverUser, err := ids.UpsertUser(ctx, "https://idp.example", formatSlug("va", suffix), "Approver")
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := wfstore.NewPostgres(app)
+	approvals := NewPostgres(app)
+	ops := opsconfig.NewPostgres(app)
+	scope, _ := desk(t, ctx, ids, tenant.ID, user.ID, approverUser.ID, suffix)
+	spec := map[string]any{"kind": "approval", "policy": map[string]any{"approverRole": "approver", "expiresIn": "PT1H"}}
+	resource, draft, err := ops.Create(ctx, scope, opsconfig.CreateInput{
+		Kind: opsconfig.KindPolicy, Name: "Version grant", Slug: formatSlug("vl", suffix), Spec: spec,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ops.Publish(ctx, scope, opsconfig.KindPolicy, resource.ID, opsconfig.PublishInput{ExpectedRevision: draft.Revision, Note: "v1"}); err != nil {
+		t.Fatal(err)
+	}
+	src := `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: version-grant-` + formatSlug("vg", suffix) + `
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: gate
+      type: flow.approval
+      name: Gate
+      with:
+        approverRole: approver
+        policyId: ` + resource.ID + `
+        expiresIn: PT1H
+  edges: []
+`
+	exec := publishRun(t, ctx, store, scope, src, "v1")
+	now := time.Now().UTC()
+	rec, err := approvals.Create(ctx, scope, CreateInput{
+		WorkflowID: exec.WorkflowID, WorkflowVersionID: exec.WorkflowVersionID, WorkflowDigest: exec.WorkflowDigest,
+		ExecutionID: exec.ID, RequestedBy: user.ID,
+		Requirement: policy.Requirement{
+			NodeID: "gate", NodeName: "Gate", Operation: "flow.approval",
+			ApproverRole: "approver", ExpiresAt: now.Add(time.Hour),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.Exec(ctx, `REVOKE SELECT ON ops_resource_versions FROM flowforge_app`); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = admin.Exec(context.Background(), `GRANT SELECT ON ops_resource_versions TO flowforge_app`)
+	}()
+	stats, err := resyncWorkspace(ctx, app, store, ops, scope.WorkspaceID(), now)
+	if err != nil || stats.Closed != 0 || stats.Corrected != 0 {
+		t.Fatalf("stats = %+v %v", stats, err)
+	}
+	got, err := approvals.Get(ctx, scope, rec.ID)
+	if err != nil || got.Status != StatusPending || got.CloseReason != "" {
+		t.Fatalf("row = %+v %v", got, err)
+	}
+	events, err := approvals.Events(ctx, scope, rec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range events {
+		if ev.EventType == EventCanceled {
+			t.Fatalf("canceled = %+v", ev)
+		}
+	}
+}
+
+func TestPostgresResyncKeepsPinnedPolicyRole(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	dsn := testDatabaseURL(t)
+	admin, err := postgres.OpenAdmin(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	app, err := postgres.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+	ids := identity.NewPostgres(admin)
+	suffix := time.Now().UnixNano()
+	tenant, err := ids.CreateTenant(ctx, formatSlug("pr", suffix), "PR")
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := ids.UpsertUser(ctx, "https://idp.example", formatSlug("pu", suffix), "Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	approverUser, err := ids.UpsertUser(ctx, "https://idp.example", formatSlug("pa", suffix), "Approver")
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := wfstore.NewPostgres(app)
+	approvals := NewPostgres(app)
+	ops := opsconfig.NewPostgres(app)
+	scope, _ := desk(t, ctx, ids, tenant.ID, user.ID, approverUser.ID, suffix)
+	v1Spec := map[string]any{"kind": "approval", "policy": map[string]any{"approverRole": "admin", "expiresIn": "PT1H"}}
+	resource, draft, err := ops.Create(ctx, scope, opsconfig.CreateInput{
+		Kind: opsconfig.KindPolicy, Name: "Pinned role", Slug: formatSlug("pl", suffix), Spec: v1Spec,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ver1, err := ops.Publish(ctx, scope, opsconfig.KindPolicy, resource.ID, opsconfig.PublishInput{ExpectedRevision: draft.Revision, Note: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: pinned-role-` + formatSlug("pr", suffix) + `
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: gate
+      type: flow.approval
+      name: Gate
+      with:
+        approverRole: approver
+        policyId: ` + resource.ID + `
+        expiresIn: PT1H
+  edges: []
+`
+	exec := publishRun(t, ctx, store, scope, src, "v1")
+	if _, err := ops.BindPins(ctx, scope, opsconfig.BindInput{
+		OwnerKind: opsconfig.OwnerExecution, OwnerID: exec.ID,
+		Pins: []opsconfig.Pin{{
+			Kind: opsconfig.KindPolicy, ResourceID: resource.ID, VersionID: ver1.ID,
+			VersionNumber: ver1.VersionNumber, Digest: ver1.Digest,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	claimed, err := store.ClaimJob(ctx, scope, now, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
+	if err != nil || claimed.Step.NodeID != "gate" {
+		t.Fatalf("claim = %s %v", claimed.Step.NodeID, err)
+	}
+	if _, err := store.WaitJob(ctx, scope, now, wfstore.WaitJobInput{
+		JobID: claimed.Job.ID, AvailableAt: now.Add(time.Hour),
+		Approval: &wfstore.ParkedApproval{
+			WorkflowID: exec.WorkflowID, WorkflowVersionID: exec.WorkflowVersionID, WorkflowDigest: exec.WorkflowDigest,
+			ExecutionID: exec.ID, RequestedBy: exec.RequestedBy,
+			NodeID: "gate", NodeName: "Gate", Operation: "flow.approval", ApproverRole: "approver",
+			PolicyResourceID: resource.ID, PolicyVersionID: ver1.ID, PolicyDigest: ver1.Digest, PolicyRevision: ver1.VersionNumber,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	v2Spec := map[string]any{"kind": "approval", "policy": map[string]any{"approverRole": "auditor", "expiresIn": "PT2H"}}
+	_, next, err := ops.SaveDraft(ctx, scope, opsconfig.KindPolicy, resource.ID, opsconfig.SaveInput{
+		ExpectedRevision: draft.Revision, Name: "Pinned role", Spec: v2Spec,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ver2, err := ops.Publish(ctx, scope, opsconfig.KindPolicy, resource.ID, opsconfig.PublishInput{ExpectedRevision: next.Revision, Note: "v2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stats, err := resyncWorkspace(ctx, app, store, ops, scope.WorkspaceID(), now)
+	if err != nil || stats.Closed != 0 || stats.Corrected != 1 {
+		t.Fatalf("stats = %+v %v", stats, err)
+	}
+	rows, err := approvals.List(ctx, scope, Filter{ExecutionID: exec.ID})
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("rows = %+v %v", rows, err)
+	}
+	got := rows[0]
+	if got.Status != StatusPending || got.ApproverRole != "admin" || got.PolicyVersionID != ver1.ID || got.PolicyVersionID == ver2.ID {
+		t.Fatalf("row = %+v newer %s", got, ver2.ID)
+	}
+}

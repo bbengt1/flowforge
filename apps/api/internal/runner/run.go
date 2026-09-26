@@ -180,7 +180,7 @@ func (r *Runner) claimOne(ctx context.Context, ws Workspace) (bool, error) {
 	ctx, span := observability.Continue(ctx, job.Job.TraceParent, job.Job.TraceState, "runner.job")
 	defer span.End()
 	if job.Step.NodeType == "flow.approval" {
-		until, decision := approvalDeadline(job.Step, r.now())
+		until, decision := approvalDeadline(job.Step, job.Job.CreatedAt)
 		if decision.Fail {
 			if err := r.queue.Fail(ctx, ws, *job, decision.Error); err != nil {
 				return true, err
@@ -190,12 +190,7 @@ func (r *Runner) claimOne(ctx context.Context, ws Workspace) (bool, error) {
 		}
 		if err := r.parkApproval(ctx, ws, *job, until); err != nil {
 			if errors.Is(err, approval.ErrBindingTransient) {
-				if q, ok := r.queue.(*StoreQueue); ok {
-					if relErr := q.Release(ctx, ws, *job); relErr != nil && r.log != nil {
-						r.log.Warn("production runner left a transient approval claim", "job_id", job.Job.ID, "reason", "release failed")
-					}
-				}
-				return true, err
+				return r.leaveTransientApproval(ctx, ws, *job)
 			}
 			var unresolved approvalBindingError
 			if errors.As(err, &unresolved) {
@@ -270,7 +265,40 @@ func (r *Runner) claimOne(ctx context.Context, ws Workspace) (bool, error) {
 	return true, nil
 }
 
-func approvalDeadline(step wfstore.ExecutionStep, now time.Time) (time.Time, Decision) {
+// leaveTransientApproval keeps one stuck gate from stopping the claim pass.
+// A rebuild that is still inside the first-queued plus expiresIn limit is
+// logged and released. The pass continues either way. Past that limit the
+// job fails with requirement_unresolvable and does not take expired.
+func (r *Runner) leaveTransientApproval(ctx context.Context, ws Workspace, job Job) (bool, error) {
+	if wfstore.ApprovalPastLimit(job.Job.CreatedAt, job.Step.Input, r.now()) {
+		failure := map[string]any{
+			"code":    wfstore.ReasonRequirementUnresolvable,
+			"message": "The approval requirement could not be rebuilt.",
+		}
+		if err := r.queue.Fail(ctx, ws, job, failure); err != nil {
+			return true, err
+		}
+		if r.log != nil {
+			r.log.Info("production runner failed job", "workspace_id", ws.ID, "job_id", job.Job.ID, "node_type", job.Step.NodeType, "code", wfstore.ReasonRequirementUnresolvable)
+		}
+		return true, nil
+	}
+	if q, ok := r.queue.(*StoreQueue); ok {
+		if relErr := q.Release(ctx, ws, job); relErr != nil && r.log != nil {
+			r.log.Warn("production runner left a transient approval claim", "job_id", job.Job.ID, "reason", "release failed")
+		}
+	}
+	if r.log != nil {
+		r.log.Warn("production runner skipped a transient approval claim",
+			"workspace_id", ws.ID,
+			"job_id", job.Job.ID,
+			"code", "approval_requirement_unavailable",
+		)
+	}
+	return true, nil
+}
+
+func approvalDeadline(step wfstore.ExecutionStep, queuedAt time.Time) (time.Time, Decision) {
 	if step.NodeType != "flow.approval" {
 		return time.Time{}, Decision{}
 	}
@@ -282,14 +310,17 @@ func approvalDeadline(step wfstore.ExecutionStep, now time.Time) (time.Time, Dec
 		}
 		return time.Time{}, fail(code, errs[0].Message)
 	}
+	if limit, ok := wfstore.ApprovalRetryLimit(queuedAt, step.Input); ok {
+		return limit, Decision{}
+	}
 	secs := 0
 	if res != nil {
 		secs = asInt(res.Audit["expiresSeconds"])
 	}
-	if secs <= 0 {
+	if secs <= 0 || queuedAt.IsZero() {
 		return time.Time{}, fail(CodeUnsupported, "Production runner cannot park an approval without an expiry.")
 	}
-	return now.Add(time.Duration(secs) * time.Second), Decision{}
+	return queuedAt.UTC().Add(time.Duration(secs) * time.Second), Decision{}
 }
 
 func delayDeadline(step wfstore.ExecutionStep, now time.Time) (time.Time, Decision) {

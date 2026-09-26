@@ -759,6 +759,10 @@ func resolveOne(ctx context.Context, tx pgx.Tx, ref Ref) (Pin, error) {
 		`, ref.ResourceID, ref.VersionID), ref.Kind)
 	}
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			return Pin{}, err
+		}
 		if errors.Is(err, ErrNotFound) {
 			return Pin{}, ErrDraftNotUsable
 		}

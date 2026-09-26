@@ -144,6 +144,18 @@ func (m *Memory) HasPending(executionID, nodeID string) bool {
 	return false
 }
 
+func (m *Memory) policyPinsLocked(executionID string) []runPin {
+	slot := m.runPins[executionID]
+	if len(slot.policies) == 0 {
+		return nil
+	}
+	out := make([]runPin, 0, len(slot.policies))
+	for _, pin := range slot.policies {
+		out = append(out, pin)
+	}
+	return out
+}
+
 func (m *Memory) policyPin(executionID, resourceID string) runPin {
 	if resourceID == "" {
 		return runPin{}
@@ -546,11 +558,16 @@ func (m *Memory) ResyncPending(ctx context.Context, versions VersionSource, ops 
 	type item struct {
 		workspaceID string
 		rec         Record
+		pins        []runPin
 	}
 	var pending []item
 	for _, row := range m.rows {
 		if row.record.Status == StatusPending {
-			pending = append(pending, item{workspaceID: row.workspaceID, rec: cloneRecord(row.record)})
+			pending = append(pending, item{
+				workspaceID: row.workspaceID,
+				rec:         cloneRecord(row.record),
+				pins:        m.policyPinsLocked(row.record.ExecutionID),
+			})
 		}
 	}
 	m.mu.Unlock()
@@ -572,7 +589,7 @@ func (m *Memory) ResyncPending(ctx context.Context, versions VersionSource, ops 
 			stats.Failed++
 			continue
 		}
-		req, err := ResolveGateRequirement(ctx, scope, versions, ops, item.rec.WorkflowID, item.rec.WorkflowVersionID, item.rec.NodeID, now)
+		req, err := resolveGateRequirement(ctx, scope, versions, ops, item.rec.WorkflowID, item.rec.WorkflowVersionID, item.rec.NodeID, now, item.pins)
 		m.mu.Lock()
 		row, ok := m.rows[item.rec.ID]
 		if !ok || row.workspaceID != item.workspaceID || row.record.Status != StatusPending {

@@ -28,6 +28,13 @@ type PinSource interface {
 // A nil source evaluates with no pins. A resolve error is returned as-is
 // so the caller can fail closed.
 func ResolvePins(ctx context.Context, scope isolation.Scope, ops PinSource, yamlDoc string) ([]opsconfig.Pin, error) {
+	return resolvePins(ctx, scope, ops, yamlDoc, nil)
+}
+
+// resolvePins resolves definition refs. pinned, when set, selects each
+// policy's run pin instead of the latest published revision, so role and
+// expiry come from the revision the run started with.
+func resolvePins(ctx context.Context, scope isolation.Scope, ops PinSource, yamlDoc string, pinned []runPin) ([]opsconfig.Pin, error) {
 	if ops == nil {
 		return []opsconfig.Pin{}, nil
 	}
@@ -35,6 +42,7 @@ func ResolvePins(ctx context.Context, scope isolation.Scope, ops PinSource, yaml
 	if len(refs) == 0 {
 		return []opsconfig.Pin{}, nil
 	}
+	stampRunPins(refs, pinned)
 	pins, err := ops.Resolve(ctx, scope, refs)
 	if err != nil {
 		return nil, err
@@ -62,11 +70,30 @@ func ResolvePins(ctx context.Context, scope isolation.Scope, ops PinSource, yaml
 	if len(extra) == 0 {
 		return pins, nil
 	}
+	stampRunPins(extra, pinned)
 	more, err := ops.Resolve(ctx, scope, extra)
 	if err != nil {
 		return nil, err
 	}
 	return append(pins, more...), nil
+}
+
+func stampRunPins(refs []opsconfig.Ref, pinned []runPin) {
+	if len(refs) == 0 || len(pinned) == 0 {
+		return
+	}
+	byID := map[string]string{}
+	for _, pin := range pinned {
+		if pin.PolicyResourceID == "" || pin.PolicyVersionID == "" {
+			continue
+		}
+		byID[pin.PolicyResourceID] = pin.PolicyVersionID
+	}
+	for i := range refs {
+		if versionID, ok := byID[refs[i].ResourceID]; ok {
+			refs[i].VersionID = versionID
+		}
+	}
 }
 
 // ResolveGateRequirement re-derives the requirement for one node from the
@@ -79,6 +106,10 @@ func ResolvePins(ctx context.Context, scope isolation.Scope, ops PinSource, yaml
 // context, or timeout failure returns ErrBindingTransient. The caller
 // retries that and does not cancel or correct the row.
 func ResolveGateRequirement(ctx context.Context, scope isolation.Scope, versions VersionSource, ops PinSource, workflowID, versionID, nodeID string, now time.Time) (policy.Requirement, error) {
+	return resolveGateRequirement(ctx, scope, versions, ops, workflowID, versionID, nodeID, now, nil)
+}
+
+func resolveGateRequirement(ctx context.Context, scope isolation.Scope, versions VersionSource, ops PinSource, workflowID, versionID, nodeID string, now time.Time, pinned []runPin) (policy.Requirement, error) {
 	if versions == nil {
 		return policy.Requirement{}, fmt.Errorf("%w: workflow version is not available", ErrBindingUnresolved)
 	}
@@ -89,7 +120,7 @@ func ResolveGateRequirement(ctx context.Context, scope isolation.Scope, versions
 		}
 		return policy.Requirement{}, fmt.Errorf("%w: version lookup failed", ErrBindingUnresolved)
 	}
-	pins, err := ResolvePins(ctx, scope, ops, ver.DefinitionYAML)
+	pins, err := resolvePins(ctx, scope, ops, ver.DefinitionYAML, pinned)
 	if err != nil {
 		if privilegeDenied(err) || !pinFailureDefinitive(err) {
 			return policy.Requirement{}, fmt.Errorf("%w: pin resolve failed", ErrBindingTransient)
