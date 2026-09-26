@@ -10,6 +10,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/page"
+	"github.com/bbengt1/flowforge/apps/api/internal/parkedapproval"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -57,6 +58,10 @@ func (p *Postgres) Create(ctx context.Context, scope isolation.Scope, in CreateI
 		return Record{}, mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
+
+	if err := parkedapproval.SupersedeOtherPending(ctx, tx, scope.WorkspaceID(), rec.ExecutionID, rec.NodeID, rec.BindingFingerprint, time.Now().UTC()); err != nil {
+		return Record{}, mapDBErr(err)
+	}
 
 	var existing Record
 	err = scanRecord(tx.QueryRow(ctx, `SELECT `+recordColumns+`

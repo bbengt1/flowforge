@@ -152,9 +152,10 @@ const (
 
 // DeleteResult is the secret-free record of a soft delete.
 type DeleteResult struct {
-	ID        string
-	Name      string
-	Published bool
+	ID         string
+	Name       string
+	Published  bool
+	ClosedRuns []string
 }
 
 // Workflow is the workspace-owned authoring record.

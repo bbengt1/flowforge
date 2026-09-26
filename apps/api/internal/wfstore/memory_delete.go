@@ -22,7 +22,7 @@ func (m *Memory) Delete(ctx context.Context, scope isolation.Scope, id string) (
 		return DeleteResult{}, ErrNotFound
 	}
 	runWorkflowRowLockHook(ctx)
-	impact, parked := classifyDeleteRuns(m.openRunsLocked(scope, id))
+	impact, parked, finished := classifyDeleteRuns(m.openRunsLocked(scope, id))
 	if impact.Blocked {
 		return DeleteResult{}, ErrActiveExecutions
 	}
@@ -31,6 +31,9 @@ func (m *Memory) Delete(ctx context.Context, scope isolation.Scope, id string) (
 		if err := m.closeParkedLocked(scope, now, executionID); err != nil {
 			return DeleteResult{}, err
 		}
+	}
+	for _, executionID := range finished {
+		m.rollupFinishedLocked(now, executionID)
 	}
 	published := row.record.Status == StatusPublished
 	row.record.Status = StatusDraft
@@ -58,7 +61,7 @@ func (m *Memory) Delete(ctx context.Context, scope isolation.Scope, id string) (
 			Details:      details,
 		}, now),
 	})
-	return DeleteResult{ID: id, Name: row.record.Name, Published: published}, nil
+	return DeleteResult{ID: id, Name: row.record.Name, Published: published, ClosedRuns: append([]string(nil), parked...)}, nil
 }
 
 func (m *Memory) DeleteImpact(_ context.Context, scope isolation.Scope, id string) (DeleteImpact, error) {
@@ -74,7 +77,7 @@ func (m *Memory) DeleteImpact(_ context.Context, scope isolation.Scope, id strin
 	if !ok || row.workspaceID != scope.WorkspaceID() || row.deletedAt != nil {
 		return DeleteImpact{}, ErrNotFound
 	}
-	impact, _ := classifyDeleteRuns(m.openRunsLocked(scope, id))
+	impact, _, _ := classifyDeleteRuns(m.openRunsLocked(scope, id))
 	return impact, nil
 }
 
@@ -95,6 +98,59 @@ func (m *Memory) openRunsLocked(scope isolation.Scope, workflowID string) []open
 		})
 	}
 	return runs
+}
+
+// ApprovalGateWaiting reports whether the latest flow.approval step is still waiting.
+func (m *Memory) ApprovalGateWaiting(executionID, nodeID string) (found, waiting bool) {
+	if m == nil {
+		return false, false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	exec, ok := m.executions[executionID]
+	if !ok {
+		return false, false
+	}
+	var step *ExecutionStep
+	for i := range exec.steps {
+		candidate := &exec.steps[i]
+		if candidate.NodeID != nodeID || candidate.NodeType != "flow.approval" {
+			continue
+		}
+		if step == nil || candidate.Attempt > step.Attempt {
+			step = candidate
+		}
+	}
+	if step == nil {
+		return false, false
+	}
+	var jobStatus string
+	var jobAt time.Time
+	var haveJob bool
+	for _, job := range exec.jobs {
+		if job.ExecutionStepID != step.ID {
+			continue
+		}
+		if !haveJob || job.CreatedAt.After(jobAt) {
+			jobStatus = job.Status
+			jobAt = job.CreatedAt
+			haveJob = true
+		}
+	}
+	return true, step.Status == ExecutionWaiting && jobStatus == JobWaiting
+}
+
+func (m *Memory) rollupFinishedLocked(now time.Time, executionID string) {
+	exec, ok := m.executions[executionID]
+	if !ok {
+		return
+	}
+	next := rollupExecutionStatus(exec.jobs, exec.steps)
+	if !isTerminalExecution(next) {
+		return
+	}
+	applyExecutionStatus(&exec.record, next, now)
+	m.executions[executionID] = exec
 }
 
 func (m *Memory) closeParkedLocked(scope isolation.Scope, now time.Time, executionID string) error {

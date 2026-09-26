@@ -33,18 +33,18 @@ func TestClassifyDeleteRuns(t *testing.T) {
 		jobs:   []ExecutionJob{{Status: JobSucceeded}},
 	}
 
-	impact, parked := classifyDeleteRuns([]openRun{waiting, done})
-	if impact.Blocked || impact.InFlightRuns != 0 || impact.WaitingRuns != 1 || len(parked) != 1 || parked[0] != "parked" {
-		t.Fatalf("parked impact = %+v ids=%v", impact, parked)
+	impact, parked, rollup := classifyDeleteRuns([]openRun{waiting, done})
+	if impact.Blocked || impact.InFlightRuns != 0 || impact.WaitingRuns != 1 || len(parked) != 1 || parked[0] != "parked" || len(rollup) != 0 {
+		t.Fatalf("parked impact = %+v ids=%v rollup=%v", impact, parked, rollup)
 	}
 
-	impact, parked = classifyDeleteRuns([]openRun{sibling, queued})
-	if !impact.Blocked || impact.InFlightRuns != 2 || impact.WaitingRuns != 0 || len(parked) != 0 {
-		t.Fatalf("in-flight impact = %+v ids=%v", impact, parked)
+	impact, parked, rollup = classifyDeleteRuns([]openRun{sibling, queued})
+	if !impact.Blocked || impact.InFlightRuns != 2 || impact.WaitingRuns != 0 || len(parked) != 0 || len(rollup) != 0 {
+		t.Fatalf("in-flight impact = %+v ids=%v rollup=%v", impact, parked, rollup)
 	}
 
-	impact, parked = classifyDeleteRuns([]openRun{finished})
-	if impact.Blocked || impact.InFlightRuns != 0 || impact.WaitingRuns != 0 || len(parked) != 0 {
-		t.Fatalf("finished-but-active impact = %+v ids=%v", impact, parked)
+	impact, parked, rollup = classifyDeleteRuns([]openRun{finished})
+	if impact.Blocked || impact.InFlightRuns != 0 || impact.WaitingRuns != 0 || len(parked) != 0 || len(rollup) != 1 || rollup[0] != "finished-active" {
+		t.Fatalf("finished-but-active impact = %+v ids=%v rollup=%v", impact, parked, rollup)
 	}
 }

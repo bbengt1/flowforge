@@ -40,7 +40,20 @@ BEGIN
             RAISE EXCEPTION 'flowforge_app has BYPASSRLS and migration role % cannot remove it; run migrations as a superuser or a role with BYPASSRLS', current_user
                 USING ERRCODE = '42501';
         END IF;
-        ALTER ROLE flowforge_app NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT;
+        -- Only attributes that differ. A non-superuser can clear LOGIN or
+        -- INHERIT without sending NOSUPERUSER or NOBYPASSRLS.
+        IF app_login THEN
+            ALTER ROLE flowforge_app NOLOGIN;
+        END IF;
+        IF app_super THEN
+            ALTER ROLE flowforge_app NOSUPERUSER;
+        END IF;
+        IF app_bypass THEN
+            ALTER ROLE flowforge_app NOBYPASSRLS;
+        END IF;
+        IF app_inherit THEN
+            ALTER ROLE flowforge_app NOINHERIT;
+        END IF;
     END IF;
     IF NOT pg_has_role(current_user, 'flowforge_app', 'MEMBER') THEN
         GRANT flowforge_app TO CURRENT_USER;

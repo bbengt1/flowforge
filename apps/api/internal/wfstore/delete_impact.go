@@ -22,9 +22,9 @@ type openRun struct {
 // A run whose unfinished work is only waiting, pending, or blocked does not.
 // An in-flight run is not also counted as waiting, even when a sibling
 // branch is parked on a gate.
-func classifyDeleteRuns(runs []openRun) (DeleteImpact, []string) {
+func classifyDeleteRuns(runs []openRun) (DeleteImpact, []string, []string) {
 	var impact DeleteImpact
-	var parked []string
+	var parked, rollup []string
 	for _, run := range runs {
 		if isTerminalExecution(run.status) {
 			continue
@@ -38,9 +38,13 @@ func classifyDeleteRuns(runs []openRun) (DeleteImpact, []string) {
 		if hold {
 			impact.WaitingRuns++
 			parked = append(parked, run.id)
+			continue
+		}
+		if isTerminalExecution(rollupExecutionStatus(run.jobs, run.steps)) {
+			rollup = append(rollup, run.id)
 		}
 	}
-	return impact, parked
+	return impact, parked, rollup
 }
 
 func classifyOneRun(jobs []ExecutionJob, steps []ExecutionStep) (inFlight, parked bool) {

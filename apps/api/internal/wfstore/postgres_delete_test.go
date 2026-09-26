@@ -11,6 +11,91 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/schedule"
 )
 
+func TestPostgresDeleteRollsUpFinishedActiveRun(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	defer cancel()
+	dsn := testDatabaseURL(t)
+	admin, err := postgres.OpenAdmin(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	app, err := postgres.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+	store := NewPostgres(app)
+	ws, _, userID := seedWorkflowWorkspaces(t, ctx, admin)
+	scope, err := isolation.Authorize(ws, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalized := mustNormalize(t, fixtureYAML)
+	wf, draft, err := store.Create(ctx, scope, CreateInput{
+		Slug:           "finished-active-slot",
+		NormalizedYAML: normalized.NormalizedYAML,
+		Digest:         normalized.Digest,
+		Summary:        normalized.Summary,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ver, err := store.Publish(ctx, scope, wf.ID, PublishInput{ExpectedRevision: draft.Revision, Note: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exec, err := store.StartExecution(ctx, scope, wf.ID, StartInput{VersionID: ver.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.Exec(ctx, `
+		UPDATE execution_jobs SET status = 'succeeded', updated_at = now() WHERE execution_id = $1::uuid
+	`, exec.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.Exec(ctx, `
+		UPDATE execution_steps SET status = 'succeeded', finished_at = now(), updated_at = now() WHERE execution_id = $1::uuid
+	`, exec.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.Exec(ctx, `
+		UPDATE executions SET status = 'running', updated_at = now() WHERE id = $1::uuid
+	`, exec.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.StartExecution(ctx, scope, wf.ID, StartInput{VersionID: ver.ID, MaxOpen: 1}); !errors.Is(err, ErrConcurrency) {
+		t.Fatalf("slot before delete = %v", err)
+	}
+	if _, err := store.Delete(ctx, scope, wf.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.GetExecutionByID(ctx, scope, exec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != ExecutionSucceeded {
+		t.Fatalf("rolled up = %s", got.Status)
+	}
+	otherNorm := mustNormalize(t, fixtureYAML)
+	other, otherDraft, err := store.Create(ctx, scope, CreateInput{
+		Slug:           "after-finished-rollup",
+		NormalizedYAML: otherNorm.NormalizedYAML,
+		Digest:         otherNorm.Digest,
+		Summary:        otherNorm.Summary,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, otherVer, err := store.Publish(ctx, scope, other.ID, PublishInput{ExpectedRevision: otherDraft.Revision, Note: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.StartExecution(ctx, scope, other.ID, StartInput{VersionID: otherVer.ID, MaxOpen: 1}); err != nil {
+		t.Fatalf("slot after rollup = %v", err)
+	}
+}
+
 func TestPostgresSoftDeleteSlugAndActiveExecution(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()

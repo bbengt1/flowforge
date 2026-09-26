@@ -310,6 +310,11 @@ func newServer(d Deps) *API {
 	if approvalStore == nil {
 		approvalStore = inferApprovals(d.DB)
 	}
+	if wfMem, ok := workflows.(*wfstore.Memory); ok {
+		if apMem, ok := approvalStore.(*approval.Memory); ok {
+			apMem.SetGateWaiting(wfMem.ApprovalGateWaiting)
+		}
+	}
 	alertStore := d.Alerts
 	if alertStore == nil {
 		alertStore = inferAlerts(d.DB)

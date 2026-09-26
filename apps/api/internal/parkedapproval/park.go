@@ -44,8 +44,14 @@ type Pending struct {
 	ExpiresAt         time.Time
 }
 
-// Fingerprint matches approval.BindingFingerprint.
-func Fingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID, executionID string) string {
+// Fingerprint matches approval.BindingFingerprint. The approver role and
+// the target and policy version ids are part of the bind, so a row minted
+// for a different role cannot be reused.
+func Fingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID, approverRole, executionID string) string {
+	role := strings.TrimSpace(approverRole)
+	if role == "" {
+		role = "approver"
+	}
 	parts := []string{
 		strings.TrimSpace(workspaceID),
 		strings.TrimSpace(workflowVersionID),
@@ -55,6 +61,7 @@ func Fingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID
 		strings.TrimSpace(policyDigest),
 		strings.TrimSpace(operation),
 		strings.TrimSpace(nodeID),
+		role,
 	}
 	if exec := strings.TrimSpace(executionID); exec != "" {
 		parts = append(parts, exec)
@@ -84,7 +91,10 @@ func Insert(ctx context.Context, tx pgx.Tx, in Pending) error {
 	}
 	expires := in.ExpiresAt.UTC()
 	now := time.Now().UTC()
-	fp := Fingerprint(in.WorkspaceID, in.WorkflowVersionID, in.WorkflowDigest, in.TargetVersionID, in.PolicyVersionID, in.PolicyDigest, operation, nodeID, in.ExecutionID)
+	fp := Fingerprint(in.WorkspaceID, in.WorkflowVersionID, in.WorkflowDigest, in.TargetVersionID, in.PolicyVersionID, in.PolicyDigest, operation, nodeID, role, in.ExecutionID)
+	if err := SupersedeOtherPending(ctx, tx, in.WorkspaceID, in.ExecutionID, nodeID, fp, now); err != nil {
+		return err
+	}
 	var existingID, existingStatus string
 	var existingExpires time.Time
 	err := tx.QueryRow(ctx, `
@@ -135,6 +145,39 @@ func Insert(ctx context.Context, tx pgx.Tx, in Pending) error {
 		INSERT INTO approval_events (workspace_id, approval_id, event_type, actor_id, details)
 		VALUES ($1::uuid, $2::uuid, 'created', $3::uuid, $4::jsonb)
 	`, in.WorkspaceID, id, nullUUID(in.ActorID), raw)
+	return err
+}
+
+// SupersedeOtherPending invalidates other pending rows for the same
+// execution and node whose fingerprint does not match. A row bound to the
+// wrong approver role, target, or policy cannot stay decidable.
+func SupersedeOtherPending(ctx context.Context, tx pgx.Tx, workspaceID, executionID, nodeID, fingerprint string, now time.Time) error {
+	executionID = strings.TrimSpace(executionID)
+	nodeID = strings.TrimSpace(nodeID)
+	if !authz.ValidUUID(workspaceID) || !authz.ValidUUID(executionID) || nodeID == "" || fingerprint == "" {
+		return nil
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	_, err := tx.Exec(ctx, `
+		WITH closed AS (
+			UPDATE approvals
+			   SET status = 'invalidated',
+			       updated_at = $5
+			 WHERE workspace_id = $1::uuid
+			   AND execution_id = $2::uuid
+			   AND node_id = $3
+			   AND status = 'pending'
+			   AND binding_fingerprint <> $4
+			RETURNING workspace_id, id
+		)
+		INSERT INTO approval_events (workspace_id, approval_id, event_type, actor_id, details, occurred_at)
+		SELECT workspace_id, id, 'invalidated', NULL, '{"reason":"approver_binding_replaced"}'::jsonb, $5
+		  FROM closed
+	`, workspaceID, executionID, nodeID, fingerprint, now)
 	return err
 }
 

@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
@@ -187,6 +188,18 @@ func (r *Runner) claimOne(ctx context.Context, ws Workspace) (bool, error) {
 			return true, nil
 		}
 		if err := r.parkApproval(ctx, ws, *job, until); err != nil {
+			var unresolved approvalBindingError
+			if errors.As(err, &unresolved) {
+				failure := map[string]any{
+					"code":    CodeApprovalBindingUnresolved,
+					"message": "Approval binding could not be resolved.",
+				}
+				if failErr := r.queue.Fail(ctx, ws, *job, failure); failErr != nil {
+					return true, failErr
+				}
+				r.log.Info("production runner failed job", "job_id", job.Job.ID, "node_type", job.Step.NodeType, "code", CodeApprovalBindingUnresolved)
+				return true, nil
+			}
 			return true, err
 		}
 		r.log.Info("production runner parked job", "job_id", job.Job.ID, "node_type", job.Step.NodeType)

@@ -648,7 +648,7 @@ func DispatchApprovalsOK(s *core.Server, ctx context.Context, scope isolation.Sc
 		if fresh.Status != approval.StatusApproved {
 			return created, ErrApprovalRequired
 		}
-		if fresh.BindingFingerprint != approval.BindingFingerprint(scope.WorkspaceID(), versionID, eval.WorkflowDigest, rec.TargetVersionID, rec.PolicyVersionID, rec.PolicyDigest, rec.Operation, rec.NodeID) {
+		if fresh.BindingFingerprint != approval.BindingFingerprint(scope.WorkspaceID(), versionID, eval.WorkflowDigest, rec.TargetVersionID, rec.PolicyVersionID, rec.PolicyDigest, rec.Operation, rec.NodeID, rec.ApproverRole) {
 			return created, ErrApprovalRequired
 		}
 	}

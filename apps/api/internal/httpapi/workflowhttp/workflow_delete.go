@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/approval"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/core"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
@@ -54,11 +55,20 @@ func deleteWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	if !s.ChargeWorkspace(w, r, scope.WorkspaceID()) {
 		return
 	}
-	if _, err := s.Workflows.Delete(r.Context(), scope, id); err != nil {
+	result, err := s.Workflows.Delete(r.Context(), scope, id)
+	if err != nil {
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
 	if _, isMemory := s.Workflows.(*wfstore.Memory); isMemory {
+		if s.Approvals != nil {
+			for _, executionID := range result.ClosedRuns {
+				if err := s.Approvals.ClosePendingForExecution(r.Context(), scope, executionID, approval.ReasonWorkflowDeleted, s.ClockNow()); err != nil {
+					core.WriteProblem(w, r, http.StatusInternalServerError, core.CodeInternalError, "Internal Server Error", "An unexpected error occurred.")
+					return
+				}
+			}
+		}
 		if s.Hooks != nil {
 			if err := s.Hooks.DisableForWorkflow(r.Context(), scope, id); err != nil {
 				core.WriteProblem(w, r, http.StatusInternalServerError, core.CodeInternalError, "Internal Server Error", "An unexpected error occurred.")

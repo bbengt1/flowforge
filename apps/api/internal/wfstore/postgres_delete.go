@@ -55,13 +55,18 @@ func (p *Postgres) Delete(ctx context.Context, scope isolation.Scope, id string)
 	if err != nil {
 		return DeleteResult{}, err
 	}
-	impact, parked := classifyDeleteRuns(runs)
+	impact, parked, finished := classifyDeleteRuns(runs)
 	if impact.Blocked {
 		return DeleteResult{}, ErrActiveExecutions
 	}
 	now := time.Now().UTC()
 	for _, executionID := range parked {
 		if err := closeParkedRunTx(ctx, tx, scope, now, executionID); err != nil {
+			return DeleteResult{}, err
+		}
+	}
+	for _, executionID := range finished {
+		if err := rollupExecutionTx(ctx, tx, executionID, now); err != nil {
 			return DeleteResult{}, err
 		}
 	}
@@ -118,7 +123,7 @@ func (p *Postgres) Delete(ctx context.Context, scope isolation.Scope, id string)
 	if err := tx.Commit(ctx); err != nil {
 		return DeleteResult{}, mapDBErr(err)
 	}
-	return DeleteResult{ID: id, Name: name, Published: published}, nil
+	return DeleteResult{ID: id, Name: name, Published: published, ClosedRuns: append([]string(nil), parked...)}, nil
 }
 
 // DeleteImpact classifies open runs with the same function Delete uses.
@@ -156,7 +161,7 @@ func (p *Postgres) DeleteImpact(ctx context.Context, scope isolation.Scope, id s
 	if err := tx.Commit(ctx); err != nil {
 		return DeleteImpact{}, mapDBErr(err)
 	}
-	impact, _ := classifyDeleteRuns(runs)
+	impact, _, _ := classifyDeleteRuns(runs)
 	return impact, nil
 }
 

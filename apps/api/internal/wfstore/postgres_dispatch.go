@@ -52,16 +52,19 @@ func (p *Postgres) ClaimJob(ctx context.Context, scope isolation.Scope, now time
 	lease := normalizeLease(in.Lease)
 	ttl := normalizeBindingTTL(in.BindingTTL)
 
+	// Lease recovery commits before the claim transaction. Holding an
+	// expired-lease execution and then locking its workflow deadlocks with
+	// delete, which locks the workflow first.
+	recovered, err := p.RecoverExpiredLeases(ctx, scope, now)
+	if err != nil {
+		return DispatchResult{}, err
+	}
+
 	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
 	if err != nil {
 		return DispatchResult{}, mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
-
-	recovered, err := recoverExpiredTx(ctx, tx, scope, now)
-	if err != nil {
-		return DispatchResult{}, err
-	}
 
 	// The first read does not lock the job. Two claims can select the same
 	// row; after the live workflow lock, the loser re-reads the next queued
@@ -1154,19 +1157,22 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 }
 
 func recoverExpiredTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now time.Time) (int, error) {
-	// Due-wait workflows are locked before any execution row. Lease recovery
-	// then locks those execution ids, sorted, before job updates. ClaimJob
-	// calls this before its own workflow lock. Cancel and complete lock the
-	// execution before jobs, so recovery must not lock jobs first.
+	// Lock order is workflow, then executions sorted by id, then steps and
+	// jobs. Lease rows are included in that workflow set so recovery never
+	// locks an execution whose workflow is still unlocked.
 	due, err := loadDueWaits(ctx, tx, now)
 	if err != nil {
 		return 0, err
 	}
-	deleted, err := lockDueWaitWorkflows(ctx, tx, due)
+	leaseIDs, leaseWorkflows, err := expiredLeaseExecutions(ctx, tx, now)
 	if err != nil {
 		return 0, err
 	}
-	leaseIDs, err := expiredLeaseExecutionIDs(ctx, tx, now)
+	workflowIDs := append([]string{}, leaseWorkflows...)
+	for _, row := range due {
+		workflowIDs = append(workflowIDs, row.workflowID)
+	}
+	deleted, err := lockWorkflowsSorted(ctx, tx, workflowIDs)
 	if err != nil {
 		return 0, err
 	}
@@ -1260,30 +1266,31 @@ func recoverExpiredTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now
 	return n + stopped + resumed, nil
 }
 
-func expiredLeaseExecutionIDs(ctx context.Context, tx pgx.Tx, now time.Time) ([]string, error) {
+func expiredLeaseExecutions(ctx context.Context, tx pgx.Tx, now time.Time) (execIDs, workflowIDs []string, err error) {
 	rows, err := tx.Query(ctx, `
-		SELECT DISTINCT execution_id::text
-		FROM execution_jobs
-		WHERE status IN ('claimed', 'running')
-		  AND lease_expires_at IS NOT NULL
-		  AND lease_expires_at <= $1
+		SELECT DISTINCT e.workflow_id::text, j.execution_id::text
+		FROM execution_jobs j
+		JOIN executions e ON e.workspace_id = j.workspace_id AND e.id = j.execution_id
+		WHERE j.status IN ('claimed', 'running')
+		  AND j.lease_expires_at IS NOT NULL
+		  AND j.lease_expires_at <= $1
 	`, now)
 	if err != nil {
-		return nil, mapDBErr(err)
+		return nil, nil, mapDBErr(err)
 	}
 	defer rows.Close()
-	var ids []string
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, mapDBErr(err)
+		var workflowID, execID string
+		if err := rows.Scan(&workflowID, &execID); err != nil {
+			return nil, nil, mapDBErr(err)
 		}
-		ids = append(ids, id)
+		workflowIDs = append(workflowIDs, workflowID)
+		execIDs = append(execIDs, execID)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, mapDBErr(err)
+		return nil, nil, mapDBErr(err)
 	}
-	return ids, nil
+	return execIDs, workflowIDs, nil
 }
 
 func loadDueWaits(ctx context.Context, tx pgx.Tx, now time.Time) ([]dueWaitRow, error) {
@@ -1312,15 +1319,18 @@ func loadDueWaits(ctx context.Context, tx pgx.Tx, now time.Time) ([]dueWaitRow, 
 	return out, nil
 }
 
-func lockDueWaitWorkflows(ctx context.Context, tx pgx.Tx, rows []dueWaitRow) (map[string]struct{}, error) {
+func lockWorkflowsSorted(ctx context.Context, tx pgx.Tx, workflowIDs []string) (map[string]struct{}, error) {
 	seen := map[string]struct{}{}
 	var order []string
-	for _, row := range rows {
-		if _, ok := seen[row.workflowID]; ok {
+	for _, workflowID := range workflowIDs {
+		if workflowID == "" {
 			continue
 		}
-		seen[row.workflowID] = struct{}{}
-		order = append(order, row.workflowID)
+		if _, ok := seen[workflowID]; ok {
+			continue
+		}
+		seen[workflowID] = struct{}{}
+		order = append(order, workflowID)
 	}
 	sort.Strings(order)
 	deleted := map[string]struct{}{}

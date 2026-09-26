@@ -19,11 +19,27 @@ type memRow struct {
 	record      Record
 }
 
+// GateWaiting reports whether the latest flow.approval step for a node is
+// still waiting. found is false when that step does not exist.
+type GateWaiting func(executionID, nodeID string) (found, waiting bool)
+
 // Memory is an in-process Store used by HTTP unit tests.
 type Memory struct {
 	mu     sync.Mutex
 	rows   map[string]memRow
 	events map[string][]Event
+	gate   GateWaiting
+}
+
+// SetGateWaiting installs the check Decide uses before it accepts a decision.
+// A nil func leaves decisions that have no gate view unchanged.
+func (m *Memory) SetGateWaiting(fn GateWaiting) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.gate = fn
 }
 
 // NewMemory returns an empty approval store.
@@ -41,6 +57,7 @@ func (m *Memory) Create(_ context.Context, scope isolation.Scope, in CreateInput
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.supersedeLocked(scope, rec)
 	for _, row := range m.rows {
 		if row.workspaceID == scope.WorkspaceID() && row.record.BindingFingerprint == rec.BindingFingerprint &&
 			(row.record.Status == StatusPending || row.record.Status == StatusApproved) {
@@ -132,6 +149,21 @@ func (m *Memory) Decide(_ context.Context, scope isolation.Scope, id string, in 
 	rec := row.record
 	if rec.Status == StatusCanceled {
 		return Record{}, ErrClosed
+	}
+	if rec.ExecutionID != "" && rec.NodeID != "" && m.gate != nil {
+		found, waiting := m.gate(rec.ExecutionID, rec.NodeID)
+		if found && !waiting {
+			if rec.Status == StatusPending {
+				rec.Status = StatusExpired
+				rec.DecidedBy = ""
+				rec.DecidedAt = nil
+				rec.CloseReason = ""
+				rec.UpdatedAt = now
+				m.rows[id] = memRow{workspaceID: scope.WorkspaceID(), record: rec}
+				m.appendEventLocked(scope, rec.ID, EventExpired, "", map[string]any{"reason": "gate_expired"})
+			}
+			return Record{}, ErrClosed
+		}
 	}
 	if scope.ActorID() != "" && rec.RequestedBy != "" && scope.ActorID() == rec.RequestedBy {
 		return Record{}, ErrSelfApproval
@@ -271,6 +303,29 @@ func (m *Memory) applyStatusLocked(scope isolation.Scope, rec Record, status, re
 	return rec
 }
 
+func (m *Memory) supersedeLocked(scope isolation.Scope, rec Record) {
+	if strings.TrimSpace(rec.ExecutionID) == "" || strings.TrimSpace(rec.NodeID) == "" {
+		return
+	}
+	now := time.Now().UTC()
+	for id, row := range m.rows {
+		if row.workspaceID != scope.WorkspaceID() {
+			continue
+		}
+		if row.record.ExecutionID != rec.ExecutionID || row.record.NodeID != rec.NodeID {
+			continue
+		}
+		if row.record.Status != StatusPending || row.record.BindingFingerprint == rec.BindingFingerprint {
+			continue
+		}
+		updated := row.record
+		updated.Status = StatusInvalidated
+		updated.UpdatedAt = now
+		m.rows[id] = memRow{workspaceID: scope.WorkspaceID(), record: updated}
+		m.appendEventLocked(scope, updated.ID, EventInvalidated, "", map[string]any{"reason": "approver_binding_replaced"})
+	}
+}
+
 func (m *Memory) appendEventLocked(scope isolation.Scope, approvalID, eventType, actor string, details map[string]any) {
 	if details == nil {
 		details = map[string]any{}
@@ -296,11 +351,11 @@ func recordFromCreate(scope isolation.Scope, in CreateInput, now time.Time) (Rec
 	if req.ExpiresAt.IsZero() {
 		return Record{}, ErrInvalid
 	}
-	fp := BindingFingerprint(scope.WorkspaceID(), in.WorkflowVersionID, in.WorkflowDigest, req.TargetVersionID, req.PolicyVersionID, req.PolicyDigest, req.Operation, req.NodeID, in.ExecutionID)
 	role := strings.TrimSpace(req.ApproverRole)
 	if role == "" {
 		role = "approver"
 	}
+	fp := BindingFingerprint(scope.WorkspaceID(), in.WorkflowVersionID, in.WorkflowDigest, req.TargetVersionID, req.PolicyVersionID, req.PolicyDigest, req.Operation, req.NodeID, role, in.ExecutionID)
 	requestedBy := strings.TrimSpace(in.RequestedBy)
 	if requestedBy == "" {
 		requestedBy = scope.ActorID()

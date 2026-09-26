@@ -189,14 +189,15 @@ type Store interface {
 	Events(ctx context.Context, scope isolation.Scope, id string) ([]Event, error)
 }
 
-// BindingFingerprint is the immutable bind of version + target + policy + operation.
-// Pass a non-empty executionID only for mid-run waits so pre-run fingerprints stay stable.
-func BindingFingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID string, executionID ...string) string {
+// BindingFingerprint is the immutable bind of version + target + policy +
+// operation + approver role. Pass a non-empty executionID only for mid-run
+// waits so pre-run fingerprints stay stable.
+func BindingFingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID, approverRole string, executionID ...string) string {
 	exec := ""
 	if len(executionID) > 0 {
 		exec = executionID[0]
 	}
-	return parkedapproval.Fingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID, exec)
+	return parkedapproval.Fingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID, approverRole, exec)
 }
 
 // Freshness reports whether a record is still usable against current heads.

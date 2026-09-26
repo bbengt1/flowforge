@@ -123,8 +123,12 @@ func TestMemoryDeleteBlocksQueuedAndRunningOnly(t *testing.T) {
 		held.steps[i].Status = ExecutionWaiting
 	}
 	store.executions[exec.ID] = held
-	if _, err := store.Delete(ctx, scope, waiting.WorkflowID); err != nil {
+	result, err := store.Delete(ctx, scope, waiting.WorkflowID)
+	if err != nil {
 		t.Fatalf("waiting delete = %v", err)
+	}
+	if len(result.ClosedRuns) != 1 || result.ClosedRuns[0] != exec.ID {
+		t.Fatalf("closed runs = %v", result.ClosedRuns)
 	}
 	closed := store.executions[exec.ID]
 	if closed.record.Status != ExecutionFailed {
@@ -187,6 +191,39 @@ func TestDeleteAndStartCloseTheRowLockRace(t *testing.T) {
 			t.Fatalf("start = %v", err)
 		}
 	})
+}
+
+func TestMemoryDeleteRollsUpFinishedActiveRun(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	scope := deleteScope(t)
+	ver := publishFixture(t, store, scope, "finished-active")
+	exec, err := store.StartExecution(ctx, scope, ver.WorkflowID, StartInput{VersionID: ver.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	held := store.executions[exec.ID]
+	held.record.Status = ExecutionRunning
+	for i := range held.jobs {
+		held.jobs[i].Status = JobSucceeded
+	}
+	for i := range held.steps {
+		held.steps[i].Status = ExecutionSucceeded
+	}
+	store.executions[exec.ID] = held
+	if _, err := store.StartExecution(ctx, scope, ver.WorkflowID, StartInput{VersionID: ver.ID, MaxOpen: 1}); !errors.Is(err, ErrConcurrency) {
+		t.Fatalf("slot before delete = %v", err)
+	}
+	if _, err := store.Delete(ctx, scope, ver.WorkflowID); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.executions[exec.ID].record.Status; got != ExecutionSucceeded {
+		t.Fatalf("rolled up = %s", got)
+	}
+	other := publishFixture(t, store, scope, "after-rollup")
+	if _, err := store.StartExecution(ctx, scope, other.WorkflowID, StartInput{VersionID: other.ID, MaxOpen: 1}); err != nil {
+		t.Fatalf("slot after rollup = %v", err)
+	}
 }
 
 func deleteScope(t *testing.T) isolation.Scope {

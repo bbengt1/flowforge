@@ -108,6 +108,26 @@ func TestMigrateAsRestrictedRole(t *testing.T) {
 		t.Fatalf("migrate as restricted role: %v", err)
 	}
 
+	if _, err := admin.Exec(ctx, `ALTER ROLE ff_migrate_check CREATEROLE`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.Exec(ctx, `ALTER ROLE flowforge_app LOGIN INHERIT`); err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(ctx, restricted); err != nil {
+		t.Fatalf("login migrate: %v", err)
+	}
+	var login, inherit, bypass, superUser bool
+	if err := admin.QueryRow(ctx, `
+		SELECT rolcanlogin, rolinherit, rolbypassrls, rolsuper
+		  FROM pg_roles WHERE rolname = 'flowforge_app'
+	`).Scan(&login, &inherit, &bypass, &superUser); err != nil {
+		t.Fatal(err)
+	}
+	if login || inherit || bypass || superUser {
+		t.Fatalf("flowforge_app login=%v inherit=%v bypass=%v super=%v", login, inherit, bypass, superUser)
+	}
+
 	if _, err := admin.Exec(ctx, `ALTER ROLE flowforge_app BYPASSRLS`); err != nil {
 		t.Fatal(err)
 	}
