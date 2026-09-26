@@ -36,7 +36,12 @@ func approvalRetryWait(jitter float64) time.Duration {
 }
 
 // ApprovalRetryLimit is when the job was first queued plus the gate expiresIn.
-// queuedAt is the job created_at. input is the step input, which holds expiresIn.
+// queuedAt is the job created_at. That column is written when the step is
+// materialized and is not rewritten by release, lease recovery, or reclaim.
+// input is the step input. A published flow.approval requires expiresIn, and
+// evaluation fails a claim that has none. This does not substitute the
+// policy requirement builder's PT1H default. A missing or unparseable
+// duration has no limit.
 func ApprovalRetryLimit(queuedAt time.Time, input map[string]any) (time.Time, bool) {
 	if queuedAt.IsZero() {
 		return time.Time{}, false

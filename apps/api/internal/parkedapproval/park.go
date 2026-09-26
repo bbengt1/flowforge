@@ -181,6 +181,40 @@ func SupersedeOtherPending(ctx context.Context, tx pgx.Tx, workspaceID, executio
 	return err
 }
 
+// CancelUnresolvable closes a still-pending approval for this execution and
+// node because the gate's retry deadline passed. close_reason is
+// requirement_unresolvable and no decider is recorded. No matching row is
+// a no-op. The event is secret-free.
+func CancelUnresolvable(ctx context.Context, tx pgx.Tx, executionID, nodeID string, now time.Time) error {
+	if executionID == "" || nodeID == "" {
+		return nil
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	_, err := tx.Exec(ctx, `
+		WITH closed AS (
+			UPDATE approvals
+			   SET status = 'canceled',
+			       close_reason = 'requirement_unresolvable',
+			       decided_by = NULL,
+			       decided_at = NULL,
+			       updated_at = $3
+			 WHERE execution_id = $1::uuid
+			   AND node_id = $2
+			   AND status = 'pending'
+			   AND workspace_id = app.current_workspace_id()
+			RETURNING workspace_id, id
+		)
+		INSERT INTO approval_events (workspace_id, approval_id, event_type, actor_id, details, occurred_at)
+		SELECT workspace_id, id, 'canceled', NULL, '{"reason":"requirement_unresolvable"}'::jsonb, $3
+		  FROM closed
+	`, executionID, nodeID, now)
+	return err
+}
+
 // Expire closes a still-pending approval because its gate is no longer waiting.
 // No decider is recorded. The event is secret-free.
 func Expire(ctx context.Context, tx pgx.Tx, executionID, nodeID string, now time.Time) error {

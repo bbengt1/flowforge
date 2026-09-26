@@ -794,22 +794,22 @@ func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope
 				if !ok {
 					continue
 				}
+				if ApprovalPastLimit(job.CreatedAt, exec.steps[stepIdx].Input, now) {
+					job.Status = JobFailed
+					job.WorkerID = ""
+					job.LeaseExpiresAt = nil
+					job.HeartbeatAt = nil
+					job.UpdatedAt = now
+					exec.jobs[i] = job
+					exec.steps[stepIdx].Error = requirementUnresolvableStepError()
+					exec.steps[stepIdx].LeaseID = ""
+					applyStepStatus(&exec.steps[stepIdx], ExecutionFailed, now)
+					changed = true
+					outcome = "failed"
+					n++
+					continue
+				}
 				if !known {
-					if ApprovalPastLimit(job.CreatedAt, exec.steps[stepIdx].Input, now) {
-						job.Status = JobFailed
-						job.WorkerID = ""
-						job.LeaseExpiresAt = nil
-						job.HeartbeatAt = nil
-						job.UpdatedAt = now
-						exec.jobs[i] = job
-						exec.steps[stepIdx].Error = requirementUnresolvableStepError()
-						exec.steps[stepIdx].LeaseID = ""
-						applyStepStatus(&exec.steps[stepIdx], ExecutionFailed, now)
-						changed = true
-						outcome = "failed"
-						n++
-						continue
-					}
 					job.Status = JobQueued
 					job.WorkerID = ""
 					job.LeaseExpiresAt = nil

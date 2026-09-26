@@ -9,6 +9,23 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 )
 
+func TestApprovalRetryLimitUsesStoredExpiresIn(t *testing.T) {
+	queued := time.Date(2026, 9, 26, 3, 0, 0, 0, time.UTC)
+	limit, ok := ApprovalRetryLimit(queued, map[string]any{"expiresIn": "PT1H"})
+	if !ok || !limit.Equal(queued.Add(time.Hour)) {
+		t.Fatalf("limit = %s ok=%v", limit, ok)
+	}
+	if _, ok := ApprovalRetryLimit(queued, map[string]any{}); ok {
+		t.Fatal("missing expiresIn invented a limit")
+	}
+	if _, ok := ApprovalRetryLimit(queued, map[string]any{"expiresIn": "later"}); ok {
+		t.Fatal("unparseable expiresIn invented a limit")
+	}
+	if _, ok := ApprovalRetryLimit(time.Time{}, map[string]any{"expiresIn": "PT1H"}); ok {
+		t.Fatal("zero anchor invented a limit")
+	}
+}
+
 func TestApprovalRetryWaitIsFlat(t *testing.T) {
 	if d := approvalRetryWait(0); d != 30*time.Second {
 		t.Fatalf("low = %s", d)
@@ -210,6 +227,186 @@ func TestMemoryApprovalTransientPastDeadlineFails(t *testing.T) {
 	if err != nil || got.Status != ExecutionFailed {
 		t.Fatalf("run = %+v %v", got, err)
 	}
+}
+
+func TestMemoryDeadlineAnchorSurvivesRequeueRecoveryAndReclaim(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	scope, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Add(time.Minute)
+	norm := mustNormalize(t, expiredDownstreamYAML)
+	wf, _, err := store.Create(ctx, scope, CreateInput{
+		NormalizedYAML: norm.NormalizedYAML, Digest: norm.Digest, Summary: norm.Summary,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ver, err := store.Publish(ctx, scope, wf.ID, PublishInput{ExpectedRevision: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exec, err := store.StartExecution(ctx, scope, ver.WorkflowID, StartInput{VersionID: ver.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := store.ClaimJob(ctx, scope, now, ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
+	if err != nil || claimed.Step.NodeID != "gate" {
+		t.Fatalf("claim = %s %v", claimed.Step.NodeID, err)
+	}
+	anchor, stepAnchor := claimed.Job.CreatedAt, claimed.Step.CreatedAt
+	released, err := store.ReleaseJob(ctx, scope, now, JobActionInput{
+		JobID: claimed.Job.ID, WorkerID: "edge-worker", FencingToken: claimed.Job.FencingToken,
+		ApprovalTransientRetry: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAnchor(t, anchor, stepAnchor, released.Job.CreatedAt, released.Step.CreatedAt)
+	claimed, err = store.ClaimJob(ctx, scope, now.Add(35*time.Second), ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAnchor(t, anchor, stepAnchor, claimed.Job.CreatedAt, claimed.Step.CreatedAt)
+	recoverAt := now.Add(2 * time.Minute)
+	if _, err := store.RecoverExpiredLeases(ctx, scope, recoverAt); err != nil {
+		t.Fatal(err)
+	}
+	job := gateJob(t, ctx, store, scope, exec.ID)
+	stepAt := gateStepCreated(t, ctx, store, scope, exec.ID)
+	assertAnchor(t, anchor, stepAnchor, job.CreatedAt, stepAt)
+	claimed, err = store.ClaimJob(ctx, scope, recoverAt.Add(35*time.Second), ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAnchor(t, anchor, stepAnchor, claimed.Job.CreatedAt, claimed.Step.CreatedAt)
+}
+
+func TestMemoryPendingPastDeadlineFailsUnresolvable(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	store.SetApprovalPending(func(string, string) bool { return true })
+	scope, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Add(time.Minute)
+	norm := mustNormalize(t, expiredDownstreamYAML)
+	wf, _, err := store.Create(ctx, scope, CreateInput{
+		NormalizedYAML: norm.NormalizedYAML, Digest: norm.Digest, Summary: norm.Summary,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ver, err := store.Publish(ctx, scope, wf.ID, PublishInput{ExpectedRevision: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exec, err := store.StartExecution(ctx, scope, ver.WorkflowID, StartInput{VersionID: ver.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := store.ClaimJob(ctx, scope, now, ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
+	if err != nil || claimed.Step.NodeID != "gate" {
+		t.Fatalf("claim = %s %v", claimed.Step.NodeID, err)
+	}
+	recoverAt := claimed.Job.CreatedAt.Add(2 * time.Hour)
+	if _, err := store.RecoverExpiredLeases(ctx, scope, recoverAt); err != nil {
+		t.Fatal(err)
+	}
+	job := gateJob(t, ctx, store, scope, exec.ID)
+	if job.Status != JobFailed || job.Attempt != claimed.Job.Attempt {
+		t.Fatalf("past deadline = %+v", job)
+	}
+	assertNotExpired(t, ctx, store, scope, exec.ID)
+	steps, err := store.ListSteps(ctx, scope, exec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range steps {
+		if step.NodeID == "gate" && (step.Status != ExecutionFailed || step.Error["code"] != ReasonRequirementUnresolvable) {
+			t.Fatalf("gate = %+v", step)
+		}
+	}
+}
+
+func TestMemoryWaitingGateStillExpires(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	store.SetApprovalPending(func(string, string) bool { return true })
+	scope, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Add(time.Minute)
+	norm := mustNormalize(t, expiredDownstreamYAML)
+	wf, _, err := store.Create(ctx, scope, CreateInput{
+		NormalizedYAML: norm.NormalizedYAML, Digest: norm.Digest, Summary: norm.Summary,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ver, err := store.Publish(ctx, scope, wf.ID, PublishInput{ExpectedRevision: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exec, err := store.StartExecution(ctx, scope, ver.WorkflowID, StartInput{VersionID: ver.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := store.ClaimJob(ctx, scope, now, ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
+	if err != nil || claimed.Step.NodeID != "gate" {
+		t.Fatalf("claim = %s %v", claimed.Step.NodeID, err)
+	}
+	limit, ok := ApprovalRetryLimit(claimed.Job.CreatedAt, claimed.Step.Input)
+	if !ok {
+		t.Fatal("missing limit")
+	}
+	if _, err := store.WaitJob(ctx, scope, now, WaitJobInput{JobID: claimed.Job.ID, AvailableAt: limit}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecoverExpiredLeases(ctx, scope, limit); err != nil {
+		t.Fatal(err)
+	}
+	steps, err := store.ListSteps(ctx, scope, exec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range steps {
+		if step.NodeID != "gate" {
+			continue
+		}
+		if step.Status != ExecutionSucceeded || step.Output["port"] != "expired" {
+			t.Fatalf("waiting gate = %+v", step)
+		}
+		if step.Error["code"] == ReasonRequirementUnresolvable {
+			t.Fatalf("waiting gate failed unresolvable: %+v", step)
+		}
+	}
+}
+
+func assertAnchor(t *testing.T, jobAt, stepAt, gotJob, gotStep time.Time) {
+	t.Helper()
+	if !gotJob.Equal(jobAt) || !gotStep.Equal(stepAt) {
+		t.Fatalf("anchor moved job %s -> %s step %s -> %s", jobAt, gotJob, stepAt, gotStep)
+	}
+}
+
+func gateStepCreated(t *testing.T, ctx context.Context, store *Memory, scope isolation.Scope, executionID string) time.Time {
+	t.Helper()
+	steps, err := store.ListSteps(ctx, scope, executionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range steps {
+		if step.NodeID == "gate" {
+			return step.CreatedAt
+		}
+	}
+	t.Fatal("missing gate step")
+	return time.Time{}
 }
 
 func assertFlatDelay(t *testing.T, delay time.Duration) {

@@ -12,10 +12,12 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/core"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/parkedapproval"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestPersistentPrivilegeSpacesClaims(t *testing.T) {
@@ -141,6 +143,220 @@ func TestTransientPastDeadlineFailsUnresolvable(t *testing.T) {
 		t.Fatalf("recovery past deadline = %+v", job)
 	}
 	assertRequirementUnresolvable(t, ctx, store, scope, exec.ID)
+}
+
+func TestDeadlineAnchorSurvivesRequeueRecoveryAndReclaim(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	store, scope, exec := startBackoffRun(t, ctx, "an")
+	now := time.Now().UTC()
+	claimed, err := store.ClaimJob(ctx, scope, now, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
+	if err != nil || claimed.Step.NodeID != "gate" {
+		t.Fatalf("claim = %s %v", claimed.Step.NodeID, err)
+	}
+	anchor, stepAnchor := claimed.Job.CreatedAt, claimed.Step.CreatedAt
+	released, err := store.ReleaseJob(ctx, scope, now, wfstore.JobActionInput{
+		JobID: claimed.Job.ID, WorkerID: "edge-worker", FencingToken: claimed.Job.FencingToken,
+		ApprovalTransientRetry: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !released.Job.CreatedAt.Equal(anchor) || !released.Step.CreatedAt.Equal(stepAnchor) {
+		t.Fatalf("release moved anchor job %s step %s", released.Job.CreatedAt, released.Step.CreatedAt)
+	}
+	claimed, err = store.ClaimJob(ctx, scope, now.Add(35*time.Second), wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !claimed.Job.CreatedAt.Equal(anchor) || !claimed.Step.CreatedAt.Equal(stepAnchor) {
+		t.Fatalf("reclaim moved anchor job %s step %s", claimed.Job.CreatedAt, claimed.Step.CreatedAt)
+	}
+	recoverAt := now.Add(2 * time.Minute)
+	if _, err := store.RecoverExpiredLeases(ctx, scope, recoverAt); err != nil {
+		t.Fatal(err)
+	}
+	job := postgresGateJob(t, ctx, store, scope, exec.ID)
+	stepAt := postgresGateStepCreated(t, ctx, store, scope, exec.ID)
+	if !job.CreatedAt.Equal(anchor) || !stepAt.Equal(stepAnchor) {
+		t.Fatalf("recovery moved anchor job %s step %s", job.CreatedAt, stepAt)
+	}
+	claimed, err = store.ClaimJob(ctx, scope, recoverAt.Add(35*time.Second), wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !claimed.Job.CreatedAt.Equal(anchor) || !claimed.Step.CreatedAt.Equal(stepAnchor) {
+		t.Fatalf("restart reclaim moved anchor job %s step %s", claimed.Job.CreatedAt, claimed.Step.CreatedAt)
+	}
+}
+
+func TestPastLimitCancelsPendingApproval(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	store, scope, exec := startBackoffRun(t, ctx, "cu")
+	now := time.Now().UTC()
+	claimed, err := store.ClaimJob(ctx, scope, now, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
+	if err != nil || claimed.Step.NodeID != "gate" {
+		t.Fatalf("claim = %s %v", claimed.Step.NodeID, err)
+	}
+	insertPendingGate(t, ctx, scope, exec)
+	recoverAt := claimed.Job.CreatedAt.Add(2 * time.Hour)
+	if _, err := store.RecoverExpiredLeases(ctx, scope, recoverAt); err != nil {
+		t.Fatal(err)
+	}
+	job := postgresGateJob(t, ctx, store, scope, exec.ID)
+	if job.Status != wfstore.JobFailed || job.Attempt != claimed.Job.Attempt {
+		t.Fatalf("recovery past deadline = %+v", job)
+	}
+	assertRequirementUnresolvable(t, ctx, store, scope, exec.ID)
+	status, reason, decided := approvalGateRow(t, ctx, scope, exec.ID)
+	if status != approval.StatusCanceled || reason != approval.ReasonRequirementUnresolvable || decided != "" {
+		t.Fatalf("approval = %s %s decided=%q", status, reason, decided)
+	}
+
+	store, scope, exec = startBackoffRunExpiry(t, ctx, "cf", "PT1S")
+	claimed, err = store.ClaimJob(ctx, scope, time.Now().UTC(), wfstore.ClaimInput{WorkerID: "edge-worker", Lease: 5 * time.Minute})
+	if err != nil || claimed.Step.NodeID != "gate" {
+		t.Fatalf("claim = %s %v", claimed.Step.NodeID, err)
+	}
+	insertPendingGate(t, ctx, scope, exec)
+	failAt := claimed.Job.CreatedAt.Add(30 * time.Second)
+	if _, err := store.FailJob(ctx, scope, failAt, wfstore.JobActionInput{
+		JobID: claimed.Job.ID, WorkerID: claimed.Job.WorkerID, FencingToken: claimed.Job.FencingToken,
+		Error: map[string]any{
+			"code":    wfstore.ReasonRequirementUnresolvable,
+			"message": "The approval requirement could not be rebuilt.",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertRequirementUnresolvable(t, ctx, store, scope, exec.ID)
+	status, reason, decided = approvalGateRow(t, ctx, scope, exec.ID)
+	if status != approval.StatusCanceled || reason != approval.ReasonRequirementUnresolvable || decided != "" {
+		t.Fatalf("fail approval = %s %s decided=%q", status, reason, decided)
+	}
+}
+
+func TestWaitingGateStillExpires(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	store, scope, exec := startBackoffRun(t, ctx, "wx")
+	now := time.Now().UTC()
+	claimed, err := store.ClaimJob(ctx, scope, now, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
+	if err != nil || claimed.Step.NodeID != "gate" {
+		t.Fatalf("claim = %s %v", claimed.Step.NodeID, err)
+	}
+	limit, ok := wfstore.ApprovalRetryLimit(claimed.Job.CreatedAt, claimed.Step.Input)
+	if !ok {
+		t.Fatal("missing limit")
+	}
+	if _, err := store.WaitJob(ctx, scope, now, wfstore.WaitJobInput{
+		JobID:       claimed.Job.ID,
+		AvailableAt: limit,
+		Approval: &wfstore.ParkedApproval{
+			WorkflowID:        exec.WorkflowID,
+			WorkflowVersionID: exec.WorkflowVersionID,
+			WorkflowDigest:    exec.WorkflowDigest,
+			ExecutionID:       exec.ID,
+			RequestedBy:       exec.RequestedBy,
+			NodeID:            "gate",
+			NodeName:          "Gate",
+			Operation:         "flow.approval",
+			ApproverRole:      "approver",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecoverExpiredLeases(ctx, scope, limit); err != nil {
+		t.Fatal(err)
+	}
+	steps, err := store.ListSteps(ctx, scope, exec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gate wfstore.ExecutionStep
+	for _, step := range steps {
+		if step.NodeID == "gate" {
+			gate = step
+		}
+	}
+	if gate.Status != wfstore.ExecutionSucceeded || gate.Output["port"] != "expired" {
+		t.Fatalf("waiting gate = %+v", gate)
+	}
+	if gate.Error["code"] == wfstore.ReasonRequirementUnresolvable {
+		t.Fatalf("waiting gate failed unresolvable: %+v", gate)
+	}
+	status, reason, decided := approvalGateRow(t, ctx, scope, exec.ID)
+	if status != approval.StatusExpired || reason != "" || decided != "" {
+		t.Fatalf("expired approval = %s %s decided=%q", status, reason, decided)
+	}
+}
+
+func insertPendingGate(t *testing.T, ctx context.Context, scope isolation.Scope, exec wfstore.Execution) {
+	t.Helper()
+	app := openBackoffDB(t, ctx)
+	defer app.Close()
+	tx, err := postgres.BeginScoped(ctx, app, scope.WorkspaceID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	err = parkedapproval.Insert(ctx, tx, parkedapproval.Pending{
+		WorkspaceID:       scope.WorkspaceID(),
+		ActorID:           scope.ActorID(),
+		WorkflowID:        exec.WorkflowID,
+		WorkflowVersionID: exec.WorkflowVersionID,
+		WorkflowDigest:    exec.WorkflowDigest,
+		ExecutionID:       exec.ID,
+		RequestedBy:       exec.RequestedBy,
+		NodeID:            "gate",
+		NodeName:          "Gate",
+		Operation:         "flow.approval",
+		ApproverRole:      "approver",
+		ExpiresAt:         time.Now().UTC().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func approvalGateRow(t *testing.T, ctx context.Context, scope isolation.Scope, executionID string) (status, reason, decidedBy string) {
+	t.Helper()
+	app := openBackoffDB(t, ctx)
+	defer app.Close()
+	tx, err := postgres.BeginScoped(ctx, app, scope.WorkspaceID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	err = tx.QueryRow(ctx, `
+		SELECT status, COALESCE(close_reason, ''), COALESCE(decided_by::text, '')
+		  FROM approvals
+		 WHERE execution_id = $1::uuid AND node_id = 'gate'
+	`, executionID).Scan(&status, &reason, &decidedBy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return status, reason, decidedBy
+}
+
+func openBackoffDB(t *testing.T, ctx context.Context) *pgxpool.Pool {
+	t.Helper()
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		dsn = os.Getenv("DATABASE_URL")
+	}
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL / DATABASE_URL not set")
+	}
+	app, err := postgres.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return app
 }
 
 func assertRequirementUnresolvable(t *testing.T, ctx context.Context, store *wfstore.Postgres, scope isolation.Scope, executionID string) {
@@ -272,6 +488,21 @@ spec:
 		t.Fatal(err)
 	}
 	return store, scope, exec
+}
+
+func postgresGateStepCreated(t *testing.T, ctx context.Context, store *wfstore.Postgres, scope isolation.Scope, executionID string) time.Time {
+	t.Helper()
+	steps, err := store.ListSteps(ctx, scope, executionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range steps {
+		if step.NodeID == "gate" {
+			return step.CreatedAt
+		}
+	}
+	t.Fatal("missing gate step")
+	return time.Time{}
 }
 
 func postgresGateJob(t *testing.T, ctx context.Context, store *wfstore.Postgres, scope isolation.Scope, executionID string) wfstore.ExecutionJob {
