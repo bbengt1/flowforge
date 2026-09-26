@@ -610,6 +610,22 @@ describe("execution redaction and list/detail rendering", () => {
     assert.equal(
       displaysAsNotReached({
         runStatus: "failed",
+        status: "failed",
+        siblingJobStatuses: ["blocked"],
+      }),
+      false,
+    );
+    assert.equal(
+      executionStatusPresentationInRun("failed", "failed", ["blocked"]).label,
+      "Failed",
+    );
+    assert.equal(
+      executionStatusPresentationInRun("failed", "failed", ["blocked"]).description,
+      executionStatusPresentation("failed").description,
+    );
+    assert.equal(
+      displaysAsNotReached({
+        runStatus: "failed",
         status: "queued",
         siblingJobStatuses: ["blocked"],
       }),

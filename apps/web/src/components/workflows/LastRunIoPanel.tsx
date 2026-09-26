@@ -279,6 +279,11 @@ export function LastRunIoPanel({
               not a new route.
             </p>
           ) : null}
+          {io.view?.failureText ? (
+            <p role="status" className="text-sm text-fg">
+              {io.view.failureText}
+            </p>
+          ) : null}
           <div>
             <p className="text-xs font-medium text-fg">Redacted input</p>
             <pre className="mt-1 overflow-auto rounded-lg bg-bg p-3 font-mono text-xs text-fg">

@@ -524,7 +524,8 @@ describe("action wizard insert + redaction", () => {
       entry,
     );
     assert.equal(retries.ok, false);
-    assert.ok(retries.errors.some((error) => /retrySafe|retry-denied/i.test(error)));
+    assert.ok(retries.errors.some((error) => /retrySafe/i.test(error)));
+    assert.ok(retries.errors.every((error) => !/retry-denied/.test(error)));
 
     const retrySafe = validateWizardDraft(
       {

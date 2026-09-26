@@ -7,10 +7,11 @@ import {
   cancelExecution,
   retryExecution,
 } from "@/lib/execution-client";
+import { RETRY_FORBIDDEN_MESSAGE } from "@/lib/execution-contract";
 import {
-  RETRY_CONFLICT_MESSAGE,
-  RETRY_FORBIDDEN_MESSAGE,
-} from "@/lib/execution-contract";
+  retryFailureCopy,
+  retryProblemShouldRefetch,
+} from "@/lib/execution-retry";
 import {
   EXECUTION_OPERATE_CANCEL_LABEL,
   EXECUTION_OPERATE_HELP,
@@ -28,7 +29,6 @@ import {
   SCRIPT_EMERGENCY_STOP_FORBIDDEN_MESSAGE,
   emergencyStopShouldMarkUncertain,
 } from "@/lib/script-ops-contract";
-import { SSH_RETRY_DENIED_MESSAGE } from "@/lib/ssh-retry-contract";
 import {
   FF_INBOX_DANGER_CLASS,
   FF_INBOX_GHOST_CLASS,
@@ -44,7 +44,10 @@ type ExecutionOperateActionsProps = {
   workflowId?: string;
   status?: ExecutionStatus;
   permissions?: readonly string[] | null;
-  detail?: Pick<ExecutionDetail, "status" | "steps"> | null;
+  detail?: Pick<
+    ExecutionDetail,
+    "status" | "steps" | "capabilities" | "capabilitiesInvalid"
+  > | null;
   surface?: ExecutionOperateSurface;
   compact?: boolean;
   disabled?: boolean;
@@ -70,12 +73,14 @@ export function ExecutionOperateActions({
   const [stoppedUncertain, setStoppedUncertain] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const resolvedStatus = detail?.status ?? status;
-  // Retry stays gated by GET /executions/{id} result.retry.allowed.
+  // Retry stays gated by capabilities.retry.allowed on the execution.
   const affordances = executionOperateAffordances({
     permissions,
     status: resolvedStatus,
     steps: detail?.steps,
     stoppedUncertain,
+    capabilities: detail?.capabilities,
+    capabilitiesInvalid: detail?.capabilitiesInvalid,
   });
   const busy = cancelPending || retryPending || stopPending || disabled;
   const pad = compact ? "px-2 py-0.5 text-[11px]" : "px-2.5 py-1 text-xs";
@@ -114,10 +119,12 @@ export function ExecutionOperateActions({
         setMessage(RETRY_FORBIDDEN_MESSAGE);
       } else if (result.statusCode === 409) {
         setMessage(
-          result.problem.code === "retry-denied"
-            ? result.problem.detail || SSH_RETRY_DENIED_MESSAGE
-            : RETRY_CONFLICT_MESSAGE,
+          retryFailureCopy(result.problem, result.statusCode) ??
+            (result.problem.detail || result.problem.title),
         );
+        if (retryProblemShouldRefetch(result.problem)) {
+          onOperated?.();
+        }
       } else {
         setMessage(result.problem.detail || result.problem.title);
       }

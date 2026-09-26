@@ -16,6 +16,8 @@ export type ProblemDetails = {
   instance: string;
   code: string;
   request_id: string;
+  /** Machine-readable cause on retry 409s. Never shown raw in the UI. */
+  reason?: string;
   errors?: ProblemFieldError[];
 };
 

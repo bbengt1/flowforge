@@ -82,7 +82,7 @@ export const EXECUTION_INBOX_KEYBOARD_HELP =
 export const EXECUTION_INBOX_OPEN_LABEL = "Open";
 
 export const EXECUTION_INBOX_HELP =
-  "Workspace inbox for operate-a-run. Filter with GET /executions status, workflowId, and limit. Load more sends cursor from the previous next in memory — the opaque token is not written to the URL. Open a row into existing /executions/{id} detail — no second graph here. Cancel, retry, and emergency stop use the existing E5/E8/E9 routes on the row. Retry stays gated by result.retry.allowed. Waiting runs decide the bound approval with POST /approvals/{id}/decide. Drafts never run. Secrets stay [redacted].";
+  "Workspace inbox for operate-a-run. Filter with GET /executions status, workflowId, and limit. Load more sends cursor from the previous next in memory — the opaque token is not written to the URL. Open a row into existing /executions/{id} detail — no second graph here. Cancel, retry, and emergency stop use the existing E5/E8/E9 routes on the row. Retry stays gated by capabilities.retry.allowed. Waiting runs decide the bound approval with POST /approvals/{id}/decide. Drafts never run. Secrets stay [redacted].";
 
 export const EXECUTION_INBOX_DETAIL_PATH = "/executions/{id}";
 export const EXECUTION_INBOX_REPLAY_GRAPH_SOURCE =

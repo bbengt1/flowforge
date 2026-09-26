@@ -8,6 +8,7 @@
  */
 
 import { isExecutionAwaitingApproval } from "./approval.ts";
+import { FLOW_APPROVAL_NODE_TYPE } from "./approval-contract.ts";
 import type { ApprovalRequest, PolicyEvaluation } from "./approval-types.ts";
 import {
   APPROVAL_RESUME_DISABLED_HELP,
@@ -28,6 +29,7 @@ import {
   executionStatusPresentation,
   executionStatusPresentationInRun,
   isIndeterminateStatus,
+  isTerminalRunStatus,
   isSecretFieldName,
   jobStatusesForStep,
   normalizeExecutionStatus,
@@ -87,6 +89,8 @@ export type ReplayStepView = {
   waiting: boolean;
   current: boolean;
   outputText: string;
+  /** Plain failed sentence for a failed approval gate. Null otherwise. */
+  failureText: string | null;
 };
 
 export type PreRunReview = {
@@ -239,6 +243,26 @@ export function summaryFromPublishedYaml(yaml: string): WorkflowSummary | null {
   };
 }
 
+export const WORKFLOW_DELETED_GRAPH_MESSAGE =
+  "This workflow was deleted, so its graph is no longer available.";
+
+export const GRAPH_UNAVAILABLE_MESSAGE =
+  "Pinned version YAML is not available, so this page does not guess a graph. Step status, duration, and redacted output are listed below.";
+
+/** Copy for the graph slot. Steps stay listed either way. */
+export function graphReplayMessage(input: {
+  graphAvailable: boolean;
+  workflowDeleted: boolean;
+}): string | null {
+  if (input.graphAvailable) {
+    return null;
+  }
+  if (input.workflowDeleted) {
+    return WORKFLOW_DELETED_GRAPH_MESSAGE;
+  }
+  return GRAPH_UNAVAILABLE_MESSAGE;
+}
+
 /** Project the pinned published version only. Invalid YAML never becomes a graph. */
 export function projectPinnedVersionGraph(input: {
   yaml?: string;
@@ -318,7 +342,10 @@ export function overlayExecutionOnGraph(
   } = {},
 ): WorkflowGraph {
   const latest = latestStepsByNode(steps);
-  const waiting = new Set(options.waitingApprovalNodeIds ?? []);
+  const terminal = isTerminalRunStatus(options.runStatus);
+  const waiting = terminal
+    ? new Set<string>()
+    : new Set(options.waitingApprovalNodeIds ?? []);
   const jobs = options.jobs ?? [];
   return {
     ...graph,
@@ -338,6 +365,9 @@ export function overlayExecutionOnGraph(
         state = "not-reached";
       } else if (step) {
         state = canvasStateFromExecutionStatus(step.status);
+        if (terminal && state === "approval-required") {
+          state = canvasStateFromExecutionStatus(options.runStatus);
+        }
       }
       return { ...node, state };
     }),
@@ -347,8 +377,10 @@ export function overlayExecutionOnGraph(
 export function currentReplayNodeId(
   steps: readonly ExecutionStep[],
   waitingApprovalNodeIds: readonly string[] = [],
+  runStatus?: string,
 ): string | null {
   const latest = [...latestStepsByNode(steps).values()];
+  const terminal = isTerminalRunStatus(runStatus);
   const running = latest.find(
     (step) =>
       normalizeExecutionStatus(step.status) === "running" ||
@@ -357,12 +389,16 @@ export function currentReplayNodeId(
   if (running) {
     return running.nodeId;
   }
-  const waitingStep = latest.find((step) => isExecutionAwaitingApproval(step.status));
-  if (waitingStep) {
-    return waitingStep.nodeId;
-  }
-  if (waitingApprovalNodeIds[0]) {
-    return waitingApprovalNodeIds[0];
+  if (!terminal) {
+    const waitingStep = latest.find((step) =>
+      isExecutionAwaitingApproval(step.status),
+    );
+    if (waitingStep) {
+      return waitingStep.nodeId;
+    }
+    if (waitingApprovalNodeIds[0]) {
+      return waitingApprovalNodeIds[0];
+    }
   }
   const attention = latest.find(
     (step) =>
@@ -408,7 +444,11 @@ export function formatDuration(ms: number | null | undefined): string {
 
 export function waitingApprovalNodeIds(
   approvals: readonly ApprovalRequest[],
+  runStatus?: string,
 ): string[] {
+  if (isTerminalRunStatus(runStatus)) {
+    return [];
+  }
   return approvals
     .filter((item) => item.status === "pending")
     .map((item) => item.binding.nodeId)
@@ -423,8 +463,10 @@ export function replayStepViews(
     jobs?: readonly { executionStepId?: string; status?: string }[];
   } = {},
 ): ReplayStepView[] {
-  const current = currentReplayNodeId(steps, options.waitingApprovalNodeIds);
-  const waiting = new Set(options.waitingApprovalNodeIds ?? []);
+  const terminal = isTerminalRunStatus(options.runStatus);
+  const waitingIds = terminal ? [] : (options.waitingApprovalNodeIds ?? []);
+  const current = currentReplayNodeId(steps, waitingIds, options.runStatus);
+  const waiting = new Set(waitingIds);
   const jobs = options.jobs ?? [];
   return steps.map((step) => {
     const durationMs = stepDurationMs(step);
@@ -441,11 +483,45 @@ export function replayStepViews(
       durationLabel: formatDuration(durationMs),
       attempts: step.attempt,
       waiting:
-        waiting.has(step.nodeId) || isExecutionAwaitingApproval(step.status),
+        !terminal &&
+        (waiting.has(step.nodeId) || isExecutionAwaitingApproval(step.status)),
       current: step.nodeId === current,
       outputText: boundRedactedDisplay(step.output ?? step.error ?? step.input).text,
+      failureText: gateStepFailureCopy(step),
     };
   });
+}
+
+/**
+ * Human sentence for a `flow.approval` step that ended `failed`.
+ * Known or unknown error codes use the same generic failed wording.
+ * A malformed error never throws and is not echoed.
+ */
+export function gateStepFailureCopy(step: {
+  nodeType?: string;
+  status?: string;
+  error?: unknown;
+}): string | null {
+  if (step.nodeType?.trim() !== FLOW_APPROVAL_NODE_TYPE) {
+    return null;
+  }
+  if (normalizeExecutionStatus(step.status) !== "failed") {
+    return null;
+  }
+  void readStepErrorCode(step.error);
+  return executionStatusPresentation("failed").description;
+}
+
+function readStepErrorCode(error: unknown): string {
+  try {
+    if (!error || typeof error !== "object") {
+      return "";
+    }
+    const code = (error as { code?: unknown }).code;
+    return typeof code === "string" ? code : "";
+  } catch {
+    return "";
+  }
 }
 
 export function sideEffectWarnings(

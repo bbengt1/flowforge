@@ -13,6 +13,7 @@
  */
 
 import { EXECUTION_WAITING_STATUSES } from "./approval-types.ts";
+import { readRecordCapabilities } from "./execution-retry.ts";
 import {
   APPROVAL_RESUME_DISABLED_HELP,
   CANCEL_APPLIED_MESSAGE,
@@ -392,6 +393,18 @@ export function normalizeExecutionStatus(
   return folded;
 }
 
+/** Canceled, failed, or a run closed because its workflow was deleted. */
+export function isTerminalRunStatus(
+  status: string | undefined,
+  statusReason?: string,
+): boolean {
+  if (statusReason === "workflow_deleted") {
+    return true;
+  }
+  const folded = normalizeExecutionStatus(status as ExecutionStatus | undefined);
+  return folded === "canceled" || folded === "failed";
+}
+
 export function executionStatusLabel(status: ExecutionStatus | undefined): string {
   return executionStatusPresentation(status).label;
 }
@@ -512,6 +525,11 @@ export function displaysAsNotReached(input: {
     return false;
   }
   const folded = normalizeExecutionStatus(input.status);
+  // A step that itself failed was reached. A blocked job on that step
+  // must not replace the failed wording.
+  if (folded === "failed") {
+    return false;
+  }
   if (folded === "pending" || folded === "blocked") {
     return true;
   }
@@ -809,6 +827,7 @@ export function parseExecutionRecord(raw: unknown): ExecutionRecord | null {
       nested.permittedActions,
       nested.permitted_actions,
     ),
+    ...readRecordCapabilities(nested),
   };
 }
 
@@ -869,6 +888,7 @@ export function parseExecutionStep(
     fencingToken: readNumber(row.fencingToken, row.fencing_token),
     workerId: readString(row.workerId, row.worker_id),
     leaseId: readString(row.leaseId, row.lease_id),
+    ...readRecordCapabilities(row),
   };
 }
 

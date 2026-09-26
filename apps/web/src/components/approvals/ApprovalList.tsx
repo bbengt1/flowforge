@@ -18,6 +18,7 @@ import {
   isRequesterActor,
   pendingApprovals,
 } from "@/lib/approval";
+import { isTerminalRunStatus } from "@/lib/execution";
 import {
   COLLECTION_PAGE_DEFAULT_LIMIT,
   appendCollectionItems,
@@ -240,7 +241,8 @@ export function ApprovalList() {
               <p className="mt-2 break-all font-mono text-xs text-[var(--ff-muted)]">
                 expires {item.binding.expiresAt || "—"} · {item.id}
               </p>
-              {item.status === "pending" ? (
+              {item.status === "pending" &&
+              !isTerminalRunStatus(item.executionStatus) ? (
                 <div className="mt-3">
                   <ApprovalDecideControls
                     identity={identity}
@@ -252,6 +254,7 @@ export function ApprovalList() {
                         current.map((row) => (row.id === next.id ? next : row)),
                       )
                     }
+                    onRefetch={() => void refresh()}
                   />
                 </div>
               ) : null}

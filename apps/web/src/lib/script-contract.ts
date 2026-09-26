@@ -420,7 +420,7 @@ export const DEFAULT_SCRIPT_NODE_ERRORS: ScriptNodeErrorShape[] = [
   { code: "output-too-large", status: 400, meaning: "Runner output exceeded the 16 KiB persist cap." },
   { code: "handle-forbidden", status: 403, meaning: "Credential handle missing, expired, unscoped, or contained plaintext. Handles only." },
   { code: "env-denied", status: 403, meaning: "Runtime env key is outside the FLOWFORGE_* allowlist, or plaintext credentials were supplied as env." },
-  { code: "retry-denied", status: 400, meaning: "retryPolicy.maxAttempts>0 without retrySafe+idempotencyKey+verification, or a step retry that is not allowed. HTTP execution retry uses 409 retry-denied." },
+  { code: "retry-denied", status: 400, meaning: "Retries above zero need retrySafe, an idempotency key, and verification. Otherwise this step can't be retried." },
   { code: "invalid-verification", status: 400, meaning: "retrySafe=true without a valid idempotency key or verification.behavior." },
   { code: "indeterminate", status: 409, meaning: "Lease lost after dispatch, unknown provider outcome, uncertain emergency stop, or verification could not confirm state. Never a silent re-run." },
   { code: "emergency-stopped", status: 409, meaning: "Emergency stop halted the script before dispatch. The runner was not started." },

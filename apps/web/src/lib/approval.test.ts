@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import {
+  approvalDecideOutcome,
+  APPROVAL_WRONG_APPROVER_MESSAGE,
   canDecideApproval,
   canDispatchFromEvaluation,
   canSeeApprovalsNav,
@@ -24,8 +29,12 @@ import {
   shouldBlockRun,
   stripSecretKeys,
   approvalDecideControlsState,
+  approvalStatusLabel,
+  approvalStatusLabelForRun,
   approvalValidityBannerState,
+  failClosedProblemTitle,
 } from "./approval.ts";
+import { APPROVAL_CLOSED_MESSAGE } from "./execution-retry.ts";
 import {
   APPROVAL_PROBLEM_CODES,
   APPROVAL_RESUME_VIA_DECIDE_HELP,
@@ -475,5 +484,178 @@ describe("E10.3 approval decide contract", () => {
     assert.equal(catalog.waitSurvivesWorkerLoss, true);
     assert.equal(catalog.selfApprovalDenied, true);
     assert.equal(catalog.freshAuthRequired, true);
+  });
+
+  it("reads a canceled approval as closed and refuses a decision", () => {
+    const closed = parseApprovalRequest({
+      id: "77777777-7777-4777-8777-777777777777",
+      status: "canceled",
+      closeReason: "run_canceled",
+      binding: {
+        workflowVersionId: "22222222-2222-4222-8222-222222222222",
+        operation: "deploy",
+        nodeId: "gate",
+      },
+      validity: { current: true },
+    });
+    assert.ok(closed);
+    assert.equal(closed?.status, "canceled");
+    assert.equal(closed?.closeReason, "run_canceled");
+    assert.equal(closed?.validity.current, false);
+    assert.equal(approvalStatusLabel("canceled"), "Closed");
+    assert.equal(approvalStatusLabelForRun("pending", "canceled"), "Closed");
+    assert.equal(approvalStatusLabelForRun("pending", "failed"), "Closed");
+    assert.equal(approvalStatusLabelForRun("canceled", "failed"), "Closed");
+    assert.equal(approvalStatusLabelForRun("pending", "running"), "Pending");
+    assert.equal(approvalStatusLabelForRun("approved", "failed"), "Approved");
+    assert.equal(canDecideApproval(closed!), false);
+
+    const deleted = parseApprovalRequest({
+      id: "77777777-7777-4777-8777-777777777777",
+      status: "canceled",
+      closeReason: "workflow_deleted",
+      binding: {
+        workflowVersionId: "22222222-2222-4222-8222-222222222222",
+        operation: "deploy",
+        nodeId: "gate",
+      },
+    });
+    assert.equal(deleted?.closeReason, "workflow_deleted");
+    assert.equal(deleted?.status === "pending", false);
+
+    const stalePending = approval({ executionStatus: "canceled" });
+    assert.equal(canDecideApproval(stalePending), false);
+    const failedRun = approval({ executionStatus: "failed" });
+    assert.equal(canDecideApproval(failedRun), false);
+    const closedOutcome = approvalDecideOutcome({
+      type: "urn:flowforge:problem:approval_closed",
+      title: "Conflict",
+      status: 409,
+      detail: "This approval is closed and can no longer be decided.",
+      instance: "/approvals/x/decide",
+      code: "approval_closed",
+      request_id: "req",
+    });
+    assert.equal(closedOutcome.kind, "closed");
+    if (closedOutcome.kind === "closed") {
+      assert.equal(closedOutcome.message, APPROVAL_CLOSED_MESSAGE);
+      assert.equal(closedOutcome.hideControls, false);
+      assert.equal(closedOutcome.refetch, true);
+      assert.equal(closedOutcome.message.includes("approval_closed"), false);
+    }
+    assert.equal(
+      problemClosesApproval({
+        type: "urn:flowforge:problem:approval_closed",
+        title: "Conflict",
+        status: 409,
+        detail: "This approval is closed and can no longer be decided.",
+        instance: "/approvals/x/decide",
+        code: "approval_closed",
+        request_id: "req",
+      }),
+      true,
+    );
+    assert.equal(
+      failClosedProblemTitle({
+        type: "urn:flowforge:problem:approval_closed",
+        title: "Conflict",
+        status: 409,
+        detail: "closed",
+        instance: "/approvals/x/decide",
+        code: "approval_closed",
+        request_id: "req",
+      }),
+      "Approval already closed",
+    );
+  });
+});
+
+const here = dirname(fileURLToPath(import.meta.url));
+
+function problem(
+  status: number,
+  code: string,
+  detail = "denied",
+): {
+  type: string;
+  title: string;
+  status: number;
+  detail: string;
+  instance: string;
+  code: string;
+  request_id: string;
+} {
+  return {
+    type: `urn:flowforge:problem:${code}`,
+    title: "Forbidden",
+    status,
+    detail,
+    instance: "/approvals/x/decide",
+    code,
+    request_id: "req-decide",
+  };
+}
+
+describe("approval decide 403", () => {
+  it("hides controls and refetches when the pinned gate needs another approver", () => {
+    for (const denied of [
+      problem(403, "forbidden", "approver role admin is required"),
+      problem(403, "forbidden", "target approver mismatch"),
+      problem(403, "not-a-published-code", "old row"),
+    ]) {
+      const outcome = approvalDecideOutcome(denied);
+      assert.equal(outcome.kind, "wrong-approver");
+      if (outcome.kind !== "wrong-approver") {
+        continue;
+      }
+      assert.equal(outcome.message, APPROVAL_WRONG_APPROVER_MESSAGE);
+      assert.equal(outcome.hideControls, true);
+      assert.equal(outcome.refetch, true);
+      assert.equal(outcome.message.includes(denied.code), false);
+      assert.equal(/forbidden|approval_closed|admin/i.test(outcome.message), false);
+    }
+  });
+
+  it("keeps self-approval and approval_closed on their existing paths", () => {
+    const self = approvalDecideOutcome(
+      problem(
+        403,
+        "forbidden",
+        "The requester cannot approve or reject their own request.",
+      ),
+    );
+    assert.equal(self.kind, "problem");
+    assert.equal(self.hideControls, false);
+    assert.equal(self.refetch, false);
+
+    const closed = approvalDecideOutcome(problem(409, "approval_closed"));
+    assert.equal(closed.kind, "closed");
+    if (closed.kind === "closed") {
+      assert.equal(closed.message, APPROVAL_CLOSED_MESSAGE);
+      assert.equal(closed.hideControls, false);
+      assert.equal(closed.refetch, true);
+    }
+  });
+
+  it("wires decide controls to the outcome, not a raw problem code", () => {
+    const controls = readFileSync(
+      join(here, "../components/approvals/ApprovalDecideControls.tsx"),
+      "utf8",
+    );
+    const inbox = readFileSync(
+      join(here, "../components/executions/ExecutionDecideActions.tsx"),
+      "utf8",
+    );
+    assert.match(controls, /approvalDecideOutcome/);
+    assert.match(controls, /outcome\?\.kind === "wrong-approver"/);
+    assert.match(controls, /outcome\.message/);
+    assert.match(controls, /setControlsRevoked\(true\)/);
+    assert.match(controls, /if \(next\.refetch\) \{\s*onRefetch\?\.\(\);/);
+    assert.match(controls, /outcome\?\.kind === "closed"/);
+    assert.equal(controls.includes("retryProblemShouldRefetch"), false);
+    assert.match(inbox, /outcome\.kind === "wrong-approver"/);
+    assert.match(inbox, /setRevokedIds/);
+    assert.match(inbox, /onDecided\?\.\(\)/);
+    assert.match(inbox, /failClosedProblemTitle\(result\.problem\)/);
   });
 });

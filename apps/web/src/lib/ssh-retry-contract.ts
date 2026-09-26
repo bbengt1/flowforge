@@ -49,7 +49,7 @@ export const SSH_RETRY_ZERO_MESSAGE =
   "Retries default to zero (first attempt only). maxAttempts>0 requires a retrySafe profile with a declared verification probe.";
 
 export const SSH_RETRY_DENIED_MESSAGE =
-  "retryPolicy.maxAttempts>0 requires retrySafe plus verification. Otherwise the engine and POST …/retry return retry-denied.";
+  "Retries above zero need a retry-safe profile and a verification probe. Otherwise this step can't be retried.";
 
 export const SSH_INVALID_VERIFICATION_MESSAGE =
   "retrySafe=true requires spec.verification.template (an idempotent read-only probe). Missing or invalid verification is invalid-verification at save/publish.";
@@ -61,7 +61,7 @@ export const SSH_INDETERMINATE_LEASE_LOSS_HELP =
   "Indeterminate SSH outcome — lease lost, unknown after dispatch, or verification could not confirm state. A remote side effect may have occurred. Do not assume the command did not run.";
 
 export const SSH_NO_BLIND_RETRY_HELP =
-  "This UI never offers a blind retry for ssh.run. Retry is shown only when result.retry.allowed is true (retrySafe + verification + remaining attempts). POST …/retry is 409 retry-denied when closed.";
+  "This UI never offers a blind retry for ssh.run. Retry is shown only when result.retry.allowed is true (retrySafe + verification + remaining attempts). A closed retry is not offered.";
 
 export const SSH_PROBE_HELP =
   "spec.verification is an idempotent read-only probe using the same parameterSchema and POSIX quoting as the mutating template. It is never the mutating command. already-applied succeeds without re-run; safe-to-retry may re-run once; onError stays indeterminate.";
@@ -163,7 +163,7 @@ export const DEFAULT_SSH_RETRY_UI: SshRetryUI = {
   retrySafeFlag: SSH_RETRY_SAFE_FLAG,
   retryEnabledWhen:
     "Show Retry when result.retry.allowed is true (retrySafe + verification + remaining attempts). Disable/hide Retry for non-retrySafe indeterminate.",
-  hideRetryWhen: "indeterminate without retry.allowed, retry-denied, or maxAttempts=0",
+  hideRetryWhen: "indeterminate without an allowed retry, or maxAttempts=0",
   neverAssumeAbsent: true,
 };
 

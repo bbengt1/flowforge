@@ -23,6 +23,7 @@ import {
 } from "@/lib/script-io-contract";
 import {
   currentReplayNodeId,
+  graphReplayMessage,
   overlayExecutionOnGraph,
   projectPinnedVersionGraph,
   replayStepViews,
@@ -47,6 +48,8 @@ import {
 type ExecutionReplayProps = {
   detail: ExecutionDetail;
   version: WorkflowVersion | null;
+  /** True only when the pinned version lookup returned 404. */
+  workflowDeleted?: boolean;
   catalog: WorkflowCatalog | null;
   entries: ActionLibraryEntry[];
   approvals: ApprovalRequest[];
@@ -59,6 +62,7 @@ type ExecutionReplayProps = {
 export function ExecutionReplay({
   detail,
   version,
+  workflowDeleted = false,
   catalog,
   entries,
   approvals,
@@ -67,7 +71,7 @@ export function ExecutionReplay({
   onSelect,
   logsText,
 }: ExecutionReplayProps) {
-  const waitingIds = waitingApprovalNodeIds(approvals);
+  const waitingIds = waitingApprovalNodeIds(approvals, detail.status);
   const base = projectPinnedVersionGraph({
     yaml: version?.definitionYaml,
     summary: version?.summary,
@@ -80,7 +84,11 @@ export function ExecutionReplay({
         jobs: detail.jobs,
       })
     : null;
-  const currentNodeId = currentReplayNodeId(detail.steps, waitingIds);
+  const currentNodeId = currentReplayNodeId(
+    detail.steps,
+    waitingIds,
+    detail.status,
+  );
   const views = replayStepViews(detail.steps, {
     waitingApprovalNodeIds: waitingIds,
     runStatus: detail.status,
@@ -122,8 +130,10 @@ export function ExecutionReplay({
         />
       ) : (
         <p className={`text-sm ${FF_INBOX_EMPTY_CLASS}`}>
-          Pinned version YAML is not available, so this page does not guess a
-          graph. Step status, duration, and redacted output are listed below.
+          {graphReplayMessage({
+            graphAvailable: false,
+            workflowDeleted,
+          })}
         </p>
       )}
 
@@ -234,6 +244,11 @@ export function ExecutionReplay({
             <p role="status" className="mt-3 text-sm">
               Waiting on approval. Decide the bound approval — the wait state
               survives worker or pod loss. Resume is decide, not a new route.
+            </p>
+          ) : null}
+          {selected.failureText ? (
+            <p role="status" className="mt-3 text-sm">
+              {selected.failureText}
             </p>
           ) : null}
           <div className="mt-3">
