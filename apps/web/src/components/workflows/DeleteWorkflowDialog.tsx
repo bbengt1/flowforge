@@ -62,7 +62,6 @@ export function DeleteWorkflowDialog({
       return;
     }
     let cancelled = false;
-    setFetched(null);
     void getWorkflow(identity, workflowId).then((result) => {
       if (cancelled) {
         return;
