@@ -128,7 +128,7 @@ func (m *Memory) Get(_ context.Context, scope isolation.Scope, id string) (Recor
 	return cloneRecord(row.record), nil
 }
 
-func (m *Memory) Decide(_ context.Context, scope isolation.Scope, id string, in DecideInput) (Record, error) {
+func (m *Memory) Decide(ctx context.Context, scope isolation.Scope, id string, in DecideInput) (Record, error) {
 	decision, err := NormalizeDecision(in.Decision)
 	if err != nil {
 		return Record{}, err
@@ -179,6 +179,13 @@ func (m *Memory) Decide(_ context.Context, scope isolation.Scope, id string, in 
 	}
 	if rec.Status != StatusPending {
 		return Record{}, ErrNotPending
+	}
+	next, changed, err := authorizeDerived(ctx, scope, rec, in)
+	if err != nil {
+		return Record{}, err
+	}
+	if changed {
+		rec = next
 	}
 	rec.Status = decision
 	rec.DecidedBy = scope.ActorID()

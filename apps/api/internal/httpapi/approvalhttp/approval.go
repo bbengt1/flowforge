@@ -106,6 +106,9 @@ func listApprovals(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	var next string
 	pageQuery.Next = &next
 	q := r.URL.Query()
+	// The list is not re-derived. Evaluating every pinned version on a hot
+	// read is the expensive path; Decide re-derives and is the authorization
+	// boundary. A stale stored role can still appear here.
 	items, err := s.Approvals.List(r.Context(), scope, approval.Filter{
 		Status:            strings.TrimSpace(q.Get("status")),
 		WorkflowID:        strings.TrimSpace(q.Get("workflowId")),
@@ -221,10 +224,6 @@ func decideApproval(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		WriteApprovalError(w, r, err)
 		return
 	}
-	if !approval.HasApproverRole(roles, rec.ApproverRole) {
-		core.WriteForbidden(w, r)
-		return
-	}
 	if strings.TrimSpace(rec.ExecutionID) != "" && s.Workflows != nil {
 		if err := s.Workflows.AbandonIfWorkflowDeleted(r.Context(), scope, s.Clock().UTC(), rec.ExecutionID); err != nil {
 			if errors.Is(err, wfstore.ErrWorkflowDeleted) {
@@ -248,12 +247,22 @@ func decideApproval(s *core.Server, w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	heads := headsFor(s, r.Context(), scope, rec)
+	derived, err := approval.ResolveGateRequirement(r.Context(), scope, s.Workflows, s.Ops, rec.WorkflowID, rec.WorkflowVersionID, rec.NodeID, s.Clock().UTC())
+	if err != nil {
+		core.WriteForbidden(w, r)
+		return
+	}
+	projected, _ := approval.ProjectRequirement(rec, scope.WorkspaceID(), derived)
+	heads := headsFor(s, r.Context(), scope, projected)
 	out, err := s.Approvals.Decide(r.Context(), scope, rec.ID, approval.DecideInput{
 		Decision: req.Decision,
 		Note:     req.Note,
 		Now:      s.Clock().UTC(),
 		Heads:    heads,
+		Roles:    roles,
+		Resolve: func(ctx context.Context, scope isolation.Scope, row approval.Record) (policy.Requirement, error) {
+			return approval.ResolveGateRequirement(ctx, scope, s.Workflows, s.Ops, row.WorkflowID, row.WorkflowVersionID, row.NodeID, s.Clock().UTC())
+		},
 	})
 	if err != nil {
 		WriteApprovalError(w, r, err)
@@ -291,7 +300,7 @@ func EvaluateVersion(s *core.Server, ctx context.Context, scope isolation.Scope,
 	if err != nil {
 		return policy.Result{}, err
 	}
-	pins, err := ResolveEvalPins(s, ctx, scope, ver.DefinitionYAML)
+	pins, err := approval.ResolvePins(ctx, scope, s.Ops, ver.DefinitionYAML)
 	if err != nil {
 		return policy.Result{}, err
 	}
@@ -305,48 +314,7 @@ func EvaluateVersion(s *core.Server, ctx context.Context, scope isolation.Scope,
 }
 
 func ResolveEvalPins(s *core.Server, ctx context.Context, scope isolation.Scope, yamlDoc string) ([]opsconfig.Pin, error) {
-	if s.Ops == nil {
-		return []opsconfig.Pin{}, nil
-	}
-	refs := opsconfig.ExtractRefs(yamlDoc)
-	if len(refs) == 0 {
-		return []opsconfig.Pin{}, nil
-	}
-	pins, err := s.Ops.Resolve(ctx, scope, refs)
-	if err != nil {
-		return nil, err
-	}
-	seen := map[string]struct{}{}
-	for _, pin := range pins {
-		seen[pin.ResourceID] = struct{}{}
-	}
-	var extra []opsconfig.Ref
-	addPolicy := func(id string) {
-		id = strings.TrimSpace(id)
-		if id == "" {
-			return
-		}
-		if _, ok := seen[id]; ok {
-			return
-		}
-		seen[id] = struct{}{}
-		extra = append(extra, opsconfig.Ref{Kind: opsconfig.KindPolicy, ResourceID: id})
-	}
-	for _, pin := range pins {
-		if pin.Spec != nil {
-			if id, _ := pin.Spec["policyId"].(string); id != "" {
-				addPolicy(id)
-			}
-		}
-	}
-	if len(extra) == 0 {
-		return pins, nil
-	}
-	more, err := s.Ops.Resolve(ctx, scope, extra)
-	if err != nil {
-		return nil, err
-	}
-	return append(pins, more...), nil
+	return approval.ResolvePins(ctx, scope, s.Ops, yamlDoc)
 }
 
 func evaluateAndList(s *core.Server, ctx context.Context, scope isolation.Scope, workflowID, versionID, executionID string) (policy.Result, []approval.Record, error) {
@@ -481,34 +449,22 @@ func ParkApprovalClaim(s *core.Server, ctx context.Context, scope isolation.Scop
 	if result.Step.NodeType != "flow.approval" || s.Workflows == nil {
 		return result, nil
 	}
-	eval, err := EvaluateVersion(s, ctx, scope, result.Execution.WorkflowID, result.Execution.WorkflowVersionID)
+	req, err := approval.ResolveGateRequirement(ctx, scope, s.Workflows, s.Ops, result.Execution.WorkflowID, result.Execution.WorkflowVersionID, result.Step.NodeID, s.Clock().UTC())
 	if err != nil {
 		return result, err
 	}
-	var req *policy.Requirement
-	expires := s.Clock().UTC().Add(time.Hour)
-	for i := range eval.Requirements {
-		item := eval.Requirements[i]
-		if item.NodeID == result.Step.NodeID && item.Wait {
-			req = &eval.Requirements[i]
-			if !item.ExpiresAt.IsZero() {
-				expires = item.ExpiresAt
-			}
-			break
-		}
+	expires := req.ExpiresAt
+	if expires.IsZero() {
+		expires = s.Clock().UTC().Add(time.Hour)
 	}
-	var seed *approval.CreateInput
-	if req != nil {
-		copied := *req
-		copied.ExpiresAt = expires
-		seed = &approval.CreateInput{
-			WorkflowID:        result.Execution.WorkflowID,
-			WorkflowVersionID: result.Execution.WorkflowVersionID,
-			WorkflowDigest:    result.Execution.WorkflowDigest,
-			ExecutionID:       result.Execution.ID,
-			RequestedBy:       result.Execution.RequestedBy,
-			Requirement:       copied,
-		}
+	req.ExpiresAt = expires
+	seed := &approval.CreateInput{
+		WorkflowID:        result.Execution.WorkflowID,
+		WorkflowVersionID: result.Execution.WorkflowVersionID,
+		WorkflowDigest:    result.Execution.WorkflowDigest,
+		ExecutionID:       result.Execution.ID,
+		RequestedBy:       result.Execution.RequestedBy,
+		Requirement:       req,
 	}
 	waited, err := s.Workflows.WaitJob(ctx, scope, s.Clock().UTC(), wfstore.WaitJobInput{
 		JobID:       result.Job.ID,
@@ -669,6 +625,8 @@ func DenyDetail(eval policy.Result) string {
 
 func WriteApprovalEvalError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, approval.ErrBindingUnresolved):
+		core.WriteForbidden(w, r)
 	case errors.Is(err, wfstore.ErrNotFound), errors.Is(err, opsconfig.ErrNotFound), errors.Is(err, opsconfig.ErrCrossWorkspace):
 		core.WriteProblem(w, r, http.StatusNotFound, core.CodeNotFound, "Not Found", "The requested resource was not found.")
 	case errors.Is(err, opsconfig.ErrDraftNotUsable), errors.Is(err, opsconfig.ErrNotPublished):
@@ -692,6 +650,8 @@ func WriteApprovalError(w http.ResponseWriter, r *http.Request, err error) {
 		core.WriteProblem(w, r, http.StatusNotFound, core.CodeNotFound, "Not Found", "The requested resource was not found.")
 	case errors.Is(err, approval.ErrSelfApproval):
 		core.WriteProblem(w, r, http.StatusForbidden, core.CodeForbidden, "Forbidden", "The requester cannot approve or reject their own request.")
+	case errors.Is(err, approval.ErrForbidden), errors.Is(err, approval.ErrBindingUnresolved):
+		core.WriteForbidden(w, r)
 	case errors.Is(err, approval.ErrExpired):
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeConflict, "Conflict", "Approval has expired.")
 	case errors.Is(err, approval.ErrInvalidated):

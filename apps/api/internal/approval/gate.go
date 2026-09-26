@@ -1,0 +1,166 @@
+package approval
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
+	"github.com/bbengt1/flowforge/apps/api/internal/policy"
+	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
+)
+
+// VersionSource loads the run's pinned workflow version.
+type VersionSource interface {
+	GetVersion(ctx context.Context, scope isolation.Scope, workflowID, versionID string) (wfstore.Version, error)
+}
+
+// PinSource resolves published operational pins for a workflow definition.
+type PinSource interface {
+	Resolve(ctx context.Context, scope isolation.Scope, refs []opsconfig.Ref) ([]opsconfig.Pin, error)
+}
+
+// ResolvePins resolves definition refs and any policyId those pins name.
+// A nil source evaluates with no pins. A resolve error is returned as-is
+// so the caller can fail closed.
+func ResolvePins(ctx context.Context, scope isolation.Scope, ops PinSource, yamlDoc string) ([]opsconfig.Pin, error) {
+	if ops == nil {
+		return []opsconfig.Pin{}, nil
+	}
+	refs := opsconfig.ExtractRefs(yamlDoc)
+	if len(refs) == 0 {
+		return []opsconfig.Pin{}, nil
+	}
+	pins, err := ops.Resolve(ctx, scope, refs)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]struct{}{}
+	for _, pin := range pins {
+		seen[pin.ResourceID] = struct{}{}
+	}
+	var extra []opsconfig.Ref
+	for _, pin := range pins {
+		if pin.Spec == nil {
+			continue
+		}
+		id, _ := pin.Spec["policyId"].(string)
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		extra = append(extra, opsconfig.Ref{Kind: opsconfig.KindPolicy, ResourceID: id})
+	}
+	if len(extra) == 0 {
+		return pins, nil
+	}
+	more, err := ops.Resolve(ctx, scope, extra)
+	if err != nil {
+		return nil, err
+	}
+	return append(pins, more...), nil
+}
+
+// ResolveGateRequirement re-derives the wait requirement for one gate from
+// the pinned workflow version. A missing loader, a version lookup error, an
+// evaluate error, or no matching wait requirement returns ErrBindingUnresolved.
+// The caller denies the decision and does not record one.
+func ResolveGateRequirement(ctx context.Context, scope isolation.Scope, versions VersionSource, ops PinSource, workflowID, versionID, nodeID string, now time.Time) (policy.Requirement, error) {
+	if versions == nil {
+		return policy.Requirement{}, fmt.Errorf("%w: workflow version is not available", ErrBindingUnresolved)
+	}
+	ver, err := versions.GetVersion(ctx, scope, workflowID, versionID)
+	if err != nil {
+		return policy.Requirement{}, fmt.Errorf("%w: version lookup failed", ErrBindingUnresolved)
+	}
+	pins, err := ResolvePins(ctx, scope, ops, ver.DefinitionYAML)
+	if err != nil {
+		return policy.Requirement{}, fmt.Errorf("%w: pin resolve failed", ErrBindingUnresolved)
+	}
+	eval, err := policy.Evaluate(policy.Input{
+		YAML:              ver.DefinitionYAML,
+		WorkflowVersionID: ver.ID,
+		WorkflowDigest:    ver.Digest,
+		Pins:              pins,
+		Now:               now,
+	})
+	if err != nil {
+		return policy.Requirement{}, fmt.Errorf("%w: policy evaluation failed", ErrBindingUnresolved)
+	}
+	nodeID = strings.TrimSpace(nodeID)
+	for _, item := range eval.Requirements {
+		if item.NodeID == nodeID && item.Wait {
+			return item, nil
+		}
+	}
+	return policy.Requirement{}, fmt.Errorf("%w: approval requirement is missing", ErrBindingUnresolved)
+}
+
+// ProjectRequirement copies the re-derived role and binding onto rec and
+// recomputes the fingerprint. changed is false when the stored row already
+// matches. ExpiresAt is left alone: it is the wait deadline, not a new evaluation.
+func ProjectRequirement(rec Record, workspaceID string, req policy.Requirement) (Record, bool) {
+	next := rec
+	role := strings.TrimSpace(req.ApproverRole)
+	if role == "" {
+		role = "approver"
+	}
+	op := strings.TrimSpace(req.Operation)
+	if op == "" {
+		op = rec.Operation
+	}
+	next.ApproverRole = role
+	next.NodeName = req.NodeName
+	next.Operation = op
+	next.TargetKind = req.TargetKind
+	next.TargetID = req.TargetID
+	next.TargetVersionID = req.TargetVersionID
+	next.TargetDigest = req.TargetDigest
+	next.PolicyResourceID = req.PolicyResourceID
+	next.PolicyVersionID = req.PolicyVersionID
+	next.PolicyDigest = req.PolicyDigest
+	next.PolicyRevision = req.PolicyRevision
+	next.BindingFingerprint = BindingFingerprint(workspaceID, rec.WorkflowVersionID, rec.WorkflowDigest, req.TargetVersionID, req.PolicyVersionID, req.PolicyDigest, op, rec.NodeID, role, rec.ExecutionID)
+	changed := next.ApproverRole != rec.ApproverRole ||
+		next.NodeName != rec.NodeName ||
+		next.Operation != rec.Operation ||
+		next.TargetKind != rec.TargetKind ||
+		next.TargetID != rec.TargetID ||
+		next.TargetVersionID != rec.TargetVersionID ||
+		next.TargetDigest != rec.TargetDigest ||
+		next.PolicyResourceID != rec.PolicyResourceID ||
+		next.PolicyVersionID != rec.PolicyVersionID ||
+		next.PolicyDigest != rec.PolicyDigest ||
+		next.PolicyRevision != rec.PolicyRevision ||
+		next.BindingFingerprint != rec.BindingFingerprint
+	return next, changed
+}
+
+// authorizeDerived re-derives the gate and returns the record Decide must
+// persist. A resolve error or a missing role denies without a decision.
+// The caller writes next only when the role check passes, in the same
+// transaction as the decision.
+func authorizeDerived(ctx context.Context, scope isolation.Scope, rec Record, in DecideInput) (Record, bool, error) {
+	if in.Resolve == nil {
+		return rec, false, nil
+	}
+	req, err := in.Resolve(ctx, scope, rec)
+	if err != nil {
+		if errors.Is(err, ErrBindingUnresolved) {
+			return Record{}, false, err
+		}
+		return Record{}, false, fmt.Errorf("%w: %v", ErrBindingUnresolved, err)
+	}
+	next, changed := ProjectRequirement(rec, scope.WorkspaceID(), req)
+	if !HasApproverRole(in.Roles, next.ApproverRole) {
+		return Record{}, false, ErrForbidden
+	}
+	return next, changed, nil
+}

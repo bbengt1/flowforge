@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/approval"
-	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
-	"github.com/bbengt1/flowforge/apps/api/internal/policy"
 )
 
 // approvalBindingError is a fail-closed lookup or evaluation failure.
@@ -56,43 +54,21 @@ func (r *Runner) approvalSeed(ctx context.Context, ws Workspace, job Job, until 
 	if err != nil {
 		return approval.CreateInput{}, bindingUnresolved(err)
 	}
-	ver, err := q.Workflows.GetVersion(ctx, scope, job.Execution.WorkflowID, job.Execution.WorkflowVersionID)
-	if err != nil {
-		return approval.CreateInput{}, bindingUnresolved(err)
-	}
-	var pins []opsconfig.Pin
+	var ops approval.PinSource
 	if r.disp != nil && r.disp.Ops != nil {
-		refs := opsconfig.ExtractRefs(ver.DefinitionYAML)
-		if len(refs) > 0 {
-			pins, err = r.disp.Ops.Resolve(ctx, scope, refs)
-			if err != nil {
-				return approval.CreateInput{}, bindingUnresolved(err)
-			}
-		}
+		ops = r.disp.Ops
 	}
-	eval, err := policy.Evaluate(policy.Input{
-		YAML:              ver.DefinitionYAML,
-		WorkflowVersionID: ver.ID,
-		WorkflowDigest:    ver.Digest,
-		Pins:              pins,
-		Now:               r.now(),
-	})
+	req, err := approval.ResolveGateRequirement(ctx, scope, q.Workflows, ops, job.Execution.WorkflowID, job.Execution.WorkflowVersionID, job.Step.NodeID, r.now())
 	if err != nil {
 		return approval.CreateInput{}, bindingUnresolved(err)
 	}
-	for _, item := range eval.Requirements {
-		if item.NodeID != job.Step.NodeID || !item.Wait {
-			continue
-		}
-		item.ExpiresAt = until
-		return approval.CreateInput{
-			WorkflowID:        job.Execution.WorkflowID,
-			WorkflowVersionID: job.Execution.WorkflowVersionID,
-			WorkflowDigest:    job.Execution.WorkflowDigest,
-			ExecutionID:       job.Execution.ID,
-			RequestedBy:       job.Execution.RequestedBy,
-			Requirement:       item,
-		}, nil
-	}
-	return approval.CreateInput{}, bindingUnresolved(errors.New("approval requirement is missing"))
+	req.ExpiresAt = until
+	return approval.CreateInput{
+		WorkflowID:        job.Execution.WorkflowID,
+		WorkflowVersionID: job.Execution.WorkflowVersionID,
+		WorkflowDigest:    job.Execution.WorkflowDigest,
+		ExecutionID:       job.Execution.ID,
+		RequestedBy:       job.Execution.RequestedBy,
+		Requirement:       req,
+	}, nil
 }

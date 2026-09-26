@@ -280,6 +280,15 @@ func (p *Postgres) Decide(ctx context.Context, scope isolation.Scope, id string,
 	if rec.Status != StatusPending {
 		return Record{}, ErrNotPending
 	}
+	next, changed, err := authorizeDerived(ctx, scope, rec, in)
+	if err != nil {
+		return Record{}, err
+	}
+	if changed {
+		if rec, err = updateBinding(ctx, tx, next, now); err != nil {
+			return Record{}, err
+		}
+	}
 	if err := tx.QueryRow(ctx, `
 		UPDATE approvals
 		SET status = $2, decided_by = $3::uuid, decided_at = $4, decision_note = $5, updated_at = $4
@@ -496,6 +505,33 @@ func requestedByArg(scope isolation.Scope, requestedBy string) any {
 		return requestedBy
 	}
 	return actorArg(scope)
+}
+
+func updateBinding(ctx context.Context, tx pgx.Tx, rec Record, now time.Time) (Record, error) {
+	var out Record
+	err := scanRecord(tx.QueryRow(ctx, `
+		UPDATE approvals SET
+			node_name = $2,
+			operation = $3,
+			target_kind = $4,
+			target_id = $5::uuid,
+			target_version_id = $6::uuid,
+			target_digest = $7,
+			policy_resource_id = $8::uuid,
+			policy_version_id = $9::uuid,
+			policy_digest = $10,
+			policy_revision = $11,
+			binding_fingerprint = $12,
+			approver_role = $13,
+			updated_at = $14
+		WHERE id = $1::uuid
+		RETURNING `+recordColumns,
+		rec.ID, rec.NodeName, rec.Operation, rec.TargetKind,
+		nullUUID(rec.TargetID), nullUUID(rec.TargetVersionID), rec.TargetDigest,
+		nullUUID(rec.PolicyResourceID), nullUUID(rec.PolicyVersionID), rec.PolicyDigest, rec.PolicyRevision,
+		rec.BindingFingerprint, rec.ApproverRole, now,
+	), &out)
+	return out, err
 }
 
 func updateStatus(ctx context.Context, tx pgx.Tx, scope isolation.Scope, rec Record, status, reason string, now time.Time) (Record, error) {

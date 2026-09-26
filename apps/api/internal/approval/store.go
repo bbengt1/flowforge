@@ -15,17 +15,19 @@ import (
 
 // Persistence errors.
 var (
-	ErrNotFound         = errors.New("not found")
-	ErrConflict         = errors.New("conflict")
-	ErrInvalid          = errors.New("invalid")
-	ErrNoScope          = errors.New("workspace scope is not set")
-	ErrStoreUnavailable = errors.New("approval store is unavailable")
-	ErrSelfApproval     = errors.New("requester cannot decide their own approval")
-	ErrNotPending       = errors.New("approval is not pending")
-	ErrClosed           = errors.New("approval is closed")
-	ErrExpired          = errors.New("approval has expired")
-	ErrInvalidated      = errors.New("approval binding is no longer valid")
-	ErrStaleAuth        = errors.New("authorization is no longer valid")
+	ErrNotFound          = errors.New("not found")
+	ErrConflict          = errors.New("conflict")
+	ErrInvalid           = errors.New("invalid")
+	ErrNoScope           = errors.New("workspace scope is not set")
+	ErrStoreUnavailable  = errors.New("approval store is unavailable")
+	ErrSelfApproval      = errors.New("requester cannot decide their own approval")
+	ErrNotPending        = errors.New("approval is not pending")
+	ErrClosed            = errors.New("approval is closed")
+	ErrExpired           = errors.New("approval has expired")
+	ErrInvalidated       = errors.New("approval binding is no longer valid")
+	ErrStaleAuth         = errors.New("authorization is no longer valid")
+	ErrForbidden         = errors.New("forbidden")
+	ErrBindingUnresolved = errors.New("approval binding is unresolved")
 )
 
 // Status values.
@@ -122,11 +124,16 @@ type CreateInput struct {
 }
 
 // DecideInput is a fresh-authorization decision.
+// Resolve, when set, re-derives the gate inside Decide. Postgres and memory
+// both authorize against that requirement, not the stored role. The API
+// always sets it. A resolve error denies the decision and writes nothing.
 type DecideInput struct {
 	Decision string
 	Note     string
 	Now      time.Time
 	Heads    CurrentHeads
+	Resolve  func(ctx context.Context, scope isolation.Scope, rec Record) (policy.Requirement, error)
+	Roles    []string
 }
 
 // InvalidateInput marks matching pending/approved rows invalidated.
@@ -171,7 +178,7 @@ func TypeCatalog() Catalog {
 		WaitSurvivesWorkerLoss: true,
 		SelfApprovalDenied:     true,
 		FreshAuthRequired:      true,
-		Help:                   "Mid-run flow.approval parks a durable waiting job with no worker lease. Decide is resume: approved/rejected ports. Expiry and binding change resume on expired. Requester self-approval is denied. Decide rechecks approval.decide on the server.",
+		Help:                   "Mid-run flow.approval parks a durable waiting job with no worker lease. Decide is resume: approved/rejected ports. Expiry and binding change resume on expired. Requester self-approval is denied. Decide rechecks approval.decide on the server and re-derives the approver role from the pinned workflow version.",
 	}
 }
 
