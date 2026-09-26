@@ -525,6 +525,11 @@ export function displaysAsNotReached(input: {
     return false;
   }
   const folded = normalizeExecutionStatus(input.status);
+  // A step that itself failed was reached. A blocked job on that step
+  // must not replace the failed wording.
+  if (folded === "failed") {
+    return false;
+  }
   if (folded === "pending" || folded === "blocked") {
     return true;
   }

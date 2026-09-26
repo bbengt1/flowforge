@@ -4,8 +4,12 @@ import {
   INDETERMINATE_STATUS_HELP,
   RETRY_INDETERMINATE_MESSAGE,
 } from "./execution-contract.ts";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   approvalWaitControls,
+  gateStepFailureCopy,
   buildPreRunReview,
   canStartPublishedRun,
   canvasStateFromExecutionStatus,
@@ -631,6 +635,75 @@ describe("terminal runs do not look like they are waiting on approval", () => {
       deleted.nodes.find((node) => node.id === "seed")?.state === "approval-required",
       false,
     );
+  });
+
+  it("uses generic failed wording for an unknown gate error code", () => {
+    const generic = executionStatusPresentation("failed").description;
+    const unknown = "approver-requirement-changed";
+    const explosive: { code?: string } = {};
+    Object.defineProperty(explosive, "code", {
+      get() {
+        throw new Error("unknown code blew up");
+      },
+    });
+    const cases = [
+      { code: unknown },
+      { code: "workflow_deleted" },
+      { code: { nested: true } },
+      null,
+      "not-an-object",
+      explosive,
+    ];
+    for (const error of cases) {
+      const copy = gateStepFailureCopy({
+        nodeType: "flow.approval",
+        status: "failed",
+        error,
+      });
+      assert.equal(copy, generic);
+      assert.equal(copy?.includes(unknown), false);
+      assert.equal(copy?.includes("workflow_deleted"), false);
+    }
+    assert.equal(
+      gateStepFailureCopy({
+        nodeType: "flow.approval",
+        status: "waiting",
+        error: { code: unknown },
+      }),
+      null,
+    );
+    assert.equal(
+      gateStepFailureCopy({
+        nodeType: "data.set",
+        status: "failed",
+        error: { code: unknown },
+      }),
+      null,
+    );
+    const views = replayStepViews(
+      [
+        sampleStep({
+          nodeId: "gate",
+          nodeType: "flow.approval",
+          status: "failed",
+          error: { code: unknown, message: "pinned approver changed" },
+        }),
+      ],
+      { runStatus: "failed" },
+    );
+    assert.equal(views[0]?.failureText, generic);
+    assert.equal(views[0]?.presentation.label, "Failed");
+    assert.equal(views[0]?.failureText?.includes(unknown), false);
+    const detail = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../components/executions/ExecutionDetail.tsx"),
+      "utf8",
+    );
+    const replay = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../components/executions/ExecutionReplay.tsx"),
+      "utf8",
+    );
+    assert.match(detail, /gateStepFailureCopy\(step\)/);
+    assert.match(replay, /selected\.failureText/);
   });
 
   it("treats a closed approval as not waiting on a live run", () => {
