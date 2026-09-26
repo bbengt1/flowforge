@@ -246,6 +246,11 @@ export function ExecutionReplay({
               survives worker or pod loss. Resume is decide, not a new route.
             </p>
           ) : null}
+          {selected.failureText ? (
+            <p role="status" className="mt-3 text-sm">
+              {selected.failureText}
+            </p>
+          ) : null}
           <div className="mt-3">
             <p className={`text-xs font-medium ${FF_INBOX_MUTED_CLASS}`}>Safe outputs</p>
             <pre className={`mt-1 overflow-auto rounded-lg p-3 font-mono text-xs ${FF_INBOX_PANEL_CLASS}`}>

@@ -41,6 +41,10 @@ import {
   type ValidityReason,
 } from "./approval-types.ts";
 import { isTerminalRunStatus } from "./execution.ts";
+import {
+  APPROVAL_CLOSED_MESSAGE,
+  retryProblemShouldRefetch,
+} from "./execution-retry.ts";
 import type { ProblemDetails } from "./problem.ts";
 
 const UUID =
@@ -1016,6 +1020,66 @@ export function problemClosesApproval(problem: ProblemDetails): boolean {
     isDeniedProblemCode(problem.code) ||
     problem.code === "approval_closed"
   );
+}
+
+export const APPROVAL_WRONG_APPROVER_MESSAGE =
+  "You can't decide this approval. It needs a different approver.";
+
+/**
+ * Decide-time failure. A 403 that is not self-approval means the pinned
+ * gate wants a different approver: plain sentence, hide the controls, and
+ * refetch. `approval_closed` stays the existing closed sentence.
+ */
+export type ApprovalDecideOutcome =
+  | {
+      kind: "closed";
+      message: string;
+      hideControls: false;
+      refetch: true;
+    }
+  | {
+      kind: "wrong-approver";
+      message: string;
+      hideControls: true;
+      refetch: true;
+    }
+  | {
+      kind: "problem";
+      hideControls: false;
+      refetch: boolean;
+    };
+
+export function isWrongApproverProblem(problem: ProblemDetails): boolean {
+  if (isSelfApprovalProblem(problem)) {
+    return false;
+  }
+  return problem.status === 403 || problem.code === "forbidden";
+}
+
+export function approvalDecideOutcome(
+  problem: ProblemDetails,
+): ApprovalDecideOutcome {
+  if (problem.code === "approval_closed") {
+    return {
+      kind: "closed",
+      message: APPROVAL_CLOSED_MESSAGE,
+      hideControls: false,
+      refetch: true,
+    };
+  }
+  if (isWrongApproverProblem(problem)) {
+    return {
+      kind: "wrong-approver",
+      message: APPROVAL_WRONG_APPROVER_MESSAGE,
+      hideControls: true,
+      refetch: true,
+    };
+  }
+  return {
+    kind: "problem",
+    hideControls: false,
+    refetch: retryProblemShouldRefetch(problem),
+  };
 }
 
 export function failClosedProblemTitle(problem: ProblemDetails): string {

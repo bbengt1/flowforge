@@ -8,6 +8,7 @@
  */
 
 import { isExecutionAwaitingApproval } from "./approval.ts";
+import { FLOW_APPROVAL_NODE_TYPE } from "./approval-contract.ts";
 import type { ApprovalRequest, PolicyEvaluation } from "./approval-types.ts";
 import {
   APPROVAL_RESUME_DISABLED_HELP,
@@ -88,6 +89,8 @@ export type ReplayStepView = {
   waiting: boolean;
   current: boolean;
   outputText: string;
+  /** Plain failed sentence for a failed approval gate. Null otherwise. */
+  failureText: string | null;
 };
 
 export type PreRunReview = {
@@ -484,8 +487,41 @@ export function replayStepViews(
         (waiting.has(step.nodeId) || isExecutionAwaitingApproval(step.status)),
       current: step.nodeId === current,
       outputText: boundRedactedDisplay(step.output ?? step.error ?? step.input).text,
+      failureText: gateStepFailureCopy(step),
     };
   });
+}
+
+/**
+ * Human sentence for a `flow.approval` step that ended `failed`.
+ * Known or unknown error codes use the same generic failed wording.
+ * A malformed error never throws and is not echoed.
+ */
+export function gateStepFailureCopy(step: {
+  nodeType?: string;
+  status?: string;
+  error?: unknown;
+}): string | null {
+  if (step.nodeType?.trim() !== FLOW_APPROVAL_NODE_TYPE) {
+    return null;
+  }
+  if (normalizeExecutionStatus(step.status) !== "failed") {
+    return null;
+  }
+  void readStepErrorCode(step.error);
+  return executionStatusPresentation("failed").description;
+}
+
+function readStepErrorCode(error: unknown): string {
+  try {
+    if (!error || typeof error !== "object") {
+      return "";
+    }
+    const code = (error as { code?: unknown }).code;
+    return typeof code === "string" ? code : "";
+  } catch {
+    return "";
+  }
 }
 
 export function sideEffectWarnings(

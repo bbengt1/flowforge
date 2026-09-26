@@ -4,14 +4,11 @@ import { useState } from "react";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import {
   approvalDecideControlsState,
+  approvalDecideOutcome,
   failClosedProblemTitle,
-  problemClosesApproval,
 } from "@/lib/approval";
 import { isTerminalRunStatus } from "@/lib/execution";
-import {
-  APPROVAL_CLOSED_MESSAGE,
-  retryProblemShouldRefetch,
-} from "@/lib/execution-retry";
+import { APPROVAL_CLOSED_MESSAGE } from "@/lib/execution-retry";
 import { approveApproval, rejectApproval } from "@/lib/approval-client";
 import {
   APPROVAL_DECIDE_HELP,
@@ -41,14 +38,18 @@ export function ApprovalDecideControls({
   const [note, setNote] = useState("");
   const [pending, setPending] = useState<string | null>(null);
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
+  const [controlsRevoked, setControlsRevoked] = useState(false);
   const { canDecide, selfRequested } = approvalDecideControlsState(
     approval,
     actorUserId,
     permissions,
   );
+  const outcome = problem ? approvalDecideOutcome(problem) : null;
   const offerDecision =
     approval.status === "pending" &&
-    !isTerminalRunStatus(approval.executionStatus);
+    !isTerminalRunStatus(approval.executionStatus) &&
+    !controlsRevoked &&
+    outcome?.hideControls !== true;
 
   async function decide(action: "approve" | "reject") {
     setPending(action);
@@ -59,17 +60,13 @@ export function ApprovalDecideControls({
         : await rejectApproval(identity, approval.id, note);
     setPending(null);
     if (!result.ok) {
+      const next = approvalDecideOutcome(result.problem);
       setProblem(result.problem);
-      if (retryProblemShouldRefetch(result.problem)) {
-        onRefetch?.();
+      if (next.hideControls) {
+        setControlsRevoked(true);
       }
-      if (
-        result.expired ||
-        result.invalidated ||
-        result.selfApproval ||
-        problemClosesApproval(result.problem)
-      ) {
-        return;
+      if (next.refetch) {
+        onRefetch?.();
       }
       return;
     }
@@ -79,9 +76,13 @@ export function ApprovalDecideControls({
 
   return (
     <div className="space-y-3">
-      {problem?.code === "approval_closed" ? (
+      {outcome?.kind === "closed" ? (
         <p role="status" className="text-sm text-[var(--ff-text)]">
-          {APPROVAL_CLOSED_MESSAGE}
+          {outcome.message}
+        </p>
+      ) : outcome?.kind === "wrong-approver" ? (
+        <p role="status" className="text-sm text-[var(--ff-text)]">
+          {outcome.message}
         </p>
       ) : problem ? (
         <ProblemBanner

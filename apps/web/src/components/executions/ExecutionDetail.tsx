@@ -53,6 +53,7 @@ import {
 import {
   compareRedactedExecutions,
   executionErrorNavLinks,
+  gateStepFailureCopy,
 } from "@/lib/execution-replay";
 import { adaptActionLibrary } from "@/lib/workflow-action-library";
 import { compareWorkflow } from "@/lib/workflow-client";
@@ -836,7 +837,9 @@ export function ExecutionDetail({
               </p>
             ) : (
               <ul className="mt-4 grid gap-3">
-                {view.steps.map((step) => (
+                {view.steps.map((step) => {
+                  const gateFailure = gateStepFailureCopy(step);
+                  return (
                   <li
                     key={step.id}
                     className={
@@ -860,6 +863,11 @@ export function ExecutionDetail({
                           .map((job) => job.status)}
                       />
                     </div>
+                    {gateFailure ? (
+                      <p role="status" className="mt-2 text-sm">
+                        {gateFailure}
+                      </p>
+                    ) : null}
                     {step.workerId || step.leaseId || step.fencingToken != null ? (
                       <p className={`mt-2 font-mono text-xs ${FF_INBOX_MUTED_CLASS}`}>
                         {step.workerId ? `worker ${step.workerId}` : ""}
@@ -990,7 +998,8 @@ export function ExecutionDetail({
                       );
                     })()}
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             )}
           </section>
