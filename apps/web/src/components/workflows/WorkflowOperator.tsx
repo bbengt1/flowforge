@@ -2615,6 +2615,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     />
     {!embed && workflow && workflowDeleteOpen ? (
       <DeleteWorkflowDialog
+        key={workflow.id}
         open
         workflowId={workflow.id}
         identity={identity}

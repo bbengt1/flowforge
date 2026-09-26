@@ -2251,6 +2251,7 @@ function WorkflowHomeSession() {
       ) : null}
       {!embed && workflowDelete ? (
         <DeleteWorkflowDialog
+          key={workflowDelete.id}
           open
           workflowId={workflowDelete.id}
           identity={identity}
