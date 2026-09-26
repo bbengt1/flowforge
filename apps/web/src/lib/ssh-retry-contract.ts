@@ -61,7 +61,7 @@ export const SSH_INDETERMINATE_LEASE_LOSS_HELP =
   "Indeterminate SSH outcome — lease lost, unknown after dispatch, or verification could not confirm state. A remote side effect may have occurred. Do not assume the command did not run.";
 
 export const SSH_NO_BLIND_RETRY_HELP =
-  "This UI never offers a blind retry for ssh.run. Retry is shown only when the step is allowed to retry (retry-safe, a verification probe, and attempts remaining). A closed retry is not offered.";
+  "This UI never offers a blind retry for ssh.run. Retry is shown only when result.retry.allowed is true (retrySafe + verification + remaining attempts). A closed retry is not offered.";
 
 export const SSH_PROBE_HELP =
   "spec.verification is an idempotent read-only probe using the same parameterSchema and POSIX quoting as the mutating template. It is never the mutating command. already-applied succeeds without re-run; safe-to-retry may re-run once; onError stays indeterminate.";

@@ -155,7 +155,7 @@ export const SCRIPT_IO_INVALID_VERIFICATION_MESSAGE =
   "retrySafe=true requires idempotencyKey (1–128, letter-prefixed) and verification.behavior=declared-hook. Missing or invalid declaration is invalid-verification at validate/publish.";
 
 export const SCRIPT_IO_NO_BLIND_RETRY_HELP =
-  "This UI never offers a blind retry for script.python or script.go. Retry is shown only when the step is allowed to retry (retrySafe, an idempotency key, verification, and attempts remaining). Lease loss stays indeterminate until the verification hook runs first. A closed retry is not offered.";
+  "This UI never offers a blind retry for script.python or script.go. Retry is shown only when result.retry.allowed is true (retrySafe + idempotencyKey + verification + remaining attempts). Lease loss stays indeterminate until the verification hook runs first. A closed retry is not offered.";
 
 export const SCRIPT_IO_INDETERMINATE_HELP =
   "Indeterminate script outcome — lease lost after dispatch or verification could not confirm state. A side effect may have occurred. Do not assume the script did not run. Verify first — never blindly re-run.";
