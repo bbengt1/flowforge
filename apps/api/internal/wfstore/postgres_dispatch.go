@@ -1192,6 +1192,49 @@ func recoverExpiredTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now
 		}
 		return stopped + resumed, nil
 	}
+	// A claimed approval whose rebuild failed, and whose release also
+	// failed, has no pending row. Put it back on the queue. Do not burn
+	// the attempt and do not park it as waiting, or the deadline takes
+	// expired. A claim that still has a pending approval parks below.
+	requeued, err := tx.Query(ctx, `
+		UPDATE execution_jobs j
+		SET status = 'queued', worker_id = NULL, lease_expires_at = NULL, heartbeat_at = NULL, updated_at = $1
+		FROM execution_steps s
+		WHERE s.workspace_id = j.workspace_id AND s.id = j.execution_step_id
+		  AND j.execution_id = ANY($2::uuid[])
+		  AND j.status IN ('claimed', 'running')
+		  AND j.lease_expires_at IS NOT NULL
+		  AND j.lease_expires_at <= $1
+		  AND s.node_type = 'flow.approval'
+		  AND NOT EXISTS (
+			SELECT 1 FROM approvals a
+			WHERE a.workspace_id = j.workspace_id
+			  AND a.execution_id = j.execution_id
+			  AND a.node_id = s.node_id
+			  AND a.status = 'pending'
+		  )
+		RETURNING j.execution_id::text, j.execution_step_id::text
+	`, now, leaseIDs)
+	if err != nil {
+		return 0, mapDBErr(err)
+	}
+	requeuePairs, err := collectRecoverPairs(requeued)
+	if err != nil {
+		return 0, err
+	}
+	for _, p := range requeuePairs {
+		if _, err := tx.Exec(ctx, `
+			UPDATE execution_steps
+			SET status = 'queued', lease_id = NULL, finished_at = NULL, updated_at = $1
+			WHERE id = $2::uuid
+		`, now, p.step); err != nil {
+			return 0, mapDBErr(err)
+		}
+		n++
+	}
+	if err := finishRecoverPairs(ctx, tx, scope, now, requeuePairs, "requeued"); err != nil {
+		return 0, err
+	}
 	parked, err := tx.Query(ctx, `
 		UPDATE execution_jobs j
 		SET status = 'waiting', worker_id = NULL, lease_expires_at = NULL, heartbeat_at = NULL, updated_at = $1
@@ -1202,6 +1245,13 @@ func recoverExpiredTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now
 		  AND j.lease_expires_at IS NOT NULL
 		  AND j.lease_expires_at <= $1
 		  AND s.node_type = 'flow.approval'
+		  AND EXISTS (
+			SELECT 1 FROM approvals a
+			WHERE a.workspace_id = j.workspace_id
+			  AND a.execution_id = j.execution_id
+			  AND a.node_id = s.node_id
+			  AND a.status = 'pending'
+		  )
 		RETURNING j.execution_id::text, j.execution_step_id::text
 	`, now, leaseIDs)
 	if err != nil {

@@ -734,6 +734,21 @@ func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope
 				continue
 			}
 			if stepIdx >= 0 && exec.steps[stepIdx].NodeType == "flow.approval" {
+				pending := m.approvalPending != nil && m.approvalPending(exec.record.ID, exec.steps[stepIdx].NodeID)
+				if !pending {
+					job.Status = JobQueued
+					job.WorkerID = ""
+					job.LeaseExpiresAt = nil
+					job.HeartbeatAt = nil
+					job.UpdatedAt = now
+					exec.jobs[i] = job
+					exec.steps[stepIdx].LeaseID = ""
+					applyStepStatus(&exec.steps[stepIdx], ExecutionQueued, now)
+					changed = true
+					outcome = "requeued"
+					n++
+					continue
+				}
 				job.Status = JobWaiting
 				job.WorkerID = ""
 				job.LeaseExpiresAt = nil

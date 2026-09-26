@@ -12,6 +12,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/policy"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 const adminGateDefinition = `apiVersion: flowforge/v1
@@ -192,11 +193,42 @@ spec:
 
 type staticPins struct {
 	pins []opsconfig.Pin
+	err  error
 }
 
 func (s staticPins) Resolve(context.Context, isolation.Scope, []opsconfig.Ref) ([]opsconfig.Pin, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
 	return s.pins, nil
 }
+
+const twoGateDefinition = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: two-gates
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: gate
+      type: flow.approval
+      name: Gate
+      with:
+        approverRole: admin
+        policyId: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+        expiresIn: PT1H
+    - id: open
+      type: flow.approval
+      name: Open
+      with:
+        approverRole: approver
+        expiresIn: PT1H
+  edges:
+    - from: gate.approved
+      to: open.request
+`
 
 func TestMemoryDecidePersistsPolicyPinOnDeny(t *testing.T) {
 	ctx := context.Background()
@@ -477,7 +509,7 @@ func TestMemoryResyncSkipsTransient(t *testing.T) {
 	}
 }
 
-func TestMemoryResyncInvalidatesStalePolicy(t *testing.T) {
+func TestMemoryResyncRebuildsFromRunPin(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemory()
 	owner, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
@@ -486,32 +518,132 @@ func TestMemoryResyncInvalidatesStalePolicy(t *testing.T) {
 	}
 	now := time.Date(2026, 9, 26, 1, 0, 0, 0, time.UTC)
 	versionID := "55555555-5555-4555-8555-555555555555"
-	bound := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	policyID := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 	pinned := "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+	current := "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 	digest := "sha256:" + strings.Repeat("ab", 32)
+	pinDigest := "sha256:" + strings.Repeat("d", 64)
 	execID := "66666666-6666-4666-8666-666666666666"
 	rec, err := store.Create(ctx, owner, CreateInput{
 		WorkflowID: "44444444-4444-4444-8444-444444444444", WorkflowVersionID: versionID, WorkflowDigest: digest,
 		ExecutionID: execID,
 		Requirement: policy.Requirement{
 			NodeID: "gate", Operation: "flow.approval", ApproverRole: "approver", ExpiresAt: now.Add(time.Hour),
-			PolicyVersionID: bound, PolicyDigest: "sha256:" + strings.Repeat("c", 64), PolicyRevision: 1,
 		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	store.SetRunPin(execID, runPin{
-		WorkflowVersionID: versionID, WorkflowDigest: digest, PolicyVersionID: pinned,
-		PolicyDigest: "sha256:" + strings.Repeat("d", 64), PolicyRevision: 2,
+	plain, err := store.Create(ctx, owner, CreateInput{
+		WorkflowID: "44444444-4444-4444-8444-444444444444", WorkflowVersionID: versionID, WorkflowDigest: digest,
+		ExecutionID: execID,
+		Requirement: policy.Requirement{
+			NodeID: "open", Operation: "flow.approval", ApproverRole: "approver", ExpiresAt: now.Add(time.Hour),
+		},
 	})
-	ver := wfstore.Version{ID: versionID, DefinitionYAML: adminGateDefinition, Digest: digest}
-	stats := store.ResyncPending(ctx, staticVersion{ver: ver}, nil, now)
-	if stats.Corrected != 0 || stats.Closed != 0 {
+	if err != nil {
+		t.Fatal(err)
+	}
+	RememberRun(store, execID, versionID, digest, []opsconfig.Pin{{
+		Kind: opsconfig.KindPolicy, ResourceID: policyID, VersionID: pinned,
+		VersionNumber: 2, Digest: pinDigest,
+	}})
+	ver := wfstore.Version{ID: versionID, DefinitionYAML: twoGateDefinition, Digest: digest}
+	stats := store.ResyncPending(ctx, staticVersion{ver: ver}, staticPins{pins: []opsconfig.Pin{{
+		Kind: opsconfig.KindPolicy, ResourceID: policyID, VersionID: current,
+		VersionNumber: 9, Digest: "sha256:" + strings.Repeat("e", 64),
+		Spec: map[string]any{"kind": "approval", "policy": map[string]any{}},
+	}}}, now)
+	if stats.Closed != 0 || stats.Corrected != 1 {
 		t.Fatalf("stats = %+v", stats)
 	}
 	got, err := store.Get(ctx, owner, rec.ID)
-	if err != nil || got.Status != StatusInvalidated || got.ApproverRole != "approver" || got.PolicyVersionID != bound {
+	if err != nil || got.Status != StatusPending || got.ApproverRole != "admin" || got.PolicyVersionID != pinned || got.PolicyDigest != pinDigest {
+		t.Fatalf("pinned row = %+v %v", got, err)
+	}
+	open, err := store.Get(ctx, owner, plain.ID)
+	if err != nil || open.Status != StatusPending || open.PolicyVersionID != "" || open.PolicyResourceID != "" {
+		t.Fatalf("open row = %+v %v", open, err)
+	}
+}
+
+func TestResolveTreatsPrivilegeAsTransient(t *testing.T) {
+	ctx := context.Background()
+	scope, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	denied := errors.Join(wfstore.ErrNotFound, &pgconn.PgError{Code: "42501", Message: "permission denied"})
+	if _, err := ResolveGateRequirement(ctx, scope, staticVersion{err: denied}, nil, "44444444-4444-4444-8444-444444444444", "55555555-5555-4555-8555-555555555555", "gate", time.Now().UTC()); !errors.Is(err, ErrBindingTransient) || errors.Is(err, ErrBindingUnresolved) {
+		t.Fatalf("version = %v", err)
+	}
+	ver := wfstore.Version{ID: "55555555-5555-4555-8555-555555555555", DefinitionYAML: pinnedGateDefinition, Digest: "sha256:" + strings.Repeat("ab", 32)}
+	pinDenied := errors.Join(opsconfig.ErrNotFound, &pgconn.PgError{Code: "42501", Message: "permission denied"})
+	if _, err := ResolveGateRequirement(ctx, scope, staticVersion{ver: ver}, staticPins{err: pinDenied}, "44444444-4444-4444-8444-444444444444", ver.ID, "gate", time.Now().UTC()); !errors.Is(err, ErrBindingTransient) || errors.Is(err, ErrBindingUnresolved) {
+		t.Fatalf("policy = %v", err)
+	}
+}
+
+func TestMemoryResyncSkipsPrivilegeFailure(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	owner, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 26, 1, 0, 0, 0, time.UTC)
+	rec, err := store.Create(ctx, owner, CreateInput{
+		WorkflowID: "44444444-4444-4444-8444-444444444444", WorkflowVersionID: "55555555-5555-4555-8555-555555555555",
+		WorkflowDigest: "sha256:" + strings.Repeat("a", 64),
+		Requirement:    policy.Requirement{NodeID: "gate", Operation: "flow.approval", ApproverRole: "approver", ExpiresAt: now.Add(time.Hour)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.SetUnresolvableRun(func(context.Context, isolation.Scope, string, string, string, time.Time) error {
+		t.Fatal("privilege failure settled the run")
+		return nil
+	})
+	denied := errors.Join(wfstore.ErrNotFound, &pgconn.PgError{Code: "42501", Message: "permission denied"})
+	stats := store.ResyncPending(ctx, staticVersion{err: denied}, nil, now)
+	if stats.Closed != 0 || stats.Corrected != 0 || stats.Skipped != 1 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	got, err := store.Get(ctx, owner, rec.ID)
+	if err != nil || got.Status != StatusPending || got.CloseReason != "" {
+		t.Fatalf("row = %+v %v", got, err)
+	}
+}
+
+func TestMemoryResyncSkipsPrivilegeOnPolicy(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	owner, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 26, 1, 0, 0, 0, time.UTC)
+	versionID := "55555555-5555-4555-8555-555555555555"
+	digest := "sha256:" + strings.Repeat("ab", 32)
+	rec, err := store.Create(ctx, owner, CreateInput{
+		WorkflowID: "44444444-4444-4444-8444-444444444444", WorkflowVersionID: versionID, WorkflowDigest: digest,
+		Requirement: policy.Requirement{NodeID: "gate", Operation: "flow.approval", ApproverRole: "approver", ExpiresAt: now.Add(time.Hour)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.SetUnresolvableRun(func(context.Context, isolation.Scope, string, string, string, time.Time) error {
+		t.Fatal("privilege failure settled the run")
+		return nil
+	})
+	ver := wfstore.Version{ID: versionID, DefinitionYAML: pinnedGateDefinition, Digest: digest}
+	denied := errors.Join(opsconfig.ErrNotFound, &pgconn.PgError{Code: "42501", Message: "permission denied"})
+	stats := store.ResyncPending(ctx, staticVersion{ver: ver}, staticPins{err: denied}, now)
+	if stats.Closed != 0 || stats.Corrected != 0 || stats.Skipped != 1 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	got, err := store.Get(ctx, owner, rec.ID)
+	if err != nil || got.Status != StatusPending || got.CloseReason != "" {
 		t.Fatalf("row = %+v %v", got, err)
 	}
 }

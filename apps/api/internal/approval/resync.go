@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
@@ -44,9 +45,10 @@ type ResyncStats struct {
 // requirement_unresolvable means the pinned version is not found, policy
 // evaluation failed deterministically, or no requirement matches. A
 // database, network, context, or timeout failure is skipped and logged.
-// That approval stays pending and the run stays waiting. A row whose bound
-// version is not the run pin is invalidated and is not rebound. Errors are
-// logged. The function returns after the budget or the walk.
+// That approval stays pending and the run stays waiting. The rebuild uses
+// the run's pinned version and that requirement's policy pin, never current
+// heads, so boot does not invalidate a row. Errors are logged. The function
+// returns after the budget or the walk.
 func ResyncOpenApprovals(ctx context.Context, db DB, versions VersionSource, ops PinSource, log *slog.Logger) ResyncStats {
 	if log == nil {
 		log = slog.Default()
@@ -254,20 +256,14 @@ func resyncOne(ctx context.Context, tx pgx.Tx, scope isolation.Scope, versions V
 		_, _ = tx.Exec(ctx, `RELEASE SAVEPOINT approval_resync`)
 		return 0, 1, 0
 	}
-	pin, err := loadRunPin(ctx, tx, rec.ExecutionID)
+	pin, err := loadRunPin(ctx, tx, rec.ExecutionID, req.PolicyResourceID)
 	if err != nil {
 		slog.Warn("approval resync skipped", "approval", id, "reason", "transient")
 		return 0, 0, 0
 	}
-	if bindingStale(rec, pin, req) {
-		if _, err := updateStatus(ctx, tx, scope, rec, StatusInvalidated, "bound version is not the run pin", now); err != nil {
-			return 0, 0, 1
-		}
-		rollback = false
-		_, _ = tx.Exec(ctx, `RELEASE SAVEPOINT approval_resync`)
-		return 0, 0, 0
+	if strings.TrimSpace(req.PolicyResourceID) != "" {
+		req = overlayRunPolicy(req, pin)
 	}
-	req = overlayRunPolicy(req, pin)
 	next, changed := ProjectRequirement(rec, scope.WorkspaceID(), req)
 	if !changed {
 		rollback = false
@@ -286,7 +282,7 @@ func resyncOne(ctx context.Context, tx pgx.Tx, scope isolation.Scope, versions V
 	return 1, 0, 0
 }
 
-func loadRunPin(ctx context.Context, tx pgx.Tx, executionID string) (runPin, error) {
+func loadRunPin(ctx context.Context, tx pgx.Tx, executionID, policyResourceID string) (runPin, error) {
 	var pin runPin
 	if !authz.ValidUUID(executionID) {
 		return pin, nil
@@ -295,12 +291,16 @@ func loadRunPin(ctx context.Context, tx pgx.Tx, executionID string) (runPin, err
 		SELECT workflow_version_id::text, workflow_digest
 		  FROM executions
 		 WHERE id = $1::uuid
+		   AND workspace_id = app.current_workspace_id()
 	`, executionID).Scan(&pin.WorkflowVersionID, &pin.WorkflowDigest)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return runPin{}, nil
 	}
 	if err != nil {
 		return runPin{}, err
+	}
+	if !authz.ValidUUID(policyResourceID) {
+		return pin, nil
 	}
 	var resourceID, versionID, digest string
 	var revision int
@@ -310,9 +310,9 @@ func loadRunPin(ctx context.Context, tx pgx.Tx, executionID string) (runPin, err
 		 WHERE owner_kind = 'execution'
 		   AND owner_id = $1::uuid
 		   AND resource_kind = 'policy'
-		 ORDER BY created_at
-		 LIMIT 1
-	`, executionID).Scan(&resourceID, &versionID, &digest, &revision)
+		   AND resource_id = $2::uuid
+		   AND workspace_id = app.current_workspace_id()
+	`, executionID, policyResourceID).Scan(&resourceID, &versionID, &digest, &revision)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return pin, nil
 	}

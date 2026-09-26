@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -18,6 +19,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 	"github.com/bbengt1/flowforge/apps/api/internal/webhook"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 const rederiveAdminYAML = `apiVersion: flowforge/v1
@@ -203,6 +205,73 @@ func TestDecideTransientRequirementUnavailable(t *testing.T) {
 	}
 }
 
+func TestDecidePrivilegeDeniedIsUnavailable(t *testing.T) {
+	denied := errors.Join(wfstore.ErrNotFound, &pgconn.PgError{Code: "42501", Message: "permission denied"})
+	versions := &transientVersions{Store: wfstore.NewMemory(), err: denied}
+	h, admin, approvals := approvalRederiveServerWith(t, versions)
+	ws, tenant := currentWorkspace(t, h, admin)
+	wf := createWorkflow(t, h, admin, tenant, ws, rederiveAdminYAML)
+	pub := publishWorkflow(t, h, admin, tenant, ws, wf.Workflow.ID, wf.Draft.Revision, "v1")
+	scope, err := isolation.Authorize(ws.ID, admin.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, err := approvals.Create(context.Background(), scope, approval.CreateInput{
+		WorkflowID:        wf.Workflow.ID,
+		WorkflowVersionID: pub.Version.ID,
+		WorkflowDigest:    pub.Version.Digest,
+		RequestedBy:       "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+		Requirement: policy.Requirement{
+			NodeID: "gate", NodeName: "Gate", Operation: "flow.approval",
+			ApproverRole: "approver", ExpiresAt: time.Now().UTC().Add(time.Hour),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	versions.fail.Store(true)
+	body, _ := json.Marshal(map[string]string{"decision": "approved"})
+	httpRec := httptest.NewRecorder()
+	req := workspaceJSON(http.MethodPost, "/api/v1/approvals/"+rec.ID+"/decide", body, admin, tenant, ws)
+	h.ServeHTTP(httpRec, req)
+	if httpRec.Header().Get("Retry-After") != "5" {
+		t.Fatalf("Retry-After = %q body=%s", httpRec.Header().Get("Retry-After"), httpRec.Body.String())
+	}
+	assertProblem(t, httpRec, http.StatusServiceUnavailable, CodeApprovalRequirementUnavailable, "")
+	var raw map[string]any
+	if err := json.Unmarshal(httpRec.Body.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := raw["errors"]; ok {
+		t.Fatalf("errors field present: %s", httpRec.Body.String())
+	}
+	httpRec = httptest.NewRecorder()
+	req = workspaceRequest(http.MethodGet, "/api/v1/approvals/"+rec.ID, nil, admin, tenant, ws)
+	h.ServeHTTP(httpRec, req)
+	if httpRec.Code != http.StatusOK {
+		t.Fatalf("get: %d %s", httpRec.Code, httpRec.Body.String())
+	}
+	var still approval.Record
+	if err := json.Unmarshal(httpRec.Body.Bytes(), &still); err != nil {
+		t.Fatal(err)
+	}
+	if still.Status != approval.StatusPending || still.DecidedBy != "" || still.CloseReason != "" || still.ApproverRole != rec.ApproverRole {
+		t.Fatalf("lookup row = %+v", still)
+	}
+}
+
+func TestMemoryStartRecordsRunPin(t *testing.T) {
+	h, admin, approvals := approvalRederiveServer(t)
+	ws, tenant := currentWorkspace(t, h, admin)
+	wf := createWorkflow(t, h, admin, tenant, ws, rederiveAdminYAML)
+	pub := publishWorkflow(t, h, admin, tenant, ws, wf.Workflow.ID, wf.Draft.Revision, "v1")
+	exec := startExecution(t, h, admin, tenant, ws, wf.Workflow.ID, pub.Version.ID)
+	got, ok := approvals.PinnedVersion(exec.ID)
+	if !ok || got != pub.Version.ID {
+		t.Fatalf("pin = %q ok=%v want %s", got, ok, pub.Version.ID)
+	}
+}
+
 func TestDecideDeniesWhenVersionLookupFails(t *testing.T) {
 	h, admin, approvals := approvalRederiveServer(t)
 	ws, tenant := currentWorkspace(t, h, admin)
@@ -264,10 +333,14 @@ spec:
 type transientVersions struct {
 	wfstore.Store
 	fail atomic.Bool
+	err  error
 }
 
 func (v *transientVersions) GetVersion(ctx context.Context, scope isolation.Scope, workflowID, versionID string) (wfstore.Version, error) {
 	if v.fail.Load() {
+		if v.err != nil {
+			return wfstore.Version{}, v.err
+		}
 		return wfstore.Version{}, context.DeadlineExceeded
 	}
 	return v.Store.GetVersion(ctx, scope, workflowID, versionID)

@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/approval"
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/approvalhttp"
@@ -747,6 +748,7 @@ func startWorkflowExecution(s *core.Server, w http.ResponseWriter, r *http.Reque
 	if !authorizeHTTPNodes(s, w, r, perms, ver.DefinitionYAML) {
 		return
 	}
+	approval.RememberRun(s.Approvals, exec.ID, exec.WorkflowVersionID, exec.WorkflowDigest, pins)
 	WriteExecutionDetail(s, w, r, scope, exec, http.StatusCreated)
 }
 

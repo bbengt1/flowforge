@@ -11,6 +11,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/policy"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // VersionSource loads the run's pinned workflow version.
@@ -83,17 +84,17 @@ func ResolveGateRequirement(ctx context.Context, scope isolation.Scope, versions
 	}
 	ver, err := versions.GetVersion(ctx, scope, workflowID, versionID)
 	if err != nil {
-		if errors.Is(err, wfstore.ErrNotFound) {
-			return policy.Requirement{}, fmt.Errorf("%w: version lookup failed", ErrBindingUnresolved)
+		if privilegeDenied(err) || !errors.Is(err, wfstore.ErrNotFound) {
+			return policy.Requirement{}, fmt.Errorf("%w: version lookup failed", ErrBindingTransient)
 		}
-		return policy.Requirement{}, fmt.Errorf("%w: version lookup failed", ErrBindingTransient)
+		return policy.Requirement{}, fmt.Errorf("%w: version lookup failed", ErrBindingUnresolved)
 	}
 	pins, err := ResolvePins(ctx, scope, ops, ver.DefinitionYAML)
 	if err != nil {
-		if pinFailureDefinitive(err) {
-			return policy.Requirement{}, fmt.Errorf("%w: pin resolve failed", ErrBindingUnresolved)
+		if privilegeDenied(err) || !pinFailureDefinitive(err) {
+			return policy.Requirement{}, fmt.Errorf("%w: pin resolve failed", ErrBindingTransient)
 		}
-		return policy.Requirement{}, fmt.Errorf("%w: pin resolve failed", ErrBindingTransient)
+		return policy.Requirement{}, fmt.Errorf("%w: pin resolve failed", ErrBindingUnresolved)
 	}
 	eval, err := policy.Evaluate(policy.Input{
 		YAML:              ver.DefinitionYAML,
@@ -171,7 +172,7 @@ func StoredRequirement(rec Record) policy.Requirement {
 	}
 }
 
-// runPin is the workflow version and policy revision the run was started with.
+// runPin is the workflow version and one policy revision the run was started with.
 type runPin struct {
 	WorkflowVersionID string
 	WorkflowDigest    string
@@ -181,24 +182,12 @@ type runPin struct {
 	PolicyRevision    int
 }
 
-// bindingStale reports that rec is not bound to the run's pinned version.
-// A stored policy version that evaluation would replace, when the run has
-// no pin to confirm it, is stale too. An empty stored policy is a fallback
-// row and is not stale.
-func bindingStale(rec Record, pin runPin, resolved policy.Requirement) bool {
-	if pin.WorkflowVersionID != "" && rec.WorkflowVersionID != "" && rec.WorkflowVersionID != pin.WorkflowVersionID {
-		return true
-	}
-	if pin.WorkflowDigest != "" && rec.WorkflowDigest != "" && rec.WorkflowDigest != pin.WorkflowDigest {
-		return true
-	}
-	if pin.PolicyVersionID != "" {
-		return rec.PolicyVersionID != "" && rec.PolicyVersionID != pin.PolicyVersionID
-	}
-	if rec.PolicyVersionID != "" && resolved.PolicyVersionID != rec.PolicyVersionID {
-		return true
-	}
-	return false
+// privilegeDenied reports SQLSTATE 42501. mapDBErr keeps that code wrapped
+// with not-found so other callers stay unchanged, and a grant failure must
+// retry instead of canceling the approval.
+func privilegeDenied(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "42501"
 }
 
 // overlayRunPolicy keeps the run's pinned policy on the rebuilt requirement

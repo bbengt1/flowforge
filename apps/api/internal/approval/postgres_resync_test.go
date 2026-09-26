@@ -10,10 +10,12 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/policy"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -488,10 +490,10 @@ func TestPostgresDecideTransientRecordsNothing(t *testing.T) {
 	}
 }
 
-func TestPostgresResyncInvalidatesStaleDigest(t *testing.T) {
+func TestPostgresResyncRebuildsFromRunPin(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	app, store, approvals, scope, exec, rec := parkFallback(t, ctx, "st")
+	app, store, approvals, scope, exec, rec := parkFallback(t, ctx, "rp")
 	defer app.Close()
 	stale := "sha256:" + strings.Repeat("f", 64)
 	tx, err := postgres.BeginScoped(ctx, app, scope.WorkspaceID())
@@ -506,11 +508,11 @@ func TestPostgresResyncInvalidatesStaleDigest(t *testing.T) {
 		t.Fatal(err)
 	}
 	stats, err := resyncWorkspace(ctx, app, store, nil, scope.WorkspaceID(), time.Now().UTC())
-	if err != nil || stats.Corrected != 0 || stats.Closed != 0 {
+	if err != nil || stats.Corrected != 1 || stats.Closed != 0 {
 		t.Fatalf("stats = %+v %v", stats, err)
 	}
 	got, err := approvals.Get(ctx, scope, rec.ID)
-	if err != nil || got.Status != StatusInvalidated || got.ApproverRole != "approver" || got.WorkflowDigest != stale {
+	if err != nil || got.Status != StatusPending || got.ApproverRole != "admin" || got.CloseReason != "" || got.DecidedBy != "" {
 		t.Fatalf("row = %+v %v", got, err)
 	}
 	assertExec(t, ctx, store, scope, exec.ID, wfstore.ExecutionWaiting)
@@ -518,8 +520,214 @@ func TestPostgresResyncInvalidatesStaleDigest(t *testing.T) {
 	if step.Status != wfstore.ExecutionWaiting || job.Status != wfstore.JobWaiting {
 		t.Fatalf("gate step=%s job=%s", step.Status, job.Status)
 	}
+	if port, _ := step.Output["port"].(string); port == "expired" {
+		t.Fatalf("gate output = %+v", step.Output)
+	}
 	if code, _ := step.Error["code"].(string); code == wfstore.ReasonRequirementUnresolvable {
 		t.Fatalf("gate error = %+v", step.Error)
+	}
+}
+
+func TestPostgresResyncSkipsPrivilegeFailure(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	app, store, approvals, scope, exec, rec := parkFallback(t, ctx, "pv")
+	defer app.Close()
+	denied := errors.Join(wfstore.ErrNotFound, &pgconn.PgError{Code: "42501", Message: "permission denied"})
+	stats, err := resyncWorkspace(ctx, app, staticVersion{err: denied}, nil, scope.WorkspaceID(), time.Now().UTC())
+	if err != nil || stats.Closed != 0 || stats.Corrected != 0 {
+		t.Fatalf("stats = %+v %v", stats, err)
+	}
+	got, err := approvals.Get(ctx, scope, rec.ID)
+	if err != nil || got.Status != StatusPending || got.CloseReason != "" || got.ApproverRole != rec.ApproverRole {
+		t.Fatalf("row = %+v %v", got, err)
+	}
+	assertExec(t, ctx, store, scope, exec.ID, wfstore.ExecutionWaiting)
+}
+
+func TestPostgresResyncKeepsEachPolicyPin(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	dsn := testDatabaseURL(t)
+	admin, err := postgres.OpenAdmin(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	app, err := postgres.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+	ids := identity.NewPostgres(admin)
+	suffix := time.Now().UnixNano()
+	tenant, err := ids.CreateTenant(ctx, formatSlug("pp", suffix), "PP")
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := ids.UpsertUser(ctx, "https://idp.example", formatSlug("pu", suffix), "Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	approverUser, err := ids.UpsertUser(ctx, "https://idp.example", formatSlug("pa", suffix), "Approver")
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := wfstore.NewPostgres(app)
+	approvals := NewPostgres(app)
+	ops := opsconfig.NewPostgres(app)
+	scope, _ := desk(t, ctx, ids, tenant.ID, user.ID, approverUser.ID, suffix)
+	spec := map[string]any{"kind": "approval", "policy": map[string]any{"approverRole": "approver", "expiresIn": "PT1H"}}
+	policyA, _, err := ops.Create(ctx, scope, opsconfig.CreateInput{Kind: opsconfig.KindPolicy, Name: "Pin A", Slug: formatSlug("pa", suffix), Spec: spec})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, pubA, err := ops.Publish(ctx, scope, opsconfig.KindPolicy, policyA.ID, opsconfig.PublishInput{ExpectedRevision: policyA.DraftRevision, Note: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	policyB, _, err := ops.Create(ctx, scope, opsconfig.CreateInput{Kind: opsconfig.KindPolicy, Name: "Pin B", Slug: formatSlug("pb", suffix), Spec: spec})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, pubB, err := ops.Publish(ctx, scope, opsconfig.KindPolicy, policyB.ID, opsconfig.PublishInput{ExpectedRevision: policyB.DraftRevision, Note: "b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: two-policies-` + formatSlug("pp", suffix) + `
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: seed
+      type: data.set
+      name: Seed
+      with:
+        value:
+          ticket: CHG-1
+    - id: gate-a
+      type: flow.approval
+      name: A
+      with:
+        approverRole: approver
+        expiresIn: PT1H
+        policyId: ` + policyA.ID + `
+    - id: gate-b
+      type: flow.approval
+      name: B
+      with:
+        approverRole: approver
+        expiresIn: PT1H
+        policyId: ` + policyB.ID + `
+    - id: gate-c
+      type: flow.approval
+      name: C
+      with:
+        approverRole: approver
+        expiresIn: PT1H
+  edges:
+    - from: seed.result
+      to: gate-a.request
+    - from: seed.result
+      to: gate-b.request
+    - from: seed.result
+      to: gate-c.request
+`
+	exec := publishRun(t, ctx, store, scope, src, "v1")
+	if _, err := ops.BindPins(ctx, scope, opsconfig.BindInput{
+		OwnerKind: opsconfig.OwnerExecution, OwnerID: exec.ID,
+		Pins: []opsconfig.Pin{
+			{Kind: opsconfig.KindPolicy, ResourceID: policyB.ID, VersionID: pubB.ID, VersionNumber: pubB.VersionNumber, Digest: pubB.Digest},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// A second transaction gives policy A a later created_at. The old
+	// loader took ORDER BY created_at LIMIT 1 and would attach B to every gate.
+	pinTx, err := postgres.BeginScoped(ctx, admin, scope.WorkspaceID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pinTx.Exec(ctx, `
+		INSERT INTO ops_pins (
+			workspace_id, owner_kind, owner_id, resource_kind, resource_id,
+			version_id, version_number, digest
+		) VALUES ($1::uuid, 'execution', $2::uuid, 'policy', $3::uuid, $4::uuid, $5, $6)
+	`, scope.WorkspaceID(), exec.ID, policyA.ID, pubA.ID, pubA.VersionNumber, pubA.Digest); err != nil {
+		pinTx.Rollback(ctx)
+		t.Fatal(err)
+	}
+	if err := pinTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	completeSeed(t, ctx, store, scope, func() time.Time { return time.Now().UTC() })
+	now := time.Now().UTC()
+	parked := map[string]wfstore.DispatchResult{}
+	for len(parked) < 3 {
+		got, err := store.ClaimJob(ctx, scope, now, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
+		if err != nil {
+			t.Fatal(err)
+		}
+		approval := &wfstore.ParkedApproval{
+			WorkflowID: exec.WorkflowID, WorkflowVersionID: exec.WorkflowVersionID, WorkflowDigest: exec.WorkflowDigest,
+			ExecutionID: exec.ID, RequestedBy: exec.RequestedBy,
+			NodeID: got.Step.NodeID, NodeName: got.Step.NodeID, Operation: "flow.approval", ApproverRole: "approver",
+		}
+		switch got.Step.NodeID {
+		case "gate-a":
+			approval.PolicyResourceID = policyA.ID
+			approval.PolicyVersionID = pubA.ID
+			approval.PolicyDigest = pubA.Digest
+			approval.PolicyRevision = pubA.VersionNumber
+		case "gate-b":
+			approval.PolicyResourceID = policyB.ID
+			approval.PolicyVersionID = pubB.ID
+			approval.PolicyDigest = pubB.Digest
+			approval.PolicyRevision = pubB.VersionNumber
+		}
+		if _, err := store.WaitJob(ctx, scope, now, wfstore.WaitJobInput{
+			JobID: got.Job.ID, AvailableAt: now.Add(time.Hour), Approval: approval,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		parked[got.Step.NodeID] = got
+	}
+	currentA := "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+	currentB := "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+	currentDigest := "sha256:" + strings.Repeat("9", 64)
+	stats, err := resyncWorkspace(ctx, app, store, staticPins{pins: []opsconfig.Pin{
+		{Kind: opsconfig.KindPolicy, ResourceID: policyB.ID, VersionID: currentB, VersionNumber: 9, Digest: currentDigest, Spec: map[string]any{"kind": "approval", "policy": map[string]any{}}},
+		{Kind: opsconfig.KindPolicy, ResourceID: policyA.ID, VersionID: currentA, VersionNumber: 9, Digest: currentDigest, Spec: map[string]any{"kind": "approval", "policy": map[string]any{}}},
+	}}, scope.WorkspaceID(), now)
+	if err != nil || stats.Corrected != 0 || stats.Closed != 0 {
+		t.Fatalf("stats = %+v %v", stats, err)
+	}
+	rows, err := approvals.List(ctx, scope, Filter{ExecutionID: exec.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byNode := map[string]Record{}
+	for _, row := range rows {
+		byNode[row.NodeID] = row
+	}
+	if len(byNode) != 3 {
+		t.Fatalf("rows = %+v", rows)
+	}
+	if byNode["gate-a"].Status != StatusPending || byNode["gate-a"].PolicyResourceID != policyA.ID || byNode["gate-a"].PolicyVersionID != pubA.ID {
+		t.Fatalf("gate-a = %+v", byNode["gate-a"])
+	}
+	if byNode["gate-b"].Status != StatusPending || byNode["gate-b"].PolicyResourceID != policyB.ID || byNode["gate-b"].PolicyVersionID != pubB.ID {
+		t.Fatalf("gate-b = %+v", byNode["gate-b"])
+	}
+	if byNode["gate-c"].Status != StatusPending || byNode["gate-c"].PolicyResourceID != "" || byNode["gate-c"].PolicyVersionID != "" {
+		t.Fatalf("gate-c = %+v", byNode["gate-c"])
+	}
+	for _, node := range []string{"gate-a", "gate-b", "gate-c"} {
+		assertStepJob(t, ctx, store, scope, exec.ID, node, wfstore.ExecutionWaiting, wfstore.JobWaiting)
 	}
 }
 

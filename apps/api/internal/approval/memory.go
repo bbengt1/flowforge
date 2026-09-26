@@ -12,6 +12,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/page"
 )
 
@@ -30,11 +31,17 @@ type GateWaiting func(executionID, nodeID string) (found, waiting bool)
 type UnresolvableRun func(ctx context.Context, scope isolation.Scope, workflowID, executionID, nodeID string, now time.Time) error
 
 // Memory is an in-process Store used by HTTP unit tests.
+type memExecutionPin struct {
+	versionID string
+	digest    string
+	policies  map[string]runPin
+}
+
 type Memory struct {
 	mu      sync.Mutex
 	rows    map[string]memRow
 	events  map[string][]Event
-	runPins map[string]runPin
+	runPins map[string]memExecutionPin
 	gate    GateWaiting
 	failRun UnresolvableRun
 }
@@ -50,18 +57,102 @@ func (m *Memory) SetGateWaiting(fn GateWaiting) {
 	m.gate = fn
 }
 
-// SetRunPin records the workflow and policy revision a run was started with.
-// Resync uses it to invalidate a pending row that is no longer that pin.
+// SetRunPin records the workflow version and, when set, one policy pin a run
+// was started with. A later call for another policy on the same run keeps
+// both. Resync overlays the pin that matches the requirement and does not
+// read current heads.
 func (m *Memory) SetRunPin(executionID string, pin runPin) {
-	if m == nil {
+	if m == nil || strings.TrimSpace(executionID) == "" {
 		return
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.noteRunLocked(executionID, pin)
+}
+
+func (m *Memory) noteRunLocked(executionID string, pin runPin) {
 	if m.runPins == nil {
-		m.runPins = map[string]runPin{}
+		m.runPins = map[string]memExecutionPin{}
 	}
-	m.runPins[executionID] = pin
+	slot := m.runPins[executionID]
+	if pin.WorkflowVersionID != "" {
+		slot.versionID = pin.WorkflowVersionID
+	}
+	if pin.WorkflowDigest != "" {
+		slot.digest = pin.WorkflowDigest
+	}
+	if pin.PolicyResourceID != "" {
+		if slot.policies == nil {
+			slot.policies = map[string]runPin{}
+		}
+		slot.policies[pin.PolicyResourceID] = pin
+	}
+	m.runPins[executionID] = slot
+}
+
+// RememberRun stores the version and policy pins copied onto a memory run.
+// Postgres keeps those on the execution and ops_pins. A non-memory store
+// is a no-op.
+func RememberRun(store Store, executionID, versionID, digest string, pins []opsconfig.Pin) {
+	mem, ok := store.(*Memory)
+	if !ok || mem == nil || strings.TrimSpace(executionID) == "" {
+		return
+	}
+	mem.SetRunPin(executionID, runPin{WorkflowVersionID: versionID, WorkflowDigest: digest})
+	for _, pin := range pins {
+		if pin.Kind != opsconfig.KindPolicy || strings.TrimSpace(pin.ResourceID) == "" {
+			continue
+		}
+		mem.SetRunPin(executionID, runPin{
+			WorkflowVersionID: versionID,
+			WorkflowDigest:    digest,
+			PolicyResourceID:  pin.ResourceID,
+			PolicyVersionID:   pin.VersionID,
+			PolicyDigest:      pin.Digest,
+			PolicyRevision:    pin.VersionNumber,
+		})
+	}
+}
+
+// PinnedVersion reports the workflow version recorded for a memory run.
+func (m *Memory) PinnedVersion(executionID string) (string, bool) {
+	if m == nil {
+		return "", false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	slot, ok := m.runPins[executionID]
+	if !ok || slot.versionID == "" {
+		return "", false
+	}
+	return slot.versionID, true
+}
+
+// HasPending reports a pending approval for that execution and node.
+func (m *Memory) HasPending(executionID, nodeID string) bool {
+	if m == nil {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, row := range m.rows {
+		rec := row.record
+		if rec.ExecutionID == executionID && rec.NodeID == nodeID && rec.Status == StatusPending {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Memory) policyPin(executionID, resourceID string) runPin {
+	if resourceID == "" {
+		return runPin{}
+	}
+	slot := m.runPins[executionID]
+	if slot.policies == nil {
+		return runPin{}
+	}
+	return slot.policies[resourceID]
 }
 
 // SetUnresolvableRun installs the run-fail used when a pending row cannot
@@ -442,8 +533,9 @@ func recordFromCreate(scope isolation.Scope, in CreateInput, now time.Time) (Rec
 // cancels the row with requirement_unresolvable and, when a run hook is
 // set, settles that waiting gate through the normal failed-step roll-up.
 // A transient failure leaves the row pending and does not call the hook.
-// A row whose bound version is not the run pin is invalidated. A hook
-// error leaves the row pending. A second call changes nothing.
+// The rebuild uses the run pin recorded at start, never current heads, and
+// does not invalidate the row. A hook error leaves the row pending. A
+// second call changes nothing.
 func (m *Memory) ResyncPending(ctx context.Context, versions VersionSource, ops PinSource, now time.Time) ResyncStats {
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -522,15 +614,9 @@ func (m *Memory) ResyncPending(ctx context.Context, versions VersionSource, ops 
 			m.mu.Unlock()
 			continue
 		}
-		pin := m.runPins[row.record.ExecutionID]
-		if bindingStale(row.record, pin, req) {
-			rec := m.applyStatusLocked(scope, row.record, StatusInvalidated, "bound version is not the run pin", now)
-			m.rows[item.rec.ID] = memRow{workspaceID: item.workspaceID, record: rec}
-			stats.Skipped++
-			m.mu.Unlock()
-			continue
+		if strings.TrimSpace(req.PolicyResourceID) != "" {
+			req = overlayRunPolicy(req, m.policyPin(row.record.ExecutionID, req.PolicyResourceID))
 		}
-		req = overlayRunPolicy(req, pin)
 		next, changed := ProjectRequirement(row.record, item.workspaceID, req)
 		if !changed {
 			stats.Skipped++
