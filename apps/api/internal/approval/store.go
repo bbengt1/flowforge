@@ -139,7 +139,7 @@ type DecideInput struct {
 	Now      time.Time
 	Heads    CurrentHeads
 	Resolve  func(ctx context.Context, scope isolation.Scope, rec Record) (policy.Requirement, error)
-	Roles []string
+	Roles    []string
 }
 
 // InvalidateInput marks matching pending/approved rows invalidated.
