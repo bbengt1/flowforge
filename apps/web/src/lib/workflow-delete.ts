@@ -7,6 +7,11 @@
  *
  * The action is shown only when capabilities.delete is true and the
  * surface is not /embed/v1. A missing flag is false.
+ *
+ * Workflow detail may include deleteImpact for a caller who can delete.
+ * waitingRuns are parked runs delete will stop. blocked or inFlightRuns
+ * means delete would return 409. A missing or malformed field keeps the
+ * previous copy and never invents a count. Embed never shows it.
  */
 
 import type { QueryClient } from "@tanstack/react-query";
@@ -19,7 +24,11 @@ import {
   workflowRecordQueryKey,
   workflowSearchQueryKey,
 } from "./query-cache.ts";
-import type { WorkflowCapabilities, WorkflowRecord } from "./workflow-types.ts";
+import type {
+  WorkflowCapabilities,
+  WorkflowDeleteImpact,
+  WorkflowRecord,
+} from "./workflow-types.ts";
 
 export const WORKFLOW_HAS_ACTIVE_EXECUTIONS_CODE =
   "workflow_has_active_executions" as const;
@@ -36,6 +45,15 @@ export const WORKFLOW_DELETE_PUBLISHED_NOTE =
 
 export const WORKFLOW_DELETE_ACTIVE_EXECUTIONS_MESSAGE =
   "Queued or running executions must finish or be cancelled before this workflow can be deleted. Delete does not cancel them.";
+
+export const WORKFLOW_DELETE_EXECUTIONS_DETAIL =
+  "Queued or running executions block delete. Nothing is cancelled.";
+
+const DELETE_IMPACT_FIELDS = new Set([
+  "waitingRuns",
+  "blocked",
+  "inFlightRuns",
+]);
 
 export const WORKFLOW_DELETE_FORBIDDEN_MESSAGE =
   "You don't have permission to delete this workflow.";
@@ -78,14 +96,137 @@ export function readWorkflowCapabilities(value: unknown): WorkflowCapabilities {
   return { delete: body.delete === true };
 }
 
+function nonNegativeInt(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    return null;
+  }
+  return value;
+}
+
+/**
+ * A valid deleteImpact, or undefined when the field is missing or
+ * malformed. Undefined keeps the existing confirm copy.
+ */
+export function readWorkflowDeleteImpact(
+  value: unknown,
+): WorkflowDeleteImpact | undefined {
+  if (value == null) {
+    return undefined;
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const body = value as Record<string, unknown>;
+  for (const key of Object.keys(body)) {
+    if (!DELETE_IMPACT_FIELDS.has(key)) {
+      return undefined;
+    }
+  }
+  if (
+    !Object.prototype.hasOwnProperty.call(body, "waitingRuns") ||
+    !Object.prototype.hasOwnProperty.call(body, "blocked") ||
+    !Object.prototype.hasOwnProperty.call(body, "inFlightRuns")
+  ) {
+    return undefined;
+  }
+  const waitingRuns = nonNegativeInt(body.waitingRuns);
+  const inFlightRuns = nonNegativeInt(body.inFlightRuns);
+  if (
+    waitingRuns === null ||
+    inFlightRuns === null ||
+    typeof body.blocked !== "boolean"
+  ) {
+    return undefined;
+  }
+  return { waitingRuns, blocked: body.blocked, inFlightRuns };
+}
+
+/** Embed never receives the counts, even when the payload includes them. */
+export function workflowDeleteShownImpact(input: {
+  embed: boolean;
+  deleteImpact: unknown;
+}): WorkflowDeleteImpact | undefined {
+  if (input.embed) {
+    return undefined;
+  }
+  return readWorkflowDeleteImpact(input.deleteImpact);
+}
+
+export function workflowDeleteWaitingRunsMessage(count: number): string {
+  const noun = count === 1 ? "run" : "runs";
+  return `${count} ${noun} waiting on an approval or a delay will be stopped and marked failed.`;
+}
+
+export function workflowDeleteBlockedRunsMessage(count: number): string {
+  if (count === 1) {
+    return "This workflow can't be deleted while 1 run is still running or queued.";
+  }
+  if (count > 1) {
+    return `This workflow can't be deleted while ${count} runs are still running or queued.`;
+  }
+  return "This workflow can't be deleted while runs are still running or queued.";
+}
+
+export type WorkflowDeleteConfirmState = {
+  description: string;
+  executionsDetail: string;
+  confirmDisabled: boolean;
+};
+
+export function workflowDeleteConfirmState(input: {
+  status: string;
+  deleteImpact?: WorkflowDeleteImpact | null;
+}): WorkflowDeleteConfirmState {
+  const description = workflowDeleteDescription(input.status);
+  const impact = input.deleteImpact ?? undefined;
+  if (!impact) {
+    return {
+      description,
+      executionsDetail: WORKFLOW_DELETE_EXECUTIONS_DETAIL,
+      confirmDisabled: false,
+    };
+  }
+  if (impact.blocked || impact.inFlightRuns > 0) {
+    const sentence = workflowDeleteBlockedRunsMessage(impact.inFlightRuns);
+    return {
+      description: `${description} ${sentence}`,
+      executionsDetail: sentence,
+      confirmDisabled: true,
+    };
+  }
+  if (impact.waitingRuns > 0) {
+    const sentence = workflowDeleteWaitingRunsMessage(impact.waitingRuns);
+    return {
+      description: `${description} ${sentence}`,
+      executionsDetail: sentence,
+      confirmDisabled: false,
+    };
+  }
+  return {
+    description,
+    executionsDetail: WORKFLOW_DELETE_EXECUTIONS_DETAIL,
+    confirmDisabled: false,
+  };
+}
+
 export function workflowRecordWithCapabilities(
   record: WorkflowRecord,
 ): WorkflowRecord {
-  const raw = record as WorkflowRecord & { capabilities?: unknown };
-  return {
+  const raw = record as WorkflowRecord & {
+    capabilities?: unknown;
+    deleteImpact?: unknown;
+  };
+  const deleteImpact = readWorkflowDeleteImpact(raw.deleteImpact);
+  const next: WorkflowRecord = {
     ...record,
     capabilities: readWorkflowCapabilities(raw.capabilities),
   };
+  if (deleteImpact) {
+    next.deleteImpact = deleteImpact;
+  } else {
+    delete next.deleteImpact;
+  }
+  return next;
 }
 
 /** Missing, false, or any non-boolean true is denied. */
@@ -164,8 +305,10 @@ export function workflowDeleteDescription(status: string): string {
 export function workflowDeleteImpact(input: {
   name: string;
   status: string;
+  deleteImpact?: WorkflowDeleteImpact | null;
 }): DestructiveImpactItem[] {
-  const items: DestructiveImpactItem[] = [
+  const state = workflowDeleteConfirmState(input);
+  return [
     { id: "workflow", label: "Workflow", detail: input.name },
     { id: "status", label: "Status", detail: input.status || "unknown" },
     {
@@ -176,10 +319,9 @@ export function workflowDeleteImpact(input: {
     {
       id: "runs",
       label: "Executions",
-      detail: "Queued or running executions block delete. Nothing is cancelled.",
+      detail: state.executionsDetail,
     },
   ];
-  return items;
 }
 
 export function workflowDeleteNameMatches(

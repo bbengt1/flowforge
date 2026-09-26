@@ -19,6 +19,12 @@ const VIEWER_PERMISSIONS = [
 
 type DeleteMode = "ok" | "active" | "missing";
 
+type DeleteImpactBody = {
+  waitingRuns: number;
+  blocked: boolean;
+  inFlightRuns: number;
+};
+
 function problem(path: string, status: number, code: string, detail: string) {
   return {
     type: "about:blank",
@@ -31,7 +37,7 @@ function problem(path: string, status: number, code: string, detail: string) {
   };
 }
 
-function workflowBody(canDelete: boolean) {
+function workflowBody(canDelete: boolean, deleteImpact?: DeleteImpactBody) {
   return {
     id: OPERATOR_WORKFLOW_ID,
     slug: "deploy",
@@ -39,6 +45,7 @@ function workflowBody(canDelete: boolean) {
     status: "published",
     draftRevision: 1,
     capabilities: { delete: canDelete },
+    ...(deleteImpact ? { deleteImpact } : {}),
   };
 }
 
@@ -49,6 +56,7 @@ async function installDeleteApi(
     mode?: DeleteMode;
     permissions?: readonly string[];
     embed?: boolean;
+    deleteImpact?: DeleteImpactBody;
   },
 ): Promise<void> {
   await installOperatorApi(page, { permissions: options.permissions });
@@ -58,6 +66,7 @@ async function installDeleteApi(
       canDelete: options.canDelete,
       mode: options.mode ?? "ok",
       embed: options.embed === true,
+      deleteImpact: options.deleteImpact,
       deleted: () => deleted,
       markDeleted: () => {
         deleted = true;
@@ -75,6 +84,7 @@ async function fulfillDelete(
     canDelete: boolean;
     mode: DeleteMode;
     embed: boolean;
+    deleteImpact?: DeleteImpactBody;
     deleted: () => boolean;
     markDeleted: () => void;
   },
@@ -141,7 +151,14 @@ async function fulfillDelete(
   }
 
   if (method === "GET" && (path === "/workflows" || path === "/workflows/")) {
-    const items = state.deleted() ? [] : [workflowBody(state.canDelete)];
+    const items = state.deleted()
+      ? []
+      : [
+          workflowBody(
+            state.canDelete,
+            state.embed ? state.deleteImpact : undefined,
+          ),
+        ];
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -162,7 +179,7 @@ async function fulfillDelete(
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(workflowBody(state.canDelete)),
+      body: JSON.stringify(workflowBody(state.canDelete, state.deleteImpact)),
     });
     return true;
   }
@@ -259,8 +276,44 @@ test.describe("delete workflow", () => {
     await dialog.screenshot({ path: `${SHOTS}/delete-active-executions.png` });
   });
 
+  test("parked runs are named in the confirm dialog", async ({ page }) => {
+    await installDeleteApi(page, {
+      canDelete: true,
+      deleteImpact: { waitingRuns: 2, blocked: false, inFlightRuns: 0 },
+    });
+    await page.goto("/workflows");
+    await expect(workflowCard(page)).toBeVisible();
+    await openConfirmFromContextMenu(page);
+    const dialog = page.getByRole("dialog", { name: "Delete workflow" });
+    await expect(dialog).toContainText(
+      "2 runs waiting on an approval or a delay will be stopped and marked failed.",
+    );
+    await dialog.getByLabel("Type Deploy to confirm").fill("Deploy");
+    await expect(dialog.getByRole("button", { name: "Delete workflow" })).toBeEnabled();
+  });
+
+  test("in-flight runs disable delete confirm", async ({ page }) => {
+    await installDeleteApi(page, {
+      canDelete: true,
+      deleteImpact: { waitingRuns: 0, blocked: true, inFlightRuns: 1 },
+    });
+    await page.goto("/workflows");
+    await expect(workflowCard(page)).toBeVisible();
+    await openConfirmFromContextMenu(page);
+    const dialog = page.getByRole("dialog", { name: "Delete workflow" });
+    await expect(dialog).toContainText(
+      "This workflow can't be deleted while 1 run is still running or queued.",
+    );
+    await dialog.getByLabel("Type Deploy to confirm").fill("Deploy");
+    await expect(dialog.getByRole("button", { name: "Delete workflow" })).toBeDisabled();
+  });
+
   test("embed never shows delete, even when the flag is true", async ({ page }) => {
-    await installDeleteApi(page, { canDelete: true, embed: true });
+    await installDeleteApi(page, {
+      canDelete: true,
+      embed: true,
+      deleteImpact: { waitingRuns: 2, blocked: false, inFlightRuns: 0 },
+    });
     const listed = page.waitForResponse((response) => {
       if (response.request().method() !== "GET" || !response.ok()) {
         return false;
@@ -323,6 +376,9 @@ test.describe("delete workflow", () => {
     await expect(page.getByRole("button", { name: "More actions" })).toHaveCount(0);
     await expect(page.locator("[data-workflow-delete]")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Delete workflow" })).toHaveCount(0);
+    await expect(page.getByText(/will be stopped/)).toHaveCount(0);
+    await expect(page.getByText("waitingRuns")).toHaveCount(0);
+    await expect(page.getByText("inFlightRuns")).toHaveCount(0);
   });
 
   test("a deep link to a deleted workflow uses the not-found boundary", async ({

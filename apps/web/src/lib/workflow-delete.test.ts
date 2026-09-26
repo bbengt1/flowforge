@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import { createFlowforgeQueryClient } from "./query-cache.ts";
 import { toWorkflowHomeItem } from "./workflow-home.ts";
 import type { WorkflowRecord } from "./workflow-types.ts";
 import {
   WORKFLOW_DELETE_ACTIVE_EXECUTIONS_MESSAGE,
   WORKFLOW_DELETE_DESCRIPTION,
+  WORKFLOW_DELETE_EXECUTIONS_DETAIL,
   WORKFLOW_DELETE_FORBIDDEN_MESSAGE,
   WORKFLOW_DELETE_NOT_FOUND_MESSAGE,
   WORKFLOW_DELETE_OTHER_MESSAGE,
@@ -20,13 +23,17 @@ import {
   invalidateDeletedWorkflowCache,
   omitDeletedWorkflow,
   readWorkflowCapabilities,
+  readWorkflowDeleteImpact,
   rememberWorkflowCollections,
   workflowCapabilitiesAllowDelete,
   workflowDeleteActionVisible,
+  workflowDeleteConfirmState,
   workflowDeleteDescription,
   workflowDeleteDialogStaysOpen,
   workflowDeleteFailureMessage,
+  workflowDeleteImpact,
   workflowDeleteNameMatches,
+  workflowDeleteShownImpact,
   workflowRecordWithCapabilities,
   workflowSlugReservedFromProblem,
   workflowSlugReservedMessage,
@@ -92,6 +99,172 @@ describe("workflow delete capability gating", () => {
       toWorkflowHomeItem(record({ capabilities: { delete: false } })).canDelete,
       false,
     );
+  });
+});
+
+describe("workflow delete impact copy", () => {
+  const parked = { waitingRuns: 2, blocked: false, inFlightRuns: 0 };
+
+  it("names plural and singular parked runs and leaves a clear run unchanged", () => {
+    const plural = workflowDeleteConfirmState({
+      status: "published",
+      deleteImpact: parked,
+    });
+    assert.equal(plural.confirmDisabled, false);
+    assert.match(
+      plural.description,
+      /2 runs waiting on an approval or a delay will be stopped and marked failed\./,
+    );
+    assert.equal(
+      plural.executionsDetail,
+      "2 runs waiting on an approval or a delay will be stopped and marked failed.",
+    );
+    assert.doesNotMatch(plural.executionsDetail, /Nothing is cancelled/);
+
+    const singular = workflowDeleteConfirmState({
+      status: "draft",
+      deleteImpact: { waitingRuns: 1, blocked: false, inFlightRuns: 0 },
+    });
+    assert.equal(singular.confirmDisabled, false);
+    assert.equal(
+      singular.executionsDetail,
+      "1 run waiting on an approval or a delay will be stopped and marked failed.",
+    );
+
+    const clear = workflowDeleteConfirmState({
+      status: "draft",
+      deleteImpact: { waitingRuns: 0, blocked: false, inFlightRuns: 0 },
+    });
+    assert.equal(clear.confirmDisabled, false);
+    assert.equal(clear.description, workflowDeleteDescription("draft"));
+    assert.equal(clear.executionsDetail, WORKFLOW_DELETE_EXECUTIONS_DETAIL);
+    assert.match(workflowDeleteImpact({ name: "Deploy", status: "draft" })[3]?.detail ?? "", /Nothing is cancelled/);
+  });
+
+  it("disables confirm when delete is blocked or runs are in flight", () => {
+    const blocked = workflowDeleteConfirmState({
+      status: "published",
+      deleteImpact: { waitingRuns: 4, blocked: true, inFlightRuns: 2 },
+    });
+    assert.equal(blocked.confirmDisabled, true);
+    assert.equal(
+      blocked.executionsDetail,
+      "This workflow can't be deleted while 2 runs are still running or queued.",
+    );
+    assert.doesNotMatch(blocked.description, /will be stopped/);
+
+    const one = workflowDeleteConfirmState({
+      status: "draft",
+      deleteImpact: { waitingRuns: 0, blocked: false, inFlightRuns: 1 },
+    });
+    assert.equal(one.confirmDisabled, true);
+    assert.equal(
+      one.executionsDetail,
+      "This workflow can't be deleted while 1 run is still running or queued.",
+    );
+
+    const blockedWithoutCount = workflowDeleteConfirmState({
+      status: "draft",
+      deleteImpact: { waitingRuns: 0, blocked: true, inFlightRuns: 0 },
+    });
+    assert.equal(blockedWithoutCount.confirmDisabled, true);
+    assert.equal(
+      blockedWithoutCount.executionsDetail,
+      "This workflow can't be deleted while runs are still running or queued.",
+    );
+    assert.doesNotMatch(blockedWithoutCount.executionsDetail, /0/);
+  });
+
+  it("falls back when deleteImpact is missing or malformed and never guesses a count", () => {
+    const fallback = workflowDeleteConfirmState({ status: "draft" });
+    assert.equal(fallback.confirmDisabled, false);
+    assert.equal(fallback.executionsDetail, WORKFLOW_DELETE_EXECUTIONS_DETAIL);
+    assert.equal(
+      workflowDeleteConfirmState({ status: "draft", deleteImpact: null }).executionsDetail,
+      WORKFLOW_DELETE_EXECUTIONS_DETAIL,
+    );
+
+    const malformed = [
+      undefined,
+      null,
+      "2",
+      [],
+      { waitingRuns: "2", blocked: false, inFlightRuns: 0 },
+      { waitingRuns: -1, blocked: false, inFlightRuns: 0 },
+      { waitingRuns: 1.5, blocked: false, inFlightRuns: 0 },
+      { waitingRuns: 1, blocked: "true", inFlightRuns: 0 },
+      { waitingRuns: 2, blocked: false, inFlightRuns: 0, extra: true },
+      { waitingRuns: 2, blocked: false },
+      { waitingRuns: Number.NaN, blocked: false, inFlightRuns: 0 },
+    ];
+    for (const value of malformed) {
+      assert.equal(readWorkflowDeleteImpact(value), undefined);
+      const state = workflowDeleteConfirmState({
+        status: "draft",
+        deleteImpact: readWorkflowDeleteImpact(value),
+      });
+      assert.equal(state.confirmDisabled, false);
+      assert.equal(state.executionsDetail, WORKFLOW_DELETE_EXECUTIONS_DETAIL);
+      assert.doesNotMatch(state.description, /will be stopped/);
+      assert.doesNotMatch(state.description, /\d+ runs?/);
+    }
+
+    assert.deepEqual(readWorkflowDeleteImpact(parked), parked);
+    const kept = workflowRecordWithCapabilities(
+      record({
+        capabilities: { delete: true },
+        deleteImpact: parked,
+      }),
+    );
+    assert.deepEqual(kept.deleteImpact, parked);
+    assert.equal(kept.capabilities?.delete, true);
+    const stripped = workflowRecordWithCapabilities(
+      record({
+        capabilities: { delete: false },
+        deleteImpact: { waitingRuns: "9", blocked: false, inFlightRuns: 0 } as never,
+      }),
+    );
+    assert.equal(stripped.deleteImpact, undefined);
+    assert.equal(stripped.capabilities?.delete, false);
+    assert.equal(
+      toWorkflowHomeItem(stripped).canDelete,
+      false,
+    );
+  });
+
+  it("drops delete impact on embed so the counts never appear", () => {
+    const hidden = workflowDeleteShownImpact({
+      embed: true,
+      deleteImpact: { waitingRuns: 3, blocked: true, inFlightRuns: 2 },
+    });
+    assert.equal(hidden, undefined);
+    const state = workflowDeleteConfirmState({
+      status: "published",
+      deleteImpact: hidden,
+    });
+    assert.equal(state.confirmDisabled, false);
+    assert.equal(state.executionsDetail, WORKFLOW_DELETE_EXECUTIONS_DETAIL);
+    assert.doesNotMatch(state.description, /will be stopped/);
+    assert.doesNotMatch(state.description, /still running or queued/);
+    assert.equal(
+      workflowDeleteActionVisible({ embed: true, canDelete: true }),
+      false,
+    );
+
+    const here = fileURLToPath(new URL(".", import.meta.url));
+    const home = readFileSync(`${here}../components/home/WorkflowHome.tsx`, "utf8");
+    const operator = readFileSync(
+      `${here}../components/workflows/WorkflowOperator.tsx`,
+      "utf8",
+    );
+    const dialog = readFileSync(
+      `${here}../components/workflows/DeleteWorkflowDialog.tsx`,
+      "utf8",
+    );
+    assert.match(home, /!embed && workflowDelete/);
+    assert.match(operator, /!embed && workflow && workflowDeleteOpen/);
+    assert.match(dialog, /workflowDeleteShownImpact/);
+    assert.match(dialog, /getWorkflow/);
   });
 });
 

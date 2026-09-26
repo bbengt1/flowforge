@@ -2616,9 +2616,13 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     {!embed && workflow && workflowDeleteOpen ? (
       <DeleteWorkflowDialog
         open
+        workflowId={workflow.id}
+        identity={identity}
+        embed={embed}
         name={workflow.name}
         status={workflow.status}
         typedName={workflowDeleteTyped}
+        deleteImpact={workflow.deleteImpact}
         pending={pending === "workflow-delete"}
         errorMessage={workflowDeleteError?.message}
         errorKind={workflowDeleteError?.kind}
