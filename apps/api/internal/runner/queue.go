@@ -179,7 +179,11 @@ func (q *StoreQueue) Release(ctx context.Context, ws Workspace, job Job) error {
 	if err != nil {
 		return err
 	}
-	_, err = q.Workflows.ReleaseJob(ctx, scope, q.now(), action(q, job))
+	in := action(q, job)
+	// This release is only the transient approval rebuild path. Other
+	// worker releases go through ReleaseJob with the flag left false.
+	in.ApprovalTransientRetry = true
+	_, err = q.Workflows.ReleaseJob(ctx, scope, q.now(), in)
 	return err
 }
 

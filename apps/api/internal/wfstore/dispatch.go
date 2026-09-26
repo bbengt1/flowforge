@@ -1,7 +1,9 @@
 package wfstore
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"strings"
@@ -12,6 +14,53 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/bbengt1/flowforge/apps/api/internal/ssh"
 )
+
+const (
+	approvalBackoffBase = 5 * time.Second
+	approvalBackoffCap  = 60 * time.Second
+)
+
+// approvalBackoff is the wait before a transient approval rebuild may be
+// claimed again. prior is the stored count, and 0 is the first failure.
+// The returned count is prior+1. It is not the step attempt. jitter is in
+// [0, 1]. The delay is 80% to 100% of 5s, 10s, 20s, 40s, then 60s, and it
+// never exceeds the cap.
+func approvalBackoff(prior int, jitter float64) (time.Duration, int) {
+	if prior < 0 {
+		prior = 0
+	}
+	next := prior + 1
+	shift := prior
+	if shift > 3 {
+		shift = 3
+	}
+	base := approvalBackoffBase << shift
+	if prior >= 4 {
+		base = approvalBackoffCap
+	}
+	if jitter < 0 {
+		jitter = 0
+	}
+	if jitter > 1 {
+		jitter = 1
+	}
+	delay := time.Duration(float64(base) * (0.8 + 0.2*jitter))
+	if delay > approvalBackoffCap {
+		delay = approvalBackoffCap
+	}
+	if delay < time.Second {
+		delay = approvalBackoffBase
+	}
+	return delay, next
+}
+
+func approvalJitter() float64 {
+	var buf [8]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return 0
+	}
+	return float64(binary.BigEndian.Uint64(buf[:])) / float64(^uint64(0))
+}
 
 func normalizeLease(d time.Duration) time.Duration {
 	if d <= 0 {
