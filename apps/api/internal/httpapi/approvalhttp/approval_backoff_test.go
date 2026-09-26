@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -188,6 +189,18 @@ func TestDeadlineAnchorSurvivesRequeueRecoveryAndReclaim(t *testing.T) {
 	if !claimed.Job.CreatedAt.Equal(anchor) || !claimed.Step.CreatedAt.Equal(stepAnchor) {
 		t.Fatalf("restart reclaim moved anchor job %s step %s", claimed.Job.CreatedAt, claimed.Step.CreatedAt)
 	}
+	if claimed.Execution.StartedAt == nil {
+		t.Fatal("root gate has no run start")
+	}
+	ready := claimed.Execution.StartedAt.UTC()
+	if _, err := store.RecoverExpiredLeases(ctx, scope, ready.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	job = postgresGateJob(t, ctx, store, scope, exec.ID)
+	if job.Status != wfstore.JobFailed || !job.CreatedAt.Equal(anchor) {
+		t.Fatalf("limit after restart = %+v", job)
+	}
+	assertRequirementUnresolvable(t, ctx, store, scope, exec.ID)
 }
 
 func TestPastLimitCancelsPendingApproval(t *testing.T) {
@@ -246,10 +259,8 @@ func TestWaitingGateStillExpires(t *testing.T) {
 	if err != nil || claimed.Step.NodeID != "gate" {
 		t.Fatalf("claim = %s %v", claimed.Step.NodeID, err)
 	}
-	limit, ok := wfstore.ApprovalRetryLimit(claimed.Job.CreatedAt, time.Time{}, claimed.Step.Input)
-	if !ok {
-		t.Fatal("missing limit")
-	}
+	d, _ := workflow.ApprovalWaitDuration("PT1H")
+	limit := now.Add(d)
 	if _, err := store.WaitJob(ctx, scope, now, wfstore.WaitJobInput{
 		JobID:       claimed.Job.ID,
 		AvailableAt: limit,
@@ -332,19 +343,23 @@ func TestRetryLimitFollowsPendingExpiry(t *testing.T) {
 			}
 		}
 	})
-	t.Run("falls back to created_at", func(t *testing.T) {
+	t.Run("falls back to run start", func(t *testing.T) {
 		store, scope, exec := startBackoffRun(t, ctx, "fb")
 		claimed, err := store.ClaimJob(ctx, scope, time.Now().UTC(), wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
 		if err != nil || claimed.Step.NodeID != "gate" {
 			t.Fatalf("claim = %s %v", claimed.Step.NodeID, err)
 		}
+		if claimed.Execution.StartedAt == nil {
+			t.Fatal("root gate has no run start")
+		}
 		anchor := claimed.Job.CreatedAt
-		if _, err := store.RecoverExpiredLeases(ctx, scope, anchor.Add(time.Hour)); err != nil {
+		ready := claimed.Execution.StartedAt.UTC()
+		if _, err := store.RecoverExpiredLeases(ctx, scope, ready.Add(time.Hour)); err != nil {
 			t.Fatal(err)
 		}
 		job := postgresGateJob(t, ctx, store, scope, exec.ID)
 		if job.Status != wfstore.JobFailed || !job.CreatedAt.Equal(anchor) {
-			t.Fatalf("created_at limit = %+v", job)
+			t.Fatalf("run start limit = %+v", job)
 		}
 		assertRequirementUnresolvable(t, ctx, store, scope, exec.ID)
 	})
@@ -548,12 +563,327 @@ func (privilegeNoRelease) ReleaseJob(context.Context, isolation.Scope, time.Time
 	return wfstore.DispatchResult{}, errors.New("release failed")
 }
 
+func TestComposeDelayedGateParksAtClaimTime(t *testing.T) {
+	ctx := context.Background()
+	store := wfstore.NewMemory()
+	approvals := approval.NewMemory()
+	scope, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := delayThenGateYAML("PT1M")
+	parsed, errs := workflow.ParseAndNormalize([]byte(src))
+	if len(errs) > 0 {
+		t.Fatalf("parse: %+v", errs)
+	}
+	wf, draft, err := store.Create(ctx, scope, wfstore.CreateInput{
+		NormalizedYAML: parsed.NormalizedYAML, Digest: parsed.Digest, Summary: parsed.Summary,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ver, err := store.Publish(ctx, scope, wf.ID, wfstore.PublishInput{ExpectedRevision: draft.Revision})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exec, err := store.StartExecution(ctx, scope, ver.WorkflowID, wfstore.StartInput{VersionID: ver.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	steps, err := store.ListSteps(ctx, scope, exec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var created time.Time
+	for _, step := range steps {
+		if step.NodeID == "gate" {
+			created = step.CreatedAt
+		}
+	}
+	finish := created.Add(2 * time.Hour)
+	pause, err := store.ClaimJob(ctx, scope, finish, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: 5 * time.Minute})
+	if err != nil || pause.Step.NodeID != "pause" {
+		t.Fatalf("delay claim = %s %v", pause.Step.NodeID, err)
+	}
+	if _, err := store.CompleteJob(ctx, scope, finish, wfstore.JobActionInput{
+		JobID: pause.Job.ID, WorkerID: "edge-worker", FencingToken: pause.Job.FencingToken,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := store.ClaimJob(ctx, scope, finish, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: 5 * time.Minute})
+	if err != nil || claimed.Step.NodeID != "gate" {
+		t.Fatalf("gate claim = %s %v", claimed.Step.NodeID, err)
+	}
+	srv := &core.Server{
+		Workflows: store,
+		Approvals: approvals,
+		Clock:     func() time.Time { return finish },
+	}
+	waited, err := ParkApprovalClaim(srv, ctx, scope, claimed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := finish.Add(time.Minute)
+	if waited.Job.Status != wfstore.JobWaiting || !waited.Job.AvailableAt.Equal(want) {
+		t.Fatalf("parked = %+v want %s", waited.Job, want)
+	}
+	if !waited.Job.AvailableAt.After(created.Add(time.Minute)) {
+		t.Fatalf("parked from created_at %s available %s", created, waited.Job.AvailableAt)
+	}
+	rows, err := approvals.List(ctx, scope, approval.Filter{ExecutionID: exec.ID})
+	if err != nil || len(rows) != 1 || !rows[0].ExpiresAt.Equal(want) || rows[0].Status != approval.StatusPending {
+		t.Fatalf("approval = %+v %v", rows, err)
+	}
+	if _, err := store.RecoverExpiredLeases(ctx, scope, finish); err != nil {
+		t.Fatal(err)
+	}
+	job := memoryNodeJobHTTP(t, ctx, store, scope, exec.ID, "gate")
+	if job.Status != wfstore.JobWaiting {
+		t.Fatalf("expired at claim time: %+v", job)
+	}
+	rows, err = approvals.List(ctx, scope, approval.Filter{ExecutionID: exec.ID})
+	if err != nil || len(rows) != 1 || rows[0].Status != approval.StatusPending {
+		t.Fatalf("after recovery = %+v %v", rows, err)
+	}
+}
+
+func TestPostgresGateReadyRetryLimit(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	t.Run("upstream finished_at", func(t *testing.T) {
+		store, scope, exec := startBackoffWorkflow(t, ctx, "up", delayThenGateYAML("PT1H"))
+		created := postgresNodeJob(t, ctx, store, scope, exec.ID, "gate").CreatedAt
+		finish := created.Add(2 * time.Hour)
+		completePostgresNode(t, ctx, store, scope, "pause", finish)
+		claimed, err := store.ClaimJob(ctx, scope, finish, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
+		if err != nil || claimed.Step.NodeID != "gate" {
+			t.Fatalf("claim = %s %v", claimed.Step.NodeID, err)
+		}
+		if _, err := store.RecoverExpiredLeases(ctx, scope, finish.Add(2*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		job := postgresNodeJob(t, ctx, store, scope, exec.ID, "gate")
+		if job.Status != wfstore.JobQueued || !job.CreatedAt.Equal(created) {
+			t.Fatalf("inside upstream window = %+v", job)
+		}
+		if _, err := store.ClaimJob(ctx, scope, finish.Add(time.Hour-2*time.Minute), wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.RecoverExpiredLeases(ctx, scope, finish.Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		job = postgresNodeJob(t, ctx, store, scope, exec.ID, "gate")
+		if job.Status != wfstore.JobFailed || !job.CreatedAt.Equal(created) {
+			t.Fatalf("at upstream limit = %+v", job)
+		}
+		assertRequirementUnresolvable(t, ctx, store, scope, exec.ID)
+	})
+	t.Run("root run start", func(t *testing.T) {
+		store, scope, exec := startBackoffRun(t, ctx, "rt")
+		if exec.StartedAt == nil {
+			t.Fatal("root gate has no run start")
+		}
+		ready := exec.StartedAt.UTC()
+		created := postgresGateJob(t, ctx, store, scope, exec.ID).CreatedAt
+		late, err := store.ClaimJob(ctx, scope, ready.Add(2*time.Hour), wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
+		if err != nil || late.Step.NodeID != "gate" {
+			t.Fatalf("late claim = %s %v", late.Step.NodeID, err)
+		}
+		if _, err := store.RecoverExpiredLeases(ctx, scope, ready.Add(2*time.Hour+2*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		job := postgresGateJob(t, ctx, store, scope, exec.ID)
+		if job.Status != wfstore.JobFailed || job.Attempt != late.Job.Attempt || !job.CreatedAt.Equal(created) {
+			t.Fatalf("late claim stays on run start = %+v", job)
+		}
+		assertRequirementUnresolvable(t, ctx, store, scope, exec.ID)
+
+		store, scope, exec = startBackoffRun(t, ctx, "rt2")
+		if exec.StartedAt == nil {
+			t.Fatal("root gate has no run start")
+		}
+		ready = exec.StartedAt.UTC()
+		created = postgresGateJob(t, ctx, store, scope, exec.ID).CreatedAt
+		if _, err := store.ClaimJob(ctx, scope, created, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.RecoverExpiredLeases(ctx, scope, ready.Add(2*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		job = postgresGateJob(t, ctx, store, scope, exec.ID)
+		if job.Status != wfstore.JobQueued || !job.CreatedAt.Equal(created) {
+			t.Fatalf("inside run-start window = %+v", job)
+		}
+		if _, err := store.ClaimJob(ctx, scope, ready.Add(time.Hour-2*time.Minute), wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.RecoverExpiredLeases(ctx, scope, ready.Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		job = postgresGateJob(t, ctx, store, scope, exec.ID)
+		if job.Status != wfstore.JobFailed || !job.CreatedAt.Equal(created) {
+			t.Fatalf("at run start limit = %+v", job)
+		}
+		assertRequirementUnresolvable(t, ctx, store, scope, exec.ID)
+	})
+	t.Run("pending expires_at", func(t *testing.T) {
+		store, scope, exec := startBackoffWorkflow(t, ctx, "px", delayThenGateYAML("PT1H"))
+		created := postgresNodeJob(t, ctx, store, scope, exec.ID, "gate").CreatedAt
+		finish := created.Add(2 * time.Hour)
+		completePostgresNode(t, ctx, store, scope, "pause", finish)
+		if _, err := store.ClaimJob(ctx, scope, finish, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute}); err != nil {
+			t.Fatal(err)
+		}
+		expires := finish.Add(3 * time.Hour)
+		insertPendingGate(t, ctx, scope, exec, expires)
+		if _, err := store.RecoverExpiredLeases(ctx, scope, finish.Add(90*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		job := postgresNodeJob(t, ctx, store, scope, exec.ID, "gate")
+		if job.Status != wfstore.JobWaiting || !job.CreatedAt.Equal(created) {
+			t.Fatalf("inside expires_at = %+v", job)
+		}
+		status, reason, decided := approvalGateRow(t, ctx, scope, exec.ID)
+		if status != approval.StatusPending || reason != "" || decided != "" {
+			t.Fatalf("approval = %s %s decided=%q", status, reason, decided)
+		}
+		if got := approvalGateExpiry(t, ctx, scope, exec.ID); !got.Equal(expires) {
+			t.Fatalf("expires_at = %s want %s", got, expires)
+		}
+	})
+	t.Run("closes pending at the limit", func(t *testing.T) {
+		store, scope, exec := startBackoffWorkflow(t, ctx, "pc", delayThenGateYAML("PT1H"))
+		created := postgresNodeJob(t, ctx, store, scope, exec.ID, "gate").CreatedAt
+		finish := created.Add(2 * time.Hour)
+		completePostgresNode(t, ctx, store, scope, "pause", finish)
+		expires := finish.Add(3 * time.Hour)
+		insertPendingGate(t, ctx, scope, exec, expires)
+		if _, err := store.ClaimJob(ctx, scope, expires.Add(-time.Minute), wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.RecoverExpiredLeases(ctx, scope, expires); err != nil {
+			t.Fatal(err)
+		}
+		job := postgresNodeJob(t, ctx, store, scope, exec.ID, "gate")
+		if job.Status != wfstore.JobFailed || !job.CreatedAt.Equal(created) {
+			t.Fatalf("at expires_at = %+v", job)
+		}
+		assertRequirementUnresolvable(t, ctx, store, scope, exec.ID)
+		status, reason, decided := approvalGateRow(t, ctx, scope, exec.ID)
+		if status != approval.StatusCanceled || reason != approval.ReasonRequirementUnresolvable || decided != "" {
+			t.Fatalf("approval = %s %s decided=%q", status, reason, decided)
+		}
+	})
+	t.Run("survives requeue recovery and restart", func(t *testing.T) {
+		store, scope, exec := startBackoffWorkflow(t, ctx, "sv", delayThenGateYAML("PT1H"))
+		created := postgresNodeJob(t, ctx, store, scope, exec.ID, "gate").CreatedAt
+		finish := created.Add(2 * time.Hour)
+		completePostgresNode(t, ctx, store, scope, "pause", finish)
+		claimed, err := store.ClaimJob(ctx, scope, finish, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
+		if err != nil || claimed.Step.NodeID != "gate" {
+			t.Fatalf("claim = %s %v", claimed.Step.NodeID, err)
+		}
+		released, err := store.ReleaseJob(ctx, scope, finish, wfstore.JobActionInput{
+			JobID: claimed.Job.ID, WorkerID: "edge-worker", FencingToken: claimed.Job.FencingToken,
+			ApprovalTransientRetry: true,
+		})
+		if err != nil || released.Job.Status != wfstore.JobQueued || !released.Job.CreatedAt.Equal(created) {
+			t.Fatalf("requeue = %+v %v", released.Job, err)
+		}
+		if _, err := store.ClaimJob(ctx, scope, finish.Add(35*time.Second), wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.RecoverExpiredLeases(ctx, scope, finish.Add(2*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.ClaimJob(ctx, scope, finish.Add(3*time.Minute), wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute}); err != nil {
+			t.Fatal(err)
+		}
+		steps, err := store.ListSteps(ctx, scope, exec.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, step := range steps {
+			if step.NodeID == "pause" && (step.FinishedAt == nil || !step.FinishedAt.UTC().Equal(finish.UTC())) {
+				t.Fatalf("finished_at = %v", step.FinishedAt)
+			}
+		}
+		if _, err := store.RecoverExpiredLeases(ctx, scope, finish.Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		job := postgresNodeJob(t, ctx, store, scope, exec.ID, "gate")
+		if job.Status != wfstore.JobFailed || !job.CreatedAt.Equal(created) {
+			t.Fatalf("limit after restart = %+v", job)
+		}
+		assertRequirementUnresolvable(t, ctx, store, scope, exec.ID)
+	})
+}
+
+func delayThenGateYAML(expires string) string {
+	return `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: delay-then-gate
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: pause
+      type: flow.delay
+      name: Pause
+      with:
+        duration: PT2H
+    - id: gate
+      type: flow.approval
+      name: Gate
+      with:
+        approverRole: approver
+        expiresIn: ` + expires + `
+  edges:
+    - from: pause.result
+      to: gate.request
+`
+}
+
 func startBackoffRun(t *testing.T, ctx context.Context, tag string) (*wfstore.Postgres, isolation.Scope, wfstore.Execution) {
 	t.Helper()
 	return startBackoffRunExpiry(t, ctx, tag, "PT1H")
 }
 
 func startBackoffRunExpiry(t *testing.T, ctx context.Context, tag, expires string) (*wfstore.Postgres, isolation.Scope, wfstore.Execution) {
+	t.Helper()
+	return startBackoffWorkflow(t, ctx, tag, backoffGateYAML(tag, expires))
+}
+
+func backoffGateYAML(tag, expires string) string {
+	return `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: backoff-` + tag + `
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: gate
+      type: flow.approval
+      name: Gate
+      with:
+        approverRole: approver
+        expiresIn: ` + expires + `
+    - id: late
+      type: flow.stop
+      name: Late
+      with:
+        status: success
+  edges:
+    - from: gate.expired
+      to: late.input
+`
+}
+
+func startBackoffWorkflow(t *testing.T, ctx context.Context, tag, src string) (*wfstore.Postgres, isolation.Scope, wfstore.Execution) {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
@@ -591,30 +921,9 @@ func startBackoffRunExpiry(t *testing.T, ctx context.Context, tag, expires strin
 		t.Fatal(err)
 	}
 	store := wfstore.NewPostgres(app)
-	src := `apiVersion: flowforge/v1
-kind: Workflow
-metadata:
-  name: backoff-` + tag + `-` + fmt.Sprintf("%d", suffix%100000000) + `
-spec:
-  triggers:
-    - id: manual
-      type: manual
-  nodes:
-    - id: gate
-      type: flow.approval
-      name: Gate
-      with:
-        approverRole: approver
-        expiresIn: ` + expires + `
-    - id: late
-      type: flow.stop
-      name: Late
-      with:
-        status: success
-  edges:
-    - from: gate.expired
-      to: late.input
-`
+	unique := fmt.Sprintf("%d", suffix%100000000)
+	src = strings.ReplaceAll(src, "name: delay-then-gate", "name: delay-then-gate-"+unique)
+	src = strings.ReplaceAll(src, "name: backoff-"+tag, "name: backoff-"+tag+"-"+unique)
 	parsed, errs := workflow.ParseAndNormalize([]byte(src))
 	if len(errs) > 0 {
 		t.Fatalf("parse: %+v", errs)
@@ -704,4 +1013,67 @@ func assertPostgresNotExpired(t *testing.T, ctx context.Context, store *wfstore.
 			t.Fatal("late ran")
 		}
 	}
+}
+
+func completePostgresNode(t *testing.T, ctx context.Context, store *wfstore.Postgres, scope isolation.Scope, node string, now time.Time) {
+	t.Helper()
+	claimed, err := store.ClaimJob(ctx, scope, now, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: 5 * time.Minute})
+	if err != nil || claimed.Step.NodeID != node {
+		t.Fatalf("claim %s = %s %v", node, claimed.Step.NodeID, err)
+	}
+	if _, err := store.CompleteJob(ctx, scope, now, wfstore.JobActionInput{
+		JobID: claimed.Job.ID, WorkerID: "edge-worker", FencingToken: claimed.Job.FencingToken,
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func postgresNodeJob(t *testing.T, ctx context.Context, store *wfstore.Postgres, scope isolation.Scope, executionID, node string) wfstore.ExecutionJob {
+	t.Helper()
+	steps, err := store.ListSteps(ctx, scope, executionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := store.ListJobs(ctx, scope, executionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stepID string
+	for _, step := range steps {
+		if step.NodeID == node {
+			stepID = step.ID
+		}
+	}
+	for _, job := range jobs {
+		if job.ExecutionStepID == stepID {
+			return job
+		}
+	}
+	t.Fatalf("missing job %s", node)
+	return wfstore.ExecutionJob{}
+}
+
+func memoryNodeJobHTTP(t *testing.T, ctx context.Context, store *wfstore.Memory, scope isolation.Scope, executionID, node string) wfstore.ExecutionJob {
+	t.Helper()
+	steps, err := store.ListSteps(ctx, scope, executionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := store.ListJobs(ctx, scope, executionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stepID string
+	for _, step := range steps {
+		if step.NodeID == node {
+			stepID = step.ID
+		}
+	}
+	for _, job := range jobs {
+		if job.ExecutionStepID == stepID {
+			return job
+		}
+	}
+	t.Fatalf("missing job %s", node)
+	return wfstore.ExecutionJob{}
 }

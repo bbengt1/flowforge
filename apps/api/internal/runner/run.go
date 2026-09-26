@@ -180,7 +180,7 @@ func (r *Runner) claimOne(ctx context.Context, ws Workspace) (bool, error) {
 	ctx, span := observability.Continue(ctx, job.Job.TraceParent, job.Job.TraceState, "runner.job")
 	defer span.End()
 	if job.Step.NodeType == "flow.approval" {
-		until, decision := approvalDeadline(job.Step, job.Job.CreatedAt)
+		until, decision := approvalDeadline(job.Step, r.now())
 		if decision.Fail {
 			if err := r.queue.Fail(ctx, ws, *job, decision.Error); err != nil {
 				return true, err
@@ -266,10 +266,10 @@ func (r *Runner) claimOne(ctx context.Context, ws Workspace) (bool, error) {
 }
 
 // leaveTransientApproval keeps one stuck gate from stopping the claim pass.
-// Release reads a pending approval's expires_at inside the job transaction
-// and fails the gate when that limit has passed. Otherwise the claim is
-// logged and released. The pass continues either way. A past-limit failure
-// uses requirement_unresolvable and does not take expired.
+// Release reads the retry limit inside the job transaction and fails the
+// gate when that limit has passed. Otherwise the claim is logged and
+// released. The pass continues either way. A past-limit failure uses
+// requirement_unresolvable and does not take expired.
 func (r *Runner) leaveTransientApproval(ctx context.Context, ws Workspace, job Job) (bool, error) {
 	if q, ok := r.queue.(*StoreQueue); ok {
 		released, relErr := q.Release(ctx, ws, job)
@@ -293,11 +293,11 @@ func (r *Runner) leaveTransientApproval(ctx context.Context, ws Workspace, job J
 	return true, nil
 }
 
-func approvalDeadline(step wfstore.ExecutionStep, queuedAt time.Time) (time.Time, Decision) {
+func approvalDeadline(step wfstore.ExecutionStep, now time.Time) (time.Time, Decision) {
 	if step.NodeType != "flow.approval" {
 		return time.Time{}, Decision{}
 	}
-	res, errs := workflow.Evaluate(step.NodeType, step.Input, map[string]any{})
+	_, errs := workflow.Evaluate(step.NodeType, step.Input, map[string]any{})
 	if len(errs) > 0 {
 		code := errs[0].Code
 		if code == "" {
@@ -305,17 +305,15 @@ func approvalDeadline(step wfstore.ExecutionStep, queuedAt time.Time) (time.Time
 		}
 		return time.Time{}, fail(code, errs[0].Message)
 	}
-	if limit, ok := wfstore.ApprovalRetryLimit(queuedAt, time.Time{}, step.Input); ok {
-		return limit, Decision{}
-	}
-	secs := 0
-	if res != nil {
-		secs = asInt(res.Audit["expiresSeconds"])
-	}
-	if secs <= 0 || queuedAt.IsZero() {
+	if now.IsZero() {
 		return time.Time{}, fail(CodeUnsupported, "Production runner cannot park an approval without an expiry.")
 	}
-	return queuedAt.UTC().Add(time.Duration(secs) * time.Second), Decision{}
+	raw, _ := step.Input["expiresIn"].(string)
+	d, _ := workflow.ApprovalWaitDuration(raw)
+	if d <= 0 {
+		return time.Time{}, fail(CodeUnsupported, "Production runner cannot park an approval without an expiry.")
+	}
+	return now.UTC().Add(d), Decision{}
 }
 
 func delayDeadline(step wfstore.ExecutionStep, now time.Time) (time.Time, Decision) {

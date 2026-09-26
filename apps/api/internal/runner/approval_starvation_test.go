@@ -78,23 +78,33 @@ func TestTransientGatePastDeadlineFailsUnresolvable(t *testing.T) {
 	}
 	exec := publishMemoryRun(t, ctx, store, scope, expiredDownstreamRunnerYAML())
 	job := memoryNodeJob(t, ctx, store, scope, exec.ID, "gate")
-	later := job.CreatedAt.Add(2 * time.Hour)
+	// A root gate's retry limit is the run insert plus PT1H. The first
+	// claim does not move that anchor.
+	clock := job.CreatedAt
 	versions := &denyWorkspace{Memory: store, workspaceID: ws}
 	queue := &StoreQueue{
 		Workflows: versions,
 		JobKey:    wfstore.NewJobBindingKey(),
 		WorkerID:  "production-runner",
 		Lease:     time.Minute,
-		Now:       func() time.Time { return later },
+		Now:       func() time.Time { return clock },
 		Fixed:     []Workspace{{ID: ws, ActorID: actor}},
 	}
 	loop := NewRunner(queue, &Dispatcher{}, Config{
 		WorkerID: "production-runner",
 		Log:      slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
 	})
-	loop.now = func() time.Time { return later }
+	loop.now = func() time.Time { return clock }
 	if n, err := loop.PollOnce(ctx); err != nil || n != 1 {
 		t.Fatalf("poll n=%d err=%v", n, err)
+	}
+	held := memoryNodeJob(t, ctx, store, scope, exec.ID, "gate")
+	if held.Status != wfstore.JobQueued || held.Attempt != job.Attempt {
+		t.Fatalf("inside run-start window = %+v", held)
+	}
+	clock = job.CreatedAt.Add(time.Hour)
+	if n, err := loop.PollOnce(ctx); err != nil || n != 1 {
+		t.Fatalf("limit poll n=%d err=%v", n, err)
 	}
 	failed := memoryNodeJob(t, ctx, store, scope, exec.ID, "gate")
 	if failed.Status != wfstore.JobFailed || failed.Attempt != job.Attempt {
@@ -226,6 +236,96 @@ spec:
       with:
         status: success
   edges: []
+`
+}
+
+func TestDelayedGateParksAtClaimTime(t *testing.T) {
+	ctx := context.Background()
+	store := wfstore.NewMemory()
+	ws := "11111111-1111-4111-8111-111111111111"
+	actor := "22222222-2222-4222-8222-222222222222"
+	scope, err := isolation.Authorize(ws, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exec := publishMemoryRun(t, ctx, store, scope, delayThenGateRunnerYAML())
+	created := memoryNodeJob(t, ctx, store, scope, exec.ID, "gate").CreatedAt
+	t0 := time.Now().UTC()
+	clock := t0
+	queue := &StoreQueue{
+		Workflows: store,
+		JobKey:    wfstore.NewJobBindingKey(),
+		WorkerID:  "production-runner",
+		Lease:     time.Minute,
+		Now:       func() time.Time { return clock },
+		Fixed:     []Workspace{{ID: ws, ActorID: actor}},
+	}
+	loop := NewRunner(queue, &Dispatcher{}, Config{
+		WorkerID: "production-runner",
+		Log:      slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+	})
+	loop.now = func() time.Time { return clock }
+	if n, err := loop.PollOnce(ctx); err != nil || n != 1 {
+		t.Fatalf("delay poll n=%d err=%v", n, err)
+	}
+	pause := memoryNodeJob(t, ctx, store, scope, exec.ID, "pause")
+	if pause.Status != wfstore.JobWaiting {
+		t.Fatalf("delay = %+v", pause)
+	}
+	clock = t0.Add(2 * time.Hour)
+	if n, err := loop.PollOnce(ctx); err != nil || n != 1 {
+		t.Fatalf("gate poll n=%d err=%v", n, err)
+	}
+	gate := memoryNodeJob(t, ctx, store, scope, exec.ID, "gate")
+	want := clock.Add(time.Minute)
+	if gate.Status != wfstore.JobWaiting || !gate.AvailableAt.Equal(want) {
+		t.Fatalf("parked = %+v want %s", gate, want)
+	}
+	if !gate.AvailableAt.After(created.Add(time.Minute)) {
+		t.Fatalf("parked at created_at plus expiresIn: %s created %s", gate.AvailableAt, created)
+	}
+	if _, err := store.RecoverExpiredLeases(ctx, scope, clock); err != nil {
+		t.Fatal(err)
+	}
+	gate = memoryNodeJob(t, ctx, store, scope, exec.ID, "gate")
+	if gate.Status != wfstore.JobWaiting {
+		t.Fatalf("expired at claim time: %+v", gate)
+	}
+	steps, err := store.ListSteps(ctx, scope, exec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range steps {
+		if port, _ := step.Output["port"].(string); port == "expired" {
+			t.Fatalf("%s took expired", step.NodeID)
+		}
+	}
+}
+
+func delayThenGateRunnerYAML() string {
+	return `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: delay-then-gate
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: pause
+      type: flow.delay
+      name: Pause
+      with:
+        duration: PT2H
+    - id: gate
+      type: flow.approval
+      name: Gate
+      with:
+        approverRole: approver
+        expiresIn: PT1M
+  edges:
+    - from: pause.result
+      to: gate.request
 `
 }
 

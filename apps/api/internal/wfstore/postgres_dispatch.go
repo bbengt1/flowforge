@@ -1036,11 +1036,11 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 		return DispatchResult{}, ErrCanceled
 	}
 	if in.ApprovalTransientRetry {
-		nodeType, input, expires, err := pendingApprovalExpiresTx(ctx, tx, job.ExecutionStepID)
+		nodeType, input, expires, ready, err := pendingApprovalExpiresTx(ctx, tx, job.ExecutionStepID)
 		if err != nil {
 			return DispatchResult{}, err
 		}
-		if nodeType == "flow.approval" && ApprovalPastLimit(job.CreatedAt, expires, input, now) {
+		if nodeType == "flow.approval" && ApprovalPastLimit(ready, expires, input, now) {
 			orig := opts.apply
 			opts.apply = func(job ExecutionJob) (string, map[string]any, error) {
 				status, payload, err := orig(job)
@@ -1227,10 +1227,12 @@ func recoverExpiredTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now
 		return stopped + resumed, nil
 	}
 	// A claimed approval whose rebuild failed has no pending row. Inside
-	// created_at plus the parked-approval wait duration, put it back on the
-	// queue after the flat retry delay. Do not burn the attempt and do not
-	// park it as waiting, or the deadline takes expired. A pending approval
-	// uses that row's expires_at as the limit instead. Past the limit, fail
+	// the gate-ready time plus the parked-approval wait duration, put it
+	// back on the queue after the flat retry delay. The gate-ready time is
+	// the latest finished_at among satisfied upstream steps, or the run's
+	// started_at for a root gate. Do not burn the attempt and do not park
+	// it as waiting, or the deadline takes expired. A pending approval uses
+	// that row's expires_at as the limit instead. Past the limit, fail
 	// the job and step with requirement_unresolvable, cancel a pending
 	// approval for that execution and node in this transaction, and roll the
 	// run up. A claim that still has a pending approval and is inside the
@@ -1287,19 +1289,43 @@ type transientApprovalRow struct {
 	exec    string
 	step    string
 	nodeID  string
-	created time.Time
+	ready   time.Time
 	expires time.Time
 	input   map[string]any
 	pending bool
 }
 
-// pendingApprovalExpiresTx reads a pending approval's expires_at for the
-// step. The select does not lock the approval row. Callers already hold
-// the execution lock and the job row.
-func pendingApprovalExpiresTx(ctx context.Context, tx pgx.Tx, stepID string) (string, map[string]any, time.Time, error) {
+// gateReadyAtSQL is the gate-ready time for the step aliased as s.
+// execution_jobs has no finished_at. The finish time of a satisfied
+// upstream job is that step's finished_at, and the latest of those is
+// when the gate became ready. A root gate uses the execution started_at.
+// The expression takes no row lock.
+const gateReadyAtSQL = `
+COALESCE(
+  (SELECT max(up.finished_at)
+     FROM execution_edges e
+     JOIN execution_steps up
+       ON up.workspace_id = e.workspace_id
+      AND up.execution_id = e.execution_id
+      AND up.node_id = e.from_node
+    WHERE e.workspace_id = s.workspace_id
+      AND e.execution_id = s.execution_id
+      AND e.to_node = s.node_id
+      AND e.satisfied
+      AND up.finished_at IS NOT NULL),
+  (SELECT ex.started_at
+     FROM executions ex
+    WHERE ex.workspace_id = s.workspace_id
+      AND ex.id = s.execution_id)
+)`
+
+// pendingApprovalExpiresTx reads a pending approval's expires_at and the
+// gate-ready time for the step. Neither select locks the approval row.
+// Callers already hold the execution lock and the job row.
+func pendingApprovalExpiresTx(ctx context.Context, tx pgx.Tx, stepID string) (string, map[string]any, time.Time, time.Time, error) {
 	var nodeType string
 	var raw []byte
-	var expires *time.Time
+	var expires, ready *time.Time
 	err := tx.QueryRow(ctx, `
 		SELECT s.node_type, s.input_redacted,
 		       (
@@ -1311,17 +1337,23 @@ func pendingApprovalExpiresTx(ctx context.Context, tx pgx.Tx, stepID string) (st
 			   AND a.status = 'pending'
 			 ORDER BY a.expires_at
 			 LIMIT 1
-		       )
+		       ),
+		       `+gateReadyAtSQL+`
 		  FROM execution_steps s
 		 WHERE s.id = $1::uuid
-	`, stepID).Scan(&nodeType, &raw, &expires)
+	`, stepID).Scan(&nodeType, &raw, &expires, &ready)
 	if err != nil {
-		return "", nil, time.Time{}, mapDBErr(err)
+		return "", nil, time.Time{}, time.Time{}, mapDBErr(err)
 	}
-	if expires == nil {
-		return nodeType, unmarshalObject(raw), time.Time{}, nil
+	input := unmarshalObject(raw)
+	var exp, at time.Time
+	if expires != nil {
+		exp = expires.UTC()
 	}
-	return nodeType, unmarshalObject(raw), expires.UTC(), nil
+	if ready != nil {
+		at = ready.UTC()
+	}
+	return nodeType, input, exp, at, nil
 }
 
 // requeueOrFailTransientApprovals locks each expired approval claim, then
@@ -1330,7 +1362,7 @@ func pendingApprovalExpiresTx(ctx context.Context, tx pgx.Tx, stepID string) (st
 // pending approval for that execution and node before the roll-up.
 func requeueOrFailTransientApprovals(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now time.Time, leaseIDs []string) (int, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT j.id::text, j.execution_id::text, j.execution_step_id::text, s.node_id, j.created_at, s.input_redacted,
+		SELECT j.id::text, j.execution_id::text, j.execution_step_id::text, s.node_id, `+gateReadyAtSQL+`, s.input_redacted,
 		       (
 			SELECT a.expires_at FROM approvals a
 			WHERE a.workspace_id = j.workspace_id
@@ -1358,11 +1390,14 @@ func requeueOrFailTransientApprovals(ctx context.Context, tx pgx.Tx, scope isola
 	for rows.Next() {
 		var row transientApprovalRow
 		var raw []byte
-		var expires *time.Time
-		if err := rows.Scan(&row.jobID, &row.exec, &row.step, &row.nodeID, &row.created, &raw, &expires); err != nil {
+		var ready, expires *time.Time
+		if err := rows.Scan(&row.jobID, &row.exec, &row.step, &row.nodeID, &ready, &raw, &expires); err != nil {
 			return 0, mapDBErr(err)
 		}
 		row.input = unmarshalObject(raw)
+		if ready != nil {
+			row.ready = ready.UTC()
+		}
 		if expires != nil {
 			row.pending = true
 			row.expires = expires.UTC()
@@ -1380,7 +1415,7 @@ func requeueOrFailTransientApprovals(ctx context.Context, tx pgx.Tx, scope isola
 	available := now.Add(delay)
 	var requeuePairs, failPairs, parkPairs []recoverPair
 	for _, row := range items {
-		if ApprovalPastLimit(row.created, row.expires, row.input, now) {
+		if ApprovalPastLimit(row.ready, row.expires, row.input, now) {
 			tag, err := tx.Exec(ctx, `
 				UPDATE execution_jobs
 				SET status = 'failed', worker_id = NULL, lease_expires_at = NULL, heartbeat_at = NULL, updated_at = $1

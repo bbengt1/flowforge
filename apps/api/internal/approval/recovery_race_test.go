@@ -2,6 +2,7 @@ package approval
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -182,14 +183,18 @@ spec:
 			t.Fatalf("approval = %+v %v", got, err)
 		}
 	})
-	t.Run("falls back to created_at", func(t *testing.T) {
+	t.Run("falls back to run start", func(t *testing.T) {
 		workflows, _, exec, claimed := start(t)
-		if _, err := workflows.RecoverExpiredLeases(ctx, owner, claimed.Job.CreatedAt.Add(time.Hour)); err != nil {
+		if claimed.Execution.StartedAt == nil {
+			t.Fatal("root gate has no run start")
+		}
+		ready := claimed.Execution.StartedAt.UTC()
+		if _, err := workflows.RecoverExpiredLeases(ctx, owner, ready.Add(time.Hour)); err != nil {
 			t.Fatal(err)
 		}
 		step, job := memoryStepJob(t, ctx, workflows, owner, exec.ID, "gate")
 		if job.Status != wfstore.JobFailed || step.Error["code"] != wfstore.ReasonRequirementUnresolvable {
-			t.Fatalf("created_at limit job=%+v step=%+v", job, step)
+			t.Fatalf("run start limit job=%+v step=%+v", job, step)
 		}
 	})
 	t.Run("closes pending at the limit", func(t *testing.T) {
@@ -215,6 +220,16 @@ spec:
 		got, err := approvals.Get(ctx, owner, rec.ID)
 		if err != nil || got.Status != StatusCanceled || got.CloseReason != ReasonRequirementUnresolvable || got.DecidedBy != "" {
 			t.Fatalf("approval = %+v %v", got, err)
+		}
+		approvals.SetGateWaiting(workflows.ApprovalGateWaiting)
+		if _, err := approvals.Decide(ctx, owner, rec.ID, DecideInput{
+			Decision: DecisionApproved, Now: expires,
+		}); !errors.Is(err, ErrClosed) {
+			t.Fatalf("decide = %v", err)
+		}
+		got, err = approvals.Get(ctx, owner, rec.ID)
+		if err != nil || got.Status != StatusCanceled || got.CloseReason != ReasonRequirementUnresolvable || got.Status == StatusExpired {
+			t.Fatalf("decide closed = %+v %v", got, err)
 		}
 	})
 }

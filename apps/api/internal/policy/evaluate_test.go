@@ -144,6 +144,23 @@ func TestRequirementFromNodePrefersStepFields(t *testing.T) {
 	if got.ApproverRole != "auditor" || got.ExpiresIn != "PT15M" {
 		t.Fatalf("blank approverRole = %+v", got)
 	}
+
+	stepAdmin := opsconfig.Pin{
+		Kind: opsconfig.KindPolicy, ResourceID: policyPin.ResourceID,
+		VersionID: policyPin.VersionID, VersionNumber: policyPin.VersionNumber, Digest: policyPin.Digest,
+		Spec: map[string]any{"kind": "approval", "policy": map[string]any{
+			"approverRole": "approver",
+			"expiresIn":    "PT2H",
+		}},
+	}
+	adminNode := workflow.Node{ID: "gate", Type: "flow.approval", Name: "Gate", With: map[string]any{
+		"approverRole": "admin",
+		"expiresIn":    "PT1H",
+	}}
+	got = requirementFromNode(adminNode, opsconfig.Pin{}, stepAdmin, now, "wait")
+	if got.ApproverRole != "admin" || got.ExpiresIn != "PT1H" {
+		t.Fatalf("step admin = %+v", got)
+	}
 }
 
 func TestEvaluateFlowApprovalAlwaysRequiresApproval(t *testing.T) {

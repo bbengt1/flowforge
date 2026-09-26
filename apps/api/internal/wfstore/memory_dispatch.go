@@ -185,7 +185,7 @@ func (m *Memory) ReleaseJob(ctx context.Context, scope isolation.Scope, now time
 	if in.ApprovalTransientRetry {
 		if view, ok := m.approvalRetryView(scope, in.JobID); ok {
 			expires, pending := m.pendingExpiry(view.execID, view.nodeID)
-			if ApprovalPastLimit(view.created, expires, view.input, now) {
+			if ApprovalPastLimit(view.ready, expires, view.input, now) {
 				result, err := m.failApprovalPastLimit(ctx, scope, now, in)
 				if errors.Is(err, errApprovalStillRunning) {
 					return m.releaseJob(ctx, scope, now, in)
@@ -829,7 +829,7 @@ func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope
 				if !ok {
 					continue
 				}
-				if ApprovalPastLimit(job.CreatedAt, gate.expires, exec.steps[stepIdx].Input, now) {
+				if ApprovalPastLimit(gateReadyAt(exec, exec.steps[stepIdx].NodeID), gate.expires, exec.steps[stepIdx].Input, now) {
 					job.Status = JobFailed
 					job.WorkerID = ""
 					job.LeaseExpiresAt = nil
@@ -918,10 +918,45 @@ type unresolvableGate struct {
 }
 
 type approvalRetrySnapshot struct {
-	execID  string
-	nodeID  string
-	created time.Time
-	input   map[string]any
+	execID string
+	nodeID string
+	ready  time.Time
+	input  map[string]any
+}
+
+// gateReadyAt is the latest finished_at among satisfied upstream steps.
+// execution jobs have no finished_at column, so the upstream step's
+// finished_at is the finish time of that work. A root gate uses the run
+// insert time. Postgres stores that in executions.started_at and does not
+// move it when the run later becomes running. Memory's StartedAt is that
+// later stamp, so the insert time is CreatedAt. A zero time means there
+// is no anchor.
+func gateReadyAt(exec memExecution, nodeID string) time.Time {
+	var latest time.Time
+	found := false
+	for _, edge := range exec.edges {
+		if edge.ToNode != nodeID || !edge.Satisfied {
+			continue
+		}
+		for i := range exec.steps {
+			step := exec.steps[i]
+			if step.NodeID != edge.FromNode || step.FinishedAt == nil {
+				continue
+			}
+			at := step.FinishedAt.UTC()
+			if !found || at.After(latest) {
+				latest = at
+				found = true
+			}
+		}
+	}
+	if found {
+		return latest
+	}
+	if !exec.record.CreatedAt.IsZero() {
+		return exec.record.CreatedAt.UTC()
+	}
+	return time.Time{}
 }
 
 func (m *Memory) approvalRetryView(scope isolation.Scope, jobID string) (approvalRetrySnapshot, bool) {
@@ -942,10 +977,10 @@ func (m *Memory) approvalRetryView(scope isolation.Scope, jobID string) (approva
 		input[k] = v
 	}
 	return approvalRetrySnapshot{
-		execID:  exec.record.ID,
-		nodeID:  step.NodeID,
-		created: job.CreatedAt,
-		input:   input,
+		execID: exec.record.ID,
+		nodeID: step.NodeID,
+		ready:  gateReadyAt(exec, step.NodeID),
+		input:  input,
 	}, true
 }
 

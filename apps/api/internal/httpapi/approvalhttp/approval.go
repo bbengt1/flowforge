@@ -15,7 +15,6 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/policy"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
-	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
 type evaluateRequest struct {
@@ -489,16 +488,10 @@ func ParkApprovalClaim(s *core.Server, ctx context.Context, scope isolation.Scop
 		return result, err
 	}
 	expires := req.ExpiresAt
-	// A resolved requirement already carries the wait deadline, including a
-	// policy expiresIn. Re-anchor it at created_at only when the stored step
-	// field is itself a duration, so a blank step field does not replace
-	// that deadline with the PT1H fallback.
-	raw, _ := result.Step.Input["expiresIn"].(string)
-	if parsed, err := workflow.ParseISODuration(strings.TrimSpace(raw)); err == nil && parsed > 0 {
-		if limit, ok := wfstore.ApprovalRetryLimit(result.Job.CreatedAt, time.Time{}, result.Step.Input); ok {
-			expires = limit
-		}
-	}
+	// ResolveGateRequirement stamps ExpiresAt at the claim clock plus
+	// ApprovalWaitDuration. Do not replace that with the job created_at:
+	// every job in the plan is inserted at run start, including a gate
+	// that is still blocked behind a longer step.
 	if expires.IsZero() {
 		expires = s.Clock().UTC().Add(time.Hour)
 	}

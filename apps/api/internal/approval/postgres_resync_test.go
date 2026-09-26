@@ -925,7 +925,7 @@ func TestPostgresResyncKeepsStepRoleOnPinnedPolicy(t *testing.T) {
 	approvals := NewPostgres(app)
 	ops := opsconfig.NewPostgres(app)
 	scope, _ := desk(t, ctx, ids, tenant.ID, user.ID, approverUser.ID, suffix)
-	v1Spec := map[string]any{"kind": "approval", "policy": map[string]any{"approverRole": "admin", "expiresIn": "PT1H"}}
+	v1Spec := map[string]any{"kind": "approval", "policy": map[string]any{"approverRole": "approver", "expiresIn": "PT1H"}}
 	resource, draft, err := ops.Create(ctx, scope, opsconfig.CreateInput{
 		Kind: opsconfig.KindPolicy, Name: "Pinned role", Slug: formatSlug("pl", suffix), Spec: v1Spec,
 	})
@@ -949,7 +949,7 @@ spec:
       type: flow.approval
       name: Gate
       with:
-        approverRole: approver
+        approverRole: admin
         policyId: ` + resource.ID + `
         expiresIn: PT1H
   edges: []
@@ -992,7 +992,7 @@ spec:
 		t.Fatal(err)
 	}
 	stats, err := resyncWorkspace(ctx, app, store, ops, scope.WorkspaceID(), now)
-	if err != nil || stats.Closed != 0 || stats.Corrected != 0 {
+	if err != nil || stats.Closed != 0 || stats.Corrected != 1 {
 		t.Fatalf("stats = %+v %v", stats, err)
 	}
 	rows, err := approvals.List(ctx, scope, Filter{ExecutionID: exec.ID})
@@ -1000,7 +1000,7 @@ spec:
 		t.Fatalf("rows = %+v %v", rows, err)
 	}
 	got := rows[0]
-	if got.Status != StatusPending || got.ApproverRole != "approver" || got.PolicyVersionID != ver1.ID || got.PolicyVersionID == ver2.ID {
+	if got.Status != StatusPending || got.ApproverRole != "admin" || got.PolicyVersionID != ver1.ID || got.PolicyVersionID == ver2.ID {
 		t.Fatalf("row = %+v newer %s", got, ver2.ID)
 	}
 }

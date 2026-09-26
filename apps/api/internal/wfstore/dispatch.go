@@ -23,9 +23,9 @@ const (
 
 // approvalRetryWait is the flat wait before a transient approval rebuild
 // may be claimed again. jitter is in [0, 1] and maps onto 30s plus 0 to 5s.
-// The outer limit is the pending approval's expires_at, or created_at plus
-// the parked-approval wait duration when no approval is pending. This delay
-// does not change attempt.
+// The outer limit is the pending approval's expires_at, or the gate-ready
+// time plus the parked-approval wait duration when no approval is pending.
+// This delay does not change attempt.
 func approvalRetryWait(jitter float64) time.Duration {
 	if jitter < 0 {
 		jitter = 0
@@ -38,28 +38,31 @@ func approvalRetryWait(jitter float64) time.Duration {
 
 // ApprovalRetryLimit is the transient-retry deadline for one gate.
 // approvalExpiresAt is the pending approval's expires_at. When it is set,
-// it is the limit, including when queuedAt is zero. With no pending
-// approval, the limit is queuedAt plus workflow.ApprovalWaitDuration:
+// it is the limit, including when readyAt is zero. With no pending
+// approval, the limit is readyAt plus workflow.ApprovalWaitDuration:
 // the step expiresIn, or PT1H when that field is missing or not a duration,
-// and never longer than the existing P7D ceiling. queuedAt is the job
-// created_at. That column is written when the step is materialized and is
-// not rewritten by release, lease recovery, or reclaim. A zero queuedAt
-// with no approval expiry has no anchor.
-func ApprovalRetryLimit(queuedAt, approvalExpiresAt time.Time, input map[string]any) (time.Time, bool) {
+// and never longer than the existing P7D ceiling. readyAt is the gate-ready
+// time: the latest finished_at among satisfied upstream steps, or the run
+// insert time for a root gate (executions.started_at, which Postgres stamps
+// at insert and does not move). Those columns are not rewritten by release,
+// lease recovery, or reclaim. A zero readyAt with no approval expiry has
+// no anchor. This is not the park deadline. A parked approval expires at
+// claim time plus the same wait duration.
+func ApprovalRetryLimit(readyAt, approvalExpiresAt time.Time, input map[string]any) (time.Time, bool) {
 	if !approvalExpiresAt.IsZero() {
 		return approvalExpiresAt.UTC(), true
 	}
-	if queuedAt.IsZero() {
+	if readyAt.IsZero() {
 		return time.Time{}, false
 	}
 	raw, _ := input["expiresIn"].(string)
 	d, _ := workflow.ApprovalWaitDuration(raw)
-	return queuedAt.UTC().Add(d), true
+	return readyAt.UTC().Add(d), true
 }
 
 // ApprovalPastLimit reports that now is at or after ApprovalRetryLimit.
-func ApprovalPastLimit(queuedAt, approvalExpiresAt time.Time, input map[string]any, now time.Time) bool {
-	limit, ok := ApprovalRetryLimit(queuedAt, approvalExpiresAt, input)
+func ApprovalPastLimit(readyAt, approvalExpiresAt time.Time, input map[string]any, now time.Time) bool {
+	limit, ok := ApprovalRetryLimit(readyAt, approvalExpiresAt, input)
 	if !ok {
 		return false
 	}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
 func TestApprovalRetryLimitUsesStoredExpiresIn(t *testing.T) {
@@ -37,7 +38,7 @@ func TestApprovalRetryLimitUsesStoredExpiresIn(t *testing.T) {
 	}
 	limit, ok = ApprovalRetryLimit(time.Time{}, parked, map[string]any{"expiresIn": "PT1H"})
 	if !ok || !limit.Equal(parked) {
-		t.Fatalf("pending expiry without created_at = %s ok=%v", limit, ok)
+		t.Fatalf("pending expiry without a gate-ready time = %s ok=%v", limit, ok)
 	}
 }
 
@@ -297,6 +298,17 @@ func TestMemoryDeadlineAnchorSurvivesRequeueRecoveryAndReclaim(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertAnchor(t, anchor, stepAnchor, claimed.Job.CreatedAt, claimed.Step.CreatedAt)
+	if claimed.Execution.StartedAt == nil || !claimed.Execution.StartedAt.Equal(now) {
+		t.Fatalf("run start moved: %v", claimed.Execution.StartedAt)
+	}
+	if _, err := store.RecoverExpiredLeases(ctx, scope, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	job = gateJob(t, ctx, store, scope, exec.ID)
+	if job.Status != JobFailed || !job.CreatedAt.Equal(anchor) {
+		t.Fatalf("limit after restart = %+v", job)
+	}
+	assertUnresolvableGate(t, ctx, store, scope, exec.ID)
 }
 
 func TestMemoryPendingPastDeadlineFailsUnresolvable(t *testing.T) {
@@ -375,10 +387,8 @@ func TestMemoryWaitingGateStillExpires(t *testing.T) {
 	if err != nil || claimed.Step.NodeID != "gate" {
 		t.Fatalf("claim = %s %v", claimed.Step.NodeID, err)
 	}
-	limit, ok := ApprovalRetryLimit(claimed.Job.CreatedAt, time.Time{}, claimed.Step.Input)
-	if !ok {
-		t.Fatal("missing limit")
-	}
+	d, _ := workflow.ApprovalWaitDuration("PT1H")
+	limit := now.Add(d)
 	if _, err := store.WaitJob(ctx, scope, now, WaitJobInput{JobID: claimed.Job.ID, AvailableAt: limit}); err != nil {
 		t.Fatal(err)
 	}
@@ -424,17 +434,21 @@ func TestMemoryRetryLimitFollowsPendingExpiry(t *testing.T) {
 		}
 		assertNotExpired(t, ctx, store, scope, exec.ID)
 	})
-	t.Run("falls back to created_at", func(t *testing.T) {
+	t.Run("falls back to run start", func(t *testing.T) {
 		store, scope, exec, claimed := claimMemoryGate(t, ctx, expiredDownstreamYAML, time.Minute)
 		anchor := claimed.Job.CreatedAt
+		if claimed.Execution.StartedAt == nil {
+			t.Fatal("root gate has no run start")
+		}
+		ready := claimed.Execution.StartedAt.UTC()
 		var closed int
 		store.SetApprovalUnresolvable(func(string, string, time.Time) { closed++ })
-		if _, err := store.RecoverExpiredLeases(ctx, scope, anchor.Add(time.Hour)); err != nil {
+		if _, err := store.RecoverExpiredLeases(ctx, scope, ready.Add(time.Hour)); err != nil {
 			t.Fatal(err)
 		}
 		job := gateJob(t, ctx, store, scope, exec.ID)
 		if job.Status != JobFailed || !job.CreatedAt.Equal(anchor) {
-			t.Fatalf("created_at limit = %+v", job)
+			t.Fatalf("run start limit = %+v", job)
 		}
 		assertUnresolvableGate(t, ctx, store, scope, exec.ID)
 		if closed != 0 {
@@ -483,10 +497,14 @@ func TestMemoryReleaseFollowsPendingExpiry(t *testing.T) {
 		}
 		assertNotExpired(t, ctx, store, scope, exec.ID)
 	})
-	t.Run("falls back to created_at", func(t *testing.T) {
+	t.Run("falls back to run start", func(t *testing.T) {
 		store, scope, _, claimed := claimMemoryGate(t, ctx, shortExpiryGateYAML, 5*time.Minute)
 		anchor := claimed.Job.CreatedAt
-		released, err := store.ReleaseJob(ctx, scope, anchor.Add(30*time.Second), JobActionInput{
+		if claimed.Execution.StartedAt == nil {
+			t.Fatal("root gate has no run start")
+		}
+		ready := claimed.Execution.StartedAt.UTC()
+		released, err := store.ReleaseJob(ctx, scope, ready.Add(time.Second), JobActionInput{
 			JobID: claimed.Job.ID, WorkerID: "edge-worker", FencingToken: claimed.Job.FencingToken,
 			ApprovalTransientRetry: true,
 		})
@@ -494,7 +512,7 @@ func TestMemoryReleaseFollowsPendingExpiry(t *testing.T) {
 			t.Fatal(err)
 		}
 		if released.Job.Status != JobFailed || released.Step.Error["code"] != ReasonRequirementUnresolvable || !released.Job.CreatedAt.Equal(anchor) {
-			t.Fatalf("created_at limit = %+v %+v", released.Job, released.Step.Error)
+			t.Fatalf("run start limit = %+v %+v", released.Job, released.Step.Error)
 		}
 	})
 	t.Run("closes pending at the limit", func(t *testing.T) {
@@ -529,6 +547,259 @@ func TestMemoryReleaseFollowsPendingExpiry(t *testing.T) {
 			t.Fatalf("closed node = %q", closedNode)
 		}
 	})
+}
+
+func TestMemoryRetryLimitFollowsGateReadyTime(t *testing.T) {
+	ctx := context.Background()
+	t.Run("upstream finished_at", func(t *testing.T) {
+		store, scope, exec := startMemoryRun(t, ctx, delayThenGateYAML("PT1H"))
+		created := nodeJob(t, ctx, store, scope, exec.ID, "gate").CreatedAt
+		finish := created.Add(2 * time.Hour)
+		completeMemoryNode(t, ctx, store, scope, "pause", finish)
+		claimMemoryNode(t, ctx, store, scope, "gate", finish, time.Minute)
+		// created_at plus PT1H is already behind this claim. The limit is the
+		// upstream finished_at, so the claim is still inside the window.
+		if _, err := store.RecoverExpiredLeases(ctx, scope, finish.Add(2*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		job := nodeJob(t, ctx, store, scope, exec.ID, "gate")
+		if job.Status != JobQueued || !job.CreatedAt.Equal(created) {
+			t.Fatalf("inside upstream window = %+v", job)
+		}
+		assertNotExpired(t, ctx, store, scope, exec.ID)
+		reclaimed := claimMemoryNode(t, ctx, store, scope, "gate", finish.Add(time.Hour-2*time.Minute), time.Minute)
+		if _, err := store.RecoverExpiredLeases(ctx, scope, finish.Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		job = nodeJob(t, ctx, store, scope, exec.ID, "gate")
+		if job.Status != JobFailed || job.Attempt != reclaimed.Job.Attempt || !job.CreatedAt.Equal(created) {
+			t.Fatalf("at upstream limit = %+v", job)
+		}
+		assertUnresolvableGate(t, ctx, store, scope, exec.ID)
+	})
+	t.Run("root run start", func(t *testing.T) {
+		store, scope, exec := startMemoryRun(t, ctx, expiredDownstreamYAML)
+		created := nodeJob(t, ctx, store, scope, exec.ID, "gate").CreatedAt
+		// The run insert is the anchor. A claim does not move it, and two
+		// hours later is already past PT1H.
+		late := claimMemoryNode(t, ctx, store, scope, "gate", created.Add(2*time.Hour), time.Minute)
+		if _, err := store.RecoverExpiredLeases(ctx, scope, created.Add(2*time.Hour+2*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		job := nodeJob(t, ctx, store, scope, exec.ID, "gate")
+		if job.Status != JobFailed || job.Attempt != late.Job.Attempt || !job.CreatedAt.Equal(created) {
+			t.Fatalf("late claim stays on run start = %+v", job)
+		}
+		assertUnresolvableGate(t, ctx, store, scope, exec.ID)
+
+		store, scope, exec = startMemoryRun(t, ctx, expiredDownstreamYAML)
+		created = nodeJob(t, ctx, store, scope, exec.ID, "gate").CreatedAt
+		claimMemoryNode(t, ctx, store, scope, "gate", created, time.Minute)
+		if _, err := store.RecoverExpiredLeases(ctx, scope, created.Add(2*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		job = nodeJob(t, ctx, store, scope, exec.ID, "gate")
+		if job.Status != JobQueued || !job.CreatedAt.Equal(created) {
+			t.Fatalf("inside run-start window = %+v", job)
+		}
+		_ = claimMemoryNode(t, ctx, store, scope, "gate", created.Add(time.Hour-2*time.Minute), time.Minute)
+		if _, err := store.RecoverExpiredLeases(ctx, scope, created.Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		job = nodeJob(t, ctx, store, scope, exec.ID, "gate")
+		if job.Status != JobFailed || !job.CreatedAt.Equal(created) {
+			t.Fatalf("at run start limit = %+v", job)
+		}
+		assertUnresolvableGate(t, ctx, store, scope, exec.ID)
+	})
+	t.Run("pending expires_at", func(t *testing.T) {
+		store, scope, exec := startMemoryRun(t, ctx, delayThenGateYAML("PT1H"))
+		created := nodeJob(t, ctx, store, scope, exec.ID, "gate").CreatedAt
+		finish := created.Add(2 * time.Hour)
+		completeMemoryNode(t, ctx, store, scope, "pause", finish)
+		claimMemoryNode(t, ctx, store, scope, "gate", finish, time.Minute)
+		expires := finish.Add(3 * time.Hour)
+		var closed int
+		store.SetApprovalPending(func(string, string) (time.Time, bool) { return expires, true })
+		store.SetApprovalUnresolvable(func(string, string, time.Time) { closed++ })
+		// Past the upstream finished_at plus PT1H, still inside expires_at.
+		if _, err := store.RecoverExpiredLeases(ctx, scope, finish.Add(90*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		job := nodeJob(t, ctx, store, scope, exec.ID, "gate")
+		if job.Status != JobWaiting || !job.CreatedAt.Equal(created) || closed != 0 {
+			t.Fatalf("inside expires_at = %+v closed=%d", job, closed)
+		}
+	})
+	t.Run("pending expires_at closes at the limit", func(t *testing.T) {
+		store, scope, exec := startMemoryRun(t, ctx, delayThenGateYAML("PT1H"))
+		created := nodeJob(t, ctx, store, scope, exec.ID, "gate").CreatedAt
+		finish := created.Add(2 * time.Hour)
+		completeMemoryNode(t, ctx, store, scope, "pause", finish)
+		expires := finish.Add(3 * time.Hour)
+		var closedNode string
+		store.SetApprovalPending(func(string, string) (time.Time, bool) { return expires, true })
+		store.SetApprovalUnresolvable(func(_, nodeID string, _ time.Time) { closedNode = nodeID })
+		claimed := claimMemoryNode(t, ctx, store, scope, "gate", expires.Add(-time.Minute), time.Minute)
+		if _, err := store.RecoverExpiredLeases(ctx, scope, expires); err != nil {
+			t.Fatal(err)
+		}
+		job := nodeJob(t, ctx, store, scope, exec.ID, "gate")
+		if job.Status != JobFailed || job.Attempt != claimed.Job.Attempt || !job.CreatedAt.Equal(created) {
+			t.Fatalf("at expires_at = %+v", job)
+		}
+		assertUnresolvableGate(t, ctx, store, scope, exec.ID)
+		if closedNode != "gate" {
+			t.Fatalf("closed node = %q", closedNode)
+		}
+	})
+	t.Run("survives requeue recovery and restart", func(t *testing.T) {
+		store, scope, exec := startMemoryRun(t, ctx, delayThenGateYAML("PT1H"))
+		created := nodeJob(t, ctx, store, scope, exec.ID, "gate").CreatedAt
+		finish := created.Add(2 * time.Hour)
+		completeMemoryNode(t, ctx, store, scope, "pause", finish)
+		pause, _ := nodeStep(t, ctx, store, scope, exec.ID, "pause")
+		if pause.FinishedAt == nil || !pause.FinishedAt.Equal(finish) {
+			t.Fatalf("upstream finished_at = %v", pause.FinishedAt)
+		}
+		claimed := claimMemoryNode(t, ctx, store, scope, "gate", finish, time.Minute)
+		released, err := store.ReleaseJob(ctx, scope, finish, JobActionInput{
+			JobID: claimed.Job.ID, WorkerID: "edge-worker", FencingToken: claimed.Job.FencingToken,
+			ApprovalTransientRetry: true,
+		})
+		if err != nil || released.Job.Status != JobQueued || !released.Job.CreatedAt.Equal(created) {
+			t.Fatalf("requeue = %+v %v", released.Job, err)
+		}
+		claimed = claimMemoryNode(t, ctx, store, scope, "gate", finish.Add(35*time.Second), time.Minute)
+		if _, err := store.RecoverExpiredLeases(ctx, scope, finish.Add(2*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		job := nodeJob(t, ctx, store, scope, exec.ID, "gate")
+		if job.Status != JobQueued || !job.CreatedAt.Equal(created) {
+			t.Fatalf("recovery = %+v", job)
+		}
+		claimed = claimMemoryNode(t, ctx, store, scope, "gate", finish.Add(3*time.Minute), time.Minute)
+		if !claimed.Job.CreatedAt.Equal(created) {
+			t.Fatalf("restart moved created_at to %s", claimed.Job.CreatedAt)
+		}
+		again, _ := nodeStep(t, ctx, store, scope, exec.ID, "pause")
+		if again.FinishedAt == nil || !again.FinishedAt.Equal(finish) {
+			t.Fatalf("finished_at moved to %v", again.FinishedAt)
+		}
+		if _, err := store.RecoverExpiredLeases(ctx, scope, finish.Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		job = nodeJob(t, ctx, store, scope, exec.ID, "gate")
+		if job.Status != JobFailed || !job.CreatedAt.Equal(created) {
+			t.Fatalf("limit after restart = %+v", job)
+		}
+		assertUnresolvableGate(t, ctx, store, scope, exec.ID)
+	})
+}
+
+func startMemoryRun(t *testing.T, ctx context.Context, src string) (*Memory, isolation.Scope, Execution) {
+	t.Helper()
+	store := NewMemory()
+	scope, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	norm := mustNormalize(t, src)
+	wf, _, err := store.Create(ctx, scope, CreateInput{
+		NormalizedYAML: norm.NormalizedYAML, Digest: norm.Digest, Summary: norm.Summary,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ver, err := store.Publish(ctx, scope, wf.ID, PublishInput{ExpectedRevision: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exec, err := store.StartExecution(ctx, scope, ver.WorkflowID, StartInput{VersionID: ver.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store, scope, exec
+}
+
+func claimMemoryNode(t *testing.T, ctx context.Context, store *Memory, scope isolation.Scope, node string, now time.Time, lease time.Duration) DispatchResult {
+	t.Helper()
+	claimed, err := store.ClaimJob(ctx, scope, now, ClaimInput{WorkerID: "edge-worker", Lease: lease})
+	if err != nil || claimed.Step.NodeID != node {
+		t.Fatalf("claim %s = %s %v", node, claimed.Step.NodeID, err)
+	}
+	return claimed
+}
+
+func completeMemoryNode(t *testing.T, ctx context.Context, store *Memory, scope isolation.Scope, node string, now time.Time) {
+	t.Helper()
+	claimed := claimMemoryNode(t, ctx, store, scope, node, now, 5*time.Minute)
+	if _, err := store.CompleteJob(ctx, scope, now, JobActionInput{
+		JobID: claimed.Job.ID, WorkerID: "edge-worker", FencingToken: claimed.Job.FencingToken,
+		Output: map[string]any{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func nodeJob(t *testing.T, ctx context.Context, store *Memory, scope isolation.Scope, executionID, node string) ExecutionJob {
+	t.Helper()
+	step, ok := nodeStep(t, ctx, store, scope, executionID, node)
+	if !ok {
+		t.Fatalf("missing step %s", node)
+	}
+	jobs, err := store.ListJobs(ctx, scope, executionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, job := range jobs {
+		if job.ExecutionStepID == step.ID {
+			return job
+		}
+	}
+	t.Fatalf("missing job %s", node)
+	return ExecutionJob{}
+}
+
+func nodeStep(t *testing.T, ctx context.Context, store *Memory, scope isolation.Scope, executionID, node string) (ExecutionStep, bool) {
+	t.Helper()
+	steps, err := store.ListSteps(ctx, scope, executionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range steps {
+		if step.NodeID == node {
+			return step, true
+		}
+	}
+	return ExecutionStep{}, false
+}
+
+func delayThenGateYAML(expires string) string {
+	return `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: delay-then-gate
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: pause
+      type: flow.delay
+      name: Pause
+      with:
+        duration: PT2H
+    - id: gate
+      type: flow.approval
+      name: Gate
+      with:
+        approverRole: admin
+        expiresIn: ` + expires + `
+  edges:
+    - from: pause.result
+      to: gate.request
+`
 }
 
 func claimMemoryGate(t *testing.T, ctx context.Context, src string, lease time.Duration) (*Memory, isolation.Scope, Execution, DispatchResult) {
