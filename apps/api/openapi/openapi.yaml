@@ -3189,7 +3189,9 @@ paths:
         The delete handler refuses any embed session with 403 forbidden before it reads permissions, capabilities, or ownership. That includes a session minted earlier whose stored caps still list workflow.delete. capabilities.delete is false for every embed session. Ownership never adds a permission an embed session does not already hold.
         workflow.delete cannot be minted on an embed assertion (ErrCapability, the same rejection as platform.administer). It stays on the editor and admin workspace roles.
         The browser identity proxy refuses DELETE /workflows/{workflowId} for an embed session with 403. First-party browser DELETE stays allowlisted.
-        Queued or running executions return 409 workflow_has_active_executions and are not canceled. Waiting and pinned executions do not block.
+        A non-terminal run with a job in queued, claimed, or running returns 409 workflow_has_active_executions and is not changed. That includes a gate parked while a sibling branch still has a queued or running job. Waiting, pending, and blocked work does not block.
+        Delete of a parked run, in that same transaction, cancels its waiting, pending, and blocked steps and jobs with error code workflow_deleted, cancels a flow.delay timer, closes pending approvals as canceled with closeReason workflow_deleted and no decider, and fails the run with workflow_deleted. That frees the concurrency slot.
+        Workflow detail includes deleteImpact for a caller who can delete: waitingRuns, blocked, and inFlightRuns. It is omitted for viewers and embed sessions. waitingRuns is how many parked runs delete will stop.
         A waiting run that later resumes or is requeued after the workflow is deleted is failed with reason workflow_deleted. No further steps run. Step retry returns 409 execution_not_retryable with reason workflow_deleted. Approval decide on that run returns 409 approval_closed and does not record the decision.
         Auth class: authenticated. Identity proxy: browser.
         Responses never include secrets, credentials, tokens, private keys, or vault material.
@@ -3203,7 +3205,7 @@ paths:
         "404":
           description: No workflow.view, unknown id, already deleted, or another tenant. Same not-found problem as a missing workflow.
         "409":
-          description: workflow_has_active_executions when a queued or running execution exists.
+          description: workflow_has_active_executions when a non-terminal run has a job in queued, claimed, or running.
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "500":
@@ -7828,6 +7830,35 @@ components:
           properties:
             delete:
               type: boolean
+        deleteImpact:
+          $ref: "#/components/schemas/WorkflowDeleteImpact"
+    WorkflowDeleteImpact:
+      type: object
+      description: |
+        Read-only counts on workflow detail, next to capabilities.delete.
+        Present only for a caller who can delete. Omitted for viewers, for
+        embed sessions, and on list and create responses.
+        Computed by the same classification DELETE uses.
+      required: [waitingRuns, blocked, inFlightRuns]
+      properties:
+        waitingRuns:
+          type: integer
+          minimum: 0
+          description: |
+            Non-terminal runs whose unfinished work is only waiting, pending,
+            or blocked. Delete stops them and marks each run failed with
+            workflow_deleted. The confirmation text is "N runs waiting on
+            approval or a delay will be stopped and marked failed".
+        blocked:
+          type: boolean
+          description: True when delete would return 409 workflow_has_active_executions.
+        inFlightRuns:
+          type: integer
+          minimum: 0
+          description: |
+            Non-terminal runs that have a job in queued, claimed, or running.
+            A gate parked beside a sibling queued or running job counts here,
+            not in waitingRuns.
     WorkflowList:
       type: object
       required: [items]

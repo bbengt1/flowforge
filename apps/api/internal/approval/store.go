@@ -3,14 +3,13 @@ package approval
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"strings"
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/page"
+	"github.com/bbengt1/flowforge/apps/api/internal/parkedapproval"
 	"github.com/bbengt1/flowforge/apps/api/internal/policy"
 )
 
@@ -193,23 +192,11 @@ type Store interface {
 // BindingFingerprint is the immutable bind of version + target + policy + operation.
 // Pass a non-empty executionID only for mid-run waits so pre-run fingerprints stay stable.
 func BindingFingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID string, executionID ...string) string {
-	parts := []string{
-		strings.TrimSpace(workspaceID),
-		strings.TrimSpace(workflowVersionID),
-		strings.TrimSpace(workflowDigest),
-		strings.TrimSpace(targetVersionID),
-		strings.TrimSpace(policyVersionID),
-		strings.TrimSpace(policyDigest),
-		strings.TrimSpace(operation),
-		strings.TrimSpace(nodeID),
-	}
+	exec := ""
 	if len(executionID) > 0 {
-		if exec := strings.TrimSpace(executionID[0]); exec != "" {
-			parts = append(parts, exec)
-		}
+		exec = executionID[0]
 	}
-	sum := sha256.Sum256([]byte(strings.Join(parts, "\x1f")))
-	return "sha256:" + hex.EncodeToString(sum[:])
+	return parkedapproval.Fingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID, exec)
 }
 
 // Freshness reports whether a record is still usable against current heads.

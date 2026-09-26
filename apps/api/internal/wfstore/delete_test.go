@@ -101,6 +101,9 @@ func TestMemoryDeleteBlocksQueuedAndRunningOnly(t *testing.T) {
 	}
 	held := store2.executions[exec.ID]
 	held.record.Status = ExecutionRunning
+	for i := range held.jobs {
+		held.jobs[i].Status = JobRunning
+	}
 	store2.executions[exec.ID] = held
 	if _, err := store2.Delete(ctx, scope, running.WorkflowID); !errors.Is(err, ErrActiveExecutions) {
 		t.Fatalf("running delete = %v", err)
@@ -113,9 +116,29 @@ func TestMemoryDeleteBlocksQueuedAndRunningOnly(t *testing.T) {
 	}
 	held = store.executions[exec.ID]
 	held.record.Status = ExecutionWaiting
+	for i := range held.jobs {
+		held.jobs[i].Status = JobWaiting
+	}
+	for i := range held.steps {
+		held.steps[i].Status = ExecutionWaiting
+	}
 	store.executions[exec.ID] = held
 	if _, err := store.Delete(ctx, scope, waiting.WorkflowID); err != nil {
 		t.Fatalf("waiting delete = %v", err)
+	}
+	closed := store.executions[exec.ID]
+	if closed.record.Status != ExecutionFailed {
+		t.Fatalf("parked run = %s", closed.record.Status)
+	}
+	for _, job := range closed.jobs {
+		if job.Status != JobCanceled {
+			t.Fatalf("job = %s", job.Status)
+		}
+	}
+	for _, step := range closed.steps {
+		if step.Status != ExecutionCanceled || step.Error["code"] != ReasonWorkflowDeleted {
+			t.Fatalf("step = %s %v", step.Status, step.Error)
+		}
 	}
 }
 

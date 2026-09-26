@@ -13,15 +13,41 @@ import (
 // flowforge_app. Boot must repair that before SET ROLE on checkout.
 const ensureAppRoleSQL = `
 DO $$
+DECLARE
+    app_login boolean;
+    app_super boolean;
+    app_bypass boolean;
+    app_inherit boolean;
+    caller_super boolean;
+    caller_bypass boolean;
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'flowforge_app') THEN
+    SELECT rolcanlogin, rolsuper, rolbypassrls, rolinherit
+      INTO app_login, app_super, app_bypass, app_inherit
+      FROM pg_roles
+     WHERE rolname = 'flowforge_app';
+    IF NOT FOUND THEN
         CREATE ROLE flowforge_app NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT;
-    ELSE
+    ELSIF app_login OR app_super OR app_bypass OR app_inherit THEN
+        SELECT rolsuper, rolbypassrls
+          INTO caller_super, caller_bypass
+          FROM pg_roles
+         WHERE rolname = current_user;
+        IF app_super AND NOT caller_super THEN
+            RAISE EXCEPTION 'flowforge_app has SUPERUSER and migration role % cannot remove it', current_user
+                USING ERRCODE = '42501';
+        END IF;
+        IF app_bypass AND NOT caller_super AND NOT caller_bypass THEN
+            RAISE EXCEPTION 'flowforge_app has BYPASSRLS and migration role % cannot remove it; run migrations as a superuser or a role with BYPASSRLS', current_user
+                USING ERRCODE = '42501';
+        END IF;
         ALTER ROLE flowforge_app NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT;
     END IF;
-    GRANT flowforge_app TO CURRENT_USER;
+    IF NOT pg_has_role(current_user, 'flowforge_app', 'MEMBER') THEN
+        GRANT flowforge_app TO CURRENT_USER;
+    END IF;
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'flowforge')
-       AND CURRENT_USER <> 'flowforge' THEN
+       AND current_user <> 'flowforge'
+       AND NOT pg_has_role('flowforge', 'flowforge_app', 'MEMBER') THEN
         GRANT flowforge_app TO flowforge;
     END IF;
 END
@@ -73,6 +99,10 @@ BEGIN
     IF to_regprocedure('app.backfill_close_stale_approvals()') IS NOT NULL THEN
         REVOKE ALL ON FUNCTION app.backfill_close_stale_approvals() FROM PUBLIC;
         REVOKE ALL ON FUNCTION app.backfill_close_stale_approvals() FROM flowforge_app;
+    END IF;
+    IF to_regprocedure('app.backfill_settle_stuck_runs()') IS NOT NULL THEN
+        REVOKE ALL ON FUNCTION app.backfill_settle_stuck_runs() FROM PUBLIC;
+        REVOKE ALL ON FUNCTION app.backfill_settle_stuck_runs() FROM flowforge_app;
     END IF;
 END
 $$;

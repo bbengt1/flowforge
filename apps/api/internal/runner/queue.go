@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/approval"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
@@ -185,6 +186,16 @@ func (q *StoreQueue) Fail(ctx context.Context, ws Workspace, job Job, failure ma
 }
 
 func (q *StoreQueue) Park(ctx context.Context, ws Workspace, job Job, until time.Time) error {
+	return q.park(ctx, ws, job, until, nil)
+}
+
+// ParkApproval parks a gate and inserts its approval in that same transaction.
+// The approval expires_at is until, the wait deadline.
+func (q *StoreQueue) ParkApproval(ctx context.Context, ws Workspace, job Job, until time.Time, in approval.CreateInput) error {
+	return q.park(ctx, ws, job, until, &in)
+}
+
+func (q *StoreQueue) park(ctx context.Context, ws Workspace, job Job, until time.Time, seed *approval.CreateInput) error {
 	scope, err := scopeFor(ws)
 	if err != nil {
 		return err
@@ -192,6 +203,7 @@ func (q *StoreQueue) Park(ctx context.Context, ws Workspace, job Job, until time
 	_, err = q.Workflows.WaitJob(ctx, scope, q.now(), wfstore.WaitJobInput{
 		JobID:       job.Job.ID,
 		AvailableAt: until,
+		Approval:    parkedApproval(seed),
 	})
 	return err
 }
@@ -202,6 +214,32 @@ func action(q *StoreQueue, job Job) wfstore.JobActionInput {
 		WorkerID:     q.WorkerID,
 		FencingToken: job.Job.FencingToken,
 		Lease:        q.Lease,
+	}
+}
+
+func parkedApproval(in *approval.CreateInput) *wfstore.ParkedApproval {
+	if in == nil {
+		return nil
+	}
+	req := in.Requirement
+	return &wfstore.ParkedApproval{
+		WorkflowID:        in.WorkflowID,
+		WorkflowVersionID: in.WorkflowVersionID,
+		WorkflowDigest:    in.WorkflowDigest,
+		ExecutionID:       in.ExecutionID,
+		RequestedBy:       in.RequestedBy,
+		NodeID:            req.NodeID,
+		NodeName:          req.NodeName,
+		Operation:         req.Operation,
+		ApproverRole:      req.ApproverRole,
+		TargetKind:        req.TargetKind,
+		TargetID:          req.TargetID,
+		TargetVersionID:   req.TargetVersionID,
+		TargetDigest:      req.TargetDigest,
+		PolicyResourceID:  req.PolicyResourceID,
+		PolicyVersionID:   req.PolicyVersionID,
+		PolicyDigest:      req.PolicyDigest,
+		PolicyRevision:    req.PolicyRevision,
 	}
 }
 

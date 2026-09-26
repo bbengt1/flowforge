@@ -553,11 +553,14 @@ func (m *Memory) ResumeWait(ctx context.Context, scope isolation.Scope, now time
 		if job.Status == JobSucceeded {
 			return nil
 		}
-		if job.Status != JobWaiting {
-			return ErrNotClaimable
-		}
+		// A tombstone is checked before the waiting-status check so a gate
+		// delete already canceled still returns ErrWorkflowDeleted and does
+		// not write a port. That matches the postgres resume path.
 		if err := m.guardLiveLocked(ctx, scope, now, exec.record.WorkflowID, exec.record.ID); err != nil {
 			return err
+		}
+		if job.Status != JobWaiting {
+			return ErrNotClaimable
 		}
 		job.Status = JobSucceeded
 		job.UpdatedAt = now

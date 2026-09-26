@@ -69,6 +69,9 @@ func (m *Memory) List(_ context.Context, scope isolation.Scope, filter Filter) (
 		if !matchFilter(row.record, filter) {
 			continue
 		}
+		if filter.Status == StatusPending && !row.record.ExpiresAt.After(time.Now().UTC()) {
+			continue
+		}
 		out = append(out, cloneRecord(row.record))
 	}
 	if filter.Page.Bound {

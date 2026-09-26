@@ -58,8 +58,9 @@ var (
 	ErrFolderNotEmpty             = errors.New("folder is not empty")
 	// ErrConcurrency is the per-workspace cap on non-terminal executions.
 	ErrConcurrency = errors.New("execution concurrency limit exceeded")
-	// ErrActiveExecutions blocks soft-delete while a queued or running
-	// execution exists. Waiting and pinned rows do not block.
+	// ErrActiveExecutions blocks soft-delete while any non-terminal run
+	// of the workflow has a job in queued, claimed, or running. Waiting,
+	// pending, and blocked work does not block. Pinned rows do not block.
 	ErrActiveExecutions = errors.New("workflow has active executions")
 	// ErrSlugReserved is a tombstone holding the slug. A live slug is ErrConflict.
 	ErrSlugReserved = errors.New("workflow slug is reserved")
@@ -617,10 +618,37 @@ type DispatchResult struct {
 	Recovered int
 }
 
+// ParkedApproval is the approval inserted in the same transaction that parks
+// a flow.approval gate. expires_at is the wait deadline, not this struct.
+type ParkedApproval struct {
+	WorkflowID        string
+	WorkflowVersionID string
+	WorkflowDigest    string
+	ExecutionID       string
+	RequestedBy       string
+	NodeID            string
+	NodeName          string
+	Operation         string
+	ApproverRole      string
+	TargetKind        string
+	TargetID          string
+	TargetVersionID   string
+	TargetDigest      string
+	PolicyResourceID  string
+	PolicyVersionID   string
+	PolicyDigest      string
+	PolicyRevision    int
+}
+
 // WaitJobInput parks a claimed or queued job without a worker lease.
+// Approval, when set on a flow.approval step, is inserted in the same
+// transaction. Its expires_at is the wait deadline (AvailableAt, or the
+// job's available_at when the job is already waiting), not a recomputed
+// clock offset.
 type WaitJobInput struct {
 	JobID       string
 	AvailableAt time.Time
+	Approval    *ParkedApproval
 }
 
 // ResumeWaitInput completes a waiting job onto an output port.
@@ -670,7 +698,11 @@ type Store interface {
 	Get(ctx context.Context, scope isolation.Scope, id string) (Workflow, error)
 	// Delete soft-deletes one workflow. It unpublishes, disables triggers and
 	// schedules, and writes workflow.deleted in the same transaction.
+	// Parked runs are failed in that transaction. An in-flight job returns
+	// ErrActiveExecutions and changes nothing.
 	Delete(ctx context.Context, scope isolation.Scope, id string) (DeleteResult, error)
+	// DeleteImpact classifies open runs with the same function Delete uses.
+	DeleteImpact(ctx context.Context, scope isolation.Scope, id string) (DeleteImpact, error)
 	SetWorkflowFolder(ctx context.Context, scope isolation.Scope, workflowID, folderID string) (Workflow, error)
 	CreateFolder(ctx context.Context, scope isolation.Scope, in CreateFolderInput) (Folder, error)
 	ListFolders(ctx context.Context, scope isolation.Scope) ([]Folder, error)

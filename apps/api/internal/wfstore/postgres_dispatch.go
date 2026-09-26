@@ -10,6 +10,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
+	"github.com/bbengt1/flowforge/apps/api/internal/parkedapproval"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/jackc/pgx/v5"
@@ -699,6 +700,13 @@ func (p *Postgres) WaitJob(ctx context.Context, scope isolation.Scope, now time.
 		return DispatchResult{}, err
 	}
 	if job.Status == JobWaiting {
+		step, err := scanStep(tx.QueryRow(ctx, `SELECT `+stepColumns+` FROM execution_steps WHERE id = $1::uuid`, job.ExecutionStepID))
+		if err != nil {
+			return DispatchResult{}, err
+		}
+		if err := ensureParkedApprovalTx(ctx, tx, scope, in, job.AvailableAt, job.ExecutionID, step.NodeType); err != nil {
+			return DispatchResult{}, err
+		}
 		return p.dispatchSnapshotTx(ctx, tx, scope, now, job)
 	}
 	if job.Status != JobClaimed && job.Status != JobRunning && job.Status != JobQueued {
@@ -728,6 +736,9 @@ func (p *Postgres) WaitJob(ctx context.Context, scope isolation.Scope, now time.
 	if err := rollupExecutionTx(ctx, tx, job.ExecutionID, now); err != nil {
 		return DispatchResult{}, err
 	}
+	if err := ensureParkedApprovalTx(ctx, tx, scope, in, avail, job.ExecutionID, step.NodeType); err != nil {
+		return DispatchResult{}, err
+	}
 	if _, err := insertAuditTx(ctx, tx, scope, AuditWrite{
 		Action:       "job.wait",
 		ResourceType: "execution",
@@ -750,6 +761,71 @@ func (p *Postgres) WaitJob(ctx context.Context, scope isolation.Scope, now time.
 		Job:       job,
 		Binding:   buildBinding(scope, exec, step, job, now.Add(DefaultJobBindingTTL), now),
 	}, nil
+}
+
+// ensureParkedApprovalTx inserts the approval in the park transaction.
+// expires_at is the wait deadline already stored on the job, not a new
+// computation from the caller's clock.
+func ensureParkedApprovalTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, in WaitJobInput, deadline time.Time, executionID, nodeType string) error {
+	if in.Approval == nil || nodeType != "flow.approval" {
+		return nil
+	}
+	if deadline.IsZero() {
+		return ErrInvalid
+	}
+	exec, err := getExecutionTx(ctx, tx, executionID)
+	if err != nil {
+		return err
+	}
+	seed := *in.Approval
+	if seed.WorkflowID == "" {
+		seed.WorkflowID = exec.WorkflowID
+	}
+	if seed.WorkflowVersionID == "" {
+		seed.WorkflowVersionID = exec.WorkflowVersionID
+	}
+	if seed.WorkflowDigest == "" {
+		seed.WorkflowDigest = exec.WorkflowDigest
+	}
+	if seed.ExecutionID == "" {
+		seed.ExecutionID = exec.ID
+	}
+	if seed.RequestedBy == "" {
+		seed.RequestedBy = exec.RequestedBy
+	}
+	if strings.TrimSpace(seed.NodeID) == "" {
+		return ErrInvalid
+	}
+	err = parkedapproval.Insert(ctx, tx, parkedapproval.Pending{
+		WorkspaceID:       scope.WorkspaceID(),
+		ActorID:           scope.ActorID(),
+		WorkflowID:        seed.WorkflowID,
+		WorkflowVersionID: seed.WorkflowVersionID,
+		WorkflowDigest:    seed.WorkflowDigest,
+		ExecutionID:       seed.ExecutionID,
+		RequestedBy:       seed.RequestedBy,
+		NodeID:            seed.NodeID,
+		NodeName:          seed.NodeName,
+		Operation:         seed.Operation,
+		ApproverRole:      seed.ApproverRole,
+		TargetKind:        seed.TargetKind,
+		TargetID:          seed.TargetID,
+		TargetVersionID:   seed.TargetVersionID,
+		TargetDigest:      seed.TargetDigest,
+		PolicyResourceID:  seed.PolicyResourceID,
+		PolicyVersionID:   seed.PolicyVersionID,
+		PolicyDigest:      seed.PolicyDigest,
+		PolicyRevision:    seed.PolicyRevision,
+		ExpiresAt:         deadline,
+	})
+	if errors.Is(err, parkedapproval.ErrInvalid) {
+		return ErrInvalid
+	}
+	return mapDBErr(err)
+}
+
+func expireParkedGateTx(ctx context.Context, tx pgx.Tx, executionID, nodeID string, now time.Time) error {
+	return mapDBErr(parkedapproval.Expire(ctx, tx, executionID, nodeID, now))
 }
 
 func (p *Postgres) ResumeWait(ctx context.Context, scope isolation.Scope, now time.Time, in ResumeWaitInput) (DispatchResult, error) {
@@ -819,6 +895,11 @@ func (p *Postgres) ResumeWait(ctx context.Context, scope isolation.Scope, now ti
 	}
 	if err := resolveOutgoingTx(ctx, tx, job.ExecutionID, step.NodeID, emittedPorts(step.NodeType, step.Output), now); err != nil {
 		return DispatchResult{}, err
+	}
+	if port == "expired" && step.NodeType == "flow.approval" {
+		if err := expireParkedGateTx(ctx, tx, job.ExecutionID, step.NodeID, now); err != nil {
+			return DispatchResult{}, err
+		}
 	}
 	if err := rollupExecutionTx(ctx, tx, job.ExecutionID, now); err != nil {
 		return DispatchResult{}, err
@@ -1344,6 +1425,11 @@ func resumeOrStopDueWaits(ctx context.Context, tx pgx.Tx, scope isolation.Scope,
 			}
 			if err := resolveOutgoingTx(ctx, tx, row.exec, step.NodeID, emittedPorts(step.NodeType, step.Output), now); err != nil {
 				return 0, 0, err
+			}
+			if port == "expired" {
+				if err := expireParkedGateTx(ctx, tx, row.exec, step.NodeID, now); err != nil {
+					return 0, 0, err
+				}
 			}
 			expPairs = append(expPairs, recoverPair{exec: row.exec, step: row.step})
 			resumed++

@@ -451,6 +451,32 @@ func InvalidateApprovalsForResource(s *core.Server, ctx context.Context, scope i
 	}
 }
 
+func parkedApprovalInput(in *approval.CreateInput) *wfstore.ParkedApproval {
+	if in == nil {
+		return nil
+	}
+	req := in.Requirement
+	return &wfstore.ParkedApproval{
+		WorkflowID:        in.WorkflowID,
+		WorkflowVersionID: in.WorkflowVersionID,
+		WorkflowDigest:    in.WorkflowDigest,
+		ExecutionID:       in.ExecutionID,
+		RequestedBy:       in.RequestedBy,
+		NodeID:            req.NodeID,
+		NodeName:          req.NodeName,
+		Operation:         req.Operation,
+		ApproverRole:      req.ApproverRole,
+		TargetKind:        req.TargetKind,
+		TargetID:          req.TargetID,
+		TargetVersionID:   req.TargetVersionID,
+		TargetDigest:      req.TargetDigest,
+		PolicyResourceID:  req.PolicyResourceID,
+		PolicyVersionID:   req.PolicyVersionID,
+		PolicyDigest:      req.PolicyDigest,
+		PolicyRevision:    req.PolicyRevision,
+	}
+}
+
 func ParkApprovalClaim(s *core.Server, ctx context.Context, scope isolation.Scope, result wfstore.DispatchResult) (wfstore.DispatchResult, error) {
 	if result.Step.NodeType != "flow.approval" || s.Workflows == nil {
 		return result, nil
@@ -471,22 +497,31 @@ func ParkApprovalClaim(s *core.Server, ctx context.Context, scope isolation.Scop
 			break
 		}
 	}
-	waited, err := s.Workflows.WaitJob(ctx, scope, s.Clock().UTC(), wfstore.WaitJobInput{
-		JobID:       result.Job.ID,
-		AvailableAt: expires,
-	})
-	if err != nil {
-		return result, err
-	}
-	if s.Approvals != nil && req != nil {
-		_, _ = s.Approvals.Create(ctx, scope, approval.CreateInput{
+	var seed *approval.CreateInput
+	if req != nil {
+		copied := *req
+		copied.ExpiresAt = expires
+		seed = &approval.CreateInput{
 			WorkflowID:        result.Execution.WorkflowID,
 			WorkflowVersionID: result.Execution.WorkflowVersionID,
 			WorkflowDigest:    result.Execution.WorkflowDigest,
 			ExecutionID:       result.Execution.ID,
 			RequestedBy:       result.Execution.RequestedBy,
-			Requirement:       *req,
-		})
+			Requirement:       copied,
+		}
+	}
+	waited, err := s.Workflows.WaitJob(ctx, scope, s.Clock().UTC(), wfstore.WaitJobInput{
+		JobID:       result.Job.ID,
+		AvailableAt: expires,
+		Approval:    parkedApprovalInput(seed),
+	})
+	if err != nil {
+		return result, err
+	}
+	// Memory has no shared transaction with the approval table. Postgres
+	// inserts the row inside WaitJob and copies expires_at from the deadline.
+	if _, mem := s.Workflows.(*wfstore.Memory); mem && s.Approvals != nil && seed != nil {
+		_, _ = s.Approvals.Create(ctx, scope, *seed)
 	}
 	waited.Recovered = result.Recovered
 	return waited, nil
@@ -509,6 +544,16 @@ func SyncWaitingApprovals(s *core.Server, ctx context.Context, scope isolation.S
 		if evalErr != nil {
 			continue
 		}
+		jobs, jobErr := s.Workflows.ListJobs(ctx, scope, exec.ID)
+		if jobErr != nil {
+			continue
+		}
+		deadlineByStep := map[string]time.Time{}
+		for _, job := range jobs {
+			if job.Status == wfstore.JobWaiting && !job.AvailableAt.IsZero() {
+				deadlineByStep[job.ExecutionStepID] = job.AvailableAt
+			}
+		}
 		for _, step := range steps {
 			if step.NodeType != "flow.approval" || step.Status != wfstore.ExecutionWaiting {
 				continue
@@ -516,6 +561,9 @@ func SyncWaitingApprovals(s *core.Server, ctx context.Context, scope isolation.S
 			for _, req := range eval.Requirements {
 				if req.NodeID != step.NodeID || !req.Wait {
 					continue
+				}
+				if deadline, ok := deadlineByStep[step.ID]; ok {
+					req.ExpiresAt = deadline
 				}
 				_, _ = s.Approvals.Create(ctx, scope, approval.CreateInput{
 					WorkflowID:        exec.WorkflowID,

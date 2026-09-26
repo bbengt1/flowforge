@@ -2614,6 +2614,35 @@ components:
           properties:
             delete:
               type: boolean
+        deleteImpact:
+          $ref: "#/components/schemas/WorkflowDeleteImpact"
+    WorkflowDeleteImpact:
+      type: object
+      description: |
+        Read-only counts on workflow detail, next to capabilities.delete.
+        Present only for a caller who can delete. Omitted for viewers, for
+        embed sessions, and on list and create responses.
+        Computed by the same classification DELETE uses.
+      required: [waitingRuns, blocked, inFlightRuns]
+      properties:
+        waitingRuns:
+          type: integer
+          minimum: 0
+          description: |
+            Non-terminal runs whose unfinished work is only waiting, pending,
+            or blocked. Delete stops them and marks each run failed with
+            workflow_deleted. The confirmation text is "N runs waiting on
+            approval or a delay will be stopped and marked failed".
+        blocked:
+          type: boolean
+          description: True when delete would return 409 workflow_has_active_executions.
+        inFlightRuns:
+          type: integer
+          minimum: 0
+          description: |
+            Non-terminal runs that have a job in queued, claimed, or running.
+            A gate parked beside a sibling queued or running job counts here,
+            not in waitingRuns.
     WorkflowList:
       type: object
       required: [items]

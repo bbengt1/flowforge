@@ -177,7 +177,7 @@ func (r *Runner) claimOne(ctx context.Context, ws Workspace) (bool, error) {
 	}
 	ctx, span := observability.Continue(ctx, job.Job.TraceParent, job.Job.TraceState, "runner.job")
 	defer span.End()
-	if job.Job.Status == wfstore.JobWaiting || job.Step.NodeType == "flow.approval" {
+	if job.Step.NodeType == "flow.approval" {
 		until, decision := approvalDeadline(job.Step, r.now())
 		if decision.Fail {
 			if err := r.queue.Fail(ctx, ws, *job, decision.Error); err != nil {
@@ -186,7 +186,14 @@ func (r *Runner) claimOne(ctx context.Context, ws Workspace) (bool, error) {
 			r.log.Info("production runner failed job", "job_id", job.Job.ID, "node_type", job.Step.NodeType, "code", decision.Error["code"])
 			return true, nil
 		}
-		if err := r.queue.Park(ctx, ws, *job, until); err != nil {
+		if err := r.parkApproval(ctx, ws, *job, until); err != nil {
+			return true, err
+		}
+		r.log.Info("production runner parked job", "job_id", job.Job.ID, "node_type", job.Step.NodeType)
+		return true, nil
+	}
+	if job.Job.Status == wfstore.JobWaiting {
+		if err := r.queue.Park(ctx, ws, *job, time.Time{}); err != nil {
 			return true, err
 		}
 		r.log.Info("production runner parked job", "job_id", job.Job.ID, "node_type", job.Step.NodeType)

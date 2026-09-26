@@ -41,18 +41,29 @@ func (p *Postgres) Delete(ctx context.Context, scope isolation.Scope, id string)
 	}
 	runWorkflowRowLockHook(ctx)
 
-	var active bool
-	if err := tx.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM executions
-			WHERE workflow_id = $1::uuid
-			  AND status IN ('queued', 'running')
-		)
-	`, id).Scan(&active); err != nil {
-		return DeleteResult{}, mapDBErr(err)
+	openIDs, err := openExecutionIDsTx(ctx, tx, id)
+	if err != nil {
+		return DeleteResult{}, err
 	}
-	if active {
+	// Workflow row is already locked. Execution rows follow, sorted, before
+	// any job, step, or approval update. That matches the workflow-first
+	// order used by claim recovery and resume.
+	if err := lockExecutionsSorted(ctx, tx, openIDs); err != nil {
+		return DeleteResult{}, err
+	}
+	runs, err := loadOpenRunsTx(ctx, tx, openIDs)
+	if err != nil {
+		return DeleteResult{}, err
+	}
+	impact, parked := classifyDeleteRuns(runs)
+	if impact.Blocked {
 		return DeleteResult{}, ErrActiveExecutions
+	}
+	now := time.Now().UTC()
+	for _, executionID := range parked {
+		if err := closeParkedRunTx(ctx, tx, scope, now, executionID); err != nil {
+			return DeleteResult{}, err
+		}
 	}
 
 	tag, err := tx.Exec(ctx, `
@@ -110,9 +121,140 @@ func (p *Postgres) Delete(ctx context.Context, scope isolation.Scope, id string)
 	return DeleteResult{ID: id, Name: name, Published: published}, nil
 }
 
-// lockLiveWorkflow takes the workflow row lock used by run start.
-// A missing or tombstoned row is ErrNotFound. The hook runs only after the
-// live row is locked and before the caller mutates.
+// DeleteImpact classifies open runs with the same function Delete uses.
+// It does not lock or change rows.
+func (p *Postgres) DeleteImpact(ctx context.Context, scope isolation.Scope, id string) (DeleteImpact, error) {
+	if scope.Zero() {
+		return DeleteImpact{}, ErrNoScope
+	}
+	if !authz.ValidUUID(id) {
+		return DeleteImpact{}, ErrNotFound
+	}
+	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
+	if err != nil {
+		return DeleteImpact{}, mapDBErr(err)
+	}
+	defer tx.Rollback(ctx)
+	var deleted bool
+	err = tx.QueryRow(ctx, `
+		SELECT deleted_at IS NOT NULL FROM workflows WHERE id = $1::uuid
+	`, id).Scan(&deleted)
+	if err != nil {
+		return DeleteImpact{}, mapDBErr(err)
+	}
+	if deleted {
+		return DeleteImpact{}, ErrNotFound
+	}
+	openIDs, err := openExecutionIDsTx(ctx, tx, id)
+	if err != nil {
+		return DeleteImpact{}, err
+	}
+	runs, err := loadOpenRunsTx(ctx, tx, openIDs)
+	if err != nil {
+		return DeleteImpact{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return DeleteImpact{}, mapDBErr(err)
+	}
+	impact, _ := classifyDeleteRuns(runs)
+	return impact, nil
+}
+
+func openExecutionIDsTx(ctx context.Context, tx pgx.Tx, workflowID string) ([]string, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT id::text FROM executions
+		WHERE workflow_id = $1::uuid
+		  AND status IN ('queued', 'running', 'waiting')
+		ORDER BY id
+	`, workflowID)
+	if err != nil {
+		return nil, mapDBErr(err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, mapDBErr(err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapDBErr(err)
+	}
+	return ids, nil
+}
+
+func loadOpenRunsTx(ctx context.Context, tx pgx.Tx, ids []string) ([]openRun, error) {
+	runs := make([]openRun, 0, len(ids))
+	for _, id := range ids {
+		exec, err := getExecutionTx(ctx, tx, id)
+		if err != nil {
+			return nil, err
+		}
+		steps, err := loadStepsTx(ctx, tx, id)
+		if err != nil {
+			return nil, err
+		}
+		jobs, err := loadJobsTx(ctx, tx, id)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, openRun{id: id, jobs: jobs, steps: steps, status: exec.Status})
+	}
+	return runs, nil
+}
+
+// closeParkedRunTx fails one run that has no job in flight. Waiting, pending,
+// and blocked steps and jobs become canceled with workflow_deleted, which
+// also cancels a flow.delay timer (the waiting job). The run ends failed,
+// the same terminal state as a resume that finds the workflow gone, so the
+// concurrency slot is free. Pending approvals close in this transaction.
+func closeParkedRunTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now time.Time, executionID string) error {
+	errRaw, err := marshalObject(workflowDeletedStepError())
+	if err != nil {
+		return ErrInvalid
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE execution_jobs
+		SET status = 'canceled',
+		    worker_id = NULL,
+		    lease_expires_at = NULL,
+		    available_at = $2,
+		    updated_at = $2
+		WHERE execution_id = $1::uuid
+		  AND status IN ('waiting', 'pending', 'blocked')
+	`, executionID, now); err != nil {
+		return mapDBErr(err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE execution_steps
+		SET status = 'canceled',
+		    error_redacted = $2::jsonb,
+		    finished_at = COALESCE(finished_at, $3),
+		    updated_at = $3
+		WHERE execution_id = $1::uuid
+		  AND status IN ('waiting', 'pending', 'blocked')
+	`, executionID, errRaw, now); err != nil {
+		return mapDBErr(err)
+	}
+	if err := applyExecutionStatusTx(ctx, tx, executionID, ExecutionFailed, now); err != nil {
+		return err
+	}
+	closed, err := closePendingApprovalsTx(ctx, tx, executionID, ReasonWorkflowDeleted, now)
+	if err != nil {
+		return err
+	}
+	_, err = insertAuditTx(ctx, tx, scope, AuditWrite{
+		Action:       "execution.stop",
+		ResourceType: "execution",
+		ResourceID:   executionID,
+		Outcome:      ReasonWorkflowDeleted,
+		Details:      map[string]any{"reason": ReasonWorkflowDeleted, "approvalsClosed": closed},
+	})
+	return err
+}
+
 func workflowDeletedStepError() map[string]any {
 	return map[string]any{
 		"code":    ReasonWorkflowDeleted,

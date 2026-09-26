@@ -105,6 +105,11 @@ func (p *Postgres) List(ctx context.Context, scope isolation.Scope, filter Filte
 	var parts []string
 	if filter.Status != "" {
 		parts = append(parts, "status = $"+page.Place(&args, filter.Status))
+		// A pending list hides rows whose deadline has already passed.
+		// now() is the database clock, the same clock the gate wait uses.
+		if filter.Status == StatusPending {
+			parts = append(parts, "expires_at > now()")
+		}
 	}
 	if filter.WorkflowID != "" {
 		parts = append(parts, "workflow_id = $"+page.Place(&args, filter.WorkflowID)+"::uuid")
@@ -230,8 +235,25 @@ func (p *Postgres) Decide(ctx context.Context, scope isolation.Scope, id string,
 	if err := scanRecord(tx.QueryRow(ctx, `SELECT `+recordColumns+` FROM approvals WHERE id = $1::uuid FOR UPDATE`, id), &rec); err != nil {
 		return Record{}, err
 	}
-	if rec.Status == StatusCanceled {
+	if rec.Status == StatusCanceled || rec.Status == StatusExpired {
 		return Record{}, ErrClosed
+	}
+	if rec.ExecutionID != "" && rec.NodeID != "" {
+		found, waiting, err := GateStillWaiting(ctx, tx, rec.ExecutionID, rec.NodeID)
+		if err != nil {
+			return Record{}, err
+		}
+		if found && !waiting {
+			if rec.Status == StatusPending {
+				if err := ExpirePendingGate(ctx, tx, rec.ExecutionID, rec.NodeID, now); err != nil {
+					return Record{}, err
+				}
+			}
+			if err := tx.Commit(ctx); err != nil {
+				return Record{}, mapDBErr(err)
+			}
+			return Record{}, ErrClosed
+		}
 	}
 	if scope.ActorID() != "" && rec.RequestedBy != "" && scope.ActorID() == rec.RequestedBy {
 		return Record{}, ErrSelfApproval

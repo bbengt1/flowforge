@@ -264,7 +264,16 @@ func getWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
-	core.WriteJSON(w, http.StatusOK, presentWorkflow(perms, scope.ActorID(), wf, requestEmbedBound(r)))
+	view := presentWorkflow(perms, scope.ActorID(), wf, requestEmbedBound(r))
+	if view.Capabilities.Delete {
+		impact, err := s.Workflows.DeleteImpact(r.Context(), scope, wf.ID)
+		if err != nil {
+			WriteWorkflowStoreError(w, r, err)
+			return
+		}
+		view.DeleteImpact = &impact
+	}
+	core.WriteJSON(w, http.StatusOK, view)
 }
 
 func getWorkflowDraft(s *core.Server, w http.ResponseWriter, r *http.Request) {
@@ -962,7 +971,7 @@ func WriteWorkflowStoreError(w http.ResponseWriter, r *http.Request, err error) 
 	case errors.Is(err, wfstore.ErrDuplicateVersion):
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeConflict, "Conflict", "This normalized definition is already published.")
 	case errors.Is(err, wfstore.ErrActiveExecutions):
-		core.WriteProblem(w, r, http.StatusConflict, core.CodeWorkflowHasActiveExecutions, "Conflict", "This workflow has a queued or running execution.")
+		core.WriteProblem(w, r, http.StatusConflict, core.CodeWorkflowHasActiveExecutions, "Conflict", "This workflow has a job that is queued, claimed, or running.")
 	case errors.Is(err, wfstore.ErrSlugReserved):
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeWorkflowSlugReserved, "Conflict", "This slug is reserved by a deleted workflow.")
 	case errors.Is(err, wfstore.ErrWorkflowDeleted):

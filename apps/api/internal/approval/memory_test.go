@@ -115,6 +115,53 @@ func TestFreshnessInvalidatesChangedPolicy(t *testing.T) {
 	}
 }
 
+func TestMemoryPendingListHidesExpired(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	scope, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	base := CreateInput{
+		WorkflowID:        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+		WorkflowVersionID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+		WorkflowDigest:    "sha256:" + strings.Repeat("ab", 32),
+	}
+	liveIn := base
+	liveIn.Requirement = policy.Requirement{NodeID: "live", Operation: "flow.approval", ApproverRole: "approver", ExpiresAt: now.Add(time.Hour)}
+	live, err := store.Create(ctx, scope, liveIn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleIn := base
+	staleIn.Requirement = policy.Requirement{NodeID: "stale", Operation: "flow.approval", ApproverRole: "approver", ExpiresAt: now.Add(-time.Minute)}
+	stale, err := store.Create(ctx, scope, staleIn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := store.List(ctx, scope, Filter{Status: StatusPending})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].ID != live.ID {
+		t.Fatalf("pending = %+v", pending)
+	}
+	all, err := store.List(ctx, scope, Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saw := false
+	for _, rec := range all {
+		if rec.ID == stale.ID {
+			saw = true
+		}
+	}
+	if !saw {
+		t.Fatal("unfiltered list dropped the expired row")
+	}
+}
+
 func TestHasApproverRole(t *testing.T) {
 	if !HasApproverRole([]string{"approver"}, "approver") {
 		t.Fatal("approver")

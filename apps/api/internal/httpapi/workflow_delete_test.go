@@ -44,6 +44,38 @@ func TestWorkflowSoftDelete(t *testing.T) {
 	if viewerView.Capabilities.Delete {
 		t.Fatal("viewer capabilities.delete must be false")
 	}
+	if strings.Contains(rec.Body.String(), "deleteImpact") {
+		t.Fatal("viewer detail must omit deleteImpact")
+	}
+
+	rec = httptest.NewRecorder()
+	req = workspaceRequest(http.MethodGet, "/api/v1/workflows/"+owned.Workflow.ID, nil, editor.User, tenant, ws)
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("editor get: %d %s", rec.Code, rec.Body.String())
+	}
+	var editorView struct {
+		DeleteImpact *struct {
+			WaitingRuns  int  `json:"waitingRuns"`
+			Blocked      bool `json:"blocked"`
+			InFlightRuns int  `json:"inFlightRuns"`
+		} `json:"deleteImpact"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &editorView); err != nil {
+		t.Fatal(err)
+	}
+	if editorView.DeleteImpact == nil || editorView.DeleteImpact.WaitingRuns != 0 || editorView.DeleteImpact.Blocked || editorView.DeleteImpact.InFlightRuns != 0 {
+		t.Fatalf("editor deleteImpact = %+v", editorView.DeleteImpact)
+	}
+	rec = httptest.NewRecorder()
+	req = workspaceRequest(http.MethodGet, "/api/v1/workflows", nil, editor.User, tenant, ws)
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("editor list: %d %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "deleteImpact") {
+		t.Fatal("list must omit deleteImpact")
+	}
 
 	rec = httptest.NewRecorder()
 	req = workspaceRequest(http.MethodDelete, "/api/v1/workflows/"+adminWF.Workflow.ID, nil, viewer.User, tenant, ws)
@@ -107,6 +139,9 @@ func TestWorkflowSoftDelete(t *testing.T) {
 	}
 	if !viewerView.Capabilities.Delete {
 		t.Fatal("owner demoted to viewer must still have capabilities.delete")
+	}
+	if !strings.Contains(rec.Body.String(), "deleteImpact") {
+		t.Fatal("owner detail must include deleteImpact")
 	}
 	rec = httptest.NewRecorder()
 	req = workspaceRequest(http.MethodDelete, "/api/v1/workflows/"+owned.Workflow.ID, nil, editor.User, tenant, ws)
