@@ -36,8 +36,14 @@ type ResyncStats struct {
 // It rebuilds each requirement with ResolveGateRequirement. A difference
 // is corrected. A rebuild failure cancels the row with
 // requirement_unresolvable and, when that leaves a waiting gate, fails the
-// gate and the run with that reason. A missing workflow fails the run
-// with workflow_deleted. Outgoing edges, including expired, are not taken.
+// gate step and its job with that reason. The run then follows the normal
+// failed-step roll-up: a sibling that is already queued, claimed, or
+// running finishes, and the run settles failed with
+// requirement_unresolvable. A missing workflow fails the run with
+// workflow_deleted. Outgoing edges, including expired, are not taken.
+// A target user or group row that no longer exists is unresolvable. A
+// user removed from the workspace, or a group that still exists with no
+// members, rebuilds and stays pending.
 // Errors are logged. The function returns after the budget or the walk.
 func ResyncOpenApprovals(ctx context.Context, db DB, versions VersionSource, ops PinSource, log *slog.Logger) ResyncStats {
 	if log == nil {
@@ -75,7 +81,7 @@ func ResyncOpenApprovals(ctx context.Context, db DB, versions VersionSource, ops
 			log.Error("approval resync stopped", "reason", "budget")
 			break
 		}
-		one, err := resyncWorkspace(ctx, db, versions, ops, workspaceID, now)
+		one, err := resyncWorkspace(ctx, db, versions, ops, NewSubjectDirectory(db), workspaceID, now)
 		stats.Workspaces++
 		stats.Corrected += one.Corrected
 		stats.Closed += one.Closed
@@ -102,7 +108,7 @@ type pendingRef struct {
 	execution  string
 }
 
-func resyncWorkspace(ctx context.Context, db DB, versions VersionSource, ops PinSource, workspaceID string, now time.Time) (ResyncStats, error) {
+func resyncWorkspace(ctx context.Context, db DB, versions VersionSource, ops PinSource, subjects SubjectDirectory, workspaceID string, now time.Time) (ResyncStats, error) {
 	var stats ResyncStats
 	scope, err := isolation.Authorize(workspaceID, "")
 	if err != nil {
@@ -159,7 +165,7 @@ func resyncWorkspace(ctx context.Context, db DB, versions VersionSource, ops Pin
 		}
 	}
 	for _, row := range pending {
-		corrected, closed, failed := resyncOne(ctx, tx, scope, versions, ops, row.id, now)
+		corrected, closed, failed := resyncOne(ctx, tx, scope, versions, ops, subjects, row.id, now)
 		stats.Corrected += corrected
 		stats.Closed += closed
 		stats.Skipped += 1 - corrected - closed - failed
@@ -211,7 +217,7 @@ func lockResyncParents(ctx context.Context, tx pgx.Tx, pending []pendingRef) err
 	return nil
 }
 
-func resyncOne(ctx context.Context, tx pgx.Tx, scope isolation.Scope, versions VersionSource, ops PinSource, id string, now time.Time) (corrected, closed, failed int) {
+func resyncOne(ctx context.Context, tx pgx.Tx, scope isolation.Scope, versions VersionSource, ops PinSource, subjects SubjectDirectory, id string, now time.Time) (corrected, closed, failed int) {
 	if _, err := tx.Exec(ctx, `SAVEPOINT approval_resync`); err != nil {
 		return 0, 0, 1
 	}
@@ -230,7 +236,7 @@ func resyncOne(ctx context.Context, tx pgx.Tx, scope isolation.Scope, versions V
 		_, _ = tx.Exec(ctx, `RELEASE SAVEPOINT approval_resync`)
 		return 0, 0, 0
 	}
-	req, err := ResolveGateRequirement(ctx, scope, versions, ops, rec.WorkflowID, rec.WorkflowVersionID, rec.NodeID, now)
+	req, err := ResolveGateRequirement(ctx, scope, versions, ops, subjects, rec.WorkflowID, rec.WorkflowVersionID, rec.NodeID, now)
 	if err != nil {
 		if err := cancelUnresolvable(ctx, tx, scope, rec, now); err != nil {
 			return 0, 0, 1

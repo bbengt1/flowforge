@@ -52,7 +52,7 @@ func TestResolveGateRequirement(t *testing.T) {
 	now := time.Date(2026, 9, 26, 1, 0, 0, 0, time.UTC)
 	ver := wfstore.Version{ID: "55555555-5555-4555-8555-555555555555", DefinitionYAML: adminGateDefinition, Digest: "sha256:" + strings.Repeat("a", 64)}
 
-	req, err := ResolveGateRequirement(ctx, scope, staticVersion{ver: ver}, nil, "44444444-4444-4444-8444-444444444444", ver.ID, "gate", now)
+	req, err := ResolveGateRequirement(ctx, scope, staticVersion{ver: ver}, nil, nil, "44444444-4444-4444-8444-444444444444", ver.ID, "gate", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,15 +60,15 @@ func TestResolveGateRequirement(t *testing.T) {
 		t.Fatalf("requirement = %+v", req)
 	}
 
-	if _, err := ResolveGateRequirement(ctx, scope, staticVersion{err: wfstore.ErrNotFound}, nil, ver.WorkflowID, ver.ID, "gate", now); !errors.Is(err, ErrBindingUnresolved) {
+	if _, err := ResolveGateRequirement(ctx, scope, staticVersion{err: wfstore.ErrNotFound}, nil, nil, ver.WorkflowID, ver.ID, "gate", now); !errors.Is(err, ErrBindingUnresolved) {
 		t.Fatalf("version lookup = %v", err)
 	}
 	bad := ver
 	bad.DefinitionYAML = "kind: nope\n"
-	if _, err := ResolveGateRequirement(ctx, scope, staticVersion{ver: bad}, nil, ver.WorkflowID, ver.ID, "gate", now); !errors.Is(err, ErrBindingUnresolved) {
+	if _, err := ResolveGateRequirement(ctx, scope, staticVersion{ver: bad}, nil, nil, ver.WorkflowID, ver.ID, "gate", now); !errors.Is(err, ErrBindingUnresolved) {
 		t.Fatalf("evaluate = %v", err)
 	}
-	if _, err := ResolveGateRequirement(ctx, scope, staticVersion{ver: ver}, nil, ver.WorkflowID, ver.ID, "other", now); !errors.Is(err, ErrBindingUnresolved) {
+	if _, err := ResolveGateRequirement(ctx, scope, staticVersion{ver: ver}, nil, nil, ver.WorkflowID, ver.ID, "other", now); !errors.Is(err, ErrBindingUnresolved) {
 		t.Fatalf("missing requirement = %v", err)
 	}
 }
@@ -106,7 +106,7 @@ func TestMemoryDecideRederivesStaleApproverRole(t *testing.T) {
 	store.SetGateWaiting(func(string, string) (bool, bool) { return true, true })
 	ver := wfstore.Version{ID: versionID, DefinitionYAML: adminGateDefinition, Digest: rec.WorkflowDigest}
 	resolve := func(ctx context.Context, scope isolation.Scope, row Record) (policy.Requirement, error) {
-		return ResolveGateRequirement(ctx, scope, staticVersion{ver: ver}, nil, row.WorkflowID, row.WorkflowVersionID, row.NodeID, now)
+		return ResolveGateRequirement(ctx, scope, staticVersion{ver: ver}, nil, nil, row.WorkflowID, row.WorkflowVersionID, row.NodeID, now)
 	}
 
 	if _, err := store.Decide(ctx, approver, rec.ID, DecideInput{
@@ -146,7 +146,7 @@ func TestMemoryDecideRederivesStaleApproverRole(t *testing.T) {
 		t.Fatal(err)
 	}
 	failResolve := func(ctx context.Context, scope isolation.Scope, row Record) (policy.Requirement, error) {
-		return ResolveGateRequirement(ctx, scope, staticVersion{err: wfstore.ErrNotFound}, nil, row.WorkflowID, row.WorkflowVersionID, row.NodeID, now)
+		return ResolveGateRequirement(ctx, scope, staticVersion{err: wfstore.ErrNotFound}, nil, nil, row.WorkflowID, row.WorkflowVersionID, row.NodeID, now)
 	}
 	if _, err := store.Decide(ctx, approver, lookup.ID, DecideInput{
 		Decision: DecisionApproved, Now: now, Roles: []string{"admin"}, Resolve: failResolve,
@@ -232,7 +232,7 @@ func TestMemoryDecidePersistsFullRequirementOnDeny(t *testing.T) {
 		Spec: map[string]any{"kind": "approval", "policy": map[string]any{}},
 	}}}
 	resolve := func(ctx context.Context, scope isolation.Scope, row Record) (policy.Requirement, error) {
-		return ResolveGateRequirement(ctx, scope, staticVersion{ver: ver}, pins, row.WorkflowID, row.WorkflowVersionID, row.NodeID, now)
+		return ResolveGateRequirement(ctx, scope, staticVersion{ver: ver}, pins, nil, row.WorkflowID, row.WorkflowVersionID, row.NodeID, now)
 	}
 	if _, err := store.Decide(ctx, other, rec.ID, DecideInput{
 		Decision: DecisionApproved, Now: now, Roles: []string{"approver"}, Resolve: resolve,

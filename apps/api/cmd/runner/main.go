@@ -119,6 +119,7 @@ func main() {
 		DrainTimeout: durationEnv("WORKER_DRAIN_TIMEOUT", 30*time.Second),
 		Log:          log,
 	})
+	loop.UseSubjects(approval.NewSubjectDirectory(pool))
 
 	log.Info("production runner starting", "worker_id", workerID, "app_env", appEnv)
 	approval.ResyncOpenApprovals(ctx, pool, queue.Workflows, disp.Ops, log)

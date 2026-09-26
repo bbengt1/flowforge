@@ -12,8 +12,9 @@ import (
 // SettleUnresolvableGate is the in-memory form of the Postgres settle.
 // A missing or deleted workflow fails the run with workflow_deleted. A
 // live waiting gate fails the gate step and job with
-// requirement_unresolvable, cancels other waiting, pending, and blocked
-// work, and fails the run. It does not emit a port.
+// requirement_unresolvable and rolls the run up the way any other failed
+// step does. A sibling that is already queued, claimed, or running is
+// left to finish. It does not emit a port.
 func (m *Memory) SettleUnresolvableGate(_ context.Context, scope isolation.Scope, workflowID, executionID, nodeID string, now time.Time) error {
 	if scope.Zero() {
 		return ErrNoScope
@@ -63,43 +64,19 @@ func (m *Memory) SettleUnresolvableGate(_ context.Context, scope isolation.Scope
 	if jobIdx < 0 {
 		return nil
 	}
-	errBody := requirementUnresolvableStepError()
 	exec.jobs[jobIdx].Status = JobFailed
 	exec.jobs[jobIdx].WorkerID = ""
 	exec.jobs[jobIdx].LeaseExpiresAt = nil
 	exec.jobs[jobIdx].UpdatedAt = now
-	exec.steps[stepIdx].Error = errBody
+	exec.steps[stepIdx].Error = requirementUnresolvableStepError()
 	applyStepStatus(&exec.steps[stepIdx], ExecutionFailed, now)
-	for i := range exec.jobs {
-		if i == jobIdx {
-			continue
-		}
-		switch exec.jobs[i].Status {
-		case JobWaiting, JobBlocked:
-			exec.jobs[i].Status = JobCanceled
-			exec.jobs[i].WorkerID = ""
-			exec.jobs[i].LeaseExpiresAt = nil
-			exec.jobs[i].AvailableAt = now
-			exec.jobs[i].UpdatedAt = now
-		}
-	}
-	for i := range exec.steps {
-		if i == stepIdx {
-			continue
-		}
-		switch exec.steps[i].Status {
-		case ExecutionWaiting, ExecutionPending:
-			exec.steps[i].Error = errBody
-			applyStepStatus(&exec.steps[i], ExecutionCanceled, now)
-		}
-	}
-	applyExecutionStatus(&exec.record, ExecutionFailed, now)
+	m.rollupLocked(&exec, now)
 	m.executions[executionID] = exec
 	m.appendAuditLocked(scope, AuditWrite{
-		Action:       "execution.stop",
+		Action:       "job.fail",
 		ResourceType: "execution",
 		ResourceID:   executionID,
-		Outcome:      ReasonRequirementUnresolvable,
+		Outcome:      "failed",
 		Details:      map[string]any{"reason": ReasonRequirementUnresolvable, "nodeId": nodeID},
 	}, now)
 	return nil

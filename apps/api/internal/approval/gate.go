@@ -71,10 +71,13 @@ func ResolvePins(ctx context.Context, scope isolation.Scope, ops PinSource, yaml
 // ResolveGateRequirement re-derives the requirement for one node from the
 // pinned workflow version. A gate matches its wait requirement. A pre-run
 // approval matches the non-wait requirement for that same node. A missing
-// loader, a version lookup error, an evaluate error, or no matching
-// requirement returns ErrBindingUnresolved. The caller denies the decision
-// and does not record one.
-func ResolveGateRequirement(ctx context.Context, scope isolation.Scope, versions VersionSource, ops PinSource, workflowID, versionID, nodeID string, now time.Time) (policy.Requirement, error) {
+// loader, a version lookup error, an evaluate error, no matching
+// requirement, or a target user or group record that no longer exists
+// returns ErrBindingUnresolved. The caller denies the decision and does
+// not record one. A user removed from the workspace, or a group that still
+// exists but has no members, rebuilds: membership can return. subjects may
+// be nil when the caller has no directory; production passes one.
+func ResolveGateRequirement(ctx context.Context, scope isolation.Scope, versions VersionSource, ops PinSource, subjects SubjectDirectory, workflowID, versionID, nodeID string, now time.Time) (policy.Requirement, error) {
 	if versions == nil {
 		return policy.Requirement{}, fmt.Errorf("%w: workflow version is not available", ErrBindingUnresolved)
 	}
@@ -104,6 +107,9 @@ func ResolveGateRequirement(ctx context.Context, scope isolation.Scope, versions
 			continue
 		}
 		if item.Wait {
+			if err := confirmSubjectRecords(ctx, scope, subjects, item); err != nil {
+				return policy.Requirement{}, err
+			}
 			return item, nil
 		}
 		if matched == nil {
@@ -112,6 +118,9 @@ func ResolveGateRequirement(ctx context.Context, scope isolation.Scope, versions
 		}
 	}
 	if matched != nil {
+		if err := confirmSubjectRecords(ctx, scope, subjects, *matched); err != nil {
+			return policy.Requirement{}, err
+		}
 		return *matched, nil
 	}
 	return policy.Requirement{}, fmt.Errorf("%w: approval requirement is missing", ErrBindingUnresolved)
@@ -177,8 +186,41 @@ func authorizeDerived(ctx context.Context, scope isolation.Scope, rec Record, in
 		return Record{}, false, fmt.Errorf("%w: %v", ErrBindingUnresolved, err)
 	}
 	next, changed := ProjectRequirement(rec, scope.WorkspaceID(), req)
-	if !MayAct(scope.ActorID(), in.Roles, in.GroupIDs, next) {
+	ok, err := targetAllows(ctx, scope, in, next)
+	if err != nil {
+		return Record{}, false, fmt.Errorf("%w: approver membership lookup failed", ErrBindingUnresolved)
+	}
+	if !ok {
 		return next, changed, ErrForbidden
 	}
 	return next, changed, nil
+}
+
+// targetAllows is MayAct plus a live membership check when a directory is
+// present. The stored user or group id is not enough: a removed member or
+// an empty group stays pending, and a caller who is not a current member
+// of that target is denied.
+func targetAllows(ctx context.Context, scope isolation.Scope, in DecideInput, rec Record) (bool, error) {
+	if in.Subjects == nil {
+		return MayAct(scope.ActorID(), in.Roles, in.GroupIDs, rec), nil
+	}
+	if !HasApproverRole(in.Roles, rec.ApproverRole) {
+		return false, nil
+	}
+	if id := strings.TrimSpace(rec.ApproverUserID); id != "" && id != strings.TrimSpace(scope.ActorID()) {
+		return false, nil
+	}
+	if id := strings.TrimSpace(rec.ApproverUserID); id != "" {
+		ok, err := in.Subjects.UserIsWorkspaceMember(ctx, scope.WorkspaceID(), id)
+		if err != nil || !ok {
+			return false, err
+		}
+	}
+	if id := strings.TrimSpace(rec.ApproverGroupID); id != "" {
+		ok, err := in.Subjects.UserInGroup(ctx, scope.WorkspaceID(), id, scope.ActorID())
+		if err != nil || !ok {
+			return false, err
+		}
+	}
+	return true, nil
 }

@@ -458,7 +458,7 @@ func (m *Memory) ResyncPending(ctx context.Context, versions VersionSource, ops 
 			stats.Failed++
 			continue
 		}
-		req, err := ResolveGateRequirement(ctx, scope, versions, ops, item.rec.WorkflowID, item.rec.WorkflowVersionID, item.rec.NodeID, now)
+		req, err := ResolveGateRequirement(ctx, scope, versions, ops, nil, item.rec.WorkflowID, item.rec.WorkflowVersionID, item.rec.NodeID, now)
 		m.mu.Lock()
 		row, ok := m.rows[item.rec.ID]
 		if !ok || row.workspaceID != item.workspaceID || row.record.Status != StatusPending {

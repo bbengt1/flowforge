@@ -70,7 +70,7 @@ func TestMemoryResyncFailsUnresolvableRun(t *testing.T) {
 		t.Fatalf("gate took expired port: %+v", gateStep.Output)
 	}
 	lateStep, lateJob := memoryStepJob(t, ctx, workflows, scope, exec.ID, "late")
-	if lateStep.Status != wfstore.ExecutionCanceled || lateJob.Status != wfstore.JobCanceled || lateStep.StartedAt != nil {
+	if lateStep.Status != wfstore.ExecutionPending || lateJob.Status != wfstore.JobBlocked || lateStep.StartedAt != nil {
 		t.Fatalf("late step=%s job=%s started=%v", lateStep.Status, lateJob.Status, lateStep.StartedAt)
 	}
 	if _, err := workflows.StartExecution(ctx, scope, ver.WorkflowID, wfstore.StartInput{VersionID: ver.ID, MaxOpen: 1}); err != nil {
@@ -85,8 +85,102 @@ func TestMemoryResyncFailsUnresolvableRun(t *testing.T) {
 		t.Fatalf("second pass changed %+v", still)
 	}
 	stillLate, _ := memoryStepJob(t, ctx, workflows, scope, exec.ID, "late")
-	if stillLate.Status != wfstore.ExecutionCanceled {
+	if stillLate.Status != wfstore.ExecutionPending {
 		t.Fatalf("second pass released late %s", stillLate.Status)
+	}
+}
+
+func TestMemoryResyncRollsUpAfterSiblingFinishes(t *testing.T) {
+	ctx := context.Background()
+	workflows := wfstore.NewMemory()
+	approvals := NewMemory()
+	scope, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ver := publishMemoryWorkflow(t, ctx, workflows, scope, siblingDownstreamDefinition)
+	exec, err := workflows.StartExecution(ctx, scope, ver.WorkflowID, wfstore.StartInput{VersionID: ver.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Add(time.Minute)
+	var side wfstore.DispatchResult
+	parked, held := false, false
+	for i := 0; i < 4 && (!parked || !held); i++ {
+		got, err := workflows.ClaimJob(ctx, scope, now, wfstore.ClaimInput{WorkerID: "edge-worker", Lease: time.Minute})
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch got.Step.NodeID {
+		case "fork":
+			if _, err := workflows.CompleteJob(ctx, scope, now, wfstore.JobActionInput{
+				JobID: got.Job.ID, WorkerID: "edge-worker", FencingToken: got.Job.FencingToken,
+				Output: map[string]any{"result": map[string]any{"ok": true}},
+			}); err != nil {
+				t.Fatal(err)
+			}
+		case "gate":
+			if _, err := workflows.WaitJob(ctx, scope, now, wfstore.WaitJobInput{
+				JobID: got.Job.ID, AvailableAt: now.Add(time.Hour),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			parked = true
+		case "side":
+			running, err := workflows.HeartbeatJob(ctx, scope, now, wfstore.JobActionInput{
+				JobID: got.Job.ID, WorkerID: "edge-worker", FencingToken: got.Job.FencingToken,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			side = running
+			held = true
+		default:
+			t.Fatalf("claimed %s", got.Step.NodeID)
+		}
+	}
+	if !parked || !held {
+		t.Fatal("gate and sibling were not both held")
+	}
+	approvals.SetUnresolvableRun(workflows.SettleUnresolvableGate)
+	if _, err := approvals.Create(ctx, scope, CreateInput{
+		WorkflowID: ver.WorkflowID, WorkflowVersionID: "88888888-8888-4888-8888-888888888888", WorkflowDigest: ver.Digest,
+		ExecutionID: exec.ID, RequestedBy: "77777777-7777-4777-8777-777777777777",
+		Requirement: policy.Requirement{NodeID: "gate", Operation: "flow.approval", ApproverRole: "approver", ExpiresAt: now.Add(time.Hour)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stats := approvals.ResyncPending(ctx, workflows, nil, now)
+	if stats.Closed != 1 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	got, err := workflows.GetExecutionByID(ctx, scope, exec.ID)
+	if err != nil || got.Status != wfstore.ExecutionRunning {
+		t.Fatalf("run while sibling runs = %+v %v", got.Status, err)
+	}
+	if _, err := workflows.StartExecution(ctx, scope, ver.WorkflowID, wfstore.StartInput{VersionID: ver.ID, MaxOpen: 1}); !errors.Is(err, wfstore.ErrConcurrency) {
+		t.Fatalf("slot while sibling runs = %v", err)
+	}
+	if _, err := workflows.CompleteJob(ctx, scope, now, wfstore.JobActionInput{
+		JobID: side.Job.ID, WorkerID: "edge-worker", FencingToken: side.Job.FencingToken,
+		Output: map[string]any{"result": map[string]any{"ok": true}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = workflows.GetExecutionByID(ctx, scope, exec.ID)
+	if err != nil || got.Status != wfstore.ExecutionFailed {
+		t.Fatalf("run after sibling = %+v %v", got.Status, err)
+	}
+	gateStep, _ := memoryStepJob(t, ctx, workflows, scope, exec.ID, "gate")
+	if code, _ := gateStep.Error["code"].(string); code != wfstore.ReasonRequirementUnresolvable {
+		t.Fatalf("gate error = %+v", gateStep.Error)
+	}
+	lateStep, lateJob := memoryStepJob(t, ctx, workflows, scope, exec.ID, "late")
+	if lateStep.Status != wfstore.ExecutionPending || lateJob.Status != wfstore.JobBlocked || lateStep.StartedAt != nil {
+		t.Fatalf("late step=%s job=%s", lateStep.Status, lateJob.Status)
+	}
+	if _, err := workflows.StartExecution(ctx, scope, ver.WorkflowID, wfstore.StartInput{VersionID: ver.ID, MaxOpen: 1}); err != nil {
+		t.Fatalf("slot after sibling = %v", err)
 	}
 }
 
@@ -166,6 +260,46 @@ func memoryStepJob(t *testing.T, ctx context.Context, store *wfstore.Memory, sco
 	t.Fatalf("missing job %s", node)
 	return step, wfstore.ExecutionJob{}
 }
+
+const siblingDownstreamDefinition = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: sibling-downstream
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: fork
+      type: data.set
+      name: Fork
+      with:
+        value:
+          ok: true
+    - id: gate
+      type: flow.approval
+      name: Gate
+      with:
+        approverRole: admin
+        expiresIn: PT1H
+    - id: side
+      type: flow.stop
+      name: Side
+      with:
+        status: success
+    - id: late
+      type: flow.stop
+      name: Late
+      with:
+        status: success
+  edges:
+    - from: fork.result
+      to: gate.request
+    - from: fork.result
+      to: side.input
+    - from: gate.expired
+      to: late.input
+`
 
 const expiredDownstreamDefinition = `apiVersion: flowforge/v1
 kind: Workflow

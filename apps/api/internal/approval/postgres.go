@@ -47,6 +47,14 @@ func NewPostgres(db DB) *Postgres {
 	return &Postgres{db: db}
 }
 
+// Subjects is the live user and group directory for this store.
+func (p *Postgres) Subjects() SubjectDirectory {
+	if p == nil {
+		return nil
+	}
+	return NewSubjectDirectory(p.db)
+}
+
 func (p *Postgres) Create(ctx context.Context, scope isolation.Scope, in CreateInput) (Record, error) {
 	if scope.Zero() {
 		return Record{}, ErrNoScope

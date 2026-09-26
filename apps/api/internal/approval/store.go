@@ -145,7 +145,13 @@ type DecideInput struct {
 	Roles    []string
 	// GroupIDs are the caller's group memberships. A gate with
 	// ApproverGroupID allows only a member of that group.
+	// When Subjects is set, group membership is read from that directory
+	// instead, so a caller cannot claim a group they are not in.
 	GroupIDs []string
+	// Subjects checks that a target user is still a workspace member and
+	// that a caller is a current member of a target group. Nil skips that
+	// live check and uses GroupIDs.
+	Subjects SubjectDirectory
 }
 
 // InvalidateInput marks matching pending/approved rows invalidated.

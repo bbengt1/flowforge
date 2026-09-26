@@ -262,7 +262,8 @@ func decideApproval(s *core.Server, w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	derived, err := approval.ResolveGateRequirement(r.Context(), scope, s.Workflows, s.Ops, rec.WorkflowID, rec.WorkflowVersionID, rec.NodeID, s.Clock().UTC())
+	subjects := approvalSubjects(s)
+	derived, err := approval.ResolveGateRequirement(r.Context(), scope, s.Workflows, s.Ops, subjects, rec.WorkflowID, rec.WorkflowVersionID, rec.NodeID, s.Clock().UTC())
 	if err != nil {
 		core.WriteForbidden(w, r)
 		return
@@ -275,8 +276,9 @@ func decideApproval(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		Now:      s.Clock().UTC(),
 		Heads:    heads,
 		Roles:    roles,
+		Subjects: subjects,
 		Resolve: func(ctx context.Context, scope isolation.Scope, row approval.Record) (policy.Requirement, error) {
-			return approval.ResolveGateRequirement(ctx, scope, s.Workflows, s.Ops, row.WorkflowID, row.WorkflowVersionID, row.NodeID, s.Clock().UTC())
+			return approval.ResolveGateRequirement(ctx, scope, s.Workflows, s.Ops, subjects, row.WorkflowID, row.WorkflowVersionID, row.NodeID, s.Clock().UTC())
 		},
 	})
 	if err != nil {
@@ -460,11 +462,24 @@ func parkedApprovalInput(in *approval.CreateInput) *wfstore.ParkedApproval {
 	}
 }
 
+func approvalSubjects(s *core.Server) approval.SubjectDirectory {
+	if s == nil || s.Approvals == nil {
+		return nil
+	}
+	type directory interface {
+		Subjects() approval.SubjectDirectory
+	}
+	if d, ok := s.Approvals.(directory); ok {
+		return d.Subjects()
+	}
+	return nil
+}
+
 func ParkApprovalClaim(s *core.Server, ctx context.Context, scope isolation.Scope, result wfstore.DispatchResult) (wfstore.DispatchResult, error) {
 	if result.Step.NodeType != "flow.approval" || s.Workflows == nil {
 		return result, nil
 	}
-	req, err := approval.ResolveGateRequirement(ctx, scope, s.Workflows, s.Ops, result.Execution.WorkflowID, result.Execution.WorkflowVersionID, result.Step.NodeID, s.Clock().UTC())
+	req, err := approval.ResolveGateRequirement(ctx, scope, s.Workflows, s.Ops, approvalSubjects(s), result.Execution.WorkflowID, result.Execution.WorkflowVersionID, result.Step.NodeID, s.Clock().UTC())
 	if err != nil {
 		return result, err
 	}

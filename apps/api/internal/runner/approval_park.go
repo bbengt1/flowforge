@@ -58,7 +58,7 @@ func (r *Runner) approvalSeed(ctx context.Context, ws Workspace, job Job, until 
 	if r.disp != nil && r.disp.Ops != nil {
 		ops = r.disp.Ops
 	}
-	req, err := approval.ResolveGateRequirement(ctx, scope, q.Workflows, ops, job.Execution.WorkflowID, job.Execution.WorkflowVersionID, job.Step.NodeID, r.now())
+	req, err := approval.ResolveGateRequirement(ctx, scope, q.Workflows, ops, r.subjects, job.Execution.WorkflowID, job.Execution.WorkflowVersionID, job.Step.NodeID, r.now())
 	if err != nil {
 		return approval.CreateInput{}, bindingUnresolved(err)
 	}
