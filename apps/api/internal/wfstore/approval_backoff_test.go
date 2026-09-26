@@ -933,7 +933,6 @@ spec:
     - id: gate
       type: flow.approval
       name: Gate
-      join: any
       with:
         approverRole: approver
         expiresIn: PT1H
@@ -945,8 +944,6 @@ spec:
     - from: choose.false
       to: dropped.input
     - from: kept.result
-      to: gate.request
-    - from: dropped.result
       to: gate.request
 `
 }
