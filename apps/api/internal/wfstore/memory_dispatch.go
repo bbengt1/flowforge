@@ -43,8 +43,15 @@ func (m *Memory) ClaimJob(ctx context.Context, scope isolation.Scope, now time.T
 	ttl := normalizeBindingTTL(in.BindingTTL)
 
 	m.mu.Lock()
+	candidates := m.expiredApprovalCandidatesLocked(scope, now)
+	m.mu.Unlock()
+	pending := m.approvalPendingSnapshot(candidates)
+	var cancels []unresolvableGate
+	m.mu.Lock()
+	cancelFn := m.approvalUnresolvable
+	defer func() { invokeUnresolvable(cancelFn, cancels, now) }()
 	defer m.mu.Unlock()
-	recovered := m.recoverExpiredLocked(ctx, scope, now)
+	recovered, cancels := m.recoverExpiredLocked(ctx, scope, now, pending)
 
 	var chosen *memExecution
 	jobIdx := -1
@@ -172,6 +179,28 @@ func (m *Memory) HeartbeatJob(_ context.Context, scope isolation.Scope, now time
 }
 
 func (m *Memory) ReleaseJob(ctx context.Context, scope isolation.Scope, now time.Time, in JobActionInput) (DispatchResult, error) {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if in.ApprovalTransientRetry {
+		if view, ok := m.approvalRetryView(scope, in.JobID); ok {
+			expires, pending := m.pendingExpiry(view.execID, view.nodeID)
+			if ApprovalPastLimit(view.ready, expires, view.input, now) {
+				result, err := m.failApprovalPastLimit(ctx, scope, now, in)
+				if errors.Is(err, errApprovalStillRunning) {
+					return m.releaseJob(ctx, scope, now, in)
+				}
+				if err == nil && result.Job.Status == JobFailed && pending {
+					m.closeUnresolvable(view.execID, view.nodeID, now)
+				}
+				return result, err
+			}
+		}
+	}
+	return m.releaseJob(ctx, scope, now, in)
+}
+
+func (m *Memory) releaseJob(ctx context.Context, scope isolation.Scope, now time.Time, in JobActionInput) (DispatchResult, error) {
 	return m.mutateJob(scope, now, in, func(exec *memExecution, job *ExecutionJob, step *ExecutionStep) error {
 		if err := matchFence(*job, in); err != nil {
 			return err
@@ -194,6 +223,9 @@ func (m *Memory) ReleaseJob(ctx context.Context, scope isolation.Scope, now time
 		job.LeaseExpiresAt = nil
 		job.HeartbeatAt = nil
 		job.UpdatedAt = now
+		if in.ApprovalTransientRetry {
+			job.AvailableAt = now.Add(approvalRetryWait(approvalJitter()))
+		}
 		step.LeaseID = ""
 		applyStepStatus(step, ExecutionQueued, now)
 		return nil
@@ -509,8 +541,66 @@ func (m *Memory) RecoverExpiredLeases(ctx context.Context, scope isolation.Scope
 		now = time.Now().UTC()
 	}
 	m.mu.Lock()
+	candidates := m.expiredApprovalCandidatesLocked(scope, now)
+	m.mu.Unlock()
+	// The pending hook takes the approval lock. Decide takes that lock and
+	// then this store's lock, so the pending check cannot run while this
+	// lock is held.
+	pending := m.approvalPendingSnapshot(candidates)
+	var cancels []unresolvableGate
+	m.mu.Lock()
+	cancelFn := m.approvalUnresolvable
+	defer func() { invokeUnresolvable(cancelFn, cancels, now) }()
 	defer m.mu.Unlock()
-	return m.recoverExpiredLocked(ctx, scope, now), nil
+	n, cancels := m.recoverExpiredLocked(ctx, scope, now, pending)
+	return n, nil
+}
+
+func (m *Memory) approvalPendingSnapshot(candidates []expiredApprovalCandidate) map[string]approvalGateView {
+	pending := map[string]approvalGateView{}
+	for _, candidate := range candidates {
+		if m.approvalPending == nil {
+			pending[candidate.jobID] = approvalGateView{}
+			continue
+		}
+		expires, ok := m.approvalPending(candidate.execID, candidate.nodeID)
+		if !ok {
+			pending[candidate.jobID] = approvalGateView{}
+			continue
+		}
+		pending[candidate.jobID] = approvalGateView{pending: true, expires: expires}
+	}
+	return pending
+}
+
+type expiredApprovalCandidate struct {
+	jobID  string
+	execID string
+	nodeID string
+}
+
+func (m *Memory) expiredApprovalCandidatesLocked(scope isolation.Scope, now time.Time) []expiredApprovalCandidate {
+	var out []expiredApprovalCandidate
+	for _, exec := range m.executions {
+		if exec.workspaceID != scope.WorkspaceID() {
+			continue
+		}
+		for _, job := range exec.jobs {
+			if !jobIsWritable(job.Status) || job.LeaseExpiresAt == nil || now.Before(*job.LeaseExpiresAt) {
+				continue
+			}
+			stepIdx := indexStep(exec.steps, job.ExecutionStepID)
+			if stepIdx < 0 || exec.steps[stepIdx].NodeType != "flow.approval" {
+				continue
+			}
+			out = append(out, expiredApprovalCandidate{
+				jobID:  job.ID,
+				execID: exec.record.ID,
+				nodeID: exec.steps[stepIdx].NodeID,
+			})
+		}
+	}
+	return out
 }
 
 func (m *Memory) WaitJob(_ context.Context, scope isolation.Scope, now time.Time, in WaitJobInput) (DispatchResult, error) {
@@ -553,11 +643,14 @@ func (m *Memory) ResumeWait(ctx context.Context, scope isolation.Scope, now time
 		if job.Status == JobSucceeded {
 			return nil
 		}
-		if job.Status != JobWaiting {
-			return ErrNotClaimable
-		}
+		// A tombstone is checked before the waiting-status check so a gate
+		// delete already canceled still returns ErrWorkflowDeleted and does
+		// not write a port. That matches the postgres resume path.
 		if err := m.guardLiveLocked(ctx, scope, now, exec.record.WorkflowID, exec.record.ID); err != nil {
 			return err
+		}
+		if job.Status != JobWaiting {
+			return ErrNotClaimable
 		}
 		job.Status = JobSucceeded
 		job.UpdatedAt = now
@@ -676,9 +769,10 @@ func (m *Memory) mutateJob(scope isolation.Scope, now time.Time, in JobActionInp
 	}, nil
 }
 
-func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope, now time.Time) int {
+func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope, now time.Time, approvalPending map[string]approvalGateView) (int, []unresolvableGate) {
 	n := 0
 	expiredLeases := 0
+	var cancels []unresolvableGate
 	hooked := map[string]struct{}{}
 	for id, exec := range m.executions {
 		if exec.workspaceID != scope.WorkspaceID() {
@@ -731,6 +825,43 @@ func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope
 				continue
 			}
 			if stepIdx >= 0 && exec.steps[stepIdx].NodeType == "flow.approval" {
+				gate, ok := approvalPending[job.ID]
+				if !ok {
+					continue
+				}
+				if ApprovalPastLimit(gateReadyAt(exec, exec.steps[stepIdx].NodeID), gate.expires, exec.steps[stepIdx].Input, now) {
+					job.Status = JobFailed
+					job.WorkerID = ""
+					job.LeaseExpiresAt = nil
+					job.HeartbeatAt = nil
+					job.UpdatedAt = now
+					exec.jobs[i] = job
+					exec.steps[stepIdx].Error = requirementUnresolvableStepError()
+					exec.steps[stepIdx].LeaseID = ""
+					applyStepStatus(&exec.steps[stepIdx], ExecutionFailed, now)
+					if gate.pending {
+						cancels = append(cancels, unresolvableGate{execID: exec.record.ID, nodeID: exec.steps[stepIdx].NodeID})
+					}
+					changed = true
+					outcome = "failed"
+					n++
+					continue
+				}
+				if !gate.pending {
+					job.Status = JobQueued
+					job.WorkerID = ""
+					job.LeaseExpiresAt = nil
+					job.HeartbeatAt = nil
+					job.AvailableAt = now.Add(approvalRetryWait(approvalJitter()))
+					job.UpdatedAt = now
+					exec.jobs[i] = job
+					exec.steps[stepIdx].LeaseID = ""
+					applyStepStatus(&exec.steps[stepIdx], ExecutionQueued, now)
+					changed = true
+					outcome = "requeued"
+					n++
+					continue
+				}
 				job.Status = JobWaiting
 				job.WorkerID = ""
 				job.LeaseExpiresAt = nil
@@ -771,7 +902,179 @@ func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope
 	for range expiredLeases {
 		observability.NoteExecutionOutcome(context.Background(), "indeterminate")
 	}
-	return n
+	return n, cancels
+}
+
+var errApprovalStillRunning = errors.New("approval release stays claimed")
+
+type approvalGateView struct {
+	pending bool
+	expires time.Time
+}
+
+type unresolvableGate struct {
+	execID string
+	nodeID string
+}
+
+type approvalRetrySnapshot struct {
+	execID string
+	nodeID string
+	ready  time.Time
+	input  map[string]any
+}
+
+// gateReadyAt is when the gate became ready. A job's available_at and
+// updated_at are set when it leaves blocked, then rewritten by claim,
+// release, and recovery, so they are not this time. Each satisfied
+// incoming edge contributes only its final attempt. A success uses that
+// attempt's finished_at. A skip counts only when finished_at is set and
+// not earlier than the run insert; a missing or earlier stamp is ignored.
+// A failed earlier attempt is ignored. The latest remaining time is the
+// ready time, and it is never earlier than the run insert. Nothing usable
+// uses that insert time. Postgres stores the insert in executions.started_at
+// and does not move it. Memory's StartedAt is the later running stamp, so
+// the insert time is CreatedAt. A zero time means there is no anchor.
+func gateReadyAt(exec memExecution, nodeID string) time.Time {
+	runStart := time.Time{}
+	if !exec.record.CreatedAt.IsZero() {
+		runStart = exec.record.CreatedAt.UTC()
+	}
+	var latest time.Time
+	found := false
+	for _, edge := range exec.edges {
+		if edge.ToNode != nodeID || !edge.Satisfied {
+			continue
+		}
+		step, ok := latestAttempt(exec.steps, edge.FromNode)
+		if !ok {
+			continue
+		}
+		at, ok := usableUpstreamSettle(step, runStart)
+		if !ok {
+			continue
+		}
+		if !found || at.After(latest) {
+			latest = at
+			found = true
+		}
+	}
+	if !found || (!runStart.IsZero() && latest.Before(runStart)) {
+		return runStart
+	}
+	return latest
+}
+
+func latestAttempt(steps []ExecutionStep, nodeID string) (ExecutionStep, bool) {
+	best := -1
+	for i := range steps {
+		if steps[i].NodeID != nodeID {
+			continue
+		}
+		if best < 0 || steps[i].Attempt >= steps[best].Attempt {
+			best = i
+		}
+	}
+	if best < 0 {
+		return ExecutionStep{}, false
+	}
+	return steps[best], true
+}
+
+func usableUpstreamSettle(step ExecutionStep, runStart time.Time) (time.Time, bool) {
+	if step.FinishedAt == nil {
+		return time.Time{}, false
+	}
+	at := step.FinishedAt.UTC()
+	switch step.Status {
+	case ExecutionSucceeded:
+		return at, true
+	case ExecutionSkipped:
+		if !runStart.IsZero() && at.Before(runStart) {
+			return time.Time{}, false
+		}
+		return at, true
+	default:
+		return time.Time{}, false
+	}
+}
+
+func (m *Memory) approvalRetryView(scope isolation.Scope, jobID string) (approvalRetrySnapshot, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	execID, job, ok := m.lookupJobLocked(scope.WorkspaceID(), jobID)
+	if !ok {
+		return approvalRetrySnapshot{}, false
+	}
+	exec := m.executions[execID]
+	stepIdx := indexStep(exec.steps, job.ExecutionStepID)
+	if stepIdx < 0 || exec.steps[stepIdx].NodeType != "flow.approval" {
+		return approvalRetrySnapshot{}, false
+	}
+	step := exec.steps[stepIdx]
+	input := make(map[string]any, len(step.Input))
+	for k, v := range step.Input {
+		input[k] = v
+	}
+	return approvalRetrySnapshot{
+		execID: exec.record.ID,
+		nodeID: step.NodeID,
+		ready:  gateReadyAt(exec, step.NodeID),
+		input:  input,
+	}, true
+}
+
+func (m *Memory) pendingExpiry(execID, nodeID string) (time.Time, bool) {
+	if m.approvalPending == nil {
+		return time.Time{}, false
+	}
+	expires, pending := m.approvalPending(execID, nodeID)
+	if !pending {
+		return time.Time{}, false
+	}
+	return expires, true
+}
+
+func (m *Memory) closeUnresolvable(execID, nodeID string, now time.Time) {
+	m.mu.Lock()
+	fn := m.approvalUnresolvable
+	m.mu.Unlock()
+	invokeUnresolvable(fn, []unresolvableGate{{execID: execID, nodeID: nodeID}}, now)
+}
+
+func invokeUnresolvable(fn func(string, string, time.Time), gates []unresolvableGate, now time.Time) {
+	if fn == nil {
+		return
+	}
+	for _, gate := range gates {
+		fn(gate.execID, gate.nodeID, now)
+	}
+}
+
+func (m *Memory) failApprovalPastLimit(ctx context.Context, scope isolation.Scope, now time.Time, in JobActionInput) (DispatchResult, error) {
+	return m.mutateJob(scope, now, in, func(exec *memExecution, job *ExecutionJob, step *ExecutionStep) error {
+		if err := matchFence(*job, in); err != nil {
+			return err
+		}
+		if err := requireActiveLease(*job, now); err != nil {
+			return err
+		}
+		if job.Status == JobRunning || job.HeartbeatAt != nil {
+			return errApprovalStillRunning
+		}
+		if err := m.guardLiveLocked(ctx, scope, now, exec.record.WorkflowID, exec.record.ID); err != nil {
+			return err
+		}
+		job.Status = JobFailed
+		job.WorkerID = ""
+		job.LeaseExpiresAt = nil
+		job.HeartbeatAt = nil
+		job.UpdatedAt = now
+		step.Error = requirementUnresolvableStepError()
+		step.LeaseID = ""
+		applyStepStatus(step, ExecutionFailed, now)
+		return nil
+	}, "job.fail", "failed")
 }
 
 func (m *Memory) rollupLocked(exec *memExecution, now time.Time) {

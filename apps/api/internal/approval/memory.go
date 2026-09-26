@@ -3,6 +3,7 @@ package approval
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/page"
 )
 
@@ -19,11 +21,201 @@ type memRow struct {
 	record      Record
 }
 
+// GateWaiting reports whether the latest flow.approval step for a node is
+// still waiting. found is false when that step does not exist.
+type GateWaiting func(executionID, nodeID string) (found, waiting bool)
+
+// UnresolvableRun fails the waiting run after its approval cannot be
+// rebuilt. A nil hook only cancels the approval row. A returned error
+// leaves that row pending.
+type UnresolvableRun func(ctx context.Context, scope isolation.Scope, workflowID, executionID, nodeID string, now time.Time) error
+
 // Memory is an in-process Store used by HTTP unit tests.
+type memExecutionPin struct {
+	versionID string
+	digest    string
+	policies  map[string]runPin
+}
+
 type Memory struct {
-	mu     sync.Mutex
-	rows   map[string]memRow
-	events map[string][]Event
+	mu      sync.Mutex
+	rows    map[string]memRow
+	events  map[string][]Event
+	runPins map[string]memExecutionPin
+	gate    GateWaiting
+	failRun UnresolvableRun
+}
+
+// SetGateWaiting installs the check Decide uses before it accepts a decision.
+// A nil func leaves decisions that have no gate view unchanged.
+func (m *Memory) SetGateWaiting(fn GateWaiting) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.gate = fn
+}
+
+// SetRunPin records the workflow version and, when set, one policy pin a run
+// was started with. A later call for another policy on the same run keeps
+// both. Resync overlays the pin that matches the requirement and does not
+// read current heads.
+func (m *Memory) SetRunPin(executionID string, pin runPin) {
+	if m == nil || strings.TrimSpace(executionID) == "" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.noteRunLocked(executionID, pin)
+}
+
+func (m *Memory) noteRunLocked(executionID string, pin runPin) {
+	if m.runPins == nil {
+		m.runPins = map[string]memExecutionPin{}
+	}
+	slot := m.runPins[executionID]
+	if pin.WorkflowVersionID != "" {
+		slot.versionID = pin.WorkflowVersionID
+	}
+	if pin.WorkflowDigest != "" {
+		slot.digest = pin.WorkflowDigest
+	}
+	if pin.PolicyResourceID != "" {
+		if slot.policies == nil {
+			slot.policies = map[string]runPin{}
+		}
+		slot.policies[pin.PolicyResourceID] = pin
+	}
+	m.runPins[executionID] = slot
+}
+
+// RememberRun stores the version and policy pins copied onto a memory run.
+// Postgres keeps those on the execution and ops_pins. A non-memory store
+// is a no-op.
+func RememberRun(store Store, executionID, versionID, digest string, pins []opsconfig.Pin) {
+	mem, ok := store.(*Memory)
+	if !ok || mem == nil || strings.TrimSpace(executionID) == "" {
+		return
+	}
+	mem.SetRunPin(executionID, runPin{WorkflowVersionID: versionID, WorkflowDigest: digest})
+	for _, pin := range pins {
+		if pin.Kind != opsconfig.KindPolicy || strings.TrimSpace(pin.ResourceID) == "" {
+			continue
+		}
+		mem.SetRunPin(executionID, runPin{
+			WorkflowVersionID: versionID,
+			WorkflowDigest:    digest,
+			PolicyResourceID:  pin.ResourceID,
+			PolicyVersionID:   pin.VersionID,
+			PolicyDigest:      pin.Digest,
+			PolicyRevision:    pin.VersionNumber,
+		})
+	}
+}
+
+// PinnedVersion reports the workflow version recorded for a memory run.
+func (m *Memory) PinnedVersion(executionID string) (string, bool) {
+	if m == nil {
+		return "", false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	slot, ok := m.runPins[executionID]
+	if !ok || slot.versionID == "" {
+		return "", false
+	}
+	return slot.versionID, true
+}
+
+// HasPending reports a pending approval for that execution and node.
+func (m *Memory) HasPending(executionID, nodeID string) bool {
+	_, ok := m.PendingExpiry(executionID, nodeID)
+	return ok
+}
+
+// PendingExpiry reports the expires_at of a pending approval for that
+// execution and node.
+func (m *Memory) PendingExpiry(executionID, nodeID string) (time.Time, bool) {
+	if m == nil {
+		return time.Time{}, false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, row := range m.rows {
+		rec := row.record
+		if rec.ExecutionID == executionID && rec.NodeID == nodeID && rec.Status == StatusPending {
+			return rec.ExpiresAt, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// CancelUnresolvableGate closes a pending approval for that execution and
+// node with close_reason requirement_unresolvable and no decider.
+func (m *Memory) CancelUnresolvableGate(executionID, nodeID string, now time.Time) {
+	if m == nil || executionID == "" || nodeID == "" {
+		return
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, row := range m.rows {
+		rec := row.record
+		if rec.ExecutionID != executionID || rec.NodeID != nodeID || rec.Status != StatusPending {
+			continue
+		}
+		rec.Status = StatusCanceled
+		rec.CloseReason = ReasonRequirementUnresolvable
+		rec.DecidedBy = ""
+		rec.DecidedAt = nil
+		rec.UpdatedAt = now
+		m.rows[id] = memRow{workspaceID: row.workspaceID, record: rec}
+		scope, err := isolation.Authorize(row.workspaceID, "")
+		if err != nil {
+			continue
+		}
+		m.appendEventLocked(scope, rec.ID, EventCanceled, "", map[string]any{"reason": ReasonRequirementUnresolvable})
+	}
+}
+
+func (m *Memory) policyPinsLocked(executionID string) []runPin {
+	slot := m.runPins[executionID]
+	if len(slot.policies) == 0 {
+		return nil
+	}
+	out := make([]runPin, 0, len(slot.policies))
+	for _, pin := range slot.policies {
+		out = append(out, pin)
+	}
+	return out
+}
+
+func (m *Memory) policyPin(executionID, resourceID string) runPin {
+	if resourceID == "" {
+		return runPin{}
+	}
+	slot := m.runPins[executionID]
+	if slot.policies == nil {
+		return runPin{}
+	}
+	return slot.policies[resourceID]
+}
+
+// SetUnresolvableRun installs the run-fail used when a pending row cannot
+// be rebuilt. A nil func only cancels the approval. A transient rebuild
+// does not call it.
+func (m *Memory) SetUnresolvableRun(fn UnresolvableRun) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.failRun = fn
 }
 
 // NewMemory returns an empty approval store.
@@ -41,6 +233,7 @@ func (m *Memory) Create(_ context.Context, scope isolation.Scope, in CreateInput
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.supersedeLocked(scope, rec)
 	for _, row := range m.rows {
 		if row.workspaceID == scope.WorkspaceID() && row.record.BindingFingerprint == rec.BindingFingerprint &&
 			(row.record.Status == StatusPending || row.record.Status == StatusApproved) {
@@ -67,6 +260,9 @@ func (m *Memory) List(_ context.Context, scope isolation.Scope, filter Filter) (
 			continue
 		}
 		if !matchFilter(row.record, filter) {
+			continue
+		}
+		if filter.Status == StatusPending && !row.record.ExpiresAt.After(time.Now().UTC()) {
 			continue
 		}
 		out = append(out, cloneRecord(row.record))
@@ -108,7 +304,7 @@ func (m *Memory) Get(_ context.Context, scope isolation.Scope, id string) (Recor
 	return cloneRecord(row.record), nil
 }
 
-func (m *Memory) Decide(_ context.Context, scope isolation.Scope, id string, in DecideInput) (Record, error) {
+func (m *Memory) Decide(ctx context.Context, scope isolation.Scope, id string, in DecideInput) (Record, error) {
 	decision, err := NormalizeDecision(in.Decision)
 	if err != nil {
 		return Record{}, err
@@ -127,8 +323,23 @@ func (m *Memory) Decide(_ context.Context, scope isolation.Scope, id string, in 
 		return Record{}, ErrNotFound
 	}
 	rec := row.record
-	if rec.Status == StatusCanceled {
+	if rec.Status == StatusCanceled || rec.Status == StatusExpired {
 		return Record{}, ErrClosed
+	}
+	if rec.ExecutionID != "" && rec.NodeID != "" && m.gate != nil {
+		found, waiting := m.gate(rec.ExecutionID, rec.NodeID)
+		if found && !waiting {
+			if rec.Status == StatusPending {
+				rec.Status = StatusExpired
+				rec.DecidedBy = ""
+				rec.DecidedAt = nil
+				rec.CloseReason = ""
+				rec.UpdatedAt = now
+				m.rows[id] = memRow{workspaceID: scope.WorkspaceID(), record: rec}
+				m.appendEventLocked(scope, rec.ID, EventExpired, "", map[string]any{"reason": "gate_expired"})
+			}
+			return Record{}, ErrClosed
+		}
 	}
 	if scope.ActorID() != "" && rec.RequestedBy != "" && scope.ActorID() == rec.RequestedBy {
 		return Record{}, ErrSelfApproval
@@ -145,13 +356,30 @@ func (m *Memory) Decide(_ context.Context, scope isolation.Scope, id string, in 
 	if rec.Status != StatusPending {
 		return Record{}, ErrNotPending
 	}
+	note := strings.TrimSpace(in.Note)
+	if len(note) > 2000 {
+		return Record{}, ErrInvalid
+	}
+	next, changed, err := authorizeDerived(ctx, scope, rec, in)
+	if err != nil {
+		if errors.Is(err, ErrBindingTransient) || errors.Is(err, ErrBindingUnresolved) {
+			return Record{}, err
+		}
+		if errors.Is(err, ErrForbidden) && changed {
+			next.UpdatedAt = now
+			m.rows[id] = memRow{workspaceID: scope.WorkspaceID(), record: next}
+			m.appendEventLocked(scope, next.ID, EventCorrected, scope.ActorID(), correctionDetails(rec, next))
+		}
+		return Record{}, err
+	}
+	if changed {
+		m.appendEventLocked(scope, rec.ID, EventCorrected, scope.ActorID(), correctionDetails(rec, next))
+		rec = next
+	}
 	rec.Status = decision
 	rec.DecidedBy = scope.ActorID()
 	rec.DecidedAt = &now
-	rec.DecisionNote = strings.TrimSpace(in.Note)
-	if len(rec.DecisionNote) > 2000 {
-		return Record{}, ErrInvalid
-	}
+	rec.DecisionNote = note
 	rec.UpdatedAt = now
 	m.rows[id] = memRow{workspaceID: scope.WorkspaceID(), record: rec}
 	m.appendEventLocked(scope, rec.ID, decision, scope.ActorID(), map[string]any{"noteLength": len(rec.DecisionNote)})
@@ -268,6 +496,29 @@ func (m *Memory) applyStatusLocked(scope isolation.Scope, rec Record, status, re
 	return rec
 }
 
+func (m *Memory) supersedeLocked(scope isolation.Scope, rec Record) {
+	if strings.TrimSpace(rec.ExecutionID) == "" || strings.TrimSpace(rec.NodeID) == "" {
+		return
+	}
+	now := time.Now().UTC()
+	for id, row := range m.rows {
+		if row.workspaceID != scope.WorkspaceID() {
+			continue
+		}
+		if row.record.ExecutionID != rec.ExecutionID || row.record.NodeID != rec.NodeID {
+			continue
+		}
+		if row.record.Status != StatusPending || row.record.BindingFingerprint == rec.BindingFingerprint {
+			continue
+		}
+		updated := row.record
+		updated.Status = StatusInvalidated
+		updated.UpdatedAt = now
+		m.rows[id] = memRow{workspaceID: scope.WorkspaceID(), record: updated}
+		m.appendEventLocked(scope, updated.ID, EventInvalidated, "", map[string]any{"reason": "approver_binding_replaced"})
+	}
+}
+
 func (m *Memory) appendEventLocked(scope isolation.Scope, approvalID, eventType, actor string, details map[string]any) {
 	if details == nil {
 		details = map[string]any{}
@@ -293,11 +544,11 @@ func recordFromCreate(scope isolation.Scope, in CreateInput, now time.Time) (Rec
 	if req.ExpiresAt.IsZero() {
 		return Record{}, ErrInvalid
 	}
-	fp := BindingFingerprint(scope.WorkspaceID(), in.WorkflowVersionID, in.WorkflowDigest, req.TargetVersionID, req.PolicyVersionID, req.PolicyDigest, req.Operation, req.NodeID, in.ExecutionID)
 	role := strings.TrimSpace(req.ApproverRole)
 	if role == "" {
 		role = "approver"
 	}
+	fp := BindingFingerprint(scope.WorkspaceID(), in.WorkflowVersionID, in.WorkflowDigest, req.TargetVersionID, req.PolicyVersionID, req.PolicyDigest, req.Operation, req.NodeID, role, in.ExecutionID)
 	requestedBy := strings.TrimSpace(in.RequestedBy)
 	if requestedBy == "" {
 		requestedBy = scope.ActorID()
@@ -328,6 +579,115 @@ func recordFromCreate(scope isolation.Scope, in CreateInput, now time.Time) (Rec
 	}, nil
 }
 
+// ResyncPending rebuilds every pending row with ResolveGateRequirement.
+// A difference is stored and recorded. A definitive rebuild failure
+// cancels the row with requirement_unresolvable and, when a run hook is
+// set, settles that waiting gate through the normal failed-step roll-up.
+// A transient failure leaves the row pending and does not call the hook.
+// The rebuild uses the run pin recorded at start, never current heads, and
+// does not invalidate the row. A hook error leaves the row pending. A
+// second call changes nothing.
+func (m *Memory) ResyncPending(ctx context.Context, versions VersionSource, ops PinSource, now time.Time) ResyncStats {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	m.mu.Lock()
+	type item struct {
+		workspaceID string
+		rec         Record
+		pins        []runPin
+	}
+	var pending []item
+	for _, row := range m.rows {
+		if row.record.Status == StatusPending {
+			pending = append(pending, item{
+				workspaceID: row.workspaceID,
+				rec:         cloneRecord(row.record),
+				pins:        m.policyPinsLocked(row.record.ExecutionID),
+			})
+		}
+	}
+	m.mu.Unlock()
+	sort.Slice(pending, func(i, j int) bool {
+		if pending[i].workspaceID != pending[j].workspaceID {
+			return pending[i].workspaceID < pending[j].workspaceID
+		}
+		return pending[i].rec.ID < pending[j].rec.ID
+	})
+	var stats ResyncStats
+	seenWS := map[string]struct{}{}
+	for _, item := range pending {
+		if _, ok := seenWS[item.workspaceID]; !ok {
+			seenWS[item.workspaceID] = struct{}{}
+			stats.Workspaces++
+		}
+		scope, err := isolation.Authorize(item.workspaceID, "")
+		if err != nil {
+			stats.Failed++
+			continue
+		}
+		req, err := resolveGateRequirement(ctx, scope, versions, ops, item.rec.WorkflowID, item.rec.WorkflowVersionID, item.rec.NodeID, now, item.pins)
+		m.mu.Lock()
+		row, ok := m.rows[item.rec.ID]
+		if !ok || row.workspaceID != item.workspaceID || row.record.Status != StatusPending {
+			m.mu.Unlock()
+			stats.Skipped++
+			continue
+		}
+		if err != nil {
+			if errors.Is(err, ErrBindingTransient) {
+				stats.Skipped++
+				m.mu.Unlock()
+				continue
+			}
+			failRun := m.failRun
+			rec := row.record
+			m.mu.Unlock()
+			if failRun != nil {
+				if settleErr := failRun(ctx, scope, rec.WorkflowID, rec.ExecutionID, rec.NodeID, now); settleErr != nil {
+					stats.Failed++
+					continue
+				}
+			}
+			m.mu.Lock()
+			row, ok = m.rows[item.rec.ID]
+			if !ok || row.workspaceID != item.workspaceID || row.record.Status != StatusPending {
+				m.mu.Unlock()
+				stats.Skipped++
+				continue
+			}
+			rec = row.record
+			rec.Status = StatusCanceled
+			rec.CloseReason = ReasonRequirementUnresolvable
+			rec.DecidedBy = ""
+			rec.DecidedAt = nil
+			rec.UpdatedAt = now
+			m.rows[item.rec.ID] = memRow{workspaceID: item.workspaceID, record: rec}
+			m.appendEventLocked(scope, rec.ID, EventCanceled, "", map[string]any{"reason": ReasonRequirementUnresolvable})
+			stats.Closed++
+			m.mu.Unlock()
+			continue
+		}
+		if strings.TrimSpace(req.PolicyResourceID) != "" {
+			req = overlayRunPolicy(req, m.policyPin(row.record.ExecutionID, req.PolicyResourceID))
+		}
+		next, changed := ProjectRequirement(row.record, item.workspaceID, req)
+		if !changed {
+			stats.Skipped++
+			m.mu.Unlock()
+			continue
+		}
+		next.UpdatedAt = now
+		m.rows[item.rec.ID] = memRow{workspaceID: item.workspaceID, record: next}
+		m.appendEventLocked(scope, next.ID, EventCorrected, "", correctionDetails(row.record, next))
+		stats.Corrected++
+		m.mu.Unlock()
+	}
+	return stats
+}
+
 func matchFilter(rec Record, filter Filter) bool {
 	if filter.Status != "" && rec.Status != filter.Status {
 		return false
@@ -339,6 +699,9 @@ func matchFilter(rec Record, filter Filter) bool {
 		return false
 	}
 	if filter.ExecutionID != "" && rec.ExecutionID != filter.ExecutionID {
+		return false
+	}
+	if filter.Actionable && !MayAct(filter.ActorRoles, rec) {
 		return false
 	}
 	return true

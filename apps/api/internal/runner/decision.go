@@ -9,12 +9,13 @@ import (
 // Failure codes persisted on the job. They never include credential
 // material or the compose local-worker sentence.
 const (
-	CodeUnsupported         = "runner-unsupported"
-	CodeDraftNotRunnable    = "draft-not-runnable"
-	CodeJobBindingRejected  = "job-binding-rejected"
-	CodeUnpublishedPin      = "unpublished-pin"
-	CodeHandleForbidden     = "handle-forbidden"
-	CodeIntegrationDisabled = "integration-disabled"
+	CodeUnsupported               = "runner-unsupported"
+	CodeDraftNotRunnable          = "draft-not-runnable"
+	CodeJobBindingRejected        = "job-binding-rejected"
+	CodeUnpublishedPin            = "unpublished-pin"
+	CodeHandleForbidden           = "handle-forbidden"
+	CodeIntegrationDisabled       = "integration-disabled"
+	CodeApprovalBindingUnresolved = "approval-binding-unresolved"
 )
 
 // Decision is the production runner's action for one claimed job.

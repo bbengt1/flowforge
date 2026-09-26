@@ -3189,7 +3189,9 @@ paths:
         The delete handler refuses any embed session with 403 forbidden before it reads permissions, capabilities, or ownership. That includes a session minted earlier whose stored caps still list workflow.delete. capabilities.delete is false for every embed session. Ownership never adds a permission an embed session does not already hold.
         workflow.delete cannot be minted on an embed assertion (ErrCapability, the same rejection as platform.administer). It stays on the editor and admin workspace roles.
         The browser identity proxy refuses DELETE /workflows/{workflowId} for an embed session with 403. First-party browser DELETE stays allowlisted.
-        Queued or running executions return 409 workflow_has_active_executions and are not canceled. Waiting and pinned executions do not block.
+        A non-terminal run with a job in queued, claimed, or running returns 409 workflow_has_active_executions and is not changed. That includes a gate parked while a sibling branch still has a queued or running job. Waiting, pending, and blocked work does not block.
+        Delete of a parked run, in that same transaction, cancels its waiting, pending, and blocked steps and jobs with error code workflow_deleted, cancels a flow.delay timer, closes pending approvals as canceled with closeReason workflow_deleted and no decider, and fails the run with workflow_deleted. That frees the concurrency slot.
+        Workflow detail includes deleteImpact for a caller who can delete: waitingRuns, blocked, and inFlightRuns. It is omitted for viewers and embed sessions. waitingRuns is how many parked runs delete will stop.
         A waiting run that later resumes or is requeued after the workflow is deleted is failed with reason workflow_deleted. No further steps run. Step retry returns 409 execution_not_retryable with reason workflow_deleted. Approval decide on that run returns 409 approval_closed and does not record the decision.
         Auth class: authenticated. Identity proxy: browser.
         Responses never include secrets, credentials, tokens, private keys, or vault material.
@@ -3203,7 +3205,7 @@ paths:
         "404":
           description: No workflow.view, unknown id, already deleted, or another tenant. Same not-found problem as a missing workflow.
         "409":
-          description: workflow_has_active_executions when a queued or running execution exists.
+          description: workflow_has_active_executions when a non-terminal run has a job in queued, claimed, or running.
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "500":
@@ -5175,15 +5177,16 @@ paths:
   /approvals/{approvalId}/decide:
     post:
       operationId: postApprovalsApprovalIdDecide
-      summary: POST /approvals/{approvalId}/decide
+      summary: Decide an approval
       description: |
-        Generated from the route table (POST /api/v1/approvals/{approvalId}/decide).
+        Records an approve or reject decision and resumes a waiting gate.
+        A database, network, or timeout failure while rebuilding the pinned requirement returns 503 approval_requirement_unavailable.
+        That response sets Retry-After to 5, records nothing, and changes nothing. The problem document has no errors array.
         Auth class: authenticated. Identity proxy: browser.
         Responses never include secrets, credentials, tokens, private keys, or vault material.
-        Vault references are display name and UUID only.
       responses:
         "200":
-          description: Success
+          description: Decision recorded.
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -5192,6 +5195,8 @@ paths:
           $ref: "#/components/responses/MethodNotAllowed"
         "500":
           $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ApprovalRequirementUnavailable"
   /approvals/{approvalId}/events:
     get:
       operationId: getApprovalsApprovalIdEvents
@@ -6419,8 +6424,8 @@ components:
         status: {type: string, enum: [pending, approved, rejected, expired, invalidated, canceled]}
         closeReason:
           type: string
-          description: Set only when status is canceled. run_canceled or workflow_deleted. No decider is recorded.
-          enum: [run_canceled, workflow_deleted]
+          description: Set only when status is canceled. run_canceled, workflow_deleted, or requirement_unresolvable. No decider is recorded.
+          enum: [run_canceled, workflow_deleted, requirement_unresolvable]
         expiresAt: {type: string, format: date-time}
         requestedBy: {type: string, format: uuid}
         decidedBy: {type: string, format: uuid}
@@ -6483,7 +6488,7 @@ components:
       properties:
         id: {type: string, format: uuid}
         approvalId: {type: string, format: uuid}
-        eventType: {type: string, enum: [created, approved, rejected, expired, invalidated, canceled]}
+        eventType: {type: string, enum: [created, approved, rejected, expired, invalidated, canceled, corrected]}
         actorId: {type: string, format: uuid}
         details: {type: object, additionalProperties: true}
         occurredAt: {type: string, format: date-time}
@@ -6739,6 +6744,7 @@ components:
             - execution_not_retryable
             - step_attempt_superseded
             - approval_closed
+            - approval_requirement_unavailable
         request_id:
           type: string
         reason:
@@ -7828,6 +7834,35 @@ components:
           properties:
             delete:
               type: boolean
+        deleteImpact:
+          $ref: "#/components/schemas/WorkflowDeleteImpact"
+    WorkflowDeleteImpact:
+      type: object
+      description: |
+        Read-only counts on workflow detail, next to capabilities.delete.
+        Present only for a caller who can delete. Omitted for viewers, for
+        embed sessions, and on list and create responses.
+        Computed by the same classification DELETE uses.
+      required: [waitingRuns, blocked, inFlightRuns]
+      properties:
+        waitingRuns:
+          type: integer
+          minimum: 0
+          description: |
+            Non-terminal runs whose unfinished work is only waiting, pending,
+            or blocked. Delete stops them and marks each run failed with
+            workflow_deleted. The confirmation text is "N runs waiting on
+            approval or a delay will be stopped and marked failed".
+        blocked:
+          type: boolean
+          description: True when delete would return 409 workflow_has_active_executions.
+        inFlightRuns:
+          type: integer
+          minimum: 0
+          description: |
+            Non-terminal runs that have a job in queued, claimed, or running.
+            A gate parked beside a sibling queued or running job counts here,
+            not in waitingRuns.
     WorkflowList:
       type: object
       required: [items]
@@ -8243,12 +8278,15 @@ components:
           description: Present on execution detail. Omitted from list rows.
         statusReason:
           type: string
-          enum: [no-worker, workflow_deleted]
+          enum: [no-worker, workflow_deleted, requirement_unresolvable]
           description: >
             Additive operator hint. no-worker when status is still queued and
             no job has been claimed after 15s. workflow_deleted when a waiting
-            run was stopped because the workflow was deleted. Does not change
-            status or fencing. Chloe can show “no worker is claiming jobs”.
+            run was stopped because the workflow was deleted.
+            requirement_unresolvable when a pending approval could not be
+            rebuilt: the gate failed with that code and the run is failed.
+            That is not an expired wait. Does not change status or fencing.
+            Chloe can show “no worker is claiming jobs”.
         pins:
           type: array
           items: {$ref: "#/components/schemas/OpsPin"}
@@ -9410,6 +9448,31 @@ components:
             detail: An unexpected error occurred.
             instance: /api/v1/health
             code: internal-error
+            request_id: 0123456789abcdef0123456789abcdef
+    ApprovalRequirementUnavailable:
+      description: |
+        The pinned approval requirement could not be rebuilt because of a database, network, or timeout failure.
+        Retry-After is 5 seconds. Nothing is recorded and the approval is unchanged.
+        The problem document has no errors array.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying. Always 5 for this response.
+          schema:
+            type: integer
+            example: 5
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:approval_requirement_unavailable
+            title: Service Unavailable
+            status: 503
+            detail: The approval requirement could not be rebuilt. Retry.
+            instance: /api/v1/approvals/00000000-0000-4000-8000-000000000001/decide
+            code: approval_requirement_unavailable
             request_id: 0123456789abcdef0123456789abcdef
     DependencyUnavailable:
       description: Required dependency is not configured or reachable

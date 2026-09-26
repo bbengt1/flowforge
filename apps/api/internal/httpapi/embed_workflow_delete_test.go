@@ -156,6 +156,9 @@ func assertEmbedWorkflowDeleteFalse(t *testing.T, env embedEnv, token, csrf, wor
 	if view.Capabilities.Delete {
 		t.Fatal("embed capabilities.delete must be false")
 	}
+	if strings.Contains(rec.Body.String(), "deleteImpact") {
+		t.Fatal("embed detail must omit deleteImpact")
+	}
 	rec = httptest.NewRecorder()
 	req = sessionAPIRequest(http.MethodDelete, "/api/v1/workflows/"+workflowID, "", token, csrf)
 	env.h.ServeHTTP(rec, req)

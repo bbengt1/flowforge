@@ -15,10 +15,13 @@ type WorkflowCapabilities struct {
 }
 
 // WorkflowView is a workflow plus the caller's capabilities. The embedded
-// record keeps the existing flat JSON shape.
+// record keeps the existing flat JSON shape. DeleteImpact is set only on
+// workflow detail for a caller who can delete. It is omitted for everyone
+// else, including embed sessions.
 type WorkflowView struct {
 	wfstore.Workflow
-	Capabilities WorkflowCapabilities `json:"capabilities"`
+	Capabilities WorkflowCapabilities  `json:"capabilities"`
+	DeleteImpact *wfstore.DeleteImpact `json:"deleteImpact,omitempty"`
 }
 
 func presentWorkflow(perms []string, actorID string, wf wfstore.Workflow, embedSession bool) WorkflowView {

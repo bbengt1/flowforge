@@ -67,7 +67,7 @@ func TestResumeAfterDeleteStopsTheRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, item := range jobs {
-		if item.Status != JobFailed {
+		if item.Status != JobCanceled {
 			t.Fatalf("job = %+v", item)
 		}
 	}
@@ -86,6 +86,17 @@ func TestTimerResumeAfterDeleteDoesNotExpire(t *testing.T) {
 	if _, err := store.Delete(ctx, scope, ver.WorkflowID); err != nil {
 		t.Fatal(err)
 	}
+	// Delete already canceled the timer. Put the wait back so recovery of a
+	// due job on a tombstone is still covered: it must fail the run and must
+	// not write an expired port.
+	held := store.executions[exec.ID]
+	held.record.Status = ExecutionWaiting
+	held.record.FinishedAt = nil
+	held.jobs[0].Status = JobWaiting
+	held.jobs[0].AvailableAt = now.Add(-time.Second)
+	held.steps[0].Status = ExecutionWaiting
+	held.steps[0].FinishedAt = nil
+	store.executions[exec.ID] = held
 	n, err := store.RecoverExpiredLeases(ctx, scope, now)
 	if err != nil {
 		t.Fatal(err)

@@ -3,6 +3,7 @@ package workflow
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestEvaluateCondition(t *testing.T) {
@@ -206,5 +207,24 @@ func TestISODurationSeconds(t *testing.T) {
 	}
 	if _, err := ParseISODuration("P213504D"); err == nil {
 		t.Fatal("expected time.Duration overflow rejection")
+	}
+}
+
+func TestApprovalWaitDuration(t *testing.T) {
+	d, label := ApprovalWaitDuration("PT30M")
+	if d != 30*time.Minute || label != "PT30M" {
+		t.Fatalf("parsed = %s %s", d, label)
+	}
+	d, label = ApprovalWaitDuration("")
+	if d != time.Hour || label != "PT1H" {
+		t.Fatalf("blank = %s %s", d, label)
+	}
+	d, label = ApprovalWaitDuration("later")
+	if d != time.Hour || label != "PT1H" {
+		t.Fatalf("unparseable = %s %s", d, label)
+	}
+	d, label = ApprovalWaitDuration("P8D")
+	if d != 7*24*time.Hour || label != "P7D" {
+		t.Fatalf("capped = %s %s", d, label)
 	}
 }

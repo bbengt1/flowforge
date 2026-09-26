@@ -172,7 +172,12 @@ func TestPostgresCloseApprovalsOnCancelAndDelete(t *testing.T) {
 			var decideErr, cancelErr error
 			var decided Record
 			assertNoDeadlock(t, func() error {
-				decided, decideErr = store.Decide(ctx, approver, rec.ID, DecideInput{Decision: DecisionApproved, Now: now})
+				decided, decideErr = store.Decide(ctx, approver, rec.ID, DecideInput{
+					Decision: DecisionApproved, Now: now, Roles: []string{"approver"},
+					Resolve: func(context.Context, isolation.Scope, Record) (policy.Requirement, error) {
+						return StoredRequirement(rec), nil
+					},
+				})
 				return decideErr
 			}, func() error {
 				_, cancelErr = workflows.CancelExecution(ctx, scope, now, exec.ID)

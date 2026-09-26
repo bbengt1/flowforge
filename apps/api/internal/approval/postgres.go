@@ -10,6 +10,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/page"
+	"github.com/bbengt1/flowforge/apps/api/internal/parkedapproval"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -20,7 +21,8 @@ const recordColumns = `
 	COALESCE(execution_id::text, ''), node_id, node_name, operation,
 	target_kind, COALESCE(target_id::text, ''), COALESCE(target_version_id::text, ''), target_digest,
 	COALESCE(policy_resource_id::text, ''), COALESCE(policy_version_id::text, ''), policy_digest, policy_revision,
-	binding_fingerprint, approver_role, status, expires_at,
+	binding_fingerprint, approver_role,
+	status, expires_at,
 	COALESCE(requested_by::text, ''), COALESCE(decided_by::text, ''), decided_at, decision_note,
 	COALESCE(close_reason, ''),
 	created_at, updated_at
@@ -57,6 +59,10 @@ func (p *Postgres) Create(ctx context.Context, scope isolation.Scope, in CreateI
 		return Record{}, mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
+
+	if err := parkedapproval.SupersedeOtherPending(ctx, tx, scope.WorkspaceID(), rec.ExecutionID, rec.NodeID, rec.BindingFingerprint, time.Now().UTC()); err != nil {
+		return Record{}, mapDBErr(err)
+	}
 
 	var existing Record
 	err = scanRecord(tx.QueryRow(ctx, `SELECT `+recordColumns+`
@@ -105,6 +111,18 @@ func (p *Postgres) List(ctx context.Context, scope isolation.Scope, filter Filte
 	var parts []string
 	if filter.Status != "" {
 		parts = append(parts, "status = $"+page.Place(&args, filter.Status))
+		// A pending list hides rows whose deadline has already passed.
+		// now() is the database clock, the same clock the gate wait uses.
+		if filter.Status == StatusPending {
+			parts = append(parts, "expires_at > now()")
+		}
+	}
+	if filter.Actionable {
+		roles := filter.ActorRoles
+		if roles == nil {
+			roles = []string{}
+		}
+		parts = append(parts, `(approver_role = ANY($`+page.Place(&args, roles)+`::text[]) OR 'admin' = ANY($`+page.Place(&args, roles)+`::text[]))`)
 	}
 	if filter.WorkflowID != "" {
 		parts = append(parts, "workflow_id = $"+page.Place(&args, filter.WorkflowID)+"::uuid")
@@ -230,8 +248,25 @@ func (p *Postgres) Decide(ctx context.Context, scope isolation.Scope, id string,
 	if err := scanRecord(tx.QueryRow(ctx, `SELECT `+recordColumns+` FROM approvals WHERE id = $1::uuid FOR UPDATE`, id), &rec); err != nil {
 		return Record{}, err
 	}
-	if rec.Status == StatusCanceled {
+	if rec.Status == StatusCanceled || rec.Status == StatusExpired {
 		return Record{}, ErrClosed
+	}
+	if rec.ExecutionID != "" && rec.NodeID != "" {
+		found, waiting, err := GateStillWaiting(ctx, tx, rec.ExecutionID, rec.NodeID)
+		if err != nil {
+			return Record{}, err
+		}
+		if found && !waiting {
+			if rec.Status == StatusPending {
+				if err := ExpirePendingGate(ctx, tx, rec.ExecutionID, rec.NodeID, now); err != nil {
+					return Record{}, err
+				}
+			}
+			if err := tx.Commit(ctx); err != nil {
+				return Record{}, mapDBErr(err)
+			}
+			return Record{}, ErrClosed
+		}
 	}
 	if scope.ActorID() != "" && rec.RequestedBy != "" && scope.ActorID() == rec.RequestedBy {
 		return Record{}, ErrSelfApproval
@@ -252,6 +287,34 @@ func (p *Postgres) Decide(ctx context.Context, scope isolation.Scope, id string,
 	}
 	if rec.Status != StatusPending {
 		return Record{}, ErrNotPending
+	}
+	next, changed, err := authorizeDerived(ctx, scope, rec, in)
+	if err != nil {
+		if errors.Is(err, ErrBindingTransient) || errors.Is(err, ErrBindingUnresolved) {
+			return Record{}, err
+		}
+		if errors.Is(err, ErrForbidden) && changed {
+			updated, uerr := updateBinding(ctx, tx, next, now)
+			if uerr != nil {
+				return Record{}, uerr
+			}
+			if ierr := insertEvent(ctx, tx, scope, updated.ID, EventCorrected, scope.ActorID(), correctionDetails(rec, updated)); ierr != nil {
+				return Record{}, ierr
+			}
+			if cerr := tx.Commit(ctx); cerr != nil {
+				return Record{}, mapDBErr(cerr)
+			}
+		}
+		return Record{}, err
+	}
+	if changed {
+		before := rec
+		if rec, err = updateBinding(ctx, tx, next, now); err != nil {
+			return Record{}, err
+		}
+		if err := insertEvent(ctx, tx, scope, rec.ID, EventCorrected, scope.ActorID(), correctionDetails(before, rec)); err != nil {
+			return Record{}, err
+		}
 	}
 	if err := tx.QueryRow(ctx, `
 		UPDATE approvals
@@ -469,6 +532,26 @@ func requestedByArg(scope isolation.Scope, requestedBy string) any {
 		return requestedBy
 	}
 	return actorArg(scope)
+}
+
+func updateBinding(ctx context.Context, tx pgx.Tx, rec Record, now time.Time) (Record, error) {
+	var out Record
+	err := scanRecord(tx.QueryRow(ctx, `
+		UPDATE approvals SET
+			policy_resource_id = $2::uuid,
+			policy_version_id = $3::uuid,
+			policy_digest = $4,
+			policy_revision = $5,
+			binding_fingerprint = $6,
+			approver_role = $7,
+			updated_at = $8
+		WHERE id = $1::uuid
+		RETURNING `+recordColumns,
+		rec.ID,
+		nullUUID(rec.PolicyResourceID), nullUUID(rec.PolicyVersionID), rec.PolicyDigest, rec.PolicyRevision,
+		rec.BindingFingerprint, rec.ApproverRole, now,
+	), &out)
+	return out, err
 }
 
 func updateStatus(ctx context.Context, tx pgx.Tx, scope isolation.Scope, rec Record, status, reason string, now time.Time) (Record, error) {

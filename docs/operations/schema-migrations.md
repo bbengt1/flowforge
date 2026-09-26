@@ -185,7 +185,7 @@ The clean-tree and drift tests run without a database. The happy-path
 and refused-boot tests skip unless a database URL is set. CI runs the
 database-free tests on every API change (`go test./...`).
 
-## Migration role for 000034 and 000035
+## Migration role for 000034, 000035, and 000036
 
 `000034_execution_edges.sql` creates `app.backfill_execution_dependencies()`
 as `SECURITY DEFINER` with `SET row_security = off`. PostgreSQL allows
@@ -202,6 +202,22 @@ migration role can run them. A superuser still bypasses RLS, so each
 statement also filters on `app.current_workspace_id()`.
 `app.close_pending_approvals` is granted to `flowforge_app` and only
 updates rows in the current workspace.
+`000036_settle_stuck_runs.sql` is the same kind of role as `000035`.
+`app.backfill_settle_stuck_runs()` walks workspaces, calls
+`app.set_workspace_id`, and filters on `app.current_workspace_id()`.
+It does not turn row security off and does not need `BYPASSRLS`. It is
+not granted to `flowforge_app`. It rolls up active runs whose latest
+attempts are finished, fails parked runs left on a soft-deleted
+workflow, and closes pending approvals whose gate step is no longer
+`waiting`. Re-running the file is safe.
+
 API boot grants `EXECUTE` on every `app` function to `flowforge_app`,
 then revokes that grant from `backfill_execution_dependencies`,
-`backfill_execution_edge_resolution`, and `backfill_close_stale_approvals`.
+`backfill_execution_edge_resolution`, `backfill_close_stale_approvals`,
+and `backfill_settle_stuck_runs`. Boot reads `pg_roles` before it
+changes `flowforge_app`. It issues `ALTER ROLE` only when login,
+superuser, `BYPASSRLS`, or inherit actually differs. If
+`flowforge_app` has `BYPASSRLS` and the migration role is neither a
+superuser nor a `BYPASSRLS` role, boot fails with a clear error and
+does not continue. A non-superuser, non-`BYPASSRLS` role can migrate
+when the roles are already correct.

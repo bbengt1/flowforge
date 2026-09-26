@@ -10,6 +10,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
+	"github.com/bbengt1/flowforge/apps/api/internal/parkedapproval"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/jackc/pgx/v5"
@@ -51,16 +52,19 @@ func (p *Postgres) ClaimJob(ctx context.Context, scope isolation.Scope, now time
 	lease := normalizeLease(in.Lease)
 	ttl := normalizeBindingTTL(in.BindingTTL)
 
+	// Lease recovery commits before the claim transaction. Holding an
+	// expired-lease execution and then locking its workflow deadlocks with
+	// delete, which locks the workflow first.
+	recovered, err := p.RecoverExpiredLeases(ctx, scope, now)
+	if err != nil {
+		return DispatchResult{}, err
+	}
+
 	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
 	if err != nil {
 		return DispatchResult{}, mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
-
-	recovered, err := recoverExpiredTx(ctx, tx, scope, now)
-	if err != nil {
-		return DispatchResult{}, err
-	}
 
 	// The first read does not lock the job. Two claims can select the same
 	// row; after the live workflow lock, the loser re-reads the next queued
@@ -699,6 +703,13 @@ func (p *Postgres) WaitJob(ctx context.Context, scope isolation.Scope, now time.
 		return DispatchResult{}, err
 	}
 	if job.Status == JobWaiting {
+		step, err := scanStep(tx.QueryRow(ctx, `SELECT `+stepColumns+` FROM execution_steps WHERE id = $1::uuid`, job.ExecutionStepID))
+		if err != nil {
+			return DispatchResult{}, err
+		}
+		if err := ensureParkedApprovalTx(ctx, tx, scope, in, job.AvailableAt, job.ExecutionID, step.NodeType); err != nil {
+			return DispatchResult{}, err
+		}
 		return p.dispatchSnapshotTx(ctx, tx, scope, now, job)
 	}
 	if job.Status != JobClaimed && job.Status != JobRunning && job.Status != JobQueued {
@@ -728,6 +739,9 @@ func (p *Postgres) WaitJob(ctx context.Context, scope isolation.Scope, now time.
 	if err := rollupExecutionTx(ctx, tx, job.ExecutionID, now); err != nil {
 		return DispatchResult{}, err
 	}
+	if err := ensureParkedApprovalTx(ctx, tx, scope, in, avail, job.ExecutionID, step.NodeType); err != nil {
+		return DispatchResult{}, err
+	}
 	if _, err := insertAuditTx(ctx, tx, scope, AuditWrite{
 		Action:       "job.wait",
 		ResourceType: "execution",
@@ -750,6 +764,71 @@ func (p *Postgres) WaitJob(ctx context.Context, scope isolation.Scope, now time.
 		Job:       job,
 		Binding:   buildBinding(scope, exec, step, job, now.Add(DefaultJobBindingTTL), now),
 	}, nil
+}
+
+// ensureParkedApprovalTx inserts the approval in the park transaction.
+// expires_at is the wait deadline already stored on the job, not a new
+// computation from the caller's clock.
+func ensureParkedApprovalTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, in WaitJobInput, deadline time.Time, executionID, nodeType string) error {
+	if in.Approval == nil || nodeType != "flow.approval" {
+		return nil
+	}
+	if deadline.IsZero() {
+		return ErrInvalid
+	}
+	exec, err := getExecutionTx(ctx, tx, executionID)
+	if err != nil {
+		return err
+	}
+	seed := *in.Approval
+	if seed.WorkflowID == "" {
+		seed.WorkflowID = exec.WorkflowID
+	}
+	if seed.WorkflowVersionID == "" {
+		seed.WorkflowVersionID = exec.WorkflowVersionID
+	}
+	if seed.WorkflowDigest == "" {
+		seed.WorkflowDigest = exec.WorkflowDigest
+	}
+	if seed.ExecutionID == "" {
+		seed.ExecutionID = exec.ID
+	}
+	if seed.RequestedBy == "" {
+		seed.RequestedBy = exec.RequestedBy
+	}
+	if strings.TrimSpace(seed.NodeID) == "" {
+		return ErrInvalid
+	}
+	err = parkedapproval.Insert(ctx, tx, parkedapproval.Pending{
+		WorkspaceID:       scope.WorkspaceID(),
+		ActorID:           scope.ActorID(),
+		WorkflowID:        seed.WorkflowID,
+		WorkflowVersionID: seed.WorkflowVersionID,
+		WorkflowDigest:    seed.WorkflowDigest,
+		ExecutionID:       seed.ExecutionID,
+		RequestedBy:       seed.RequestedBy,
+		NodeID:            seed.NodeID,
+		NodeName:          seed.NodeName,
+		Operation:         seed.Operation,
+		ApproverRole:      seed.ApproverRole,
+		TargetKind:        seed.TargetKind,
+		TargetID:          seed.TargetID,
+		TargetVersionID:   seed.TargetVersionID,
+		TargetDigest:      seed.TargetDigest,
+		PolicyResourceID:  seed.PolicyResourceID,
+		PolicyVersionID:   seed.PolicyVersionID,
+		PolicyDigest:      seed.PolicyDigest,
+		PolicyRevision:    seed.PolicyRevision,
+		ExpiresAt:         deadline,
+	})
+	if errors.Is(err, parkedapproval.ErrInvalid) {
+		return ErrInvalid
+	}
+	return mapDBErr(err)
+}
+
+func expireParkedGateTx(ctx context.Context, tx pgx.Tx, executionID, nodeID string, now time.Time) error {
+	return mapDBErr(parkedapproval.Expire(ctx, tx, executionID, nodeID, now))
 }
 
 func (p *Postgres) ResumeWait(ctx context.Context, scope isolation.Scope, now time.Time, in ResumeWaitInput) (DispatchResult, error) {
@@ -819,6 +898,11 @@ func (p *Postgres) ResumeWait(ctx context.Context, scope isolation.Scope, now ti
 	}
 	if err := resolveOutgoingTx(ctx, tx, job.ExecutionID, step.NodeID, emittedPorts(step.NodeType, step.Output), now); err != nil {
 		return DispatchResult{}, err
+	}
+	if port == "expired" && step.NodeType == "flow.approval" {
+		if err := expireParkedGateTx(ctx, tx, job.ExecutionID, step.NodeID, now); err != nil {
+			return DispatchResult{}, err
+		}
 	}
 	if err := rollupExecutionTx(ctx, tx, job.ExecutionID, now); err != nil {
 		return DispatchResult{}, err
@@ -951,6 +1035,25 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 	if exec.Status == ExecutionCanceled && opts.action != "job.fail" && opts.action != "job.release" {
 		return DispatchResult{}, ErrCanceled
 	}
+	if in.ApprovalTransientRetry {
+		nodeType, input, expires, ready, err := pendingApprovalExpiresTx(ctx, tx, job.ExecutionStepID)
+		if err != nil {
+			return DispatchResult{}, err
+		}
+		if nodeType == "flow.approval" && ApprovalPastLimit(ready, expires, input, now) {
+			orig := opts.apply
+			opts.apply = func(job ExecutionJob) (string, map[string]any, error) {
+				status, payload, err := orig(job)
+				if err != nil || status != JobQueued {
+					return status, payload, err
+				}
+				return JobFailed, requirementUnresolvableStepError(), nil
+			}
+			opts.writeError = true
+			opts.action = "job.fail"
+			opts.outcome = "failed"
+		}
+	}
 	nextStatus, payload, err := opts.apply(job)
 	if err != nil {
 		return DispatchResult{}, err
@@ -973,15 +1076,23 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 	if nextStatus == JobQueued && opts.clearClaim {
 		worker = ""
 	}
-	job, err = scanJob(tx.QueryRow(ctx, `
+	q := `
 		UPDATE execution_jobs
 		SET status = $2,
 		    worker_id = NULLIF($3, ''),
 		    lease_expires_at = $4,
 		    heartbeat_at = $5,
-		    updated_at = $1
-		WHERE id = $6::uuid
-		RETURNING `+jobColumns, now, nextStatus, worker, leaseExp, hb, in.JobID))
+		    updated_at = $1`
+	args := []any{now, nextStatus, worker, leaseExp, hb}
+	if nextStatus == JobQueued && in.ApprovalTransientRetry {
+		delay := approvalRetryWait(approvalJitter())
+		q += `, available_at = $6 WHERE id = $7::uuid RETURNING ` + jobColumns
+		args = append(args, now.Add(delay), in.JobID)
+	} else {
+		q += ` WHERE id = $6::uuid RETURNING ` + jobColumns
+		args = append(args, in.JobID)
+	}
+	job, err = scanJob(tx.QueryRow(ctx, q, args...))
 	if err != nil {
 		return DispatchResult{}, err
 	}
@@ -1009,7 +1120,7 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 	if nextStatus == JobQueued {
 		leaseID = ""
 	}
-	q := `
+	q = `
 		UPDATE execution_steps
 		SET status = $2,
 		    lease_id = NULLIF($3, '')::uuid,
@@ -1019,7 +1130,7 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 		                       WHEN $2 IN ('queued', 'running', 'waiting') THEN NULL
 		                       ELSE finished_at END,
 		    updated_at = $1`
-	args := []any{now, stepStatus, leaseID, job.FencingToken}
+	args = []any{now, stepStatus, leaseID, job.FencingToken}
 	if opts.writeOutput {
 		q += `, output_redacted = $5::jsonb WHERE id = $6::uuid RETURNING ` + stepColumns
 		args = append(args, outputRaw, job.ExecutionStepID)
@@ -1033,6 +1144,13 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 	step, err := scanStep(tx.QueryRow(ctx, q, args...))
 	if err != nil {
 		return DispatchResult{}, err
+	}
+	if opts.writeError {
+		if code, _ := payload["code"].(string); code == ReasonRequirementUnresolvable {
+			if err := parkedapproval.CancelUnresolvable(ctx, tx, job.ExecutionID, step.NodeID, now); err != nil {
+				return DispatchResult{}, mapDBErr(err)
+			}
+		}
 	}
 	if opts.releaseOnSuccess && nextStatus == JobSucceeded && prevStatus != JobSucceeded {
 		if err := resolveOutgoingTx(ctx, tx, job.ExecutionID, step.NodeID, emittedPorts(step.NodeType, step.Output), now); err != nil {
@@ -1073,19 +1191,22 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 }
 
 func recoverExpiredTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now time.Time) (int, error) {
-	// Due-wait workflows are locked before any execution row. Lease recovery
-	// then locks those execution ids, sorted, before job updates. ClaimJob
-	// calls this before its own workflow lock. Cancel and complete lock the
-	// execution before jobs, so recovery must not lock jobs first.
+	// Lock order is workflow, then executions sorted by id, then steps and
+	// jobs. Lease rows are included in that workflow set so recovery never
+	// locks an execution whose workflow is still unlocked.
 	due, err := loadDueWaits(ctx, tx, now)
 	if err != nil {
 		return 0, err
 	}
-	deleted, err := lockDueWaitWorkflows(ctx, tx, due)
+	leaseIDs, leaseWorkflows, err := expiredLeaseExecutions(ctx, tx, now)
 	if err != nil {
 		return 0, err
 	}
-	leaseIDs, err := expiredLeaseExecutionIDs(ctx, tx, now)
+	workflowIDs := append([]string{}, leaseWorkflows...)
+	for _, row := range due {
+		workflowIDs = append(workflowIDs, row.workflowID)
+	}
+	deleted, err := lockWorkflowsSorted(ctx, tx, workflowIDs)
 	if err != nil {
 		return 0, err
 	}
@@ -1105,38 +1226,24 @@ func recoverExpiredTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now
 		}
 		return stopped + resumed, nil
 	}
-	parked, err := tx.Query(ctx, `
-		UPDATE execution_jobs j
-		SET status = 'waiting', worker_id = NULL, lease_expires_at = NULL, heartbeat_at = NULL, updated_at = $1
-		FROM execution_steps s
-		WHERE s.workspace_id = j.workspace_id AND s.id = j.execution_step_id
-		  AND j.execution_id = ANY($2::uuid[])
-		  AND j.status IN ('claimed', 'running')
-		  AND j.lease_expires_at IS NOT NULL
-		  AND j.lease_expires_at <= $1
-		  AND s.node_type = 'flow.approval'
-		RETURNING j.execution_id::text, j.execution_step_id::text
-	`, now, leaseIDs)
-	if err != nil {
-		return 0, mapDBErr(err)
-	}
-	parkPairs, err := collectRecoverPairs(parked)
+	// A claimed approval whose rebuild failed has no pending row. Inside
+	// the gate-ready time plus the parked-approval wait duration, put it
+	// back on the queue after the flat retry delay. The gate-ready time is
+	// the latest usable settle of satisfied upstream edges: the final
+	// attempt when it succeeded, or a skip only when its finished_at is
+	// set and not earlier than the run's started_at. A failed earlier
+	// attempt is ignored. Do not burn the attempt and do not park it
+	// as waiting, or the deadline takes expired. A pending approval uses
+	// that row's expires_at as the limit instead. Past the limit, fail
+	// the job and step with requirement_unresolvable, cancel a pending
+	// approval for that execution and node in this transaction, and roll the
+	// run up. A claim that still has a pending approval and is inside the
+	// limit parks as waiting. A gate that is already waiting is not in this set.
+	settled, err := requeueOrFailTransientApprovals(ctx, tx, scope, now, leaseIDs)
 	if err != nil {
 		return 0, err
 	}
-	for _, p := range parkPairs {
-		if _, err := tx.Exec(ctx, `
-			UPDATE execution_steps
-			SET status = 'waiting', lease_id = NULL, finished_at = NULL, updated_at = $1
-			WHERE id = $2::uuid
-		`, now, p.step); err != nil {
-			return 0, mapDBErr(err)
-		}
-		n++
-	}
-	if err := finishRecoverPairs(ctx, tx, scope, now, parkPairs, "waiting"); err != nil {
-		return 0, err
-	}
+	n += settled
 
 	rows, err := tx.Query(ctx, `
 		UPDATE execution_jobs
@@ -1179,30 +1286,274 @@ func recoverExpiredTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now
 	return n + stopped + resumed, nil
 }
 
-func expiredLeaseExecutionIDs(ctx context.Context, tx pgx.Tx, now time.Time) ([]string, error) {
-	rows, err := tx.Query(ctx, `
-		SELECT DISTINCT execution_id::text
-		FROM execution_jobs
-		WHERE status IN ('claimed', 'running')
-		  AND lease_expires_at IS NOT NULL
-		  AND lease_expires_at <= $1
-	`, now)
+type transientApprovalRow struct {
+	jobID   string
+	exec    string
+	step    string
+	nodeID  string
+	ready   time.Time
+	expires time.Time
+	input   map[string]any
+	pending bool
+}
+
+// gateReadyAtSQL is the gate-ready time for the step aliased as s.
+// execution_jobs.available_at and updated_at are set when a job leaves
+// blocked, then rewritten by claim, release, and recovery, so they are
+// not this time. execution_jobs has no finished_at. Each satisfied
+// incoming edge contributes only its final attempt: a success uses that
+// attempt's finished_at, and a skip counts only when finished_at is set
+// and not earlier than the run's started_at. A failed earlier attempt is
+// ignored. The latest of those times is the ready time, never earlier
+// than started_at. A root gate, or a gate whose upstream left no usable
+// settle time, uses started_at. The expression takes no row lock.
+const gateReadyAtSQL = `
+(SELECT CASE
+    WHEN best IS NULL THEN run_start
+    WHEN run_start IS NOT NULL AND best < run_start THEN run_start
+    ELSE best
+  END
+  FROM (
+    SELECT (
+      SELECT max(candidate.ready_at)
+        FROM (
+          SELECT CASE
+            WHEN latest.status = 'succeeded' AND latest.finished_at IS NOT NULL THEN latest.finished_at
+            WHEN latest.status = 'skipped'
+                 AND latest.finished_at IS NOT NULL
+                 AND (run.started_at IS NULL OR latest.finished_at >= run.started_at)
+              THEN latest.finished_at
+            ELSE NULL
+          END AS ready_at
+            FROM execution_edges e
+            JOIN LATERAL (
+              SELECT up.status, up.finished_at
+                FROM execution_steps up
+               WHERE up.workspace_id = e.workspace_id
+                 AND up.execution_id = e.execution_id
+                 AND up.node_id = e.from_node
+               ORDER BY up.attempt DESC
+               LIMIT 1
+            ) latest ON true
+            JOIN executions run
+              ON run.workspace_id = e.workspace_id
+             AND run.id = e.execution_id
+           WHERE e.workspace_id = s.workspace_id
+             AND e.execution_id = s.execution_id
+             AND e.to_node = s.node_id
+             AND e.satisfied
+        ) candidate
+    ) AS best,
+    (
+      SELECT ex.started_at
+        FROM executions ex
+       WHERE ex.workspace_id = s.workspace_id
+         AND ex.id = s.execution_id
+    ) AS run_start
+  ) ready)`
+
+// pendingApprovalExpiresTx reads a pending approval's expires_at and the
+// gate-ready time for the step. Neither select locks the approval row.
+// Callers already hold the execution lock and the job row.
+func pendingApprovalExpiresTx(ctx context.Context, tx pgx.Tx, stepID string) (string, map[string]any, time.Time, time.Time, error) {
+	var nodeType string
+	var raw []byte
+	var expires, ready *time.Time
+	err := tx.QueryRow(ctx, `
+		SELECT s.node_type, s.input_redacted,
+		       (
+			SELECT a.expires_at
+			  FROM approvals a
+			 WHERE a.workspace_id = s.workspace_id
+			   AND a.execution_id = s.execution_id
+			   AND a.node_id = s.node_id
+			   AND a.status = 'pending'
+			 ORDER BY a.expires_at
+			 LIMIT 1
+		       ),
+		       `+gateReadyAtSQL+`
+		  FROM execution_steps s
+		 WHERE s.id = $1::uuid
+	`, stepID).Scan(&nodeType, &raw, &expires, &ready)
 	if err != nil {
-		return nil, mapDBErr(err)
+		return "", nil, time.Time{}, time.Time{}, mapDBErr(err)
+	}
+	input := unmarshalObject(raw)
+	var exp, at time.Time
+	if expires != nil {
+		exp = expires.UTC()
+	}
+	if ready != nil {
+		at = ready.UTC()
+	}
+	return nodeType, input, exp, at, nil
+}
+
+// requeueOrFailTransientApprovals locks each expired approval claim, then
+// delays it, parks it, or fails it. Jobs are locked before their steps.
+// Outgoing edges are not resolved. A past-limit failure also cancels a
+// pending approval for that execution and node before the roll-up.
+func requeueOrFailTransientApprovals(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now time.Time, leaseIDs []string) (int, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT j.id::text, j.execution_id::text, j.execution_step_id::text, s.node_id, `+gateReadyAtSQL+`, s.input_redacted,
+		       (
+			SELECT a.expires_at FROM approvals a
+			WHERE a.workspace_id = j.workspace_id
+			  AND a.execution_id = j.execution_id
+			  AND a.node_id = s.node_id
+			  AND a.status = 'pending'
+			ORDER BY a.expires_at
+			LIMIT 1
+		       )
+		FROM execution_jobs j
+		JOIN execution_steps s
+		  ON s.workspace_id = j.workspace_id AND s.id = j.execution_step_id
+		WHERE j.execution_id = ANY($2::uuid[])
+		  AND j.status IN ('claimed', 'running')
+		  AND j.lease_expires_at IS NOT NULL
+		  AND j.lease_expires_at <= $1
+		  AND s.node_type = 'flow.approval'
+		FOR UPDATE OF j
+	`, now, leaseIDs)
+	if err != nil {
+		return 0, mapDBErr(err)
 	}
 	defer rows.Close()
-	var ids []string
+	var items []transientApprovalRow
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, mapDBErr(err)
+		var row transientApprovalRow
+		var raw []byte
+		var ready, expires *time.Time
+		if err := rows.Scan(&row.jobID, &row.exec, &row.step, &row.nodeID, &ready, &raw, &expires); err != nil {
+			return 0, mapDBErr(err)
 		}
-		ids = append(ids, id)
+		row.input = unmarshalObject(raw)
+		if ready != nil {
+			row.ready = ready.UTC()
+		}
+		if expires != nil {
+			row.pending = true
+			row.expires = expires.UTC()
+		}
+		items = append(items, row)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, mapDBErr(err)
+		return 0, mapDBErr(err)
 	}
-	return ids, nil
+	errRaw, err := marshalObject(requirementUnresolvableStepError())
+	if err != nil {
+		return 0, ErrInvalid
+	}
+	delay := approvalRetryWait(approvalJitter())
+	available := now.Add(delay)
+	var requeuePairs, failPairs, parkPairs []recoverPair
+	for _, row := range items {
+		if ApprovalPastLimit(row.ready, row.expires, row.input, now) {
+			tag, err := tx.Exec(ctx, `
+				UPDATE execution_jobs
+				SET status = 'failed', worker_id = NULL, lease_expires_at = NULL, heartbeat_at = NULL, updated_at = $1
+				WHERE id = $2::uuid AND status IN ('claimed', 'running')
+			`, now, row.jobID)
+			if err != nil {
+				return 0, mapDBErr(err)
+			}
+			if tag.RowsAffected() == 0 {
+				continue
+			}
+			if _, err := tx.Exec(ctx, `
+				UPDATE execution_steps
+				SET status = 'failed', error_redacted = $2::jsonb, lease_id = NULL,
+				    finished_at = COALESCE(finished_at, $1), updated_at = $1
+				WHERE id = $3::uuid
+			`, now, errRaw, row.step); err != nil {
+				return 0, mapDBErr(err)
+			}
+			if err := parkedapproval.CancelUnresolvable(ctx, tx, row.exec, row.nodeID, now); err != nil {
+				return 0, mapDBErr(err)
+			}
+			failPairs = append(failPairs, recoverPair{exec: row.exec, step: row.step})
+			continue
+		}
+		if row.pending {
+			tag, err := tx.Exec(ctx, `
+				UPDATE execution_jobs
+				SET status = 'waiting', worker_id = NULL, lease_expires_at = NULL, heartbeat_at = NULL, updated_at = $1
+				WHERE id = $2::uuid AND status IN ('claimed', 'running')
+			`, now, row.jobID)
+			if err != nil {
+				return 0, mapDBErr(err)
+			}
+			if tag.RowsAffected() == 0 {
+				continue
+			}
+			if _, err := tx.Exec(ctx, `
+				UPDATE execution_steps
+				SET status = 'waiting', lease_id = NULL, finished_at = NULL, updated_at = $1
+				WHERE id = $2::uuid
+			`, now, row.step); err != nil {
+				return 0, mapDBErr(err)
+			}
+			parkPairs = append(parkPairs, recoverPair{exec: row.exec, step: row.step})
+			continue
+		}
+		tag, err := tx.Exec(ctx, `
+			UPDATE execution_jobs
+			SET status = 'queued', worker_id = NULL, lease_expires_at = NULL, heartbeat_at = NULL,
+			    available_at = $3, updated_at = $1
+			WHERE id = $2::uuid AND status IN ('claimed', 'running')
+		`, now, row.jobID, available)
+		if err != nil {
+			return 0, mapDBErr(err)
+		}
+		if tag.RowsAffected() == 0 {
+			continue
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE execution_steps
+			SET status = 'queued', lease_id = NULL, finished_at = NULL, updated_at = $1
+			WHERE id = $2::uuid
+		`, now, row.step); err != nil {
+			return 0, mapDBErr(err)
+		}
+		requeuePairs = append(requeuePairs, recoverPair{exec: row.exec, step: row.step})
+	}
+	if err := finishRecoverPairs(ctx, tx, scope, now, failPairs, "failed"); err != nil {
+		return 0, err
+	}
+	if err := finishRecoverPairs(ctx, tx, scope, now, parkPairs, "waiting"); err != nil {
+		return 0, err
+	}
+	if err := finishRecoverPairs(ctx, tx, scope, now, requeuePairs, "requeued"); err != nil {
+		return 0, err
+	}
+	return len(failPairs) + len(parkPairs) + len(requeuePairs), nil
+}
+
+func expiredLeaseExecutions(ctx context.Context, tx pgx.Tx, now time.Time) (execIDs, workflowIDs []string, err error) {
+	rows, err := tx.Query(ctx, `
+		SELECT DISTINCT e.workflow_id::text, j.execution_id::text
+		FROM execution_jobs j
+		JOIN executions e ON e.workspace_id = j.workspace_id AND e.id = j.execution_id
+		WHERE j.status IN ('claimed', 'running')
+		  AND j.lease_expires_at IS NOT NULL
+		  AND j.lease_expires_at <= $1
+	`, now)
+	if err != nil {
+		return nil, nil, mapDBErr(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var workflowID, execID string
+		if err := rows.Scan(&workflowID, &execID); err != nil {
+			return nil, nil, mapDBErr(err)
+		}
+		workflowIDs = append(workflowIDs, workflowID)
+		execIDs = append(execIDs, execID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, mapDBErr(err)
+	}
+	return execIDs, workflowIDs, nil
 }
 
 func loadDueWaits(ctx context.Context, tx pgx.Tx, now time.Time) ([]dueWaitRow, error) {
@@ -1231,15 +1582,18 @@ func loadDueWaits(ctx context.Context, tx pgx.Tx, now time.Time) ([]dueWaitRow, 
 	return out, nil
 }
 
-func lockDueWaitWorkflows(ctx context.Context, tx pgx.Tx, rows []dueWaitRow) (map[string]struct{}, error) {
+func lockWorkflowsSorted(ctx context.Context, tx pgx.Tx, workflowIDs []string) (map[string]struct{}, error) {
 	seen := map[string]struct{}{}
 	var order []string
-	for _, row := range rows {
-		if _, ok := seen[row.workflowID]; ok {
+	for _, workflowID := range workflowIDs {
+		if workflowID == "" {
 			continue
 		}
-		seen[row.workflowID] = struct{}{}
-		order = append(order, row.workflowID)
+		if _, ok := seen[workflowID]; ok {
+			continue
+		}
+		seen[workflowID] = struct{}{}
+		order = append(order, workflowID)
 	}
 	sort.Strings(order)
 	deleted := map[string]struct{}{}
@@ -1344,6 +1698,11 @@ func resumeOrStopDueWaits(ctx context.Context, tx pgx.Tx, scope isolation.Scope,
 			}
 			if err := resolveOutgoingTx(ctx, tx, row.exec, step.NodeID, emittedPorts(step.NodeType, step.Output), now); err != nil {
 				return 0, 0, err
+			}
+			if port == "expired" {
+				if err := expireParkedGateTx(ctx, tx, row.exec, step.NodeID, now); err != nil {
+					return 0, 0, err
+				}
 			}
 			expPairs = append(expPairs, recoverPair{exec: row.exec, step: row.step})
 			resumed++

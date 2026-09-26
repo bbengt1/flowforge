@@ -1076,8 +1076,10 @@ func mapDBErr(err error) error {
 			default:
 				return ErrConstraint
 			}
-		case "23503", "22P02", "42501":
+		case "23503", "22P02":
 			return ErrNotFound
+		case "42501":
+			return errors.Join(ErrNotFound, err)
 		case "23514":
 			return ErrInvalid
 		case "25006":
