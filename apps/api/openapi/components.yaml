@@ -1177,6 +1177,8 @@ components:
         policyDigest: {type: string}
         policyRevision: {type: integer}
         approverRole: {type: string}
+        approverUserId: {type: string, format: uuid}
+        approverGroupId: {type: string, format: uuid}
         expiresIn: {type: string}
         expiresAt: {type: string, format: date-time}
         reason: {type: string}
@@ -1202,11 +1204,13 @@ components:
         policyRevision: {type: integer}
         bindingFingerprint: {type: string}
         approverRole: {type: string}
+        approverUserId: {type: string, format: uuid}
+        approverGroupId: {type: string, format: uuid}
         status: {type: string, enum: [pending, approved, rejected, expired, invalidated, canceled]}
         closeReason:
           type: string
-          description: Set only when status is canceled. run_canceled or workflow_deleted. No decider is recorded.
-          enum: [run_canceled, workflow_deleted]
+          description: Set only when status is canceled. run_canceled, workflow_deleted, or requirement_unresolvable. No decider is recorded.
+          enum: [run_canceled, workflow_deleted, requirement_unresolvable]
         expiresAt: {type: string, format: date-time}
         requestedBy: {type: string, format: uuid}
         decidedBy: {type: string, format: uuid}

@@ -21,7 +21,9 @@ const recordColumns = `
 	COALESCE(execution_id::text, ''), node_id, node_name, operation,
 	target_kind, COALESCE(target_id::text, ''), COALESCE(target_version_id::text, ''), target_digest,
 	COALESCE(policy_resource_id::text, ''), COALESCE(policy_version_id::text, ''), policy_digest, policy_revision,
-	binding_fingerprint, approver_role, status, expires_at,
+	binding_fingerprint, approver_role,
+	COALESCE(approver_user_id::text, ''), COALESCE(approver_group_id::text, ''),
+	status, expires_at,
 	COALESCE(requested_by::text, ''), COALESCE(decided_by::text, ''), decided_at, decision_note,
 	COALESCE(close_reason, ''),
 	created_at, updated_at
@@ -115,6 +117,19 @@ func (p *Postgres) List(ctx context.Context, scope isolation.Scope, filter Filte
 		if filter.Status == StatusPending {
 			parts = append(parts, "expires_at > now()")
 		}
+	}
+	if filter.Actionable {
+		roles := filter.ActorRoles
+		if roles == nil {
+			roles = []string{}
+		}
+		groups := filter.ActorGroups
+		if groups == nil {
+			groups = []string{}
+		}
+		parts = append(parts, `(approver_role = ANY($`+page.Place(&args, roles)+`::text[]) OR 'admin' = ANY($`+page.Place(&args, roles)+`::text[]))`)
+		parts = append(parts, `(COALESCE(approver_user_id::text, '') = '' OR approver_user_id::text = $`+page.Place(&args, strings.TrimSpace(filter.ActorID))+`)`)
+		parts = append(parts, `(COALESCE(approver_group_id::text, '') = '' OR approver_group_id::text = ANY($`+page.Place(&args, groups)+`::text[]))`)
 	}
 	if filter.WorkflowID != "" {
 		parts = append(parts, "workflow_id = $"+page.Place(&args, filter.WorkflowID)+"::uuid")
@@ -282,6 +297,14 @@ func (p *Postgres) Decide(ctx context.Context, scope isolation.Scope, id string,
 	}
 	next, changed, err := authorizeDerived(ctx, scope, rec, in)
 	if err != nil {
+		if errors.Is(err, ErrForbidden) && changed {
+			if _, uerr := updateBinding(ctx, tx, next, now); uerr != nil {
+				return Record{}, uerr
+			}
+			if cerr := tx.Commit(ctx); cerr != nil {
+				return Record{}, mapDBErr(cerr)
+			}
+		}
 		return Record{}, err
 	}
 	if changed {
@@ -483,18 +506,18 @@ func insertRecord(ctx context.Context, tx pgx.Tx, scope isolation.Scope, rec Rec
 			workspace_id, workflow_id, workflow_version_id, workflow_digest, execution_id,
 			node_id, node_name, operation, target_kind, target_id, target_version_id, target_digest,
 			policy_resource_id, policy_version_id, policy_digest, policy_revision,
-			binding_fingerprint, approver_role, status, expires_at, requested_by
+			binding_fingerprint, approver_role, approver_user_id, approver_group_id, status, expires_at, requested_by
 		) VALUES (
 			$1::uuid, $2::uuid, $3::uuid, $4, $5::uuid,
 			$6, $7, $8, $9, $10::uuid, $11::uuid, $12,
 			$13::uuid, $14::uuid, $15, $16,
-			$17, $18, 'pending', $19, $20::uuid
+			$17, $18, $19::uuid, $20::uuid, 'pending', $21, $22::uuid
 		)
 		RETURNING `+recordColumns,
 		scope.WorkspaceID(), rec.WorkflowID, rec.WorkflowVersionID, rec.WorkflowDigest, nullUUID(rec.ExecutionID),
 		rec.NodeID, rec.NodeName, rec.Operation, rec.TargetKind, nullUUID(rec.TargetID), nullUUID(rec.TargetVersionID), rec.TargetDigest,
 		nullUUID(rec.PolicyResourceID), nullUUID(rec.PolicyVersionID), rec.PolicyDigest, rec.PolicyRevision,
-		rec.BindingFingerprint, rec.ApproverRole, rec.ExpiresAt, requestedByArg(scope, rec.RequestedBy),
+		rec.BindingFingerprint, rec.ApproverRole, nullUUID(rec.ApproverUserID), nullUUID(rec.ApproverGroupID), rec.ExpiresAt, requestedByArg(scope, rec.RequestedBy),
 	), &out)
 	return out, err
 }
@@ -523,13 +546,15 @@ func updateBinding(ctx context.Context, tx pgx.Tx, rec Record, now time.Time) (R
 			policy_revision = $11,
 			binding_fingerprint = $12,
 			approver_role = $13,
-			updated_at = $14
+			approver_user_id = $14::uuid,
+			approver_group_id = $15::uuid,
+			updated_at = $16
 		WHERE id = $1::uuid
 		RETURNING `+recordColumns,
 		rec.ID, rec.NodeName, rec.Operation, rec.TargetKind,
 		nullUUID(rec.TargetID), nullUUID(rec.TargetVersionID), rec.TargetDigest,
 		nullUUID(rec.PolicyResourceID), nullUUID(rec.PolicyVersionID), rec.PolicyDigest, rec.PolicyRevision,
-		rec.BindingFingerprint, rec.ApproverRole, now,
+		rec.BindingFingerprint, rec.ApproverRole, nullUUID(rec.ApproverUserID), nullUUID(rec.ApproverGroupID), now,
 	), &out)
 	return out, err
 }
@@ -569,7 +594,7 @@ func scanRecord(row rowScanner, rec *Record) error {
 		&rec.ExecutionID, &rec.NodeID, &rec.NodeName, &rec.Operation,
 		&rec.TargetKind, &rec.TargetID, &rec.TargetVersionID, &rec.TargetDigest,
 		&rec.PolicyResourceID, &rec.PolicyVersionID, &rec.PolicyDigest, &rec.PolicyRevision,
-		&rec.BindingFingerprint, &rec.ApproverRole, &rec.Status, &rec.ExpiresAt,
+		&rec.BindingFingerprint, &rec.ApproverRole, &rec.ApproverUserID, &rec.ApproverGroupID, &rec.Status, &rec.ExpiresAt,
 		&rec.RequestedBy, &rec.DecidedBy, &decidedAt, &rec.DecisionNote, &rec.CloseReason,
 		&rec.CreatedAt, &rec.UpdatedAt,
 	)
@@ -586,7 +611,7 @@ func recordDest(rec *Record) []any {
 		&rec.ExecutionID, &rec.NodeID, &rec.NodeName, &rec.Operation,
 		&rec.TargetKind, &rec.TargetID, &rec.TargetVersionID, &rec.TargetDigest,
 		&rec.PolicyResourceID, &rec.PolicyVersionID, &rec.PolicyDigest, &rec.PolicyRevision,
-		&rec.BindingFingerprint, &rec.ApproverRole, &rec.Status, &rec.ExpiresAt,
+		&rec.BindingFingerprint, &rec.ApproverRole, &rec.ApproverUserID, &rec.ApproverGroupID, &rec.Status, &rec.ExpiresAt,
 		&rec.RequestedBy, &rec.DecidedBy, &rec.DecidedAt, &rec.DecisionNote, &rec.CloseReason,
 		&rec.CreatedAt, &rec.UpdatedAt,
 	}

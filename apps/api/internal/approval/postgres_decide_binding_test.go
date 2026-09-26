@@ -74,7 +74,7 @@ func TestPostgresDecideRederivesStaleApproverRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != StatusPending || got.ApproverRole != "approver" || got.DecidedBy != "" {
+	if got.Status != StatusPending || got.ApproverRole != "admin" || got.DecidedBy != "" || got.BindingFingerprint == rec.BindingFingerprint {
 		t.Fatalf("after deny = %+v", got)
 	}
 	assertExec(t, ctx, store, scope, exec.ID, wfstore.ExecutionWaiting)

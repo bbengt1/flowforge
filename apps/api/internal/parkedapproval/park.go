@@ -41,13 +41,15 @@ type Pending struct {
 	PolicyDigest      string
 	PolicyRevision    int
 	ApproverRole      string
+	ApproverUserID    string
+	ApproverGroupID   string
 	ExpiresAt         time.Time
 }
 
 // Fingerprint matches approval.BindingFingerprint. The approver role and
 // the target and policy version ids are part of the bind, so a row minted
 // for a different role cannot be reused.
-func Fingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID, approverRole, executionID string) string {
+func Fingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID, approverRole, executionID, approverUserID, approverGroupID string) string {
 	role := strings.TrimSpace(approverRole)
 	if role == "" {
 		role = "approver"
@@ -65,6 +67,12 @@ func Fingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID
 	}
 	if exec := strings.TrimSpace(executionID); exec != "" {
 		parts = append(parts, exec)
+	}
+	userID := strings.TrimSpace(approverUserID)
+	groupID := strings.TrimSpace(approverGroupID)
+	// Empty subject leaves the historical hash unchanged.
+	if userID != "" || groupID != "" {
+		parts = append(parts, userID, groupID)
 	}
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x1f")))
 	return "sha256:" + hex.EncodeToString(sum[:])
@@ -91,7 +99,7 @@ func Insert(ctx context.Context, tx pgx.Tx, in Pending) error {
 	}
 	expires := in.ExpiresAt.UTC()
 	now := time.Now().UTC()
-	fp := Fingerprint(in.WorkspaceID, in.WorkflowVersionID, in.WorkflowDigest, in.TargetVersionID, in.PolicyVersionID, in.PolicyDigest, operation, nodeID, role, in.ExecutionID)
+	fp := Fingerprint(in.WorkspaceID, in.WorkflowVersionID, in.WorkflowDigest, in.TargetVersionID, in.PolicyVersionID, in.PolicyDigest, operation, nodeID, role, in.ExecutionID, in.ApproverUserID, in.ApproverGroupID)
 	if err := SupersedeOtherPending(ctx, tx, in.WorkspaceID, in.ExecutionID, nodeID, fp, now); err != nil {
 		return err
 	}
@@ -121,18 +129,18 @@ func Insert(ctx context.Context, tx pgx.Tx, in Pending) error {
 			workspace_id, workflow_id, workflow_version_id, workflow_digest, execution_id,
 			node_id, node_name, operation, target_kind, target_id, target_version_id, target_digest,
 			policy_resource_id, policy_version_id, policy_digest, policy_revision,
-			binding_fingerprint, approver_role, status, expires_at, requested_by
+			binding_fingerprint, approver_role, approver_user_id, approver_group_id, status, expires_at, requested_by
 		) VALUES (
 			$1::uuid, $2::uuid, $3::uuid, $4, $5::uuid,
 			$6, $7, $8, $9, $10::uuid, $11::uuid, $12,
 			$13::uuid, $14::uuid, $15, $16,
-			$17, $18, 'pending', $19, $20::uuid
+			$17, $18, $19::uuid, $20::uuid, 'pending', $21, $22::uuid
 		)
 		RETURNING id::text
 	`, in.WorkspaceID, in.WorkflowID, in.WorkflowVersionID, strings.TrimSpace(in.WorkflowDigest), nullUUID(in.ExecutionID),
 		nodeID, in.NodeName, operation, in.TargetKind, nullUUID(in.TargetID), nullUUID(in.TargetVersionID), in.TargetDigest,
 		nullUUID(in.PolicyResourceID), nullUUID(in.PolicyVersionID), in.PolicyDigest, in.PolicyRevision,
-		fp, role, expires, requestedBy(in),
+		fp, role, nullUUID(in.ApproverUserID), nullUUID(in.ApproverGroupID), expires, requestedBy(in),
 	).Scan(&id)
 	if err != nil {
 		return err

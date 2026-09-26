@@ -235,6 +235,8 @@ func flowApprovalContract() NodeType {
 		RequiredWith: []string{"approverRole", "expiresIn"},
 		AllowedWith: []WithField{
 			{Name: "approverRole", Kind: "string", Required: true, Description: "Workspace role that may decide. Requester self-approval is denied."},
+			{Name: "approverUserId", Kind: "uuid", Description: "Optional user who may decide. Anyone else is denied, including admin."},
+			{Name: "approverGroupId", Kind: "uuid", Description: "Optional group whose members may decide. Anyone outside the group is denied."},
 			{Name: "expiresIn", Kind: "duration", Required: true, Description: "ISO-8601 wait expiry. Max P7D."},
 			{Name: "policyId", Kind: "uuid", Description: "Optional published policy UUID bound into the approval snapshot."},
 		},

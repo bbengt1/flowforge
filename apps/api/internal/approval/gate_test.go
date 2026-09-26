@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/policy"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
@@ -117,7 +118,7 @@ func TestMemoryDecideRederivesStaleApproverRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != StatusPending || got.ApproverRole != "approver" || got.DecidedBy != "" || got.BindingFingerprint != rec.BindingFingerprint {
+	if got.Status != StatusPending || got.ApproverRole != "admin" || got.DecidedBy != "" || got.BindingFingerprint == rec.BindingFingerprint {
 		t.Fatalf("after deny = %+v", got)
 	}
 
@@ -156,7 +157,151 @@ func TestMemoryDecideRederivesStaleApproverRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if still.Status != StatusPending || still.DecidedBy != "" {
+	if still.Status != StatusPending || still.DecidedBy != "" || still.ApproverRole != "approver" {
 		t.Fatalf("lookup row = %+v", still)
+	}
+}
+
+const targetedGateDefinition = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: targeted-gate
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: gate
+      type: flow.approval
+      name: Gate
+      with:
+        approverRole: approver
+        approverUserId: 33333333-3333-4333-8333-333333333333
+        approverGroupId: 99999999-9999-4999-8999-999999999999
+        policyId: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+        expiresIn: PT1H
+  edges: []
+`
+
+type staticPins struct {
+	pins []opsconfig.Pin
+}
+
+func (s staticPins) Resolve(context.Context, isolation.Scope, []opsconfig.Ref) ([]opsconfig.Pin, error) {
+	return s.pins, nil
+}
+
+func TestMemoryDecidePersistsFullRequirementOnDeny(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	owner, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "44444444-4444-4444-8444-444444444444")
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "33333333-3333-4333-8333-333333333333")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 26, 1, 0, 0, 0, time.UTC)
+	versionID := "55555555-5555-4555-8555-555555555555"
+	policyID := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	policyVersion := "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+	rec, err := store.Create(ctx, owner, CreateInput{
+		WorkflowID:        "44444444-4444-4444-8444-444444444444",
+		WorkflowVersionID: versionID,
+		WorkflowDigest:    "sha256:" + strings.Repeat("ab", 32),
+		ExecutionID:       "66666666-6666-4666-8666-666666666666",
+		RequestedBy:       "77777777-7777-4777-8777-777777777777",
+		Requirement: policy.Requirement{
+			NodeID: "gate", NodeName: "Gate", Operation: "flow.approval",
+			ApproverRole: "approver", ExpiresAt: now.Add(time.Hour),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.SetGateWaiting(func(string, string) (bool, bool) { return true, true })
+	ver := wfstore.Version{ID: versionID, DefinitionYAML: targetedGateDefinition, Digest: rec.WorkflowDigest}
+	pins := staticPins{pins: []opsconfig.Pin{{
+		Kind: opsconfig.KindPolicy, ResourceID: policyID, VersionID: policyVersion,
+		VersionNumber: 4, Digest: "sha256:" + strings.Repeat("c", 64),
+		Spec: map[string]any{"kind": "approval", "policy": map[string]any{}},
+	}}}
+	resolve := func(ctx context.Context, scope isolation.Scope, row Record) (policy.Requirement, error) {
+		return ResolveGateRequirement(ctx, scope, staticVersion{ver: ver}, pins, row.WorkflowID, row.WorkflowVersionID, row.NodeID, now)
+	}
+	if _, err := store.Decide(ctx, other, rec.ID, DecideInput{
+		Decision: DecisionApproved, Now: now, Roles: []string{"approver"}, Resolve: resolve,
+	}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("non-target decide = %v", err)
+	}
+	got, err := store.Get(ctx, owner, rec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != StatusPending || got.DecidedBy != "" || got.ApproverRole != "approver" ||
+		got.ApproverUserID != target.ActorID() || got.ApproverGroupID != "99999999-9999-4999-8999-999999999999" ||
+		got.PolicyResourceID != policyID || got.PolicyVersionID != policyVersion || got.PolicyRevision != 4 ||
+		got.BindingFingerprint == rec.BindingFingerprint {
+		t.Fatalf("after deny = %+v", got)
+	}
+	if _, err := store.Decide(ctx, target, rec.ID, DecideInput{
+		Decision: DecisionApproved, Now: now, Roles: []string{"approver"},
+		GroupIDs: []string{"99999999-9999-4999-8999-999999999999"}, Resolve: resolve,
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMemoryResyncCorrectsAndCloses(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemory()
+	owner, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 26, 1, 0, 0, 0, time.UTC)
+	versionID := "55555555-5555-4555-8555-555555555555"
+	ver := wfstore.Version{ID: versionID, DefinitionYAML: adminGateDefinition, Digest: "sha256:" + strings.Repeat("ab", 32)}
+	rec, err := store.Create(ctx, owner, CreateInput{
+		WorkflowID: "44444444-4444-4444-8444-444444444444", WorkflowVersionID: versionID, WorkflowDigest: ver.Digest,
+		RequestedBy: "77777777-7777-4777-8777-777777777777",
+		Requirement: policy.Requirement{NodeID: "gate", Operation: "flow.approval", ApproverRole: "approver", ExpiresAt: now.Add(time.Hour)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	broken, err := store.Create(ctx, owner, CreateInput{
+		WorkflowID: rec.WorkflowID, WorkflowVersionID: "88888888-8888-4888-8888-888888888888", WorkflowDigest: ver.Digest,
+		RequestedBy: rec.RequestedBy,
+		Requirement: policy.Requirement{NodeID: "missing", Operation: "flow.approval", ApproverRole: "approver", ExpiresAt: now.Add(time.Hour)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	versions := staticVersion{ver: ver}
+	stats := store.ResyncPending(ctx, versions, nil, now)
+	if stats.Corrected != 1 || stats.Closed != 1 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	got, err := store.Get(ctx, owner, rec.ID)
+	if err != nil || got.ApproverRole != "admin" || got.Status != StatusPending {
+		t.Fatalf("corrected = %+v %v", got, err)
+	}
+	closed, err := store.Get(ctx, owner, broken.ID)
+	if err != nil || closed.Status != StatusCanceled || closed.CloseReason != ReasonRequirementUnresolvable || closed.DecidedBy != "" {
+		t.Fatalf("closed = %+v %v", closed, err)
+	}
+	again := store.ResyncPending(ctx, versions, nil, now)
+	if again.Corrected != 0 || again.Closed != 0 {
+		t.Fatalf("second = %+v", again)
+	}
+	still, err := store.Get(ctx, owner, rec.ID)
+	if err != nil || !still.UpdatedAt.Equal(got.UpdatedAt) || still.BindingFingerprint != got.BindingFingerprint {
+		t.Fatalf("second pass changed %+v", still)
 	}
 }

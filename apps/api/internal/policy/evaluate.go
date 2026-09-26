@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpnotify"
 	"github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
@@ -42,6 +43,8 @@ type Requirement struct {
 	PolicyDigest     string    `json:"policyDigest,omitempty"`
 	PolicyRevision   int       `json:"policyRevision,omitempty"`
 	ApproverRole     string    `json:"approverRole"`
+	ApproverUserID   string    `json:"approverUserId,omitempty"`
+	ApproverGroupID  string    `json:"approverGroupId,omitempty"`
 	ExpiresIn        string    `json:"expiresIn"`
 	ExpiresAt        time.Time `json:"expiresAt"`
 	Reason           string    `json:"reason,omitempty"`
@@ -181,6 +184,16 @@ func evaluateNode(node workflow.Node, pins map[string]opsconfig.Pin, now time.Ti
 	}
 
 	if op == "flow.approval" {
+		rules := map[string]any{}
+		if policyPin.Spec != nil {
+			_, rules = policyRules(policyPin.Spec)
+		}
+		userID, groupID := approverSubject(node.With, rules)
+		if approverSubjectInvalid(userID, groupID) {
+			item.Decision = DecisionDeny
+			item.Reason = "approver target is not a user or group id"
+			return item
+		}
 		req := requirementFromNode(node, target, policyPin, now, "flow.approval node requires a bound approval")
 		req.Wait = true
 		item.Decision = DecisionApprovalRequired
@@ -214,6 +227,12 @@ func evaluateNode(node workflow.Node, pins map[string]opsconfig.Pin, now time.Ti
 		return item
 	}
 	if requiresApproval(specKind, rules, op) {
+		userID, groupID := approverSubject(rules, node.With)
+		if approverSubjectInvalid(userID, groupID) {
+			item.Decision = DecisionDeny
+			item.Reason = "approver target is not a user or group id"
+			return item
+		}
 		reason := "policy requires approval before dispatch"
 		if policyReason != "" {
 			reason = policyReason
@@ -258,7 +277,8 @@ func requirementFromNode(node workflow.Node, target, policyPin opsconfig.Pin, no
 	if role == "" {
 		role = stringField(rules, "approverRole")
 	}
-	return finishRequirement(node, target, policyPin, role, expiresIn, now, reason)
+	userID, groupID := approverSubject(node.With, rules)
+	return finishRequirement(node, target, policyPin, role, userID, groupID, expiresIn, now, reason)
 }
 
 func requirementFromPolicy(node workflow.Node, target, policyPin opsconfig.Pin, rules map[string]any, now time.Time, reason string) Requirement {
@@ -270,10 +290,33 @@ func requirementFromPolicy(node workflow.Node, target, policyPin opsconfig.Pin, 
 	if role == "" {
 		role = stringField(node.With, "approverRole")
 	}
-	return finishRequirement(node, target, policyPin, role, expiresIn, now, reason)
+	userID, groupID := approverSubject(rules, node.With)
+	return finishRequirement(node, target, policyPin, role, userID, groupID, expiresIn, now, reason)
 }
 
-func finishRequirement(node workflow.Node, target, policyPin opsconfig.Pin, role, expiresIn string, now time.Time, reason string) Requirement {
+func approverSubject(primary, fallback map[string]any) (userID, groupID string) {
+	userID = stringField(primary, "approverUserId")
+	if userID == "" {
+		userID = stringField(fallback, "approverUserId")
+	}
+	groupID = stringField(primary, "approverGroupId")
+	if groupID == "" {
+		groupID = stringField(fallback, "approverGroupId")
+	}
+	return userID, groupID
+}
+
+func approverSubjectInvalid(userID, groupID string) bool {
+	if userID != "" && !authz.ValidUUID(userID) {
+		return true
+	}
+	if groupID != "" && !authz.ValidUUID(groupID) {
+		return true
+	}
+	return false
+}
+
+func finishRequirement(node workflow.Node, target, policyPin opsconfig.Pin, role, userID, groupID, expiresIn string, now time.Time, reason string) Requirement {
 	if strings.TrimSpace(role) == "" {
 		role = defaultApproverRole
 	}
@@ -302,6 +345,8 @@ func finishRequirement(node workflow.Node, target, policyPin opsconfig.Pin, role
 		PolicyDigest:     policyPin.Digest,
 		PolicyRevision:   policyPin.VersionNumber,
 		ApproverRole:     strings.TrimSpace(role),
+		ApproverUserID:   strings.TrimSpace(userID),
+		ApproverGroupID:  strings.TrimSpace(groupID),
 		ExpiresIn:        expiresIn,
 		ExpiresAt:        now.Add(exp),
 		Reason:           reason,

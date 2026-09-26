@@ -131,6 +131,8 @@ func ProjectRequirement(rec Record, workspaceID string, req policy.Requirement) 
 		op = rec.Operation
 	}
 	next.ApproverRole = role
+	next.ApproverUserID = strings.TrimSpace(req.ApproverUserID)
+	next.ApproverGroupID = strings.TrimSpace(req.ApproverGroupID)
 	next.NodeName = req.NodeName
 	next.Operation = op
 	next.TargetKind = req.TargetKind
@@ -141,8 +143,10 @@ func ProjectRequirement(rec Record, workspaceID string, req policy.Requirement) 
 	next.PolicyVersionID = req.PolicyVersionID
 	next.PolicyDigest = req.PolicyDigest
 	next.PolicyRevision = req.PolicyRevision
-	next.BindingFingerprint = BindingFingerprint(workspaceID, rec.WorkflowVersionID, rec.WorkflowDigest, req.TargetVersionID, req.PolicyVersionID, req.PolicyDigest, op, rec.NodeID, role, rec.ExecutionID)
+	next.BindingFingerprint = BindingFingerprint(workspaceID, rec.WorkflowVersionID, rec.WorkflowDigest, req.TargetVersionID, req.PolicyVersionID, req.PolicyDigest, op, rec.NodeID, role, rec.ExecutionID, next.ApproverUserID, next.ApproverGroupID)
 	changed := next.ApproverRole != rec.ApproverRole ||
+		next.ApproverUserID != rec.ApproverUserID ||
+		next.ApproverGroupID != rec.ApproverGroupID ||
 		next.NodeName != rec.NodeName ||
 		next.Operation != rec.Operation ||
 		next.TargetKind != rec.TargetKind ||
@@ -157,10 +161,10 @@ func ProjectRequirement(rec Record, workspaceID string, req policy.Requirement) 
 	return next, changed
 }
 
-// authorizeDerived re-derives the gate and returns the record Decide must
-// persist. A resolve error or a missing role denies without a decision.
-// The caller writes next only when the role check passes, in the same
-// transaction as the decision.
+// authorizeDerived re-derives the full requirement. A resolve error returns
+// ErrBindingUnresolved and the caller records nothing. When the caller may
+// not decide the rebuilt requirement, next is still returned with
+// ErrForbidden so the caller can commit that correction before the denial.
 func authorizeDerived(ctx context.Context, scope isolation.Scope, rec Record, in DecideInput) (Record, bool, error) {
 	if in.Resolve == nil {
 		return rec, false, nil
@@ -173,8 +177,8 @@ func authorizeDerived(ctx context.Context, scope isolation.Scope, rec Record, in
 		return Record{}, false, fmt.Errorf("%w: %v", ErrBindingUnresolved, err)
 	}
 	next, changed := ProjectRequirement(rec, scope.WorkspaceID(), req)
-	if !HasApproverRole(in.Roles, next.ApproverRole) {
-		return Record{}, false, ErrForbidden
+	if !MayAct(scope.ActorID(), in.Roles, in.GroupIDs, next) {
+		return next, changed, ErrForbidden
 	}
 	return next, changed, nil
 }

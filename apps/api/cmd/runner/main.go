@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/approval"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/config"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
@@ -120,6 +121,7 @@ func main() {
 	})
 
 	log.Info("production runner starting", "worker_id", workerID, "app_env", appEnv)
+	approval.ResyncOpenApprovals(ctx, pool, queue.Workflows, disp.Ops, log)
 	if err := loop.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		log.Error("production runner stopped", "error", err)
 		os.Exit(1)

@@ -166,7 +166,7 @@ spec:
 	if pending.ExecutionID != exec.ID || pending.Status != approval.StatusPending {
 		t.Fatalf("pending = %+v", pending)
 	}
-	if pending.BindingFingerprint == approval.BindingFingerprint(ws.ID, pub.Version.ID, pub.Version.Digest, pending.TargetVersionID, pending.PolicyVersionID, pending.PolicyDigest, pending.Operation, pending.NodeID, pending.ApproverRole) {
+	if pending.BindingFingerprint == approval.BindingFingerprint(ws.ID, pub.Version.ID, pub.Version.Digest, pending.TargetVersionID, pending.PolicyVersionID, pending.PolicyDigest, pending.Operation, pending.NodeID, pending.ApproverRole, "", "", "") {
 		t.Fatalf("mid-run fingerprint must include execution id")
 	}
 

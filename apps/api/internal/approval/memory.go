@@ -3,6 +3,7 @@ package approval
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -182,6 +183,10 @@ func (m *Memory) Decide(ctx context.Context, scope isolation.Scope, id string, i
 	}
 	next, changed, err := authorizeDerived(ctx, scope, rec, in)
 	if err != nil {
+		if errors.Is(err, ErrForbidden) && changed {
+			next.UpdatedAt = now
+			m.rows[id] = memRow{workspaceID: scope.WorkspaceID(), record: next}
+		}
 		return Record{}, err
 	}
 	if changed {
@@ -362,7 +367,7 @@ func recordFromCreate(scope isolation.Scope, in CreateInput, now time.Time) (Rec
 	if role == "" {
 		role = "approver"
 	}
-	fp := BindingFingerprint(scope.WorkspaceID(), in.WorkflowVersionID, in.WorkflowDigest, req.TargetVersionID, req.PolicyVersionID, req.PolicyDigest, req.Operation, req.NodeID, role, in.ExecutionID)
+	fp := BindingFingerprint(scope.WorkspaceID(), in.WorkflowVersionID, in.WorkflowDigest, req.TargetVersionID, req.PolicyVersionID, req.PolicyDigest, req.Operation, req.NodeID, role, in.ExecutionID, req.ApproverUserID, req.ApproverGroupID)
 	requestedBy := strings.TrimSpace(in.RequestedBy)
 	if requestedBy == "" {
 		requestedBy = scope.ActorID()
@@ -385,12 +390,88 @@ func recordFromCreate(scope isolation.Scope, in CreateInput, now time.Time) (Rec
 		PolicyRevision:     req.PolicyRevision,
 		BindingFingerprint: fp,
 		ApproverRole:       role,
+		ApproverUserID:     strings.TrimSpace(req.ApproverUserID),
+		ApproverGroupID:    strings.TrimSpace(req.ApproverGroupID),
 		Status:             StatusPending,
 		ExpiresAt:          req.ExpiresAt.UTC(),
 		RequestedBy:        requestedBy,
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	}, nil
+}
+
+// ResyncPending rebuilds every pending row with ResolveGateRequirement.
+// A difference is stored. A rebuild failure cancels the row with
+// requirement_unresolvable. A second call changes nothing.
+func (m *Memory) ResyncPending(ctx context.Context, versions VersionSource, ops PinSource, now time.Time) ResyncStats {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	m.mu.Lock()
+	type item struct {
+		workspaceID string
+		rec         Record
+	}
+	var pending []item
+	for _, row := range m.rows {
+		if row.record.Status == StatusPending {
+			pending = append(pending, item{workspaceID: row.workspaceID, rec: cloneRecord(row.record)})
+		}
+	}
+	m.mu.Unlock()
+	sort.Slice(pending, func(i, j int) bool {
+		if pending[i].workspaceID != pending[j].workspaceID {
+			return pending[i].workspaceID < pending[j].workspaceID
+		}
+		return pending[i].rec.ID < pending[j].rec.ID
+	})
+	var stats ResyncStats
+	seenWS := map[string]struct{}{}
+	for _, item := range pending {
+		if _, ok := seenWS[item.workspaceID]; !ok {
+			seenWS[item.workspaceID] = struct{}{}
+			stats.Workspaces++
+		}
+		scope, err := isolation.Authorize(item.workspaceID, "")
+		if err != nil {
+			stats.Failed++
+			continue
+		}
+		req, err := ResolveGateRequirement(ctx, scope, versions, ops, item.rec.WorkflowID, item.rec.WorkflowVersionID, item.rec.NodeID, now)
+		m.mu.Lock()
+		row, ok := m.rows[item.rec.ID]
+		if !ok || row.workspaceID != item.workspaceID || row.record.Status != StatusPending {
+			m.mu.Unlock()
+			stats.Skipped++
+			continue
+		}
+		if err != nil {
+			rec := row.record
+			rec.Status = StatusCanceled
+			rec.CloseReason = ReasonRequirementUnresolvable
+			rec.DecidedBy = ""
+			rec.DecidedAt = nil
+			rec.UpdatedAt = now
+			m.rows[item.rec.ID] = memRow{workspaceID: item.workspaceID, record: rec}
+			m.appendEventLocked(scope, rec.ID, EventCanceled, "", map[string]any{"reason": ReasonRequirementUnresolvable})
+			stats.Closed++
+			m.mu.Unlock()
+			continue
+		}
+		next, changed := ProjectRequirement(row.record, item.workspaceID, req)
+		if !changed {
+			stats.Skipped++
+			m.mu.Unlock()
+			continue
+		}
+		next.UpdatedAt = now
+		m.rows[item.rec.ID] = memRow{workspaceID: item.workspaceID, record: next}
+		stats.Corrected++
+		m.mu.Unlock()
+	}
+	return stats
 }
 
 func matchFilter(rec Record, filter Filter) bool {
@@ -404,6 +485,9 @@ func matchFilter(rec Record, filter Filter) bool {
 		return false
 	}
 	if filter.ExecutionID != "" && rec.ExecutionID != filter.ExecutionID {
+		return false
+	}
+	if filter.Actionable && !MayAct(filter.ActorID, filter.ActorRoles, filter.ActorGroups, rec) {
 		return false
 	}
 	return true

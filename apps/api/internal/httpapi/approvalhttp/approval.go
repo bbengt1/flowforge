@@ -95,8 +95,20 @@ func evaluatePolicy(s *core.Server, w http.ResponseWriter, r *http.Request) {
 }
 
 func listApprovals(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	scope, ok := approvalScope(s, w, r, authz.PermApprovalView)
+	user, ok := s.RequirePrincipal(w, r)
 	if !ok {
+		return
+	}
+	if !requireApprovals(s, w, r) {
+		return
+	}
+	ws, tenant, roles, _, ok := s.RequireAccess(w, r, user, authz.PermApprovalView)
+	if !ok {
+		return
+	}
+	scope, err := isolation.AuthorizeTenancy(ws.ID, user.ID, tenant.ID, ws.WorkbenchKey)
+	if err != nil {
+		core.WriteIdentityError(w, r, err)
 		return
 	}
 	pageQuery, ok := core.ParsePage(w, r)
@@ -106,15 +118,18 @@ func listApprovals(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	var next string
 	pageQuery.Next = &next
 	q := r.URL.Query()
-	// The list is not re-derived. Evaluating every pinned version on a hot
-	// read is the expensive path; Decide re-derives and is the authorization
-	// boundary. A stale stored role can still appear here.
+	status := strings.TrimSpace(q.Get("status"))
+	// Pending is the actionable inbox. The stored role and target are
+	// enough after boot resync; this read does not re-evaluate policy.
 	items, err := s.Approvals.List(r.Context(), scope, approval.Filter{
-		Status:            strings.TrimSpace(q.Get("status")),
+		Status:            status,
 		WorkflowID:        strings.TrimSpace(q.Get("workflowId")),
 		WorkflowVersionID: strings.TrimSpace(q.Get("workflowVersionId")),
 		ExecutionID:       strings.TrimSpace(q.Get("executionId")),
 		Page:              pageQuery,
+		Actionable:        status == approval.StatusPending,
+		ActorID:           user.ID,
+		ActorRoles:        roles,
 	})
 	if core.RejectPageErr(w, r, err) {
 		return
@@ -604,7 +619,7 @@ func DispatchApprovalsOK(s *core.Server, ctx context.Context, scope isolation.Sc
 		if fresh.Status != approval.StatusApproved {
 			return created, ErrApprovalRequired
 		}
-		if fresh.BindingFingerprint != approval.BindingFingerprint(scope.WorkspaceID(), versionID, eval.WorkflowDigest, rec.TargetVersionID, rec.PolicyVersionID, rec.PolicyDigest, rec.Operation, rec.NodeID, rec.ApproverRole) {
+		if fresh.BindingFingerprint != approval.BindingFingerprint(scope.WorkspaceID(), versionID, eval.WorkflowDigest, rec.TargetVersionID, rec.PolicyVersionID, rec.PolicyDigest, rec.Operation, rec.NodeID, rec.ApproverRole, rec.ExecutionID, rec.ApproverUserID, rec.ApproverGroupID) {
 			return created, ErrApprovalRequired
 		}
 	}
