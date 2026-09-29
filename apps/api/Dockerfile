@@ -5,7 +5,7 @@
 # Base pins are the multi-arch index digests for golang:1.26-alpine and
 # alpine:3.24. Refresh: docs/deployment.md#refreshing-dockerfile-base-digests.
 
-FROM golang:1.26-alpine@sha256:8ac98ca534ac3f51e1f420a1dd2c15e74c75cfa0f23f3ad27eb5d7236c349a0c AS build
+FROM golang:1.27-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS build
 WORKDIR /src
 ENV GOTOOLCHAIN=local
 ENV CGO_ENABLED=0
