@@ -3322,6 +3322,20 @@ components:
         step: {$ref: "#/components/schemas/ExecutionStep"}
         execution: {$ref: "#/components/schemas/WorkflowExecution"}
         recovered: {type: integer}
+        inputs:
+          type: object
+          additionalProperties: true
+          description: Worker-only wired inputs resolved at claim. Absent when empty.
+        skippedInputs:
+          type: array
+          description: Worker-only ports whose incoming edge did not fire.
+          items:
+            type: object
+            additionalProperties: false
+            required: [port, from]
+            properties:
+              port: {type: string}
+              from: {type: string}
     JobActionRequest:
       type: object
       required: [jobToken, workerId]

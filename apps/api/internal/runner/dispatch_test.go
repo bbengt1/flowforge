@@ -980,3 +980,163 @@ spec:
 `
 
 const kubeconfigFixture = "apiVersion: v1\nkind: Config\nclusters:\n- name: c\n  cluster:\n    server: https://127.0.0.1\n    certificate-authority-data: QQ==\ncontexts:\n- name: ctx\n  context:\n    cluster: c\n    user: u\ncurrent-context: ctx\nusers:\n- name: u\n  user:\n    token: very-secret-token\n"
+
+func TestDecideCoreInputParity(t *testing.T) {
+	ready := map[string]any{"status": "ready"}
+	set := decideCore(wfstore.ExecutionStep{
+		NodeType: "data.set",
+		Input:    map[string]any{"value": ready},
+	}, nil, nil)
+	if set.Fail {
+		t.Fatalf("data.set %+v", set)
+	}
+	if got, _ := set.Output["result"].(map[string]any); got["status"] != "ready" {
+		t.Fatalf("data.set output %#v", set.Output)
+	}
+
+	mapped := decideCore(wfstore.ExecutionStep{
+		NodeType: "data.map",
+		Input:    map[string]any{"mapping": map[string]any{"status": "status"}},
+	}, map[string]any{"input": ready}, nil)
+	if mapped.Fail {
+		t.Fatalf("data.map %+v", mapped)
+	}
+	if got, _ := mapped.Output["result"].(map[string]any); got["status"] != "ready" {
+		t.Fatalf("data.map output %#v", mapped.Output)
+	}
+
+	missing := decideCore(wfstore.ExecutionStep{
+		NodeType: "data.map",
+		Input:    map[string]any{"mapping": map[string]any{"status": "status"}},
+	}, nil, nil)
+	if !missing.Fail || missing.Error["code"] != "required-input" {
+		t.Fatalf("missing input %+v", missing)
+	}
+
+	skipped := decideCore(wfstore.ExecutionStep{
+		NodeType: "data.map",
+		Input:    map[string]any{"mapping": map[string]any{"status": "status"}},
+	}, nil, []wfstore.SkippedInput{{Port: "input", From: "left.result"}})
+	if !skipped.Fail || skipped.Error["code"] != "upstream-skipped" {
+		t.Fatalf("skipped %+v", skipped)
+	}
+
+	optionalSkip := decideCore(wfstore.ExecutionStep{
+		NodeType: "data.map",
+		Input:    map[string]any{"mapping": map[string]any{"status": "status"}},
+	}, nil, []wfstore.SkippedInput{{Port: "note", From: "side.result"}})
+	if !optionalSkip.Fail || optionalSkip.Error["code"] != "required-input" {
+		t.Fatalf("optional skip %+v", optionalSkip)
+	}
+
+	validate := decideCore(wfstore.ExecutionStep{
+		NodeType: "data.validate",
+		Input:    map[string]any{"schema": map[string]any{"type": "object"}},
+	}, nil, nil)
+	if !validate.Fail || validate.Error["code"] != "required-input" {
+		t.Fatalf("validate %+v", validate)
+	}
+
+	cond := decideCore(wfstore.ExecutionStep{
+		NodeType: "flow.condition",
+		Input:    map[string]any{"op": "eq", "path": "status", "compare": "ready"},
+	}, map[string]any{"value": ready}, nil)
+	if cond.Fail {
+		t.Fatalf("condition %+v", cond)
+	}
+	if _, ok := cond.Output["false"]; !ok || cond.Output["false"] != nil {
+		t.Fatalf("condition false port %#v", cond.Output)
+	}
+	if got, _ := cond.Output["true"].(map[string]any); got["status"] != "ready" {
+		t.Fatalf("condition true %#v", cond.Output["true"])
+	}
+
+	denied := decideCore(wfstore.ExecutionStep{
+		NodeType: "flow.fail",
+		Input:    map[string]any{"code": "operator-denied", "message": "nope"},
+	}, nil, nil)
+	if !denied.Fail || denied.Error["code"] != "operator-denied" {
+		t.Fatalf("flow.fail %+v", denied)
+	}
+}
+
+func TestSkippedOptionalInputIsNotUpstreamSkipped(t *testing.T) {
+	r, _ := newRig(t, authz.ExpandRoles([]string{authz.RoleOperator}))
+	verID := "33333333-3333-4333-8333-333333333333"
+	execID := "44444444-4444-4444-8444-444444444444"
+	jobID := "55555555-5555-4555-8555-555555555555"
+	decision := r.disp.Execute(context.Background(), r.scope, authz.ExpandRoles([]string{authz.RoleOperator}), Job{
+		Binding: wfstore.JobBinding{
+			WorkspaceID:       wsID,
+			JobID:             jobID,
+			ExecutionID:       execID,
+			WorkflowVersionID: verID,
+			WorkflowDigest:    "sha256:abc",
+			ExpiresAt:         time.Now().Add(time.Minute),
+		},
+		Execution: wfstore.Execution{ID: execID, WorkflowVersionID: verID, WorkflowDigest: "sha256:abc"},
+		Step: wfstore.ExecutionStep{
+			NodeType: "kubernetes.apply",
+			Input: map[string]any{
+				"clusterTargetId": targetID,
+				"namespace":       "demo",
+			},
+		},
+		SkippedInputs: []wfstore.SkippedInput{{Port: "parameters", From: "gate.false"}},
+		Job:           wfstore.ExecutionJob{Status: wfstore.JobRunning},
+	})
+	if !decision.Fail || decision.Error["code"] == "upstream-skipped" || decision.Error["code"] != CodeUnpublishedPin {
+		t.Fatalf("optional skip %+v", decision)
+	}
+}
+
+func TestWiredSetReachesMap(t *testing.T) {
+	r, _ := newRig(t, authz.ExpandRoles([]string{authz.RoleOperator}))
+	exec := r.start(t, r.publish(t, setThenMapRunnerYAML))
+	if _, err := r.loop.Drain(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	steps, err := r.wf.ListSteps(context.Background(), r.scope, exec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mapped wfstore.ExecutionStep
+	for _, step := range steps {
+		if step.NodeID == "mapped" {
+			mapped = step
+		}
+	}
+	if mapped.Status != wfstore.ExecutionSucceeded {
+		t.Fatalf("map status=%s err=%v", mapped.Status, mapped.Error)
+	}
+	got, _ := mapped.Output["result"].(map[string]any)
+	if got["status"] != "ready" {
+		t.Fatalf("map output %#v", mapped.Output)
+	}
+}
+
+const setThenMapRunnerYAML = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: runner-set-map
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: seed
+      type: data.set
+      name: Seed
+      with:
+        value:
+          status: ready
+    - id: mapped
+      type: data.map
+      name: Map
+      with:
+        mapping:
+          status: status
+  edges:
+    - from: seed.result
+      to: mapped.input
+`

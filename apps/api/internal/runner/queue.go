@@ -25,12 +25,15 @@ type Workspace struct {
 }
 
 // Job is one claimed step plus the HMAC ticket minted for it.
+// Inputs and SkippedInputs are the wired ports resolved at claim.
 type Job struct {
-	Token     string
-	Binding   wfstore.JobBinding
-	Job       wfstore.ExecutionJob
-	Step      wfstore.ExecutionStep
-	Execution wfstore.Execution
+	Token         string
+	Binding       wfstore.JobBinding
+	Job           wfstore.ExecutionJob
+	Step          wfstore.ExecutionStep
+	Execution     wfstore.Execution
+	Inputs        map[string]any
+	SkippedInputs []wfstore.SkippedInput
 }
 
 // Queue is the durable claim/fence surface. Production uses StoreQueue.
@@ -146,11 +149,13 @@ func (q *StoreQueue) Claim(ctx context.Context, ws Workspace) (*Job, error) {
 		return nil, err
 	}
 	return &Job{
-		Token:     token,
-		Binding:   parsed,
-		Job:       res.Job,
-		Step:      res.Step,
-		Execution: res.Execution,
+		Token:         token,
+		Binding:       parsed,
+		Job:           res.Job,
+		Step:          res.Step,
+		Execution:     res.Execution,
+		Inputs:        res.Inputs,
+		SkippedInputs: res.SkippedInputs,
 	}, nil
 }
 

@@ -621,13 +621,23 @@ type JobBinding struct {
 	LeaseExpiresAt    time.Time `json:"leaseExpiresAt"`
 }
 
+// SkippedInput is a worker-only port whose incoming edge did not fire.
+// From is fromNode.fromPort. The port key is absent from Inputs.
+type SkippedInput struct {
+	Port string `json:"port"`
+	From string `json:"from"`
+}
+
 // DispatchResult is a job mutation plus its parent step/execution.
+// Inputs and SkippedInputs are worker-only. They are not part of ExecutionStep.
 type DispatchResult struct {
-	Execution Execution
-	Step      ExecutionStep
-	Job       ExecutionJob
-	Binding   JobBinding
-	Recovered int
+	Execution     Execution
+	Step          ExecutionStep
+	Job           ExecutionJob
+	Binding       JobBinding
+	Recovered     int
+	Inputs        map[string]any
+	SkippedInputs []SkippedInput
 }
 
 // ParkedApproval is the approval inserted in the same transaction that parks

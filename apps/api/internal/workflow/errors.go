@@ -46,6 +46,7 @@ const (
 	CodeInvalidWith           = "invalid-with"
 	CodeSecretForbidden       = "secret-forbidden"
 	CodeRequiredInput         = "required-input"
+	CodeUpstreamSkipped       = "upstream-skipped"
 	CodeDuplicateEdge         = "duplicate-edge"
 	CodeClassificationDenied  = "classification-denied"
 	CodeOutputTooLarge        = "output-too-large"

@@ -1,8 +1,6 @@
 package localworker
 
 import (
-	"strings"
-
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
@@ -20,7 +18,8 @@ type Decision struct {
 // Decide evaluates a claimed step without calling a provider. Approval
 // waits are parked by the API on claim (no lease). Provider nodes and
 // durable delay fail closed so the run leaves queued with a reason.
-func Decide(step wfstore.ExecutionStep, job wfstore.ExecutionJob) Decision {
+// inputs and skipped come from the claim response.
+func Decide(step wfstore.ExecutionStep, job wfstore.ExecutionJob, inputs map[string]any, skipped []wfstore.SkippedInput) Decision {
 	if job.Status == wfstore.JobWaiting || step.NodeType == "flow.approval" {
 		return Decision{Skip: true, Reason: "waiting"}
 	}
@@ -30,39 +29,30 @@ func Decide(step wfstore.ExecutionStep, job wfstore.ExecutionJob) Decision {
 	if step.NodeType == "flow.delay" {
 		return unsupported("Compose local worker does not schedule durable flow.delay waits.")
 	}
+	return decisionFromOutcome(workflow.EvaluateStep(step.NodeType, step.Input, inputs, skippedPorts(skipped)))
+}
 
-	res, errs := workflow.Evaluate(step.NodeType, step.Input, map[string]any{})
-	if len(errs) > 0 {
-		code := errs[0].Code
-		if code == "" {
-			code = "eval-failed"
-		}
-		return Decision{
-			Fail:    true,
-			Error:   map[string]any{"code": code, "message": errs[0].Message},
-			Message: errs[0].Message,
-		}
+func skippedPorts(in []wfstore.SkippedInput) []workflow.SkippedPort {
+	if len(in) == 0 {
+		return nil
 	}
-	out := map[string]any{}
-	if res != nil && res.Outputs != nil {
-		out = res.Outputs
+	out := make([]workflow.SkippedPort, len(in))
+	for i, s := range in {
+		out[i] = workflow.SkippedPort{Port: s.Port, From: s.From}
 	}
-	if res != nil && res.Terminal != nil {
-		switch res.Terminal.Status {
-		case "failure", "canceled":
-			code := strings.TrimSpace(res.Terminal.Code)
-			if code == "" {
-				code = res.Terminal.Status
-			}
-			return Decision{
-				Fail:    true,
-				Output:  out,
-				Error:   map[string]any{"code": code, "message": res.Terminal.Message},
-				Message: res.Terminal.Message,
-			}
-		}
+	return out
+}
+
+func decisionFromOutcome(o workflow.StepOutcome) Decision {
+	if !o.Fail {
+		return Decision{Output: o.Output}
 	}
-	return Decision{Output: out}
+	return Decision{
+		Fail:    true,
+		Output:  o.Output,
+		Error:   map[string]any{"code": o.Code, "message": o.Message},
+		Message: o.Message,
+	}
 }
 
 func unsupported(message string) Decision {
