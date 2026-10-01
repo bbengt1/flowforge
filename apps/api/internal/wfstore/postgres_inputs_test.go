@@ -210,9 +210,7 @@ func TestPostgresResolveInputs(t *testing.T) {
 		mapped := claimNode(t, ctx, store, scope, now(), "mapped")
 		assertObject(t, mapped.Inputs["input"], "value", "demo")
 		finishCore(t, ctx, store, scope, now(), mapped)
-		if _, err := store.CancelExecution(ctx, scope, now(), exec.ID); err != nil {
-			t.Fatal(err)
-		}
+		assertRun(t, ctx, store, scope, exec.ID, ExecutionSucceeded)
 	})
 
 	t.Run("unwired delay input is an empty object", func(t *testing.T) {
