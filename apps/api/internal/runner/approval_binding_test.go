@@ -7,12 +7,15 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/approval"
+	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/workflowhttp"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/policy"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestRunnerApprovalBindingFailsClosed(t *testing.T) {
@@ -142,6 +145,96 @@ func TestRunnerApprovalBindingFailsClosed(t *testing.T) {
 		if approval.HasApproverRole([]string{"approver"}, right.ApproverRole) {
 			t.Fatal("approver must not satisfy admin")
 		}
+		if _, err := store.CancelExecution(ctx, scope, time.Now().UTC(), exec.ID); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("disabled pinned policy", func(t *testing.T) {
+		ops := opsconfig.NewPostgres(app)
+		spec := map[string]any{"kind": "approval", "policy": map[string]any{"approverRole": "admin", "expiresIn": "PT1H"}}
+		pol, _, err := ops.Create(ctx, scope, opsconfig.CreateInput{
+			Kind: opsconfig.KindPolicy, Name: "Gate policy", Slug: formatRunnerSlug("gp", suffix+4), Spec: spec,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := ops.Publish(ctx, scope, opsconfig.KindPolicy, pol.ID, opsconfig.PublishInput{
+			ExpectedRevision: pol.DraftRevision, Note: "v1",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		parsed, errs := workflow.ParseAndNormalize([]byte(policyGateYAML(suffix+4, pol.ID)))
+		if len(errs) > 0 {
+			t.Fatalf("parse: %+v", errs)
+		}
+		wf, draft, err := store.Create(ctx, scope, wfstore.CreateInput{
+			NormalizedYAML: parsed.NormalizedYAML, Digest: parsed.Digest, Summary: parsed.Summary,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, ver, err := store.Publish(ctx, scope, wf.ID, wfstore.PublishInput{ExpectedRevision: draft.Revision, Note: "v1"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		exec, err := store.StartExecution(ctx, scope, wf.ID, wfstore.StartInput{VersionID: ver.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ops.Disable(ctx, scope, opsconfig.KindPolicy, pol.ID); err != nil {
+			t.Fatal(err)
+		}
+		_, loop := runnerLoop(store, ws.ID, user.ID)
+		loop.disp = &Dispatcher{Ops: ops}
+		assertBindingFailed(t, ctx, loop, store, approvals, scope, approver, exec.ID)
+	})
+
+	t.Run("transient 42501 requeues", func(t *testing.T) {
+		exec := startAdminGate(t, ctx, store, scope, suffix+5)
+		pending, err := approvals.Create(ctx, scope, approval.CreateInput{
+			WorkflowID:        exec.WorkflowID,
+			WorkflowVersionID: exec.WorkflowVersionID,
+			WorkflowDigest:    exec.WorkflowDigest,
+			ExecutionID:       exec.ID,
+			Requirement: policy.Requirement{
+				NodeID: "gate", NodeName: "Gate", Operation: "flow.approval",
+				ApproverRole: "admin", ExpiresAt: time.Now().UTC().Add(time.Hour),
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		before := time.Now().UTC()
+		queue, loop := runnerLoop(store, ws.ID, user.ID)
+		queue.Workflows = versionLookup{Store: store, get: func(context.Context, isolation.Scope, string, string) (wfstore.Version, error) {
+			return wfstore.Version{}, errors.Join(wfstore.ErrNotFound, &pgconn.PgError{Code: "42501", Message: "permission denied"})
+		}}
+		if n, err := loop.PollOnce(ctx); err != nil || n != 1 {
+			t.Fatalf("drain n=%d err=%v", n, err)
+		}
+		jobs, err := store.ListJobs(ctx, scope, exec.ID)
+		if err != nil || len(jobs) != 1 || jobs[0].Status != wfstore.JobQueued {
+			t.Fatalf("jobs = %+v %v", jobs, err)
+		}
+		if jobs[0].AvailableAt.Before(before.Add(20 * time.Second)) {
+			t.Fatalf("requeue available_at = %s", jobs[0].AvailableAt)
+		}
+		steps, err := store.ListSteps(ctx, scope, exec.ID)
+		if err != nil || len(steps) != 1 || steps[0].Status == wfstore.ExecutionFailed || steps[0].Error["code"] == wfstore.ReasonRequirementUnresolvable {
+			t.Fatalf("step = %+v %v", steps, err)
+		}
+		got, err := store.GetExecutionByID(ctx, scope, exec.ID)
+		if err != nil || got.Status == wfstore.ExecutionFailed || got.Status == wfstore.ExecutionSucceeded {
+			t.Fatalf("run = %+v %v", got, err)
+		}
+		if _, err := store.StartExecution(ctx, scope, exec.WorkflowID, wfstore.StartInput{VersionID: exec.WorkflowVersionID, MaxOpen: 1}); !errors.Is(err, wfstore.ErrConcurrency) {
+			t.Fatalf("transient slot = %v", err)
+		}
+		still, err := approvals.Get(ctx, scope, pending.ID)
+		if err != nil || still.Status != approval.StatusPending || still.CloseReason != "" {
+			t.Fatalf("approval = %+v %v", still, err)
+		}
 	})
 }
 
@@ -159,6 +252,26 @@ func (v versionLookup) GetVersion(ctx context.Context, scope isolation.Scope, wo
 
 func assertBindingFailed(t *testing.T, ctx context.Context, loop *Runner, store *wfstore.Postgres, approvals *approval.Postgres, scope, approver isolation.Scope, executionID string) {
 	t.Helper()
+	exec, err := store.GetExecutionByID(ctx, scope, executionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.StartExecution(ctx, scope, exec.WorkflowID, wfstore.StartInput{VersionID: exec.WorkflowVersionID, MaxOpen: 1}); !errors.Is(err, wfstore.ErrConcurrency) {
+		t.Fatalf("slot before claim = %v", err)
+	}
+	pending, err := approvals.Create(ctx, scope, approval.CreateInput{
+		WorkflowID:        exec.WorkflowID,
+		WorkflowVersionID: exec.WorkflowVersionID,
+		WorkflowDigest:    exec.WorkflowDigest,
+		ExecutionID:       exec.ID,
+		Requirement: policy.Requirement{
+			NodeID: "gate", NodeName: "Gate", Operation: "flow.approval",
+			ApproverRole: "admin", ExpiresAt: time.Now().UTC().Add(time.Hour),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if n, err := loop.PollOnce(ctx); err != nil || n != 1 {
 		t.Fatalf("drain n=%d err=%v", n, err)
 	}
@@ -173,20 +286,32 @@ func assertBindingFailed(t *testing.T, ctx context.Context, loop *Runner, store 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(steps) != 1 || steps[0].Status == wfstore.ExecutionWaiting || steps[0].Error["code"] != CodeApprovalBindingUnresolved {
+	want := wfstore.RequirementUnresolvableError()
+	if len(steps) != 1 || steps[0].Status != wfstore.ExecutionFailed || steps[0].Error["code"] != want["code"] || steps[0].Error["message"] != want["message"] {
 		t.Fatalf("step = %+v", steps)
 	}
-	items, err := approvals.List(ctx, scope, approval.Filter{ExecutionID: executionID})
+	got, err := store.GetExecutionByID(ctx, scope, executionID)
+	if err != nil || got.Status != wfstore.ExecutionFailed {
+		t.Fatalf("run = %+v %v", got, err)
+	}
+	if reason := workflowhttp.ExecutionStatusReason(got, steps, jobs, time.Now().UTC()); reason != wfstore.ReasonRequirementUnresolvable {
+		t.Fatalf("statusReason = %q", reason)
+	}
+	closed, err := approvals.Get(ctx, scope, pending.ID)
+	if err != nil || closed.Status != approval.StatusCanceled || closed.CloseReason != approval.ReasonRequirementUnresolvable || closed.DecidedBy != "" {
+		t.Fatalf("approval = %+v %v", closed, err)
+	}
+	freed, err := store.StartExecution(ctx, scope, exec.WorkflowID, wfstore.StartInput{VersionID: exec.WorkflowVersionID, MaxOpen: 1})
 	if err != nil {
+		t.Fatalf("slot after fail = %v", err)
+	}
+	if _, err := store.CancelExecution(ctx, scope, time.Now().UTC(), freed.ID); err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 0 {
-		t.Fatalf("approvals = %+v", items)
-	}
-	if _, err := approvals.Decide(ctx, approver, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", approval.DecideInput{
+	if _, err := approvals.Decide(ctx, approver, pending.ID, approval.DecideInput{
 		Decision: approval.DecisionApproved, Now: time.Now().UTC(),
-	}); !errors.Is(err, approval.ErrNotFound) {
-		t.Fatalf("approver decide = %v", err)
+	}); err == nil {
+		t.Fatal("approver decided a closed row")
 	}
 }
 
@@ -231,6 +356,27 @@ spec:
       with:
         approverRole: admin
         expiresIn: PT1H
+  edges: []
+`
+}
+
+func policyGateYAML(suffix int64, policyID string) string {
+	return `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: policy-gate-` + formatRunnerSlug("p", suffix) + `
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: gate
+      type: flow.approval
+      name: Gate
+      with:
+        approverRole: admin
+        expiresIn: PT1H
+        policyId: ` + policyID + `
   edges: []
 `
 }

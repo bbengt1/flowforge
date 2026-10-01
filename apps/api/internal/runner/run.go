@@ -194,14 +194,13 @@ func (r *Runner) claimOne(ctx context.Context, ws Workspace) (bool, error) {
 			}
 			var unresolved approvalBindingError
 			if errors.As(err, &unresolved) {
-				failure := map[string]any{
-					"code":    CodeApprovalBindingUnresolved,
-					"message": "Approval binding could not be resolved.",
-				}
+				// Same payload as compose ParkApprovalClaim: FailJob
+				// cancels a pending approval and rolls the run up.
+				failure := wfstore.RequirementUnresolvableError()
 				if failErr := r.queue.Fail(ctx, ws, *job, failure); failErr != nil {
 					return true, failErr
 				}
-				r.log.Info("production runner failed job", "job_id", job.Job.ID, "node_type", job.Step.NodeType, "code", CodeApprovalBindingUnresolved)
+				r.log.Info("production runner failed job", "job_id", job.Job.ID, "node_type", job.Step.NodeType, "code", failure["code"])
 				return true, nil
 			}
 			return true, err

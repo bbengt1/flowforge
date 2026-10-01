@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/workflowhttp"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -59,12 +61,120 @@ func TestPollOnceContinuesAfterTransientGate(t *testing.T) {
 	if readyJob.Status != wfstore.JobSucceeded {
 		t.Fatalf("ready job = %+v", readyJob)
 	}
+	stuckSteps, err := store.ListSteps(ctx, stuckScope, stuckExec.ID)
+	if err != nil || len(stuckSteps) != 1 || stuckSteps[0].Status == wfstore.ExecutionFailed || stuckSteps[0].Error["code"] == wfstore.ReasonRequirementUnresolvable {
+		t.Fatalf("transient step = %+v %v", stuckSteps, err)
+	}
+	stuckRun, err := store.GetExecutionByID(ctx, stuckScope, stuckExec.ID)
+	if err != nil || stuckRun.Status == wfstore.ExecutionFailed {
+		t.Fatalf("transient run = %+v %v", stuckRun, err)
+	}
 	logText := buf.String()
 	for _, want := range []string{stuckWS, stuckJob.ID, "approval_requirement_unavailable"} {
 		if !bytes.Contains(buf.Bytes(), []byte(want)) {
 			t.Fatalf("log missing %s: %s", want, logText)
 		}
 	}
+}
+
+func TestDisabledPinnedPolicyClaimFailsUnresolvable(t *testing.T) {
+	ctx := context.Background()
+	store := wfstore.NewMemory()
+	ops := opsconfig.NewMemory()
+	ws := "11111111-1111-4111-8111-111111111111"
+	actor := "22222222-2222-4222-8222-222222222222"
+	scope, err := isolation.Authorize(ws, actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol, _, err := ops.Create(ctx, scope, opsconfig.CreateInput{
+		Kind: opsconfig.KindPolicy,
+		Name: "Gate policy",
+		Slug: "gate-policy",
+		Spec: map[string]any{
+			"kind": "approval",
+			"policy": map[string]any{
+				"approverRole": "approver",
+				"expiresIn":    "PT1H",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ops.Publish(ctx, scope, opsconfig.KindPolicy, pol.ID, opsconfig.PublishInput{
+		ExpectedRevision: pol.DraftRevision, Note: "v1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	exec := publishMemoryRun(t, ctx, store, scope, policyGateMemoryYAML(pol.ID))
+	if _, err := ops.Disable(ctx, scope, opsconfig.KindPolicy, pol.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.StartExecution(ctx, scope, exec.WorkflowID, wfstore.StartInput{VersionID: exec.WorkflowVersionID, MaxOpen: 1}); !errors.Is(err, wfstore.ErrConcurrency) {
+		t.Fatalf("slot before claim = %v", err)
+	}
+	queue := &StoreQueue{
+		Workflows: store,
+		JobKey:    wfstore.NewJobBindingKey(),
+		WorkerID:  "production-runner",
+		Lease:     time.Minute,
+		Fixed:     []Workspace{{ID: ws, ActorID: actor}},
+	}
+	loop := NewRunner(queue, &Dispatcher{Ops: ops}, Config{
+		WorkerID: "production-runner",
+		Log:      slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+	})
+	if n, err := loop.PollOnce(ctx); err != nil || n != 1 {
+		t.Fatalf("poll n=%d err=%v", n, err)
+	}
+	job := memoryJob(t, ctx, store, scope, exec.ID)
+	if job.Status != wfstore.JobFailed {
+		t.Fatalf("job = %+v", job)
+	}
+	steps, err := store.ListSteps(ctx, scope, exec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := wfstore.RequirementUnresolvableError()
+	if len(steps) != 1 || steps[0].Status != wfstore.ExecutionFailed || steps[0].Error["code"] != want["code"] || steps[0].Error["message"] != want["message"] {
+		t.Fatalf("step = %+v", steps)
+	}
+	got, err := store.GetExecutionByID(ctx, scope, exec.ID)
+	if err != nil || got.Status != wfstore.ExecutionFailed {
+		t.Fatalf("run = %+v %v", got, err)
+	}
+	jobs, err := store.ListJobs(ctx, scope, exec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reason := workflowhttp.ExecutionStatusReason(got, steps, jobs, time.Now().UTC()); reason != wfstore.ReasonRequirementUnresolvable {
+		t.Fatalf("statusReason = %q", reason)
+	}
+	if _, err := store.StartExecution(ctx, scope, exec.WorkflowID, wfstore.StartInput{VersionID: exec.WorkflowVersionID, MaxOpen: 1}); err != nil {
+		t.Fatalf("slot after fail = %v", err)
+	}
+}
+
+func policyGateMemoryYAML(policyID string) string {
+	return `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: disabled-policy-gate
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: gate
+      type: flow.approval
+      name: Gate
+      with:
+        approverRole: approver
+        expiresIn: PT1H
+        policyId: ` + policyID + `
+  edges: []
+`
 }
 
 func TestTransientGatePastDeadlineFailsUnresolvable(t *testing.T) {
