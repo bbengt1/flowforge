@@ -20,6 +20,8 @@ import {
   isInvalidatedApprovalProblem,
   isSecretKey,
   isSelfApprovalProblem,
+  parseApprovalEvent,
+  parseApprovalEvents,
   parseApprovalRequest,
   parsePolicyEvaluation,
   parseApprovalCatalog,
@@ -49,7 +51,7 @@ import {
   SELF_APPROVAL_DETAIL,
 } from "./approval-contract.ts";
 import type { ApprovalBinding, ApprovalRequest, PolicyEvaluation } from "./approval-types.ts";
-import { PROBLEM_JSON } from "./problem.ts";
+import { PROBLEM_JSON, problemFieldErrors } from "./problem.ts";
 
 const VERSION_ID = "11111111-1111-4111-8111-111111111111";
 const APPROVAL_ID = "22222222-2222-4222-8222-222222222222";
@@ -523,6 +525,19 @@ describe("E10.3 approval decide contract", () => {
     assert.equal(deleted?.closeReason, "workflow_deleted");
     assert.equal(deleted?.status === "pending", false);
 
+    const unresolvable = parseApprovalRequest({
+      id: "77777777-7777-4777-8777-777777777777",
+      status: "canceled",
+      closeReason: "requirement_unresolvable",
+      binding: {
+        workflowVersionId: "22222222-2222-4222-8222-222222222222",
+        operation: "deploy",
+        nodeId: "gate",
+      },
+    });
+    assert.equal(unresolvable?.closeReason, "requirement_unresolvable");
+    assert.equal(unresolvable?.status, "canceled");
+
     const stalePending = approval({ executionStatus: "canceled" });
     assert.equal(canDecideApproval(stalePending), false);
     const failedRun = approval({ executionStatus: "failed" });
@@ -635,6 +650,50 @@ describe("approval decide 403", () => {
       assert.equal(closed.hideControls, false);
       assert.equal(closed.refetch, true);
     }
+  });
+
+  it("keeps decide buttons for a 503 requirement rebuild with no field errors", () => {
+    const unavailable = problem(503, "approval_requirement_unavailable");
+    unavailable.title = "Service Unavailable";
+    unavailable.detail = "The approval requirement could not be rebuilt. Retry.";
+    const outcome = approvalDecideOutcome(unavailable);
+    assert.equal(outcome.kind, "problem");
+    assert.equal(outcome.hideControls, false);
+    assert.equal(outcome.refetch, false);
+    assert.equal(problemFieldErrors(unavailable).length, 0);
+    assert.equal(
+      failClosedProblemTitle(unavailable),
+      "Service Unavailable",
+    );
+    assert.equal(
+      failClosedProblemTitle(unavailable) === APPROVAL_WRONG_APPROVER_MESSAGE,
+      false,
+    );
+    assert.equal(
+      failClosedProblemTitle(unavailable) === APPROVAL_CLOSED_MESSAGE,
+      false,
+    );
+  });
+
+  it("keeps a corrected approval event as a line", () => {
+    const event = parseApprovalEvent({
+      id: "88888888-8888-4888-8888-888888888888",
+      approvalId: APPROVAL_ID,
+      eventType: "corrected",
+      occurredAt: "2026-10-01T00:00:00Z",
+      details: { approverRole: "admin" },
+    });
+    assert.ok(event);
+    assert.equal(event?.eventType, "corrected");
+    const events = parseApprovalEvents({ items: [event] });
+    assert.equal(events.length, 1);
+    assert.equal(events[0]?.eventType, "corrected");
+    const detail = readFileSync(
+      join(here, "../components/approvals/ApprovalDetail.tsx"),
+      "utf8",
+    );
+    assert.match(detail, /<li key=\{event\.id\}/);
+    assert.match(detail, /\{event\.eventType\}/);
   });
 
   it("wires decide controls to the outcome, not a raw problem code", () => {

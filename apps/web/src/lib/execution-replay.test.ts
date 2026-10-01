@@ -649,6 +649,7 @@ describe("terminal runs do not look like they are waiting on approval", () => {
     const cases = [
       { code: unknown },
       { code: "workflow_deleted" },
+      { code: "requirement_unresolvable" },
       { code: { nested: true } },
       null,
       "not-an-object",
@@ -663,6 +664,7 @@ describe("terminal runs do not look like they are waiting on approval", () => {
       assert.equal(copy, generic);
       assert.equal(copy?.includes(unknown), false);
       assert.equal(copy?.includes("workflow_deleted"), false);
+      assert.equal(copy?.includes("requirement_unresolvable"), false);
     }
     assert.equal(
       gateStepFailureCopy({

@@ -18,6 +18,7 @@ export const APPROVAL_STATUSES = [
 export const APPROVAL_CLOSE_REASONS = [
   "run_canceled",
   "workflow_deleted",
+  "requirement_unresolvable",
 ] as const;
 
 export type ApprovalCloseReason = (typeof APPROVAL_CLOSE_REASONS)[number];
