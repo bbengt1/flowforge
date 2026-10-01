@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { ApprovalBindingSnapshot } from "@/components/approvals/ApprovalBindingSnapshot";
+import { ApprovalCloseReason } from "@/components/approvals/ApprovalCloseReason";
 import { ApprovalValidityBanner } from "@/components/approvals/ApprovalValidityBanner";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
@@ -133,6 +134,10 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
             <p className="text-sm font-medium tracking-wide text-fg uppercase">
               {approvalStatusLabel(approval.status)}
             </p>
+            <ApprovalCloseReason
+              status={approval.status}
+              closeReason={approval.closeReason}
+            />
             <h2 className="text-xl font-semibold">
               {approval.workflowName || approval.binding.operation}
             </h2>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { CollectionLoadMore } from "@/components/CollectionLoadMore";
+import { ApprovalCloseReason } from "@/components/approvals/ApprovalCloseReason";
 import { ApprovalDecideControls } from "@/components/approvals/ApprovalDecideControls";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
@@ -231,12 +232,19 @@ export function ApprovalList() {
                     {item.binding.operation} · {item.binding.targetName || "no target"}
                   </p>
                 </div>
-                <p className="text-sm font-medium">
-                  {approvalStatusLabel(item.status)}
-                  {isRequesterActor(item.requestedBy, actorUserId)
-                    ? " · you requested"
-                    : ""}
-                </p>
+                <div className="text-sm font-medium">
+                  <p>
+                    {approvalStatusLabel(item.status)}
+                    {isRequesterActor(item.requestedBy, actorUserId)
+                      ? " · you requested"
+                      : ""}
+                  </p>
+                  <ApprovalCloseReason
+                    status={item.status}
+                    closeReason={item.closeReason}
+                    runStatus={item.executionStatus}
+                  />
+                </div>
               </div>
               <p className="mt-2 break-all font-mono text-xs text-[var(--ff-muted)]">
                 expires {item.binding.expiresAt || "—"} · {item.id}

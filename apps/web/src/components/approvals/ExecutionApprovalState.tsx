@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ApprovalBindingSnapshot } from "@/components/approvals/ApprovalBindingSnapshot";
+import { ApprovalCloseReason } from "@/components/approvals/ApprovalCloseReason";
 import { ApprovalDecideControls } from "@/components/approvals/ApprovalDecideControls";
 import { ApprovalValidityBanner } from "@/components/approvals/ApprovalValidityBanner";
 import {
@@ -58,15 +59,22 @@ export function ExecutionApprovalState({
       <ul className="mt-3 space-y-3">
         {approvals.map((item) => (
           <li key={item.id} className="space-y-2">
-            <p className="text-sm font-medium">
-              {approvalStatusLabelForRun(item.status, executionStatus)} ·{" "}
-              <Link
-                href={`/approvals/${item.id}`}
-                className="text-fg underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
-              >
-                {item.id}
-              </Link>
-            </p>
+            <div className="text-sm font-medium">
+              <p>
+                {approvalStatusLabelForRun(item.status, executionStatus)} ·{" "}
+                <Link
+                  href={`/approvals/${item.id}`}
+                  className="text-fg underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
+                >
+                  {item.id}
+                </Link>
+              </p>
+              <ApprovalCloseReason
+                status={item.status}
+                closeReason={item.closeReason}
+                runStatus={executionStatus}
+              />
+            </div>
             <ApprovalValidityBanner approval={item} />
             <ApprovalBindingSnapshot binding={item.binding} />
             {identity && item.status === "pending" && !terminal ? (

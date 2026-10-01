@@ -958,6 +958,52 @@ export function approvalStatusLabelForRun(
   return approvalStatusLabel(status);
 }
 
+const APPROVAL_CLOSE_REASON_SENTENCES: Record<ApprovalCloseReason, string> = {
+  requirement_unresolvable: "Closed because no one eligible could decide it.",
+  workflow_deleted: "Closed because the workflow was deleted.",
+  run_canceled: "Closed because the run was canceled.",
+};
+
+/**
+ * Plain sentence for a known close reason. Unknown and missing reasons
+ * return null so the UI keeps the existing Closed label and never prints
+ * the raw code.
+ */
+export function approvalCloseReasonSentence(reason: unknown): string | null {
+  if (typeof reason !== "string" || reason.length === 0) {
+    return null;
+  }
+  if (!(APPROVAL_CLOSE_REASONS as readonly string[]).includes(reason)) {
+    return null;
+  }
+  return APPROVAL_CLOSE_REASON_SENTENCES[reason as ApprovalCloseReason];
+}
+
+/**
+ * Sentence shown next to a closed approval. Canceled uses closeReason.
+ * Expired and invalidated are status values, not close reasons.
+ */
+export function approvalClosedExplanation(input: {
+  status: string;
+  closeReason?: unknown;
+  runStatus?: string;
+}): string | null {
+  const readsClosed =
+    input.status === "canceled" ||
+    (isTerminalRunStatus(input.runStatus) &&
+      (input.status === "pending" || input.status === "canceled"));
+  if (readsClosed) {
+    return approvalCloseReasonSentence(input.closeReason);
+  }
+  if (input.status === "expired") {
+    return "Closed because it expired before anyone decided.";
+  }
+  if (input.status === "invalidated") {
+    return "Closed because it was invalidated before anyone decided.";
+  }
+  return null;
+}
+
 export function approvalStatusLabel(status: ApprovalStatus): string {
   switch (status) {
     case "pending":

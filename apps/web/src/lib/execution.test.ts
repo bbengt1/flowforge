@@ -75,7 +75,9 @@ import {
   isDownloadGrantExpired,
   parseDownloadGrant,
   parseExecutionArtifact,
+  executionKnowsWorkflowDeleted,
   parseExecutionDetail,
+  readExecutionStatusReason,
   parseExecutionJob,
   parseExecutionList,
   parseExecutionLogs,
@@ -1112,5 +1114,32 @@ describe("execution artifacts and bounded logs", () => {
     assert.match(text, /\[redacted\]/);
     assert.match(text, /legal hold/i);
     assert.equal(textMentionsHostname(text, "example.com"), false);
+  });
+});
+
+describe("execution statusReason", () => {
+  it("keeps known reasons and drops an unknown one", () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    const deleted = parseExecutionDetail({
+      id,
+      workflowId: id,
+      workflowVersionId: id,
+      status: "failed",
+      statusReason: "workflow_deleted",
+    });
+    assert.equal(deleted?.statusReason, "workflow_deleted");
+    assert.equal(executionKnowsWorkflowDeleted(deleted), true);
+    assert.equal(readExecutionStatusReason("requirement_unresolvable"), "requirement_unresolvable");
+    assert.equal(readExecutionStatusReason("no-worker"), "no-worker");
+    const unknown = parseExecutionDetail({
+      id,
+      workflowId: id,
+      workflowVersionId: id,
+      status: "failed",
+      statusReason: "not-a-reason",
+    });
+    assert.equal(unknown?.statusReason, undefined);
+    assert.equal(executionKnowsWorkflowDeleted(unknown), false);
+    assert.equal(readExecutionStatusReason("workflow_deleted_extra"), "");
   });
 });

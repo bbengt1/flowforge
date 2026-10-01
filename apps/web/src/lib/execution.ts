@@ -68,7 +68,9 @@ import {
   type ExecutionLogSlice,
   type ExecutionRecord,
   type ExecutionStatus,
+  EXECUTION_STATUS_REASONS,
   type ExecutionStatusPresentation,
+  type ExecutionStatusReason,
   type ExecutionStep,
   type JobDispatchView,
 } from "./execution-types.ts";
@@ -403,6 +405,25 @@ export function isTerminalRunStatus(
   }
   const folded = normalizeExecutionStatus(status as ExecutionStatus | undefined);
   return folded === "canceled" || folded === "failed";
+}
+
+/** Known statusReason, or empty when the field is missing or not in the enum. */
+export function readExecutionStatusReason(
+  value: unknown,
+): ExecutionStatusReason | "" {
+  if (typeof value !== "string") {
+    return "";
+  }
+  return (EXECUTION_STATUS_REASONS as readonly string[]).includes(value)
+    ? (value as ExecutionStatusReason)
+    : "";
+}
+
+/** The execution payload already says the workflow was deleted. */
+export function executionKnowsWorkflowDeleted(detail: {
+  statusReason?: string;
+} | null | undefined): boolean {
+  return detail?.statusReason === "workflow_deleted";
 }
 
 export function executionStatusLabel(status: ExecutionStatus | undefined): string {
@@ -782,6 +803,15 @@ export function isExecutionForbidden(
   );
 }
 
+function readParsedStatusReason(
+  ...candidates: unknown[]
+): { statusReason: ExecutionStatusReason } | Record<string, never> {
+  const statusReason = readExecutionStatusReason(
+    candidates.find((value) => typeof value === "string"),
+  );
+  return statusReason ? { statusReason } : {};
+}
+
 export function parseExecutionRecord(raw: unknown): ExecutionRecord | null {
   const stripped: string[] = [];
   const cleaned = stripSecretFields(raw, stripped);
@@ -811,6 +841,7 @@ export function parseExecutionRecord(raw: unknown): ExecutionRecord | null {
     ),
     workflowDigest: readString(nested.workflowDigest, nested.workflow_digest),
     status: readString(nested.status) || "queued",
+    ...readParsedStatusReason(nested.statusReason, nested.status_reason),
     startedAt: readString(nested.startedAt, nested.started_at),
     finishedAt: readString(nested.finishedAt, nested.finished_at),
     createdAt: readString(nested.createdAt, nested.created_at),

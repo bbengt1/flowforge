@@ -6,6 +6,7 @@ import type { ApprovalRequest } from "@/lib/approval-types";
 import {
   canSeeExecutionsNav,
   executionDetailDisplay,
+  executionKnowsWorkflowDeleted,
   normalizeExecutionStatus,
 } from "@/lib/execution";
 import { pollExecutionStatus } from "@/lib/execution-client";
@@ -179,6 +180,7 @@ export function useExecutionDetailQuery({
         executionId,
         versionId,
         client.getQueryData<ExecutionContextCache>(queryKey),
+        { workflowDeleted: executionKnowsWorkflowDeleted(detail) },
       ),
   });
 

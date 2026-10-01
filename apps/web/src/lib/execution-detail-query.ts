@@ -265,13 +265,18 @@ export async function loadExecutionContextCache(
     getVersion?: typeof getWorkflowVersion;
     fetchCatalog?: typeof fetchWorkflowCatalog;
     listApprovals?: typeof listExecutionApprovals;
+    /** The execution payload already says the workflow was deleted. */
+    workflowDeleted?: boolean;
   } = {},
 ): Promise<ExecutionContextCache> {
   const getVersion = deps.getVersion ?? getWorkflowVersion;
   const fetchCatalog = deps.fetchCatalog ?? fetchWorkflowCatalog;
   const listApprovals = deps.listApprovals ?? listExecutionApprovals;
+  const knownDeleted = deps.workflowDeleted === true;
   const [versionResult, catalogResult, approvalResult] = await Promise.all([
-    getVersion(identity, workflowId, versionId),
+    knownDeleted
+      ? Promise.resolve(null)
+      : getVersion(identity, workflowId, versionId),
     fetchCatalog(identity),
     listApprovals(identity, workflowId, executionId),
   ]);
@@ -284,15 +289,19 @@ export async function loadExecutionContextCache(
     requestId: previous?.requestId ?? "",
     strippedKeys: [],
   };
-  if (versionResult.ok) {
+  if (knownDeleted) {
+    next.version = null;
+    next.workflowDeleted = true;
+    next.versionProblem = null;
+  } else if (versionResult && versionResult.ok) {
     next.version = versionResult.version;
     next.requestId = versionResult.requestId;
-  } else if (versionResult.statusCode === 404) {
+  } else if (versionResult && versionResult.statusCode === 404) {
     next.version = null;
     next.workflowDeleted = true;
     next.versionProblem = null;
     next.requestId = versionResult.requestId;
-  } else {
+  } else if (versionResult) {
     next.versionProblem = cacheSafeProblem(versionResult.problem);
     next.requestId = versionResult.requestId;
   }
