@@ -118,7 +118,7 @@ export const RETRY_FORBIDDEN_MESSAGE =
   "Retry requires workflow.execute. HTTP 403 is fail-closed; this UI does not start another attempt.";
 
 export const RETRY_CONFLICT_MESSAGE =
-  "The API rejected retry (HTTP 409). Closed SSH retries return retry-denied; indeterminate without result.retry.allowed is not retried.";
+  "This execution can't be retried.";
 
 export const RETRY_CSRF_HELP =
   "Retry sends X-CSRF-Token with the session cookie. Missing CSRF fails closed before the Go API is called.";

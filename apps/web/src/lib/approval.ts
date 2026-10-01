@@ -17,6 +17,7 @@ import {
 } from "./approval-contract.ts";
 import {
   APPROVAL_ACTIONS,
+  APPROVAL_CLOSE_REASONS,
   APPROVAL_INVALIDATING_KINDS,
   APPROVAL_STATUSES,
   BINDING_CHANGE_FIELDS,
@@ -25,6 +26,7 @@ import {
   VALIDITY_REASONS,
   type ApprovalAction,
   type ApprovalBinding,
+  type ApprovalCloseReason,
   type ApprovalCatalog,
   type ApprovalEvent,
   type ApprovalRequest,
@@ -38,6 +40,11 @@ import {
   type PolicyRequirement,
   type ValidityReason,
 } from "./approval-types.ts";
+import { isTerminalRunStatus } from "./execution.ts";
+import {
+  APPROVAL_CLOSED_MESSAGE,
+  retryProblemShouldRefetch,
+} from "./execution-retry.ts";
 import type { ProblemDetails } from "./problem.ts";
 
 const UUID =
@@ -131,6 +138,15 @@ function readNumber(...candidates: unknown[]): number | null {
 
 function isApprovalStatus(value: string): value is ApprovalStatus {
   return (APPROVAL_STATUSES as readonly string[]).includes(value);
+}
+
+function isApprovalCloseReason(value: string): value is ApprovalCloseReason {
+  return (APPROVAL_CLOSE_REASONS as readonly string[]).includes(value);
+}
+
+function readCloseReason(...candidates: unknown[]): ApprovalCloseReason | "" {
+  const raw = readString(...candidates);
+  return raw && isApprovalCloseReason(raw) ? raw : "";
 }
 
 function isPolicyDecision(value: string): value is PolicyDecision {
@@ -230,7 +246,12 @@ function parseValidity(
         ? row.valid
         : null;
 
-  if (explicitCurrent === false || status === "expired" || status === "invalidated") {
+  if (
+    explicitCurrent === false ||
+    status === "expired" ||
+    status === "invalidated" ||
+    status === "canceled"
+  ) {
     return {
       current: false,
       reason:
@@ -361,6 +382,7 @@ export function parseApprovalRequest(raw: unknown): ApprovalRequest | null {
     permittedActions: parseActions(
       row.permittedActions ?? row.permitted_actions,
     ),
+    closeReason: readCloseReason(row.closeReason, row.close_reason),
   };
 }
 
@@ -722,6 +744,9 @@ export function canDecideApproval(
   if (approval.status !== "pending") {
     return false;
   }
+  if (isTerminalRunStatus(approval.executionStatus)) {
+    return false;
+  }
   if (!approval.validity.current) {
     return false;
   }
@@ -919,6 +944,20 @@ export function shouldBlockRun(options: {
   return false;
 }
 
+/** On a terminal run, a still-pending or closed approval reads as closed. */
+export function approvalStatusLabelForRun(
+  status: ApprovalStatus,
+  runStatus: string | undefined,
+): string {
+  if (
+    isTerminalRunStatus(runStatus) &&
+    (status === "pending" || status === "canceled")
+  ) {
+    return "Closed";
+  }
+  return approvalStatusLabel(status);
+}
+
 export function approvalStatusLabel(status: ApprovalStatus): string {
   switch (status) {
     case "pending":
@@ -931,6 +970,8 @@ export function approvalStatusLabel(status: ApprovalStatus): string {
       return "Expired";
     case "invalidated":
       return "Invalidated";
+    case "canceled":
+      return "Closed";
   }
 }
 
@@ -976,8 +1017,69 @@ export function problemClosesApproval(problem: ProblemDetails): boolean {
   return (
     isExpiredApprovalProblem(problem) ||
     isInvalidatedApprovalProblem(problem) ||
-    isDeniedProblemCode(problem.code)
+    isDeniedProblemCode(problem.code) ||
+    problem.code === "approval_closed"
   );
+}
+
+export const APPROVAL_WRONG_APPROVER_MESSAGE =
+  "You can't decide this approval. It needs a different approver.";
+
+/**
+ * Decide-time failure. A 403 that is not self-approval means the pinned
+ * gate wants a different approver: plain sentence, hide the controls, and
+ * refetch. `approval_closed` stays the existing closed sentence.
+ */
+export type ApprovalDecideOutcome =
+  | {
+      kind: "closed";
+      message: string;
+      hideControls: false;
+      refetch: true;
+    }
+  | {
+      kind: "wrong-approver";
+      message: string;
+      hideControls: true;
+      refetch: true;
+    }
+  | {
+      kind: "problem";
+      hideControls: false;
+      refetch: boolean;
+    };
+
+export function isWrongApproverProblem(problem: ProblemDetails): boolean {
+  if (isSelfApprovalProblem(problem)) {
+    return false;
+  }
+  return problem.status === 403 || problem.code === "forbidden";
+}
+
+export function approvalDecideOutcome(
+  problem: ProblemDetails,
+): ApprovalDecideOutcome {
+  if (problem.code === "approval_closed") {
+    return {
+      kind: "closed",
+      message: APPROVAL_CLOSED_MESSAGE,
+      hideControls: false,
+      refetch: true,
+    };
+  }
+  if (isWrongApproverProblem(problem)) {
+    return {
+      kind: "wrong-approver",
+      message: APPROVAL_WRONG_APPROVER_MESSAGE,
+      hideControls: true,
+      refetch: true,
+    };
+  }
+  return {
+    kind: "problem",
+    hideControls: false,
+    refetch: retryProblemShouldRefetch(problem),
+  };
 }
 
 export function failClosedProblemTitle(problem: ProblemDetails): string {
@@ -992,6 +1094,9 @@ export function failClosedProblemTitle(problem: ProblemDetails): string {
   }
   if (isDeniedProblemCode(problem.code)) {
     return "Approval denied";
+  }
+  if (problem.code === "approval_closed") {
+    return "Approval already closed";
   }
   return problem.title;
 }

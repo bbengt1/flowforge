@@ -11,6 +11,7 @@ import {
 import { pollExecutionStatus } from "@/lib/execution-client";
 import {
   emptyExecutionHistoryCache,
+  executionDetailDisplayedProblem,
   EXECUTION_SERVER_QUERY_OPTIONS,
   forbiddenPollCache,
   loadExecutionContextCache,
@@ -59,6 +60,7 @@ export type ExecutionDetailServerState = {
   stepLogs: Record<string, ExecutionLogSlice>;
   approvals: ApprovalRequest[];
   version: WorkflowVersion | null;
+  workflowDeleted: boolean;
   catalog: WorkflowCatalog | null;
   denied: boolean;
   refresh: () => Promise<void>;
@@ -317,7 +319,10 @@ export function useExecutionDetailQuery({
 
   return {
     detail,
-    problem: loadProblem ?? fetchProblem,
+    problem: executionDetailDisplayedProblem({
+      historyProblem: loadProblem ?? fetchProblem,
+      context: context ?? null,
+    }),
     pending:
       enabled &&
       (workspaceQuery.isFetching ||
@@ -331,6 +336,7 @@ export function useExecutionDetailQuery({
     stepLogs: logs?.stepLogs ?? {},
     approvals: context?.approvals ?? [],
     version: context?.version ?? null,
+    workflowDeleted: context?.workflowDeleted === true,
     catalog: context?.catalog ?? null,
     denied,
     refresh,

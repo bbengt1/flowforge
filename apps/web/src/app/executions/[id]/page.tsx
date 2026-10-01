@@ -34,10 +34,9 @@ export default async function ExecutionDetailPage({
           and is not Cancel — queued stays canceled, running/uncertain stays
           loud{" "}
           <code className="font-mono text-sm">indeterminate</code> until
-          verified, with no blind retry. Script and SSH retry appear only
-          when{" "}
-          <code className="font-mono text-sm">result.retry.allowed</code> is
-          true. Durable approval wait is enabled; resume is decide (SoD
+          verified, with no blind retry.           Retry appears only when{" "}
+          <code className="font-mono text-sm">capabilities.retry.allowed</code>{" "}
+          is true. Durable approval wait is enabled; resume is decide (SoD
           fail-closed). Error links
           jump to the failed or indeterminate node. Secrets appear as{" "}
           <code className="font-mono text-sm">[redacted]</code>.

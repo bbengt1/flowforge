@@ -46,9 +46,10 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # so the runtime image does not ship it. Build stages above still use
 # npm only to install pnpm.
 # The pinned index (Alpine 3.23) ships libssl3 3.5.6-r0 (CVE-2026-14456,
-# fixed in 3.5.8-r0). Upgrade those two packages so the HIGH image gate
-# can pass. The build fails if Alpine v3.23 no longer publishes that version.
-RUN apk add --no-cache 'libcrypto3=3.5.8-r0' 'libssl3=3.5.8-r0' \
+# fixed in 3.5.8-r0). The v3.23 main index now publishes 3.5.9-r0 and no
+# longer publishes 3.5.8-r0. Upgrade those two packages so the HIGH image
+# gate can pass. The build fails if Alpine v3.23 no longer publishes that version.
+RUN apk add --no-cache 'libcrypto3=3.5.9-r0' 'libssl3=3.5.9-r0' \
  && addgroup -S -g 65532 flowforge \
  && adduser -S -u 65532 -G flowforge -H -D flowforge \
  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \

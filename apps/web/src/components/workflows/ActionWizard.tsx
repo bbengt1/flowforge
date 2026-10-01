@@ -1745,8 +1745,8 @@ function ReviewStep({
           {item.nodeId ? ` (${item.nodeId})` : ""}: retryAllowed=
           {String(item.retryAllowed)}, retrySafe={String(item.retrySafe)},
           verificationDeclared={String(item.verificationDeclared)},
-          retryMaxAttempts={item.retryMaxAttempts}. POST …/retry is 409
-          retry-denied when closed.
+          retryMaxAttempts={item.retryMaxAttempts}. A closed retry is not
+          offered.
         </p>
       ))}
       {parseScriptEvaluateRetry(evaluation).map((item) => (
@@ -1758,8 +1758,8 @@ function ReviewStep({
           {item.nodeId ? ` (${item.nodeId})` : ""}: retryAllowed=
           {String(item.retryAllowed)}, retrySafe={String(item.retrySafe)},
           verificationDeclared={String(item.verificationDeclared)},
-          retryMaxAttempts={item.retryMaxAttempts}. POST …/retry is 409
-          retry-denied when closed.
+          retryMaxAttempts={item.retryMaxAttempts}. A closed retry is not
+          offered.
         </p>
       ))}
       <section className="rounded-xl border border-border px-4 py-3">

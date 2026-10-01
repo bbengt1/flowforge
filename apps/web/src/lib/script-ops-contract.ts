@@ -75,7 +75,7 @@ export const SCRIPT_EMERGENCY_STOP_DENIED_MESSAGE =
   "Emergency stop was denied (403 emergency-stop-denied or policy allowEmergencyStop=false). The run is unchanged.";
 
 export const SCRIPT_NO_BLIND_RETRY_AFTER_STOP_HELP =
-  "This UI never offers a blind retry after emergency stop. Queued stops stay canceled. Running/uncertain stays indeterminate until a verification hook. POST …/retry is 409 retry-denied when closed.";
+  "This UI never offers a blind retry after emergency stop. Queued stops stay canceled. Running or uncertain stays indeterminate until a verification hook. A closed run can't be retried.";
 
 export const SCRIPT_OPS_AUDIT_SECRET_FREE_HELP =
   "Audit rows script.artifact.revoke and script.emergency_stop are secret-free (digest, actor, outcome). Package blobs, storageRef, and secrets are never shown.";
