@@ -23,9 +23,7 @@ const (
 )
 
 const (
-	defaultExpiresIn    = "PT1H"
 	defaultApproverRole = "approver"
-	maxExpiry           = 7 * 24 * time.Hour
 )
 
 // Requirement is a fail-closed approval binding produced before dispatch.
@@ -277,18 +275,7 @@ func finishRequirement(node workflow.Node, target, policyPin opsconfig.Pin, role
 	if strings.TrimSpace(role) == "" {
 		role = defaultApproverRole
 	}
-	if strings.TrimSpace(expiresIn) == "" {
-		expiresIn = defaultExpiresIn
-	}
-	exp, err := workflow.ParseISODuration(expiresIn)
-	if err != nil || exp <= 0 {
-		exp = time.Hour
-		expiresIn = defaultExpiresIn
-	}
-	if exp > maxExpiry {
-		exp = maxExpiry
-		expiresIn = "P7D"
-	}
+	exp, expiresIn := workflow.ApprovalWaitDuration(expiresIn)
 	return Requirement{
 		NodeID:           node.ID,
 		NodeName:         node.Name,

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
+	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
 func TestEvaluateAllowsWhenNoPolicyBound(t *testing.T) {
@@ -97,6 +98,68 @@ func TestEvaluateRequireApprovalBindsVersionTargetPolicyAndExpiry(t *testing.T) 
 	}
 	if !req.ExpiresAt.Equal(now.Add(30*time.Minute)) || req.ApproverRole != "approver" {
 		t.Fatalf("expiry/role = %+v", req)
+	}
+}
+
+func TestRequirementFromNodePrefersStepFields(t *testing.T) {
+	now := time.Date(2026, 9, 26, 4, 0, 0, 0, time.UTC)
+	policyPin := opsconfig.Pin{
+		Kind: opsconfig.KindPolicy, ResourceID: "44444444-4444-4444-8444-444444444444",
+		VersionID: "55555555-5555-4555-8555-555555555555", VersionNumber: 2,
+		Digest: "sha256:" + strings.Repeat("c", 64),
+		Spec: map[string]any{"kind": "approval", "policy": map[string]any{
+			"approverRole": "auditor",
+			"expiresIn":    "PT2H",
+		}},
+	}
+	node := workflow.Node{ID: "gate", Type: "flow.approval", Name: "Gate", With: map[string]any{
+		"approverRole": "admin",
+		"expiresIn":    "PT15M",
+	}}
+	got := requirementFromNode(node, opsconfig.Pin{}, policyPin, now, "wait")
+	if got.ApproverRole != "admin" || got.ExpiresIn != "PT15M" || !got.ExpiresAt.Equal(now.Add(15*time.Minute)) {
+		t.Fatalf("step fields = %+v", got)
+	}
+	if got.PolicyVersionID != policyPin.VersionID || got.PolicyResourceID != policyPin.ResourceID {
+		t.Fatalf("policy pin = %+v", got)
+	}
+
+	blank := node
+	blank.With = map[string]any{}
+	got = requirementFromNode(blank, opsconfig.Pin{}, policyPin, now, "wait")
+	if got.ApproverRole != "auditor" || got.ExpiresIn != "PT2H" || !got.ExpiresAt.Equal(now.Add(2*time.Hour)) {
+		t.Fatalf("blank step = %+v", got)
+	}
+
+	roleOnly := node
+	roleOnly.With = map[string]any{"approverRole": "admin"}
+	got = requirementFromNode(roleOnly, opsconfig.Pin{}, policyPin, now, "wait")
+	if got.ApproverRole != "admin" || got.ExpiresIn != "PT2H" {
+		t.Fatalf("blank expiresIn = %+v", got)
+	}
+
+	expiryOnly := node
+	expiryOnly.With = map[string]any{"expiresIn": "PT15M"}
+	got = requirementFromNode(expiryOnly, opsconfig.Pin{}, policyPin, now, "wait")
+	if got.ApproverRole != "auditor" || got.ExpiresIn != "PT15M" {
+		t.Fatalf("blank approverRole = %+v", got)
+	}
+
+	stepAdmin := opsconfig.Pin{
+		Kind: opsconfig.KindPolicy, ResourceID: policyPin.ResourceID,
+		VersionID: policyPin.VersionID, VersionNumber: policyPin.VersionNumber, Digest: policyPin.Digest,
+		Spec: map[string]any{"kind": "approval", "policy": map[string]any{
+			"approverRole": "approver",
+			"expiresIn":    "PT2H",
+		}},
+	}
+	adminNode := workflow.Node{ID: "gate", Type: "flow.approval", Name: "Gate", With: map[string]any{
+		"approverRole": "admin",
+		"expiresIn":    "PT1H",
+	}}
+	got = requirementFromNode(adminNode, opsconfig.Pin{}, stepAdmin, now, "wait")
+	if got.ApproverRole != "admin" || got.ExpiresIn != "PT1H" {
+		t.Fatalf("step admin = %+v", got)
 	}
 }
 

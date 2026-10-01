@@ -280,10 +280,6 @@ func boundObject(v map[string]any, maxBytes int) (map[string]any, bool) {
 	}, true
 }
 
-func executionBlocksDelete(status string) bool {
-	return status == ExecutionQueued || status == ExecutionRunning
-}
-
 func isTerminalExecution(status string) bool {
 	switch status {
 	case ExecutionSucceeded, ExecutionFailed, ExecutionCanceled, ExecutionIndeterminate, ExecutionPinned:

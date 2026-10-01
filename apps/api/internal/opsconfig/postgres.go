@@ -759,6 +759,10 @@ func resolveOne(ctx context.Context, tx pgx.Tx, ref Ref) (Pin, error) {
 		`, ref.ResourceID, ref.VersionID), ref.Kind)
 	}
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			return Pin{}, err
+		}
 		if errors.Is(err, ErrNotFound) {
 			return Pin{}, ErrDraftNotUsable
 		}
@@ -951,8 +955,10 @@ func mapDBErr(err error) error {
 				return ErrConflict
 			}
 			return ErrConflict
-		case "23503", "22P02", "42501":
+		case "23503", "22P02":
 			return ErrNotFound
+		case "42501":
+			return errors.Join(ErrNotFound, err)
 		case "23514":
 			return ErrInvalid
 		case "25006":

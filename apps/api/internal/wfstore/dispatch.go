@@ -1,7 +1,9 @@
 package wfstore
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"strings"
@@ -11,7 +13,75 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/bbengt1/flowforge/apps/api/internal/ssh"
+	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
+
+const (
+	approvalRetryBase   = 30 * time.Second
+	approvalRetryJitter = 5 * time.Second
+)
+
+// approvalRetryWait is the flat wait before a transient approval rebuild
+// may be claimed again. jitter is in [0, 1] and maps onto 30s plus 0 to 5s.
+// The outer limit is the pending approval's expires_at, or the gate-ready
+// time plus the parked-approval wait duration when no approval is pending.
+// This delay does not change attempt.
+func approvalRetryWait(jitter float64) time.Duration {
+	if jitter < 0 {
+		jitter = 0
+	}
+	if jitter > 1 {
+		jitter = 1
+	}
+	return approvalRetryBase + time.Duration(float64(approvalRetryJitter)*jitter)
+}
+
+// ApprovalRetryLimit is the transient-retry deadline for one gate.
+// approvalExpiresAt is the pending approval's expires_at. When it is set,
+// it is the limit, including when readyAt is zero. With no pending
+// approval, the limit is readyAt plus workflow.ApprovalWaitDuration:
+// the step expiresIn, or PT1H when that field is missing or not a duration,
+// and never longer than the existing P7D ceiling. readyAt is the gate-ready
+// time. A gate job's available_at and updated_at change when it leaves
+// blocked, and both are rewritten by a later claim, release, or recovery,
+// so neither is that time. It is the latest usable settle among satisfied
+// upstream edges: the final attempt's finished_at when that attempt
+// succeeded, or a skip's finished_at only when it is set and not earlier
+// than the run insert. A failed earlier attempt is ignored. The result is
+// never earlier than the run insert (executions.started_at, which Postgres
+// stamps at insert and does not move), and that insert time is the anchor
+// when nothing qualifies. Those columns are not rewritten by release,
+// lease recovery, or reclaim. A zero readyAt with no approval expiry has
+// no anchor. This is not the park deadline. A parked approval expires at
+// claim time plus the same wait duration.
+func ApprovalRetryLimit(readyAt, approvalExpiresAt time.Time, input map[string]any) (time.Time, bool) {
+	if !approvalExpiresAt.IsZero() {
+		return approvalExpiresAt.UTC(), true
+	}
+	if readyAt.IsZero() {
+		return time.Time{}, false
+	}
+	raw, _ := input["expiresIn"].(string)
+	d, _ := workflow.ApprovalWaitDuration(raw)
+	return readyAt.UTC().Add(d), true
+}
+
+// ApprovalPastLimit reports that now is at or after ApprovalRetryLimit.
+func ApprovalPastLimit(readyAt, approvalExpiresAt time.Time, input map[string]any, now time.Time) bool {
+	limit, ok := ApprovalRetryLimit(readyAt, approvalExpiresAt, input)
+	if !ok {
+		return false
+	}
+	return !now.Before(limit)
+}
+
+func approvalJitter() float64 {
+	var buf [8]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return 0
+	}
+	return float64(binary.BigEndian.Uint64(buf[:])) / float64(^uint64(0))
+}
 
 func normalizeLease(d time.Duration) time.Duration {
 	if d <= 0 {

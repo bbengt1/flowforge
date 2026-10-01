@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/approval"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/approvalhttp"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/core"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/workflowhttp"
@@ -235,18 +236,23 @@ func dispatchWebhookExecution(s *core.Server, w http.ResponseWriter, r *http.Req
 		workflowhttp.WriteExecutionDetail(s, w, r, scope, exec, http.StatusOK)
 		return
 	}
+	var pins []opsconfig.Pin
 	if s.Ops != nil {
 		copied, copyErr := s.Ops.CopyPins(r.Context(), scope, opsconfig.OwnerWorkflowVersion, ver.ID, opsconfig.OwnerExecution, exec.ID)
 		if copyErr != nil {
 			workflowhttp.WriteOpsError(w, r, copyErr)
 			return
 		}
+		pins = copied
 		if len(copied) == 0 {
-			if _, ok := workflowhttp.PinWorkflowRefs(s, w, r, scope, ver.DefinitionYAML, opsconfig.OwnerExecution, exec.ID); !ok {
+			pinned, ok := workflowhttp.PinWorkflowRefs(s, w, r, scope, ver.DefinitionYAML, opsconfig.OwnerExecution, exec.ID)
+			if !ok {
 				return
 			}
+			pins = pinned
 		}
 	}
+	approval.RememberRun(s.Approvals, exec.ID, exec.WorkflowVersionID, exec.WorkflowDigest, pins)
 	writeWebhookIngressAudit(s, r, scope, trig, "created", map[string]any{"executionId": exec.ID})
 	workflowhttp.WriteExecutionDetail(s, w, r, scope, exec, http.StatusCreated)
 }

@@ -49,14 +49,40 @@ type memGrant struct {
 
 // Memory is an in-process Store used by HTTP unit tests.
 type Memory struct {
-	mu         sync.Mutex
-	workflows  map[string]memWorkflow  // id -> row
-	folders    map[string]memFolder    // id -> row
-	versions   map[string][]Version    // workflow id -> versions
-	executions map[string]memExecution // execution id -> row
-	artifacts  map[string]memArtifact
-	grants     map[string]memGrant
-	audits     []memAudit
+	mu                   sync.Mutex
+	workflows            map[string]memWorkflow  // id -> row
+	folders              map[string]memFolder    // id -> row
+	versions             map[string][]Version    // workflow id -> versions
+	executions           map[string]memExecution // execution id -> row
+	artifacts            map[string]memArtifact
+	grants               map[string]memGrant
+	audits               []memAudit
+	approvalPending      func(executionID, nodeID string) (time.Time, bool)
+	approvalUnresolvable func(executionID, nodeID string, now time.Time)
+}
+
+// SetApprovalPending reports a pending approval for a flow.approval step
+// and that row's expires_at. A false result means no pending approval.
+// Lease recovery calls it only after dropping the workflow lock.
+func (m *Memory) SetApprovalPending(fn func(executionID, nodeID string) (time.Time, bool)) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.approvalPending = fn
+}
+
+// SetApprovalUnresolvable closes a pending approval when the retry limit
+// passes. Lease recovery and a transient release call it only after
+// dropping the workflow lock.
+func (m *Memory) SetApprovalUnresolvable(fn func(executionID, nodeID string, now time.Time)) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.approvalUnresolvable = fn
 }
 
 // NewMemory returns an empty workflow store.

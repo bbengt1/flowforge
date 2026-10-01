@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/approval"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/approvalhttp"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/core"
@@ -500,19 +501,24 @@ func dispatchScheduleExecution(s *core.Server, ctx context.Context, scope isolat
 		writeScheduleAudit(s, ctx, scope, rec, "replayed", map[string]any{"executionId": exec.ID})
 		return exec, true, nil
 	}
+	var pins []opsconfig.Pin
 	if s.Ops != nil {
 		copied, copyErr := s.Ops.CopyPins(ctx, scope, opsconfig.OwnerWorkflowVersion, ver.ID, opsconfig.OwnerExecution, exec.ID)
 		if copyErr != nil {
 			return wfstore.Execution{}, false, copyErr
 		}
+		pins = copied
 		if len(copied) == 0 {
 			if refs := opsconfig.ExtractRefs(ver.DefinitionYAML); len(refs) > 0 {
-				if _, err := s.Ops.CopyPins(ctx, scope, opsconfig.OwnerWorkflowVersion, ver.ID, opsconfig.OwnerExecution, exec.ID); err != nil {
+				copied, err = s.Ops.CopyPins(ctx, scope, opsconfig.OwnerWorkflowVersion, ver.ID, opsconfig.OwnerExecution, exec.ID)
+				if err != nil {
 					return wfstore.Execution{}, false, err
 				}
+				pins = copied
 			}
 		}
 	}
+	approval.RememberRun(s.Approvals, exec.ID, exec.WorkflowVersionID, exec.WorkflowDigest, pins)
 	writeScheduleAudit(s, ctx, scope, rec, "created", map[string]any{"executionId": exec.ID})
 	return exec, false, nil
 }

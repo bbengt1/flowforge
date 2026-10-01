@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/approval"
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/buildinfo"
@@ -21,9 +22,11 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 	"github.com/bbengt1/flowforge/apps/api/internal/machine"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
+	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/scheduler"
 	"github.com/bbengt1/flowforge/apps/api/internal/tlsmaterial"
+	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -52,22 +55,29 @@ func main() {
 
 	pool := postgres.NewPool(cfg.DatabaseURL, log, cfg.MigrateTimeout)
 	bootstrapLogin := localseed.BootstrapLoginHook(log)
+	var localDefaults func(context.Context, *pgxpool.Pool) error
 	if cfg.SeedLocalDefaults {
-		localDefaults := localseed.Hook(localseed.Input{
+		localDefaults = localseed.Hook(localseed.Input{
 			Keys:           cfg.VaultKeys,
 			PlatformAdmins: cfg.PlatformAdmins,
 			PublicBaseURL:  cfg.PublicBaseURL,
 			Log:            log,
 		})
-		pool.SetAfterReady(func(ctx context.Context, db *pgxpool.Pool) error {
+	}
+	pool.SetAfterReady(func(ctx context.Context, db *pgxpool.Pool) error {
+		if localDefaults != nil {
 			if err := localDefaults(ctx, db); err != nil {
 				return err
 			}
-			return bootstrapLogin(ctx, db)
-		})
-	} else {
-		pool.SetAfterReady(bootstrapLogin)
-	}
+		}
+		if err := bootstrapLogin(ctx, db); err != nil {
+			return err
+		}
+		// Compose starts this API process. Resync logs and returns; a
+		// failure here does not keep readiness down. Decide is the backstop.
+		approval.ResyncOpenApprovals(ctx, db, wfstore.NewPostgres(db), opsconfig.NewPostgres(db), log)
+		return nil
+	})
 	bg, stopBG := context.WithCancel(context.Background())
 	// Scheduler leadership uses its own context so SIGTERM can unlock
 	// the advisory lock before HTTP drain, without closing the pool

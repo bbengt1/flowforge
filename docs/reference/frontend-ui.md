@@ -555,10 +555,10 @@ Suggested Next proxies: `/api/control-plane/policy/evaluate`, `/api/control-plan
 | --- | --- | --- | --- | --- |
 | `GET` | `/api/v1/approvals/catalog` | `approval.view` | no | `{statuses,decisions,defaultExpiresIn}` |
 | `POST` | `/api/v1/policy/evaluate` | `workflow.view` | yes | `{workflowId,workflowVersionId}` → `decision`, `dispatchAllowed`, `requirements[]` |
-| `GET` | `/api/v1/approvals` | `approval.view` | no | query `status`, `workflowId`, `workflowVersionId`, `executionId` |
+| `GET` | `/api/v1/approvals` | `approval.view` | no | query `status`, `workflowId`, `workflowVersionId`, `executionId`. `status=pending` also requires `expires_at > now()` |
 | `POST` | `/api/v1/approvals` | `workflow.execute` | yes | materialize pending rows (idempotent on active binding) |
 | `GET` | `/api/v1/approvals/{approvalId}` | `approval.view` | no | refreshes expiry / stale binding → `invalidated` or `expired` |
-| `POST` | `/api/v1/approvals/{approvalId}/decide` | `approval.decide` | yes | `{decision:"approved"\|"rejected", note?}`. No self-approval. Stale binding is `409`. A closed approval (`status=canceled`, `closeReason` `run_canceled` or `workflow_deleted`) is `409` `approval_closed`. |
+| `POST` | `/api/v1/approvals/{approvalId}/decide` | `approval.decide` | yes | `{decision:"approved"\|"rejected", note?}`. No self-approval. Stale binding is `409`. A closed approval (`status=canceled`, `closeReason` `run_canceled` or `workflow_deleted`), or a gate that is no longer `waiting`, is `409` `approval_closed`. Nothing is recorded as approved. A transient requirement rebuild is `503` `approval_requirement_unavailable` with `Retry-After: 5` and changes nothing. |
 | `GET` | `/api/v1/approvals/{approvalId}/events` | `approval.view` | no | secret-free audit |
 | `POST` | `/api/v1/workflows/{id}/executions` | `workflow.execute` | yes | still `{workflowVersionId}`; **`409`** if a valid approval is missing; **`403`** if policy denies |
 

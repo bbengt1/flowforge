@@ -266,6 +266,9 @@ func stubOperation(rt Route) (*yaml.Node, error) {
 	if rt.Method == "DELETE" && rt.Pattern == "/api/v1/workflows/{workflowId}" {
 		return workflowDeleteOperation(rt)
 	}
+	if rt.Method == "POST" && rt.Pattern == "/api/v1/approvals/{approvalId}/decide" {
+		return approvalDecideOperation(rt)
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "operationId: %s\n", operationID(rt.Method, rt.OpenAPIPath()))
 	fmt.Fprintf(&b, "summary: %s %s\n", rt.Method, rt.OpenAPIPath())
@@ -287,6 +290,32 @@ func stubOperation(rt Route) (*yaml.Node, error) {
 	b.WriteString("    $ref: \"#/components/responses/MethodNotAllowed\"\n")
 	b.WriteString("  \"500\":\n")
 	b.WriteString("    $ref: \"#/components/responses/InternalError\"\n")
+	return unmarshalNode(b.String())
+}
+
+func approvalDecideOperation(rt Route) (*yaml.Node, error) {
+	var b strings.Builder
+	fmt.Fprintf(&b, "operationId: %s\n", operationID(rt.Method, rt.OpenAPIPath()))
+	b.WriteString("summary: Decide an approval\n")
+	b.WriteString("description: |\n")
+	b.WriteString("  Records an approve or reject decision and resumes a waiting gate.\n")
+	b.WriteString("  A database, network, or timeout failure while rebuilding the pinned requirement returns 503 approval_requirement_unavailable.\n")
+	b.WriteString("  That response sets Retry-After to 5, records nothing, and changes nothing. The problem document has no errors array.\n")
+	fmt.Fprintf(&b, "  Auth class: %s. Identity proxy: %s.\n", rt.Auth, rt.Proxy)
+	b.WriteString("  Responses never include secrets, credentials, tokens, private keys, or vault material.\n")
+	b.WriteString("responses:\n")
+	b.WriteString("  \"200\":\n")
+	b.WriteString("    description: Decision recorded.\n")
+	b.WriteString("  \"401\":\n")
+	b.WriteString("    $ref: \"#/components/responses/Unauthenticated\"\n")
+	b.WriteString("  \"403\":\n")
+	b.WriteString("    $ref: \"#/components/responses/Forbidden\"\n")
+	b.WriteString("  \"405\":\n")
+	b.WriteString("    $ref: \"#/components/responses/MethodNotAllowed\"\n")
+	b.WriteString("  \"500\":\n")
+	b.WriteString("    $ref: \"#/components/responses/InternalError\"\n")
+	b.WriteString("  \"503\":\n")
+	b.WriteString("    $ref: \"#/components/responses/ApprovalRequirementUnavailable\"\n")
 	return unmarshalNode(b.String())
 }
 
@@ -338,7 +367,9 @@ func workflowDeleteOperation(rt Route) (*yaml.Node, error) {
 	b.WriteString("  The delete handler refuses any embed session with 403 forbidden before it reads permissions, capabilities, or ownership. That includes a session minted earlier whose stored caps still list workflow.delete. capabilities.delete is false for every embed session. Ownership never adds a permission an embed session does not already hold.\n")
 	b.WriteString("  workflow.delete cannot be minted on an embed assertion (ErrCapability, the same rejection as platform.administer). It stays on the editor and admin workspace roles.\n")
 	b.WriteString("  The browser identity proxy refuses DELETE /workflows/{workflowId} for an embed session with 403. First-party browser DELETE stays allowlisted.\n")
-	b.WriteString("  Queued or running executions return 409 workflow_has_active_executions and are not canceled. Waiting and pinned executions do not block.\n")
+	b.WriteString("  A non-terminal run with a job in queued, claimed, or running returns 409 workflow_has_active_executions and is not changed. That includes a gate parked while a sibling branch still has a queued or running job. Waiting, pending, and blocked work does not block.\n")
+	b.WriteString("  Delete of a parked run, in that same transaction, cancels its waiting, pending, and blocked steps and jobs with error code workflow_deleted, cancels a flow.delay timer, closes pending approvals as canceled with closeReason workflow_deleted and no decider, and fails the run with workflow_deleted. That frees the concurrency slot.\n")
+	b.WriteString("  Workflow detail includes deleteImpact for a caller who can delete: waitingRuns, blocked, and inFlightRuns. It is omitted for viewers and embed sessions. waitingRuns is how many parked runs delete will stop.\n")
 	b.WriteString("  A waiting run that later resumes or is requeued after the workflow is deleted is failed with reason workflow_deleted. No further steps run. Step retry returns 409 execution_not_retryable with reason workflow_deleted. Approval decide on that run returns 409 approval_closed and does not record the decision.\n")
 	fmt.Fprintf(&b, "  Auth class: %s. Identity proxy: %s.\n", rt.Auth, rt.Proxy)
 	b.WriteString("  Responses never include secrets, credentials, tokens, private keys, or vault material.\n")
@@ -352,7 +383,7 @@ func workflowDeleteOperation(rt Route) (*yaml.Node, error) {
 	b.WriteString("  \"404\":\n")
 	b.WriteString("    description: No workflow.view, unknown id, already deleted, or another tenant. Same not-found problem as a missing workflow.\n")
 	b.WriteString("  \"409\":\n")
-	b.WriteString("    description: workflow_has_active_executions when a queued or running execution exists.\n")
+	b.WriteString("    description: workflow_has_active_executions when a non-terminal run has a job in queued, claimed, or running.\n")
 	b.WriteString("  \"405\":\n")
 	b.WriteString("    $ref: \"#/components/responses/MethodNotAllowed\"\n")
 	b.WriteString("  \"500\":\n")

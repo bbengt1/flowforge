@@ -16,21 +16,47 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// createSchemaMigrations creates the ledger only when it is missing.
+// A role that does not own the table must still be able to migrate once
+// the ledger is already in place, so this does not issue CREATE when the
+// table exists.
 const createSchemaMigrations = `
-CREATE TABLE IF NOT EXISTS schema_migrations (
-    version     bigint PRIMARY KEY,
-    name        text NOT NULL,
-    applied_at  timestamptz NOT NULL DEFAULT now(),
-    checksum    text
-);
+DO $$
+BEGIN
+    IF to_regclass('public.schema_migrations') IS NULL THEN
+        CREATE TABLE schema_migrations (
+            version     bigint PRIMARY KEY,
+            name        text NOT NULL,
+            applied_at  timestamptz NOT NULL DEFAULT now(),
+            checksum    text
+        );
+    END IF;
+END
+$$;
 `
 
 // ensureSchemaMigrationsChecksum adds the checksum column on databases
-// created before G.3.5. CREATE TABLE IF NOT EXISTS does not alter an
-// existing table.
+// created before G.3.5. The column is added only when it is missing, so a
+// non-owner migration role does not issue ALTER TABLE on an up-to-date ledger.
 const ensureSchemaMigrationsChecksum = `
-ALTER TABLE schema_migrations
-    ADD COLUMN IF NOT EXISTS checksum text;
+DO $$
+BEGIN
+    IF to_regclass('public.schema_migrations') IS NOT NULL
+       AND NOT EXISTS (
+           SELECT 1
+             FROM pg_attribute a
+             JOIN pg_class c ON c.oid = a.attrelid
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public'
+              AND c.relname = 'schema_migrations'
+              AND a.attname = 'checksum'
+              AND a.attnum > 0
+              AND NOT a.attisdropped
+       ) THEN
+        ALTER TABLE public.schema_migrations ADD COLUMN checksum text;
+    END IF;
+END
+$$;
 `
 
 // ErrMigrationDrift means an applied migration file does not match the

@@ -54,6 +54,10 @@ const (
 	CodeStepAttemptSuperseded = "step_attempt_superseded"
 	// CodeApprovalClosed refuses a decision on an approval closed with the run.
 	CodeApprovalClosed = "approval_closed"
+	// CodeApprovalRequirementUnavailable is the retryable decide failure when
+	// rebuilding the pinned requirement hits a database, network, or timeout
+	// error. The approval is unchanged and nothing is recorded.
+	CodeApprovalRequirementUnavailable = "approval_requirement_unavailable"
 )
 
 // FieldError is a YAML-path validation failure returned on invalid-workflow.
