@@ -111,6 +111,14 @@ func SettleUnresolvableGate(ctx context.Context, tx pgx.Tx, scope isolation.Scop
 	return err
 }
 
+// RequirementUnresolvableError is the job and step failure compose writes
+// when a pinned approval requirement cannot be rebuilt. FailJob stores
+// this code, cancels a pending approval for that execution and node, and
+// rolls the run up so statusReason is requirement_unresolvable.
+func RequirementUnresolvableError() map[string]any {
+	return requirementUnresolvableStepError()
+}
+
 func requirementUnresolvableStepError() map[string]any {
 	return map[string]any{
 		"code":    ReasonRequirementUnresolvable,
