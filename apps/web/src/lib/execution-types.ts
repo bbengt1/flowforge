@@ -212,6 +212,15 @@ export type ExecutionCapabilities = {
   retry: RetryCapability;
 };
 
+/** Additive hint on an execution. Unknown values are dropped. */
+export const EXECUTION_STATUS_REASONS = [
+  "no-worker",
+  "workflow_deleted",
+  "requirement_unresolvable",
+] as const;
+
+export type ExecutionStatusReason = (typeof EXECUTION_STATUS_REASONS)[number];
+
 export type ExecutionRecord = {
   id: string;
   workflowId: string;
@@ -221,6 +230,8 @@ export type ExecutionRecord = {
   workflowVersionNumber: number | null;
   workflowDigest: string;
   status: ExecutionStatus;
+  /** Set only when the API sent a known statusReason. */
+  statusReason?: ExecutionStatusReason;
   startedAt: string;
   finishedAt: string;
   createdAt: string;

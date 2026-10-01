@@ -373,6 +373,58 @@ describe("execution detail query cache", () => {
     assert.doesNotMatch(message ?? "", /retry-denied/);
   });
 
+  it("skips the version fetch when the execution already says the workflow was deleted", async () => {
+    let versionCalls = 0;
+    const context = await loadExecutionContextCache(
+      identity,
+      "wf-1",
+      "exec-1",
+      "ver-1",
+      previousContext(),
+      {
+        workflowDeleted: true,
+        getVersion: async () => {
+          versionCalls += 1;
+          return {
+            ok: false,
+            statusCode: 404,
+            requestId: "req-404",
+            problem: problem(404, "not-found"),
+            errors: [],
+            conflict: false,
+          };
+        },
+        fetchCatalog: async () => ({
+          ok: false,
+          statusCode: 404,
+          requestId: "req-cat",
+          problem: problem(404, "not-found"),
+          errors: [],
+          conflict: false,
+        }),
+        listApprovals: async () => ({
+          ok: true,
+          statusCode: 200,
+          requestId: "req-appr",
+          items: [],
+          limit: 0,
+          cursor: "",
+          next: "",
+          strippedKeys: [],
+        }),
+      },
+    );
+    assert.equal(versionCalls, 0);
+    assert.equal(context.workflowDeleted, true);
+    assert.equal(context.version, null);
+    assert.equal(context.versionProblem, null);
+    const hook = readFileSync(
+      fileURLToPath(new URL("../components/executions/useExecutionDetailQuery.ts", import.meta.url)),
+      "utf8",
+    );
+    assert.match(hook, /workflowDeleted: executionKnowsWorkflowDeleted\(detail\)/);
+  });
+
   it("keeps a version 500 as an error and does not call the workflow deleted", async () => {
     const serverError: WorkflowClientFailure = {
       ok: false,

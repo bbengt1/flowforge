@@ -4,6 +4,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import {
+  approvalClosedExplanation,
+  approvalCloseReasonSentence,
   approvalDecideOutcome,
   APPROVAL_WRONG_APPROVER_MESSAGE,
   canDecideApproval,
@@ -694,6 +696,73 @@ describe("approval decide 403", () => {
     );
     assert.match(detail, /<li key=\{event\.id\}/);
     assert.match(detail, /\{event\.eventType\}/);
+  });
+
+  it("renders a plain sentence for each close reason and hides unknown ones", () => {
+    assert.equal(
+      approvalCloseReasonSentence("requirement_unresolvable"),
+      "Closed because no one eligible could decide it.",
+    );
+    assert.equal(
+      approvalCloseReasonSentence("workflow_deleted"),
+      "Closed because the workflow was deleted.",
+    );
+    assert.equal(
+      approvalCloseReasonSentence("run_canceled"),
+      "Closed because the run was canceled.",
+    );
+    assert.equal(
+      approvalClosedExplanation({ status: "expired" }),
+      "Closed because it expired before anyone decided.",
+    );
+    assert.equal(
+      approvalClosedExplanation({ status: "invalidated" }),
+      "Closed because it was invalidated before anyone decided.",
+    );
+    for (const reason of [undefined, "", "expired", "not-a-reason", 12]) {
+      const sentence = approvalCloseReasonSentence(reason);
+      assert.equal(sentence, null);
+      assert.equal(
+        approvalClosedExplanation({ status: "canceled", closeReason: reason }),
+        null,
+      );
+    }
+    const unknown = approvalClosedExplanation({
+      status: "canceled",
+      closeReason: "approver-missing",
+    });
+    assert.equal(unknown, null);
+    const pendingOnCanceledRun = approvalClosedExplanation({
+      status: "pending",
+      closeReason: "run_canceled",
+      runStatus: "canceled",
+    });
+    assert.equal(pendingOnCanceledRun, "Closed because the run was canceled.");
+    assert.equal(
+      approvalClosedExplanation({ status: "approved", closeReason: "run_canceled" }),
+      null,
+    );
+    const detail = readFileSync(
+      join(here, "../components/approvals/ApprovalDetail.tsx"),
+      "utf8",
+    );
+    const list = readFileSync(
+      join(here, "../components/approvals/ApprovalList.tsx"),
+      "utf8",
+    );
+    const execution = readFileSync(
+      join(here, "../components/approvals/ExecutionApprovalState.tsx"),
+      "utf8",
+    );
+    const reason = readFileSync(
+      join(here, "../components/approvals/ApprovalCloseReason.tsx"),
+      "utf8",
+    );
+    assert.match(detail, /<ApprovalCloseReason/);
+    assert.match(list, /<ApprovalCloseReason/);
+    assert.match(execution, /<ApprovalCloseReason/);
+    assert.match(reason, /approvalClosedExplanation/);
+    assert.equal(reason.includes("title="), false);
   });
 
   it("wires decide controls to the outcome, not a raw problem code", () => {
