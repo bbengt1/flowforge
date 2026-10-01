@@ -2251,10 +2251,15 @@ function WorkflowHomeSession() {
       ) : null}
       {!embed && workflowDelete ? (
         <DeleteWorkflowDialog
+          key={workflowDelete.id}
           open
+          workflowId={workflowDelete.id}
+          identity={identity}
+          embed={embed}
           name={workflowDelete.name}
           status={workflowDelete.status}
           typedName={workflowDeleteTyped}
+          deleteImpact={workflowById(workflowDelete.id)?.deleteImpact}
           pending={pending === "workflow-delete"}
           errorMessage={workflowDeleteError?.message}
           errorKind={workflowDeleteError?.kind}

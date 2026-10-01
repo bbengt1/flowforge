@@ -293,6 +293,17 @@ export type WorkflowCapabilities = {
   delete: boolean;
 };
 
+/**
+ * Read-only counts on workflow detail, next to capabilities.delete.
+ * Present only for a caller who can delete. Omitted for viewers, embed
+ * sessions, and list or create responses.
+ */
+export type WorkflowDeleteImpact = {
+  waitingRuns: number;
+  blocked: boolean;
+  inFlightRuns: number;
+};
+
 export type WorkflowRecord = {
   id: string;
   slug: string;
@@ -310,6 +321,8 @@ export type WorkflowRecord = {
   /** Null / omitted = Unfiled. Not stored in YAML. */
   folderId?: string | null;
   capabilities?: WorkflowCapabilities;
+  /** Omitted unless this response is a detail for a caller who can delete. */
+  deleteImpact?: WorkflowDeleteImpact;
 };
 
 export type WorkflowList = {

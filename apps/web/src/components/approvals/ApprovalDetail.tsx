@@ -177,6 +177,7 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
             actorUserId={actorUserId}
             permissions={permissions}
             onUpdated={setApproval}
+            onRefetch={() => void refresh()}
           />
           <button
             type="button"

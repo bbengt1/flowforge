@@ -2,7 +2,11 @@ import Link from "next/link";
 import { ApprovalBindingSnapshot } from "@/components/approvals/ApprovalBindingSnapshot";
 import { ApprovalDecideControls } from "@/components/approvals/ApprovalDecideControls";
 import { ApprovalValidityBanner } from "@/components/approvals/ApprovalValidityBanner";
-import { approvalStatusLabel, isExecutionAwaitingApproval } from "@/lib/approval";
+import {
+  approvalStatusLabelForRun,
+  isExecutionAwaitingApproval,
+} from "@/lib/approval";
+import { isTerminalRunStatus } from "@/lib/execution";
 import {
   APPROVAL_BINDING_HELP,
   APPROVAL_WAIT_DURABLE_HELP,
@@ -18,6 +22,7 @@ type ExecutionApprovalStateProps = {
   actorUserId?: string;
   permissions?: string[] | null;
   onApprovalUpdated?: (approval: ApprovalRequest) => void;
+  onRefetch?: () => void;
 };
 
 export function ExecutionApprovalState({
@@ -27,8 +32,10 @@ export function ExecutionApprovalState({
   actorUserId = "",
   permissions,
   onApprovalUpdated,
+  onRefetch,
 }: ExecutionApprovalStateProps) {
-  const waiting = isExecutionAwaitingApproval(executionStatus);
+  const terminal = isTerminalRunStatus(executionStatus);
+  const waiting = !terminal && isExecutionAwaitingApproval(executionStatus);
   const waitControls = approvalWaitControls();
   if (!waiting && approvals.length === 0) {
     return null;
@@ -52,7 +59,7 @@ export function ExecutionApprovalState({
         {approvals.map((item) => (
           <li key={item.id} className="space-y-2">
             <p className="text-sm font-medium">
-              {approvalStatusLabel(item.status)} ·{" "}
+              {approvalStatusLabelForRun(item.status, executionStatus)} ·{" "}
               <Link
                 href={`/approvals/${item.id}`}
                 className="text-fg underline decoration-teal-200 underline-offset-2 hover:decoration-teal-700"
@@ -62,13 +69,14 @@ export function ExecutionApprovalState({
             </p>
             <ApprovalValidityBanner approval={item} />
             <ApprovalBindingSnapshot binding={item.binding} />
-            {identity && item.status === "pending" ? (
+            {identity && item.status === "pending" && !terminal ? (
               <ApprovalDecideControls
                 identity={identity}
                 approval={item}
                 actorUserId={actorUserId}
                 permissions={permissions}
                 onUpdated={onApprovalUpdated}
+                onRefetch={onRefetch}
               />
             ) : (
               <p className="text-sm">

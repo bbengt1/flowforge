@@ -170,6 +170,48 @@ export type ExecutionStartBody = {
   input?: Record<string, unknown>;
 };
 
+/** Codes on `capabilities.retry` when `allowed` is false. */
+export const RETRY_CAPABILITY_CODES = [
+  "execution_not_retryable",
+  "step_attempt_superseded",
+] as const;
+
+export type RetryCapabilityCode = (typeof RETRY_CAPABILITY_CODES)[number];
+
+/**
+ * Reasons for `execution_not_retryable`. Omitted when `allowed` is true
+ * and when the code is `step_attempt_superseded`.
+ */
+export const RETRY_CAPABILITY_REASONS = [
+  "run_canceled",
+  "run_not_failed",
+  "step_not_started",
+  "step_not_failed",
+  "incoming_unresolved",
+  "retry_not_allowed",
+  "workflow_deleted",
+] as const;
+
+export type RetryCapabilityReason = (typeof RETRY_CAPABILITY_REASONS)[number];
+
+/**
+ * Read-only retry eligibility. `allowed: true` omits `code` and `reason`.
+ * `step_attempt_superseded` omits `reason`.
+ */
+export type RetryCapability =
+  | { allowed: true }
+  | { allowed: false; code: "step_attempt_superseded" }
+  | {
+      allowed: false;
+      code: "execution_not_retryable";
+      reason: RetryCapabilityReason;
+    };
+
+/** Same object on an execution and on each step. */
+export type ExecutionCapabilities = {
+  retry: RetryCapability;
+};
+
 export type ExecutionRecord = {
   id: string;
   workflowId: string;
@@ -192,6 +234,10 @@ export type ExecutionRecord = {
   input: unknown;
   policySnapshot: unknown;
   permittedActions: string[];
+  /** Present only when the response included a well-formed retry capability. */
+  capabilities?: ExecutionCapabilities;
+  /** The response included `capabilities` that failed closed. */
+  capabilitiesInvalid?: boolean;
 };
 
 export type ExecutionStep = {
@@ -210,6 +256,9 @@ export type ExecutionStep = {
   fencingToken: number | null;
   workerId: string;
   leaseId: string;
+  capabilities?: ExecutionCapabilities;
+  /** The step payload included `capabilities` that failed closed. */
+  capabilitiesInvalid?: boolean;
 };
 
 export type ExecutionJob = {

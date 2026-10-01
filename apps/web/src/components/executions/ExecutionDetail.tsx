@@ -28,7 +28,6 @@ import {
   INDETERMINATE_STATUS_HELP,
   REDACTED_HELP,
   RETENTION_HELP,
-  RETRY_CONFLICT_MESSAGE,
   RETRY_CSRF_HELP,
   RETRY_FORBIDDEN_MESSAGE,
   RETRY_INDETERMINATE_MESSAGE,
@@ -39,18 +38,22 @@ import { useExecutionDetailQuery } from "@/components/executions/useExecutionDet
 import {
   boundRedactedDisplay,
   canCancelExecution,
-  canRetryExecution,
-  canRetryExecutionStep,
   downloadGrantFailureMessage,
   executionDetailDisplay,
   isExecutionForbidden,
   isIndeterminateStatus,
   retentionStatusMessage,
-  retryAffordanceMessage,
 } from "@/lib/execution";
+import {
+  retryCapabilityAffordance,
+  retryFailureCopy,
+  retryHiddenCopy,
+  retryProblemShouldRefetch,
+} from "@/lib/execution-retry";
 import {
   compareRedactedExecutions,
   executionErrorNavLinks,
+  gateStepFailureCopy,
 } from "@/lib/execution-replay";
 import { adaptActionLibrary } from "@/lib/workflow-action-library";
 import { compareWorkflow } from "@/lib/workflow-client";
@@ -71,8 +74,6 @@ import {
 } from "@/lib/kubernetes-rollout-contract";
 import {
   SSH_NO_BLIND_RETRY_HELP,
-  SSH_RETRY_DENIED_MESSAGE,
-  canOfferSshRetry,
   executionHasSshIndeterminate,
   executionHasSshRun,
   isSshRunType,
@@ -84,7 +85,6 @@ import {
 import { ScriptIoResultPanel } from "@/components/executions/ScriptIoResultPanel";
 import {
   SCRIPT_IO_NO_BLIND_RETRY_HELP,
-  canOfferScriptRetry,
   executionHasScriptIndeterminate,
   executionHasScriptRun,
   isScriptIoActionType,
@@ -166,6 +166,7 @@ export function ExecutionDetail({
     stepLogs,
     approvals,
     version,
+    workflowDeleted,
     catalog,
     denied,
     refresh,
@@ -202,46 +203,45 @@ export function ExecutionDetail({
       status: view?.header.status,
       permittedActions: view?.permittedActions,
     });
-  const sshRetryAllowed = Boolean(
-    view?.steps.some((step) =>
-      canOfferSshRetry({
-        permissions,
-        nodeType: step.nodeType,
-        status: step.status,
-        output: step.output,
-        error: step.error,
-        input: step.input,
-      }),
-    ),
-  );
-  const scriptRetryAllowed = Boolean(
-    view?.steps.some((step) =>
-      canOfferScriptRetry({
-        permissions,
-        nodeType: step.nodeType,
-        status: step.status,
-        output: step.output,
-        error: step.error,
-        input: step.input,
-      }),
-    ),
-  );
-  const showRetry =
-    !stoppedUncertain &&
-    (sshRetryAllowed ||
-      scriptRetryAllowed ||
-      canRetryExecution({
-        permissions,
-        permittedActions: view?.permittedActions,
-        status: view?.header.status,
-        steps: view?.steps,
-      }));
+  const executionRetry = retryCapabilityAffordance({
+    capabilities: detail?.capabilities,
+    capabilitiesInvalid: detail?.capabilitiesInvalid,
+  });
+  const showRetry = !stoppedUncertain && executionRetry.show;
+  const indeterminate = Boolean(view?.header.indeterminate);
+  const executionRetryCopy = retryHiddenCopy(executionRetry, {
+    active: indeterminate,
+    copy:
+      view &&
+      (executionHasSshRun(view.steps) || executionHasSshIndeterminate(view.steps))
+        ? sshRetryBlockedMessage({
+            status: view.header.status,
+            steps: view.steps,
+            output: view.steps.find((step) => isSshRunType(step.nodeType))?.output,
+            error: view.steps.find((step) => isSshRunType(step.nodeType))?.error,
+          })
+        : view &&
+            (executionHasScriptRun(view.steps) ||
+              executionHasScriptIndeterminate(view.steps))
+          ? scriptRetryBlockedMessage({
+              status: view.header.status,
+              nodeType: view.steps.find((step) =>
+                isScriptIoActionType(step.nodeType),
+              )?.nodeType,
+              output: view.steps.find((step) =>
+                isScriptIoActionType(step.nodeType),
+              )?.output,
+              error: view.steps.find((step) =>
+                isScriptIoActionType(step.nodeType),
+              )?.error,
+            })
+          : RETRY_INDETERMINATE_MESSAGE,
+  });
   const canEmergencyStop = canOfferScriptEmergencyStop({
     permissions,
     status: view?.header.status,
     steps: view?.steps,
   });
-  const indeterminate = Boolean(view?.header.indeterminate);
 
   async function onCancel() {
     if (!canCancel || cancelPending) {
@@ -305,33 +305,11 @@ export function ExecutionDetail({
     }
     if (stepId) {
       const step = view?.steps.find((item) => item.id === stepId);
-      const sshOffer = canOfferSshRetry({
-        permissions,
-        nodeType: step?.nodeType,
-        status: step?.status,
-        output: step?.output,
-        error: step?.error,
-        input: step?.input,
+      const offer = retryCapabilityAffordance({
+        capabilities: step?.capabilities,
+        capabilitiesInvalid: step?.capabilitiesInvalid,
       });
-      const scriptOffer = canOfferScriptRetry({
-        permissions,
-        nodeType: step?.nodeType,
-        status: step?.status,
-        output: step?.output,
-        error: step?.error,
-        input: step?.input,
-      });
-      if (
-        !sshOffer &&
-        !scriptOffer &&
-        !canRetryExecutionStep({
-          permissions,
-          permittedActions: view?.permittedActions,
-          executionStatus: view?.header.status,
-          stepStatus: step?.status,
-          nodeType: step?.nodeType,
-        })
-      ) {
+      if (!offer.show) {
         return;
       }
     } else if (!showRetry) {
@@ -349,14 +327,14 @@ export function ExecutionDetail({
     setRetryPending(null);
     if (!result.ok) {
       reportProblem(result.problem);
+      const conflict = retryFailureCopy(result.problem, result.statusCode);
       if (result.forbidden) {
         setRetryMessage(RETRY_FORBIDDEN_MESSAGE);
-      } else if (result.statusCode === 409) {
-        setRetryMessage(
-          result.problem.code === "retry-denied"
-            ? result.problem.detail || SSH_RETRY_DENIED_MESSAGE
-            : RETRY_CONFLICT_MESSAGE,
-        );
+      } else if (conflict) {
+        setRetryMessage(conflict);
+      }
+      if (retryProblemShouldRefetch(result.problem)) {
+        await refresh();
       }
       return;
     }
@@ -630,45 +608,17 @@ export function ExecutionDetail({
                 >
                   {retryPending === "execution" ? "Retrying…" : "Retry execution"}
                 </button>
-              ) : indeterminate ? (
-                <p className={`text-sm font-medium ${FF_LOUD_INDETERMINATE_CLASS}`}>
-                  {executionHasSshRun(view.steps) ||
-                  executionHasSshIndeterminate(view.steps)
-                    ? sshRetryBlockedMessage({
-                        status: view.header.status,
-                        steps: view.steps,
-                        output: view.steps.find((step) =>
-                          isSshRunType(step.nodeType),
-                        )?.output,
-                        error: view.steps.find((step) =>
-                          isSshRunType(step.nodeType),
-                        )?.error,
-                      })
-                    : executionHasScriptRun(view.steps) ||
-                        executionHasScriptIndeterminate(view.steps)
-                      ? scriptRetryBlockedMessage({
-                          status: view.header.status,
-                          nodeType: view.steps.find((step) =>
-                            isScriptIoActionType(step.nodeType),
-                          )?.nodeType,
-                          output: view.steps.find((step) =>
-                            isScriptIoActionType(step.nodeType),
-                          )?.output,
-                          error: view.steps.find((step) =>
-                            isScriptIoActionType(step.nodeType),
-                          )?.error,
-                        })
-                      : RETRY_INDETERMINATE_MESSAGE}
+              ) : executionRetryCopy ? (
+                <p
+                  className={`text-sm ${
+                    indeterminate && !executionRetry.denial
+                      ? `font-medium ${FF_LOUD_INDETERMINATE_CLASS}`
+                      : FF_INBOX_MUTED_CLASS
+                  }`}
+                >
+                  {executionRetryCopy}
                 </p>
-              ) : executionHasSshRun(view.steps) ? (
-                <p className={`text-xs ${FF_INBOX_MUTED_CLASS}`}>{SSH_NO_BLIND_RETRY_HELP}</p>
-              ) : executionHasScriptRun(view.steps) ? (
-                <p className={`text-xs ${FF_INBOX_MUTED_CLASS}`}>{SCRIPT_IO_NO_BLIND_RETRY_HELP}</p>
-              ) : (
-                <p className={`text-xs ${FF_INBOX_MUTED_CLASS}`}>
-                  {retryAffordanceMessage(view.header.status)}
-                </p>
-              )}
+              ) : null}
             </div>
             {executionHasRolloutObservation(view.steps) ? (
               <p className="mt-2 text-sm">
@@ -750,7 +700,7 @@ export function ExecutionDetail({
                 {boundRedactedDisplay(view.input).text}
               </pre>
             </div>
-            {detail?.workflowId ? (
+            {detail?.workflowId && !workflowDeleted ? (
               <p className="mt-4 flex flex-wrap gap-3 text-sm">
                 <Link
                   href={manualStartHref(detail.workflowId)}
@@ -771,6 +721,7 @@ export function ExecutionDetail({
           <ExecutionReplay
             detail={detail}
             version={version}
+            workflowDeleted={workflowDeleted}
             catalog={catalog}
             entries={adaptActionLibrary(catalog)}
             approvals={approvals}
@@ -798,6 +749,7 @@ export function ExecutionDetail({
                 current.map((item) => (item.id === next.id ? next : item)),
               )
             }
+            onRefetch={() => void refresh()}
           />
 
           <section className={FF_INBOX_PANEL_CLASS}>
@@ -885,7 +837,9 @@ export function ExecutionDetail({
               </p>
             ) : (
               <ul className="mt-4 grid gap-3">
-                {view.steps.map((step) => (
+                {view.steps.map((step) => {
+                  const gateFailure = gateStepFailureCopy(step);
+                  return (
                   <li
                     key={step.id}
                     className={
@@ -909,6 +863,11 @@ export function ExecutionDetail({
                           .map((job) => job.status)}
                       />
                     </div>
+                    {gateFailure ? (
+                      <p role="status" className="mt-2 text-sm">
+                        {gateFailure}
+                      </p>
+                    ) : null}
                     {step.workerId || step.leaseId || step.fencingToken != null ? (
                       <p className={`mt-2 font-mono text-xs ${FF_INBOX_MUTED_CLASS}`}>
                         {step.workerId ? `worker ${step.workerId}` : ""}
@@ -918,72 +877,76 @@ export function ExecutionDetail({
                           : ""}
                       </p>
                     ) : null}
-                    {canOfferSshRetry({
-                      permissions,
-                      nodeType: step.nodeType,
-                      status: step.status,
-                      output: step.output,
-                      error: step.error,
-                      input: step.input,
-                    }) ||
-                    (!stoppedUncertain &&
-                      canOfferScriptRetry({
-                      permissions,
-                      nodeType: step.nodeType,
-                      status: step.status,
-                      output: step.output,
-                      error: step.error,
-                      input: step.input,
-                    })) ||
-                    canRetryExecutionStep({
-                      permissions,
-                      permittedActions: view.permittedActions,
-                      executionStatus: view.header.status,
-                      stepStatus: step.status,
-                      nodeType: step.nodeType,
-                    }) ? (
-                      <button
-                        type="button"
-                        onClick={() => void onRetry(step.id)}
-                        disabled={Boolean(retryPending) || pending || cancelPending}
-                        className={`mt-3 ${FF_INBOX_PRIMARY_CLASS}`}
-                      >
-                        {retryPending === step.id ? "Retrying…" : "Retry step"}
-                      </button>
-                    ) : isIndeterminateStatus(step.status) ||
-                      isIndeterminateStatus(view.header.status) ? (
-                      <p className={`mt-3 text-sm font-medium ${FF_LOUD_INDETERMINATE_CLASS}`}>
-                        {isSshRunType(step.nodeType)
-                          ? sshRetryBlockedMessage({
-                              status: step.status,
-                              nodeType: step.nodeType,
-                              output: step.output,
-                              error: step.error,
-                            })
-                          : isScriptIoActionType(step.nodeType)
-                            ? scriptRetryBlockedMessage({
-                                status: step.status,
-                                nodeType: step.nodeType,
-                                output: step.output,
-                                error: step.error,
-                              })
-                            : RETRY_INDETERMINATE_MESSAGE}
-                      </p>
-                    ) : isSshRunType(step.nodeType) ? (
-                      <p className={`mt-3 text-xs ${FF_INBOX_MUTED_CLASS}`}>
-                        {SSH_NO_BLIND_RETRY_HELP}
-                      </p>
-                    ) : isScriptIoActionType(step.nodeType) ? (
-                      <p className={`mt-3 text-xs ${FF_INBOX_MUTED_CLASS}`}>
-                        {stoppedUncertain
-                          ? scriptEmergencyStopCopy({
-                              outcome: "indeterminate",
-                              uncertain: true,
-                              status: step.status,
-                            })
-                          : SCRIPT_IO_NO_BLIND_RETRY_HELP}
-                      </p>
-                    ) : null}
+                    {(() => {
+                      const stepRetry = retryCapabilityAffordance({
+                        capabilities: step.capabilities,
+                        capabilitiesInvalid: step.capabilitiesInvalid,
+                      });
+                      if (!stoppedUncertain && stepRetry.show) {
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => void onRetry(step.id)}
+                            disabled={Boolean(retryPending) || pending || cancelPending}
+                            className={`mt-3 ${FF_INBOX_PRIMARY_CLASS}`}
+                          >
+                            {retryPending === step.id ? "Retrying…" : "Retry step"}
+                          </button>
+                        );
+                      }
+                      if (stepRetry.denial) {
+                        return (
+                          <p className={`mt-3 text-sm ${FF_INBOX_MUTED_CLASS}`}>
+                            {stepRetry.denial}
+                          </p>
+                        );
+                      }
+                      if (
+                        isIndeterminateStatus(step.status) ||
+                        isIndeterminateStatus(view.header.status)
+                      ) {
+                        return (
+                          <p className={`mt-3 text-sm font-medium ${FF_LOUD_INDETERMINATE_CLASS}`}>
+                            {isSshRunType(step.nodeType)
+                              ? sshRetryBlockedMessage({
+                                  status: step.status,
+                                  nodeType: step.nodeType,
+                                  output: step.output,
+                                  error: step.error,
+                                })
+                              : isScriptIoActionType(step.nodeType)
+                                ? scriptRetryBlockedMessage({
+                                    status: step.status,
+                                    nodeType: step.nodeType,
+                                    output: step.output,
+                                    error: step.error,
+                                  })
+                                : RETRY_INDETERMINATE_MESSAGE}
+                          </p>
+                        );
+                      }
+                      if (isSshRunType(step.nodeType)) {
+                        return (
+                          <p className={`mt-3 text-xs ${FF_INBOX_MUTED_CLASS}`}>
+                            {SSH_NO_BLIND_RETRY_HELP}
+                          </p>
+                        );
+                      }
+                      if (isScriptIoActionType(step.nodeType)) {
+                        return (
+                          <p className={`mt-3 text-xs ${FF_INBOX_MUTED_CLASS}`}>
+                            {stoppedUncertain
+                              ? scriptEmergencyStopCopy({
+                                  outcome: "indeterminate",
+                                  uncertain: true,
+                                  status: step.status,
+                                })
+                              : SCRIPT_IO_NO_BLIND_RETRY_HELP}
+                          </p>
+                        );
+                      }
+                      return null;
+                    })()}
                     {canOfferScriptEmergencyStop({
                       permissions,
                       status: step.status,
@@ -1035,7 +998,8 @@ export function ExecutionDetail({
                       );
                     })()}
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             )}
           </section>

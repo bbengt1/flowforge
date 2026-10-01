@@ -63,6 +63,12 @@ export type ExecutionHistoryCache = {
 
 export type ExecutionContextCache = {
   version: WorkflowVersion | null;
+  /**
+   * True only when the pinned version lookup returned 404.
+   * Other failures stay on `versionProblem` and are not a deletion.
+   */
+  workflowDeleted: boolean;
+  versionProblem: ProblemDetails | null;
   catalog: WorkflowCatalog | null;
   approvals: ApprovalRequest[];
   requestId: string;
@@ -97,11 +103,27 @@ export function emptyExecutionHistoryCache(): ExecutionHistoryCache {
 export function emptyExecutionContextCache(): ExecutionContextCache {
   return {
     version: null,
+    workflowDeleted: false,
+    versionProblem: null,
     catalog: null,
     approvals: [],
     requestId: "",
     strippedKeys: [],
   };
+}
+
+/** Problem banner for the execution page. A deleted workflow is not an error. */
+export function executionDetailDisplayedProblem(input: {
+  historyProblem: ProblemDetails | null;
+  context: Pick<ExecutionContextCache, "workflowDeleted" | "versionProblem"> | null;
+}): ProblemDetails | null {
+  if (input.historyProblem) {
+    return input.historyProblem;
+  }
+  if (!input.context || input.context.workflowDeleted) {
+    return null;
+  }
+  return input.context.versionProblem;
 }
 
 export function emptyExecutionLogsCache(): ExecutionLogsCache {
@@ -255,6 +277,8 @@ export async function loadExecutionContextCache(
   ]);
   const next: ExecutionContextCache = {
     version: previous?.version ?? null,
+    workflowDeleted: false,
+    versionProblem: null,
     catalog: previous?.catalog ?? null,
     approvals: previous?.approvals ?? [],
     requestId: previous?.requestId ?? "",
@@ -262,6 +286,14 @@ export async function loadExecutionContextCache(
   };
   if (versionResult.ok) {
     next.version = versionResult.version;
+    next.requestId = versionResult.requestId;
+  } else if (versionResult.statusCode === 404) {
+    next.version = null;
+    next.workflowDeleted = true;
+    next.versionProblem = null;
+    next.requestId = versionResult.requestId;
+  } else {
+    next.versionProblem = cacheSafeProblem(versionResult.problem);
     next.requestId = versionResult.requestId;
   }
   if (catalogResult.ok) {

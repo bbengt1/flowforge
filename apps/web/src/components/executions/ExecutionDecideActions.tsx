@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import {
+  approvalDecideOutcome,
   failClosedProblemTitle,
   problemClosesApproval,
 } from "@/lib/approval";
@@ -57,6 +58,9 @@ export function ExecutionDecideActions({
 }: ExecutionDecideActionsProps) {
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [revokedIds, setRevokedIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const affordances = executionDecideAffordances({
     status,
     approvals,
@@ -82,6 +86,17 @@ export function ExecutionDecideActions({
         : await rejectApproval(identity, approval.id);
     setPendingAction(null);
     if (!result.ok) {
+      const outcome = approvalDecideOutcome(result.problem);
+      if (outcome.kind === "wrong-approver") {
+        setMessage(outcome.message);
+        setRevokedIds((current) => {
+          const next = new Set(current);
+          next.add(approval.id);
+          return next;
+        });
+        onDecided?.();
+        return;
+      }
       setMessage(
         failClosedProblemTitle(result.problem) ||
           result.problem.detail ||
@@ -130,9 +145,9 @@ export function ExecutionDecideActions({
         </p>
       ) : null}
       {affordances.pending.map((approval) => {
-        const canDecide = affordances.decidable.some(
-          (item) => item.id === approval.id,
-        );
+        const canDecide =
+          affordances.decidable.some((item) => item.id === approval.id) &&
+          !revokedIds.has(approval.id);
         return (
           <div key={approval.id} className="flex flex-wrap items-center gap-1.5">
             {canDecide ? (

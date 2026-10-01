@@ -10,7 +10,7 @@
  *                                   `verificationDeclared` for script nodes
  *   GET /ops-config/catalog         scriptEngine fallback
  *   GET /executions/{id}            redacted result + `result.retry.allowed`
- *   POST /executions/{id}/retry     409 `retry-denied` when closed
+ *   POST /executions/{id}/retry     409 execution_not_retryable when closed
  *
  * Cookie session + `X-CSRF-Token`. JSON camelCase. RFC 9457.
  * Relates to #94 / Part of #91. Keep #94 open (jonny owns typed I/O
@@ -149,13 +149,13 @@ export const SCRIPT_IO_RETRY_ZERO_MESSAGE =
   "Retries default to zero (first attempt only). A script is retry-safe only when it declares retrySafe, an idempotencyKey, and verification.behavior=declared-hook.";
 
 export const SCRIPT_IO_RETRY_DENIED_MESSAGE =
-  "retryPolicy.maxAttempts>0 requires retrySafe plus an idempotency key and verification. Otherwise POST …/retry returns 409 retry-denied.";
+  "Retries above zero need retrySafe, an idempotency key, and verification. Otherwise this step can't be retried.";
 
 export const SCRIPT_IO_INVALID_VERIFICATION_MESSAGE =
   "retrySafe=true requires idempotencyKey (1–128, letter-prefixed) and verification.behavior=declared-hook. Missing or invalid declaration is invalid-verification at validate/publish.";
 
 export const SCRIPT_IO_NO_BLIND_RETRY_HELP =
-  "This UI never offers a blind retry for script.python or script.go. Retry is shown only when result.retry.allowed is true (retrySafe + idempotencyKey + verification + remaining attempts). Lease loss stays indeterminate until the verification hook runs first. POST …/retry is 409 retry-denied when closed.";
+  "This UI never offers a blind retry for script.python or script.go. Retry is shown only when result.retry.allowed is true (retrySafe + idempotencyKey + verification + remaining attempts). Lease loss stays indeterminate until the verification hook runs first. A closed retry is not offered.";
 
 export const SCRIPT_IO_INDETERMINATE_HELP =
   "Indeterminate script outcome — lease lost after dispatch or verification could not confirm state. A side effect may have occurred. Do not assume the script did not run. Verify first — never blindly re-run.";
@@ -351,7 +351,7 @@ export const DEFAULT_SCRIPT_IO_UI: ScriptIoUI = {
   retrySafeFlag: SCRIPT_IO_RETRY_SAFE_FLAG,
   retryEnabledWhen:
     "Show Retry when result.retry.allowed is true (retrySafe + idempotencyKey + verification + remaining attempts). Disable/hide Retry for non-retrySafe indeterminate.",
-  hideRetryWhen: "indeterminate without retry.allowed, retry-denied, or maxAttempts=0",
+  hideRetryWhen: "indeterminate without an allowed retry, or maxAttempts=0",
   neverAssumeAbsent: true,
   redactOutputs: true,
   handlesNeverShown: true,
