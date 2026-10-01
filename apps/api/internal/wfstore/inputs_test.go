@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
 func TestResolveInputsRule(t *testing.T) {
@@ -58,7 +59,7 @@ func TestResolveInputsRule(t *testing.T) {
 	t.Run("wait nodes pass their input not their output", func(t *testing.T) {
 		snaps := map[string]succeededSnap{
 			"seed": {NodeType: "data.set", Output: map[string]any{"result": map[string]any{"ticket": "CHG-1"}}},
-			"wait": {NodeType: "flow.delay", Output: map[string]any{"port": "result", "decision": "result"}},
+			"wait": {NodeType: "flow.delay", With: map[string]any{"duration": "PT1S"}, Output: map[string]any{"port": "result", "decision": "result"}},
 			"gate": {NodeType: "flow.approval", Output: map[string]any{"port": "approved", "decision": "approved"}},
 		}
 		edges := []execEdge{
@@ -83,6 +84,103 @@ func TestResolveInputsRule(t *testing.T) {
 			t.Fatal("resolved input aliased the stored output")
 		}
 	})
+
+	t.Run("scalar through a delay is wrapped", func(t *testing.T) {
+		snaps := map[string]succeededSnap{
+			"run":  {NodeType: "ssh.run", Output: map[string]any{"stdout": "demo"}},
+			"wait": {NodeType: "flow.delay", With: map[string]any{"duration": "PT1S"}, Output: map[string]any{"port": "result", "decision": "result"}},
+		}
+		edges := []execEdge{
+			{FromNode: "run", FromPort: "stdout", ToNode: "wait", ToPort: "input", Satisfied: true, Resolved: true},
+			{FromNode: "wait", FromPort: "result", ToNode: "mapped", ToPort: "input", Satisfied: true, Resolved: true},
+		}
+		inputs, skipped := resolveInputs("mapped", edges, snaps)
+		if skipped != nil {
+			t.Fatalf("skipped %#v", skipped)
+		}
+		got, _ := inputs["input"].(map[string]any)
+		if got["value"] != "demo" || len(got) != 1 {
+			t.Fatalf("wrapped %#v", inputs["input"])
+		}
+		out := workflow.EvaluateStep("data.map", map[string]any{"mapping": map[string]any{"value": "value"}}, inputs, nil)
+		if out.Fail || out.Code == workflow.CodeRequiredInput {
+			t.Fatalf("map %+v", out)
+		}
+		result, _ := out.Output["result"].(map[string]any)
+		if result["value"] != "demo" {
+			t.Fatalf("map result %#v", out.Output)
+		}
+	})
+
+	t.Run("unwired delay input is an empty object", func(t *testing.T) {
+		snaps := map[string]succeededSnap{
+			"wait": {NodeType: "flow.delay", With: map[string]any{"duration": "PT1S"}, Output: map[string]any{"port": "result", "decision": "result"}},
+		}
+		edges := []execEdge{{
+			FromNode: "wait", FromPort: "result", ToNode: "mapped", ToPort: "input", Satisfied: true, Resolved: true,
+		}}
+		inputs, skipped := resolveInputs("mapped", edges, snaps)
+		if skipped != nil {
+			t.Fatalf("skipped %#v", skipped)
+		}
+		assertEmptyObject(t, inputs["input"])
+		out := workflow.EvaluateStep("data.map", map[string]any{"mapping": map[string]any{"value": "value"}}, inputs, nil)
+		if out.Code == workflow.CodeRequiredInput {
+			t.Fatalf("required-input %+v", out)
+		}
+	})
+
+	t.Run("unwired approval request is an empty object", func(t *testing.T) {
+		snaps := map[string]succeededSnap{
+			"gate": {NodeType: "flow.approval", Output: map[string]any{"port": "approved", "decision": "approved"}},
+		}
+		edges := []execEdge{{
+			FromNode: "gate", FromPort: "approved", ToNode: "mapped", ToPort: "input", Satisfied: true, Resolved: true,
+		}}
+		inputs, skipped := resolveInputs("mapped", edges, snaps)
+		if skipped != nil {
+			t.Fatalf("skipped %#v", skipped)
+		}
+		assertEmptyObject(t, inputs["input"])
+		if _, ok := inputs["decision"]; ok {
+			t.Fatal("decision flowed")
+		}
+	})
+}
+
+func TestUpstreamNodeIDs(t *testing.T) {
+	edges := []execEdge{
+		{FromNode: "seed", FromPort: "stdout", ToNode: "wait", ToPort: "input"},
+		{FromNode: "wait", FromPort: "result", ToNode: "mapped", ToPort: "input"},
+		{FromNode: "other", FromPort: "result", ToNode: "side", ToPort: "input"},
+	}
+	if ids := upstreamNodeIDs("seed", edges); ids != nil {
+		t.Fatalf("root ids %#v", ids)
+	}
+	got := upstreamNodeIDs("mapped", edges)
+	if len(got) != 2 || got[0] != "seed" || got[1] != "wait" {
+		t.Fatalf("closure %#v", got)
+	}
+	direct := upstreamNodeIDs("wait", edges)
+	if len(direct) != 1 || direct[0] != "seed" {
+		t.Fatalf("direct %#v", direct)
+	}
+}
+
+func TestUpstreamSkippedGuard(t *testing.T) {
+	out := workflow.EvaluateStep("data.map", map[string]any{
+		"mapping": map[string]any{"status": "status"},
+	}, nil, []workflow.SkippedPort{{Port: "input", From: "hub.result"}})
+	if !out.Fail || out.Code != workflow.CodeUpstreamSkipped {
+		t.Fatalf("%+v", out)
+	}
+	optional := workflow.EvaluateStep("kubernetes.apply", map[string]any{
+		"clusterTargetId": "11111111-1111-4111-8111-111111111111",
+		"namespace":       "demo",
+	}, nil, []workflow.SkippedPort{{Port: "parameters", From: "side.result"}})
+	if optional.Code == workflow.CodeUpstreamSkipped {
+		t.Fatalf("optional port %+v", optional)
+	}
 }
 
 func TestMemoryResolveInputs(t *testing.T) {
@@ -203,6 +301,79 @@ func TestMemoryResolveInputs(t *testing.T) {
 			t.Fatal("redacted input lost the safe fields")
 		}
 	})
+
+	t.Run("scalar through a delay reaches map", func(t *testing.T) {
+		store := NewMemory()
+		_ = startMemory(t, ctx, store, scope, scalarDelayYAML)
+		run := claimMemory(t, ctx, store, scope, now, "run")
+		completeMemory(t, ctx, store, scope, now, run, map[string]any{"stdout": "demo", "exitCode": 0})
+		wait := claimMemory(t, ctx, store, scope, now, "wait")
+		if _, err := store.WaitJob(ctx, scope, now, WaitJobInput{JobID: wait.Job.ID, AvailableAt: now.Add(-time.Minute)}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.RecoverExpiredLeases(ctx, scope, now); err != nil {
+			t.Fatal(err)
+		}
+		mapped := claimMemory(t, ctx, store, scope, now, "mapped")
+		got, _ := mapped.Inputs["input"].(map[string]any)
+		if got["value"] != "demo" {
+			t.Fatalf("wrapped %#v", mapped.Inputs)
+		}
+		out := workflow.EvaluateStep(mapped.Step.NodeType, mapped.Step.Input, mapped.Inputs, nil)
+		if out.Fail || out.Code == workflow.CodeRequiredInput {
+			t.Fatalf("map %+v", out)
+		}
+		result, _ := out.Output["result"].(map[string]any)
+		if result["value"] != "demo" {
+			t.Fatalf("map result %#v", out.Output)
+		}
+	})
+
+	t.Run("unwired delay input is an empty object", func(t *testing.T) {
+		store := NewMemory()
+		_ = startMemory(t, ctx, store, scope, unwiredDelayYAML)
+		wait := claimMemory(t, ctx, store, scope, now, "wait")
+		if wait.Inputs != nil {
+			t.Fatalf("delay inputs %#v", wait.Inputs)
+		}
+		if _, err := store.WaitJob(ctx, scope, now, WaitJobInput{JobID: wait.Job.ID, AvailableAt: now.Add(-time.Minute)}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.RecoverExpiredLeases(ctx, scope, now); err != nil {
+			t.Fatal(err)
+		}
+		mapped := claimMemory(t, ctx, store, scope, now, "mapped")
+		assertEmptyObject(t, mapped.Inputs["input"])
+		out := workflow.EvaluateStep(mapped.Step.NodeType, mapped.Step.Input, mapped.Inputs, nil)
+		if out.Code == workflow.CodeRequiredInput {
+			t.Fatalf("required-input %+v", out)
+		}
+	})
+
+	t.Run("unwired approval request is an empty object", func(t *testing.T) {
+		store := NewMemory()
+		_ = startMemory(t, ctx, store, scope, unwiredApprovalYAML)
+		gate := claimMemory(t, ctx, store, scope, now, "gate")
+		if _, err := store.WaitJob(ctx, scope, now, WaitJobInput{JobID: gate.Job.ID, AvailableAt: now.Add(time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.ResumeWait(ctx, scope, now, ResumeWaitInput{JobID: gate.Job.ID, Port: "approved"}); err != nil {
+			t.Fatal(err)
+		}
+		mapped := claimMemory(t, ctx, store, scope, now, "mapped")
+		assertEmptyObject(t, mapped.Inputs["input"])
+		if _, ok := mapped.Inputs["decision"]; ok {
+			t.Fatal("decision flowed")
+		}
+	})
+}
+
+func assertEmptyObject(t *testing.T, v any) {
+	t.Helper()
+	got, ok := v.(map[string]any)
+	if !ok || len(got) != 0 {
+		t.Fatalf("want {}, got %#v", v)
+	}
 }
 
 func assertRedacted(t *testing.T, v any) {
@@ -359,6 +530,90 @@ spec:
       to: gate.request
     - from: gate.approved
       to: after.input
+`
+
+const scalarDelayYAML = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: scalar-delay
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: run
+      type: ssh.run
+      name: Run
+      with:
+        sshTargetId: 11111111-1111-4111-8111-111111111111
+        commandProfileId: 22222222-2222-4222-8222-222222222222
+    - id: wait
+      type: flow.delay
+      name: Wait
+      with:
+        duration: PT1S
+    - id: mapped
+      type: data.map
+      name: Map
+      with:
+        mapping:
+          value: value
+  edges:
+    - from: run.stdout
+      to: wait.input
+    - from: wait.result
+      to: mapped.input
+`
+
+const unwiredDelayYAML = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: unwired-delay
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: wait
+      type: flow.delay
+      name: Wait
+      with:
+        duration: PT1S
+    - id: mapped
+      type: data.map
+      name: Map
+      with:
+        mapping:
+          value: value
+  edges:
+    - from: wait.result
+      to: mapped.input
+`
+
+const unwiredApprovalYAML = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: unwired-approval
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: gate
+      type: flow.approval
+      name: Gate
+      with:
+        approverRole: approver
+        expiresIn: PT1H
+    - id: mapped
+      type: data.map
+      name: Map
+      with:
+        mapping:
+          value: value
+  edges:
+    - from: gate.approved
+      to: mapped.input
 `
 
 const httpThenMapYAML = `apiVersion: flowforge/v1

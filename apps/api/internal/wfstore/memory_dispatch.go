@@ -130,7 +130,11 @@ func (m *Memory) ClaimJob(ctx context.Context, scope isolation.Scope, now time.T
 	step.FencingToken = job.FencingToken
 	applyStepStatus(&step, ExecutionRunning, now)
 	chosen.steps[stepIdx] = step
-	inputs, skipped := resolveInputs(step.NodeID, chosen.edges, snapsFromSteps(chosen.steps))
+	var snaps map[string]succeededSnap
+	if ids := upstreamNodeIDs(step.NodeID, chosen.edges); len(ids) > 0 {
+		snaps = snapsFromSteps(chosen.steps, ids)
+	}
+	inputs, skipped := resolveInputs(step.NodeID, chosen.edges, snaps)
 
 	applyExecutionStatus(&chosen.record, ExecutionRunning, now)
 	m.executions[chosen.record.ID] = *chosen

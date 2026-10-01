@@ -196,89 +196,64 @@ func TestPostgresResolveInputs(t *testing.T) {
 		}
 	})
 
-	t.Run("upstream skipped on a claimable join", func(t *testing.T) {
-		exec := startGraph(t, ctx, store, scope, upstreamSkipYAML)
-		done := map[string]bool{}
-		for len(done) < 2 {
-			got := claimNode(t, ctx, store, scope, now(), "")
-			switch got.Step.NodeID {
-			case "kept":
-				completeJob(t, ctx, store, scope, now(), got, map[string]any{"stdout": "demo", "exitCode": 0})
-			case "side":
-				completeJob(t, ctx, store, scope, now(), got, map[string]any{"result": map[string]any{"side": "yes"}})
-			default:
-				t.Fatalf("claimed %s", got.Step.NodeID)
-			}
-			done[got.Step.NodeID] = true
-		}
-		stamp := now()
-		if _, err := admin.Exec(ctx, `
-			UPDATE execution_edges
-			SET required = false, resolved = true, satisfied = false
-			WHERE workspace_id = $1::uuid AND execution_id = $2::uuid AND to_node = 'join' AND from_node = 'hub'
-		`, ws, exec.ID); err != nil {
+	t.Run("scalar through a delay reaches map", func(t *testing.T) {
+		exec := startGraph(t, ctx, store, scope, scalarDelayYAML)
+		run := claimNode(t, ctx, store, scope, now(), "run")
+		completeJob(t, ctx, store, scope, now(), run, map[string]any{"stdout": "demo", "exitCode": 0})
+		wait := claimNode(t, ctx, store, scope, now(), "wait")
+		if _, err := store.WaitJob(ctx, scope, now(), WaitJobInput{JobID: wait.Job.ID, AvailableAt: now().Add(-time.Minute)}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := admin.Exec(ctx, `
-			INSERT INTO execution_edges (
-				workspace_id, execution_id, from_node, from_port, to_node, to_port, required, resolved, satisfied
-			) VALUES ($1::uuid, $2::uuid, 'side', 'result', 'join', 'extra', false, true, true)
-		`, ws, exec.ID); err != nil {
+		if _, err := store.RecoverExpiredLeases(ctx, scope, now()); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := admin.Exec(ctx, `
-			UPDATE execution_steps
-			SET status = 'queued', unresolved_incoming = 0, updated_at = $3
-			WHERE workspace_id = $1::uuid AND execution_id = $2::uuid AND node_id = 'join'
-		`, ws, exec.ID, stamp); err != nil {
+		mapped := claimNode(t, ctx, store, scope, now(), "mapped")
+		assertObject(t, mapped.Inputs["input"], "value", "demo")
+		finishCore(t, ctx, store, scope, now(), mapped)
+		if _, err := store.CancelExecution(ctx, scope, now(), exec.ID); err != nil {
 			t.Fatal(err)
 		}
-		tag, err := admin.Exec(ctx, `
-			UPDATE execution_jobs j
-			SET status = 'canceled', updated_at = $3
-			FROM execution_steps s
-			WHERE j.workspace_id = s.workspace_id AND j.execution_step_id = s.id
-			  AND j.workspace_id = $1::uuid AND s.execution_id = $2::uuid AND s.node_id = 'hub' AND j.status = 'queued'
-		`, ws, exec.ID, stamp)
-		if err != nil || tag.RowsAffected() != 1 {
-			t.Fatalf("cancel hub: %v rows %d", err, tag.RowsAffected())
+	})
+
+	t.Run("unwired delay input is an empty object", func(t *testing.T) {
+		exec := startGraph(t, ctx, store, scope, unwiredDelayYAML)
+		wait := claimNode(t, ctx, store, scope, now(), "wait")
+		if wait.Inputs != nil {
+			t.Fatalf("delay inputs %#v", wait.Inputs)
 		}
-		tag, err = admin.Exec(ctx, `
-			UPDATE execution_jobs j
-			SET status = 'queued', available_at = $3, worker_id = NULL, lease_expires_at = NULL, updated_at = $3
-			FROM execution_steps s
-			WHERE j.workspace_id = s.workspace_id AND j.execution_step_id = s.id
-			  AND j.workspace_id = $1::uuid AND s.execution_id = $2::uuid AND s.node_id = 'join'
-		`, ws, exec.ID, stamp)
-		if err != nil || tag.RowsAffected() != 1 {
-			t.Fatalf("queue join: %v rows %d", err, tag.RowsAffected())
-		}
-		join := claimNode(t, ctx, store, scope, now(), "join")
-		if _, ok := join.Inputs["input"]; ok {
-			t.Fatalf("input key present %#v", join.Inputs)
-		}
-		for _, v := range join.Inputs {
-			if v == nil {
-				t.Fatal("null input")
-			}
-		}
-		assertObject(t, join.Inputs["extra"], "side", "yes")
-		if !hasSkip(join.SkippedInputs, "input", "hub.result") {
-			t.Fatalf("skipped %#v", join.SkippedInputs)
-		}
-		out := workflow.EvaluateStep(join.Step.NodeType, join.Step.Input, join.Inputs, toPorts(join.SkippedInputs))
-		if !out.Fail || out.Code != workflow.CodeUpstreamSkipped {
-			t.Fatalf("outcome %+v", out)
-		}
-		if _, err := store.FailJob(ctx, scope, now(), JobActionInput{
-			JobID: join.Job.ID, WorkerID: "edge-worker", FencingToken: join.Job.FencingToken,
-			Error: map[string]any{"code": out.Code, "message": out.Message},
-		}); err != nil {
+		if _, err := store.WaitJob(ctx, scope, now(), WaitJobInput{JobID: wait.Job.ID, AvailableAt: now().Add(-time.Minute)}); err != nil {
 			t.Fatal(err)
 		}
-		failed := stepByNode(t, listSteps(t, ctx, store, scope, exec.ID), "join")
-		if failed.Error["code"] != workflow.CodeUpstreamSkipped {
-			t.Fatalf("step error %#v", failed.Error)
+		if _, err := store.RecoverExpiredLeases(ctx, scope, now()); err != nil {
+			t.Fatal(err)
+		}
+		mapped := claimNode(t, ctx, store, scope, now(), "mapped")
+		assertEmptyObject(t, mapped.Inputs["input"])
+		out := workflow.EvaluateStep(mapped.Step.NodeType, mapped.Step.Input, mapped.Inputs, nil)
+		if out.Code == workflow.CodeRequiredInput {
+			t.Fatalf("required-input %+v", out)
+		}
+		if _, err := store.CancelExecution(ctx, scope, now(), exec.ID); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("unwired approval request is an empty object", func(t *testing.T) {
+		exec := startGraph(t, ctx, store, scope, unwiredApprovalYAML)
+		gate := claimNode(t, ctx, store, scope, now(), "gate")
+		if _, err := store.WaitJob(ctx, scope, now(), WaitJobInput{JobID: gate.Job.ID, AvailableAt: now().Add(time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.ResumeWait(ctx, scope, now(), ResumeWaitInput{JobID: gate.Job.ID, Port: "approved"}); err != nil {
+			t.Fatal(err)
+		}
+		mapped := claimNode(t, ctx, store, scope, now(), "mapped")
+		assertEmptyObject(t, mapped.Inputs["input"])
+		if _, ok := mapped.Inputs["decision"]; ok {
+			t.Fatal("decision flowed")
+		}
+		if _, err := store.CancelExecution(ctx, scope, now(), exec.ID); err != nil {
+			t.Fatal(err)
 		}
 	})
 }
@@ -414,47 +389,4 @@ spec:
       to: wait.input
     - from: wait.result
       to: after.input
-`
-
-const upstreamSkipYAML = `apiVersion: flowforge/v1
-kind: Workflow
-metadata:
-  name: upstream-skip
-spec:
-  triggers:
-    - id: manual
-      type: manual
-  nodes:
-    - id: kept
-      type: ssh.run
-      name: Kept
-      with:
-        sshTargetId: 11111111-1111-4111-8111-111111111111
-        commandProfileId: 22222222-2222-4222-8222-222222222222
-    - id: side
-      type: data.set
-      name: Side
-      with:
-        value:
-          side: "yes"
-    - id: hub
-      type: kubernetes.apply
-      name: Hub
-      join: any
-      with:
-        clusterTargetId: 11111111-1111-4111-8111-111111111111
-        namespace: demo
-    - id: join
-      type: data.map
-      name: Join
-      with:
-        mapping:
-          ok: ok
-  edges:
-    - from: kept.stdout
-      to: hub.manifests
-    - from: side.result
-      to: hub.parameters
-    - from: hub.result
-      to: join.input
 `
