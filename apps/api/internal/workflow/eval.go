@@ -188,18 +188,14 @@ func evalDelay(with, inputs map[string]any) (*EvalResult, ErrorList) {
 	if secs <= 0 || secs > MaxDelaySeconds {
 		return nil, ErrorList{fieldError("with.duration", 0, 0, CodeDurationLimit, fmt.Sprintf("duration must be between 1 and %d seconds.", MaxDelaySeconds))}
 	}
+	class, classErrs := classifyLiteral(with)
+	if len(classErrs) > 0 {
+		return nil, relocateErrors(classErrs, "with")
+	}
 	raw, present := inputs["input"]
 	result, shapeErrs := DelayPassthrough(raw, present)
 	if len(shapeErrs) > 0 {
 		return nil, shapeErrs
-	}
-	class := ClassPublic
-	if present {
-		if c, errs := classifyLiteral(raw); len(errs) > 0 {
-			return nil, relocateErrors(errs, "inputs.input")
-		} else {
-			class = c
-		}
 	}
 	return &EvalResult{
 		Outputs:        map[string]any{"result": result},

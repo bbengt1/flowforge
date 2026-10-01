@@ -78,10 +78,22 @@ func TestDelayPassthroughAndLiteralClassification(t *testing.T) {
 	_, errs = DelayPassthrough(map[string]any{"body": strings.Repeat("a", 20<<10)}, true)
 	assertHasCode(t, errs, CodeOutputTooLarge)
 
-	_, errs = Evaluate("flow.delay", map[string]any{"duration": "PT1S"}, map[string]any{
-		"input": map[string]any{"token": "literal"},
-	})
+	_, errs = Evaluate("flow.delay", map[string]any{
+		"duration": "PT1S",
+		"token":    "literal",
+	}, nil)
 	assertHasCode(t, errs, CodeClassificationDenied)
+
+	res, errs := Evaluate("flow.delay", map[string]any{"duration": "PT1S"}, map[string]any{
+		"input": map[string]any{"token": "[redacted]"},
+	})
+	if len(errs) != 0 {
+		t.Fatalf("runtime input %+v", errs)
+	}
+	got, _ = res.Outputs["result"].(map[string]any)
+	if got["token"] != "[redacted]" {
+		t.Fatalf("runtime passthrough %#v", res.Outputs)
+	}
 }
 
 func TestEvaluateDataSet(t *testing.T) {

@@ -120,6 +120,11 @@ func valueFrom(e execEdge, edges []execEdge, snaps map[string]succeededSnap, sta
 			value, ok := cloneInputValue(shaped)
 			return value, ok, nil
 		}
+		for _, s := range nestedSkipped {
+			if s.Code != "" {
+				return nil, false, &inputFailure{Code: s.Code, Message: s.Message}
+			}
+		}
 		if nested != nil {
 			if value, present := nested["request"]; present && value != nil {
 				cloned, ok := cloneInputValue(value)

@@ -426,6 +426,44 @@ func TestMemoryResolveInputs(t *testing.T) {
 			t.Fatalf("%+v", out)
 		}
 	})
+
+	t.Run("oversized body through nested delays names the inner delay", func(t *testing.T) {
+		store := NewMemory()
+		_ = startMemory(t, ctx, store, scope, nestedDelayValidateYAML)
+		call := claimMemory(t, ctx, store, scope, now, "call")
+		completeMemory(t, ctx, store, scope, now, call, map[string]any{"result": map[string]any{
+			"body": strings.Repeat("a", 20<<10),
+		}})
+		recoverDelayNode(t, ctx, store, scope, now, "inner")
+		recoverDelayNode(t, ctx, store, scope, now, "outer")
+		checked := claimMemory(t, ctx, store, scope, now, "checked")
+		out := workflow.EvaluateStep(checked.Step.NodeType, checked.Step.Input, checked.Inputs, portsOf(checked.SkippedInputs))
+		if out.Code != workflow.CodeOutputTooLarge || !strings.Contains(out.Message, "inner") {
+			t.Fatalf("%+v", out)
+		}
+	})
+
+	t.Run("oversized body through a delay and an approval names the inner delay", func(t *testing.T) {
+		store := NewMemory()
+		_ = startMemory(t, ctx, store, scope, delayApprovalValidateYAML)
+		call := claimMemory(t, ctx, store, scope, now, "call")
+		completeMemory(t, ctx, store, scope, now, call, map[string]any{"result": map[string]any{
+			"body": strings.Repeat("a", 20<<10),
+		}})
+		recoverDelayNode(t, ctx, store, scope, now, "inner")
+		gate := claimMemory(t, ctx, store, scope, now, "gate")
+		if _, err := store.WaitJob(ctx, scope, now, WaitJobInput{JobID: gate.Job.ID, AvailableAt: now.Add(time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.ResumeWait(ctx, scope, now, ResumeWaitInput{JobID: gate.Job.ID, Port: "approved"}); err != nil {
+			t.Fatal(err)
+		}
+		checked := claimMemory(t, ctx, store, scope, now, "checked")
+		out := workflow.EvaluateStep(checked.Step.NodeType, checked.Step.Input, checked.Inputs, portsOf(checked.SkippedInputs))
+		if out.Code != workflow.CodeOutputTooLarge || !strings.Contains(out.Message, "inner") {
+			t.Fatalf("%+v", out)
+		}
+	})
 }
 
 func echoDelaySnaps(body map[string]any) map[string]succeededSnap {
@@ -455,7 +493,12 @@ func portsOf(in []SkippedInput) []workflow.SkippedPort {
 
 func recoverDelay(t *testing.T, ctx context.Context, store *Memory, scope isolation.Scope, now time.Time) {
 	t.Helper()
-	wait := claimMemory(t, ctx, store, scope, now, "wait")
+	recoverDelayNode(t, ctx, store, scope, now, "wait")
+}
+
+func recoverDelayNode(t *testing.T, ctx context.Context, store *Memory, scope isolation.Scope, now time.Time, node string) {
+	t.Helper()
+	wait := claimMemory(t, ctx, store, scope, now, node)
 	if _, err := store.WaitJob(ctx, scope, now, WaitJobInput{JobID: wait.Job.ID, AvailableAt: now.Add(-time.Minute)}); err != nil {
 		t.Fatal(err)
 	}
@@ -743,6 +786,89 @@ spec:
     - from: call.result
       to: wait.input
     - from: wait.result
+      to: checked.value
+`
+
+const nestedDelayValidateYAML = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: nested-delay-validate
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: call
+      type: http.request
+      name: Call
+      with:
+        connectionId: 11111111-1111-4111-8111-111111111111
+        method: GET
+        path: /
+    - id: inner
+      type: flow.delay
+      name: Inner
+      with:
+        duration: PT1S
+    - id: outer
+      type: flow.delay
+      name: Outer
+      with:
+        duration: PT1S
+    - id: checked
+      type: data.validate
+      name: Check
+      with:
+        schema:
+          type: object
+  edges:
+    - from: call.result
+      to: inner.input
+    - from: inner.result
+      to: outer.input
+    - from: outer.result
+      to: checked.value
+`
+
+const delayApprovalValidateYAML = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: delay-approval-validate
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: call
+      type: http.request
+      name: Call
+      with:
+        connectionId: 11111111-1111-4111-8111-111111111111
+        method: GET
+        path: /
+    - id: inner
+      type: flow.delay
+      name: Inner
+      with:
+        duration: PT1S
+    - id: gate
+      type: flow.approval
+      name: Gate
+      with:
+        approverRole: approver
+        expiresIn: PT1H
+    - id: checked
+      type: data.validate
+      name: Check
+      with:
+        schema:
+          type: object
+  edges:
+    - from: call.result
+      to: inner.input
+    - from: inner.result
+      to: gate.request
+    - from: gate.approved
       to: checked.value
 `
 

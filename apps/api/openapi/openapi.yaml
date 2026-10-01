@@ -8547,7 +8547,7 @@ components:
           description: Worker-only wired inputs resolved at claim. Absent when empty.
         skippedInputs:
           type: array
-          description: Worker-only ports whose incoming edge did not fire.
+          description: Worker-only ports. An edge that did not fire is listed here. A wired port the resolver could not forward is listed here too, and code and message carry that failure.
           items:
             type: object
             additionalProperties: false

@@ -28,6 +28,8 @@ type StepOutcome struct {
 // join: any step is not reported as a merely missing required-input. The
 // per-port size cap stays inside Evaluate.
 func EvaluateStep(nodeType string, with, inputs map[string]any, skipped []SkippedPort) StepOutcome {
+	// A join: any step fails on any skipped entry that has a code, even when
+	// another branch delivered a value. That is deliberate: fail closed.
 	for _, s := range skipped {
 		if s.Code == "" {
 			continue
