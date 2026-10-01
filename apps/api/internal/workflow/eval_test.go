@@ -96,6 +96,22 @@ func TestDelayPassthroughAndLiteralClassification(t *testing.T) {
 	}
 }
 
+func TestDelayKeepsConfidentialInputClassification(t *testing.T) {
+	res, errs := Evaluate("flow.delay", map[string]any{"duration": "PT1S"}, map[string]any{
+		"input": map[string]any{"classification": ClassConfidential, "ticket": "CHG-1"},
+	})
+	if len(errs) != 0 {
+		t.Fatalf("%+v", errs)
+	}
+	if res.Classification != ClassConfidential {
+		t.Fatalf("class = %s", res.Classification)
+	}
+	got := res.Outputs["result"].(map[string]any)
+	if got["ticket"] != "CHG-1" || got["classification"] != ClassConfidential {
+		t.Fatalf("passthrough %#v", got)
+	}
+}
+
 func TestEvaluateDataSet(t *testing.T) {
 	res, errs := Evaluate("data.set", map[string]any{
 		"value": map[string]any{"env": "staging", "replicas": int64(2)},

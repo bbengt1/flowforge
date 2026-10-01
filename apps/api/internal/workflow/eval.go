@@ -197,6 +197,13 @@ func evalDelay(with, inputs map[string]any) (*EvalResult, ErrorList) {
 	if len(shapeErrs) > 0 {
 		return nil, shapeErrs
 	}
+	if present {
+		inputClass, _ := classifyLiteral(redactValue(raw))
+		if inputClass == ClassSecret {
+			inputClass = ClassConfidential
+		}
+		class = maxClassification(class, inputClass)
+	}
 	return &EvalResult{
 		Outputs:        map[string]any{"result": result},
 		Classification: class,
