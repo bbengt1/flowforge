@@ -8555,6 +8555,8 @@ components:
             properties:
               port: {type: string}
               from: {type: string}
+              code: {type: string, description: "Set when a wired port could not be forwarded. Empty when the edge did not fire."}
+              message: {type: string, description: "Failure detail. Names the upstream node when a delay passthrough cannot be forwarded."}
     JobActionRequest:
       type: object
       required: [jobToken, workerId]

@@ -62,6 +62,28 @@ func TestEvaluateDelayDoesNotSleep(t *testing.T) {
 	assertHasCode(t, errs, CodeInvalidWith)
 }
 
+func TestDelayPassthroughAndLiteralClassification(t *testing.T) {
+	got, errs := DelayPassthrough(map[string]any{"token": "[redacted]", "authorization": "[redacted]"}, true)
+	if len(errs) != 0 || got["token"] != "[redacted]" || got["authorization"] != "[redacted]" {
+		t.Fatalf("passthrough %#v %+v", got, errs)
+	}
+	wrapped, errs := DelayPassthrough("demo", true)
+	if len(errs) != 0 || wrapped["value"] != "demo" {
+		t.Fatalf("scalar %#v %+v", wrapped, errs)
+	}
+	empty, errs := DelayPassthrough(nil, false)
+	if len(errs) != 0 || len(empty) != 0 {
+		t.Fatalf("missing %#v %+v", empty, errs)
+	}
+	_, errs = DelayPassthrough(map[string]any{"body": strings.Repeat("a", 20<<10)}, true)
+	assertHasCode(t, errs, CodeOutputTooLarge)
+
+	_, errs = Evaluate("flow.delay", map[string]any{"duration": "PT1S"}, map[string]any{
+		"input": map[string]any{"token": "literal"},
+	})
+	assertHasCode(t, errs, CodeClassificationDenied)
+}
+
 func TestEvaluateDataSet(t *testing.T) {
 	res, errs := Evaluate("data.set", map[string]any{
 		"value": map[string]any{"env": "staging", "replicas": int64(2)},

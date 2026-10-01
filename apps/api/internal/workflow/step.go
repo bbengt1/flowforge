@@ -5,10 +5,14 @@ import (
 	"strings"
 )
 
-// SkippedPort is a required-or-optional input whose incoming edge did not fire.
+// SkippedPort is a required-or-optional input whose incoming edge did not fire,
+// or a wired port the resolver could not forward. Code, when set, is the
+// failure the next step must report instead of required-input.
 type SkippedPort struct {
-	Port string
-	From string
+	Port    string
+	From    string
+	Code    string
+	Message string
 }
 
 // StepOutcome is the shared core evaluation result for both workers.
@@ -24,6 +28,16 @@ type StepOutcome struct {
 // join: any step is not reported as a merely missing required-input. The
 // per-port size cap stays inside Evaluate.
 func EvaluateStep(nodeType string, with, inputs map[string]any, skipped []SkippedPort) StepOutcome {
+	for _, s := range skipped {
+		if s.Code == "" {
+			continue
+		}
+		msg := s.Message
+		if msg == "" {
+			msg = s.From
+		}
+		return StepOutcome{Fail: true, Code: s.Code, Message: msg}
+	}
 	if nt, ok := lookupNode(nodeType); ok {
 		required := map[string]bool{}
 		for _, p := range nt.Inputs {

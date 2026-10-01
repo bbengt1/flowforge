@@ -1021,6 +1021,19 @@ func TestDecideCoreInputParity(t *testing.T) {
 		t.Fatalf("skipped %+v", skipped)
 	}
 
+	tooBig := decideCore(wfstore.ExecutionStep{
+		NodeType: "data.validate",
+		Input:    map[string]any{"schema": map[string]any{"type": "object"}},
+	}, nil, []wfstore.SkippedInput{{
+		Port: "value", From: "wait.result", Code: "output-too-large", Message: "wait: input exceeds the 16384 byte limit.",
+	}})
+	if !tooBig.Fail || tooBig.Error["code"] != "output-too-large" {
+		t.Fatalf("oversized %+v", tooBig)
+	}
+	if msg, _ := tooBig.Error["message"].(string); !strings.Contains(msg, "wait") {
+		t.Fatalf("detail %+v", tooBig.Error)
+	}
+
 	optionalSkip := decideCore(wfstore.ExecutionStep{
 		NodeType: "data.map",
 		Input:    map[string]any{"mapping": map[string]any{"status": "status"}},
