@@ -48,13 +48,15 @@ type retryStepRequest struct {
 }
 
 type ClaimJobResponse struct {
-	Claimed   bool                  `json:"claimed"`
-	JobToken  string                `json:"jobToken,omitempty"`
-	Binding   wfstore.JobBinding    `json:"binding,omitempty"`
-	Job       wfstore.ExecutionJob  `json:"job"`
-	Step      wfstore.ExecutionStep `json:"step"`
-	Execution wfstore.Execution     `json:"execution"`
-	Recovered int                   `json:"recovered,omitempty"`
+	Claimed       bool                   `json:"claimed"`
+	JobToken      string                 `json:"jobToken,omitempty"`
+	Binding       wfstore.JobBinding     `json:"binding,omitempty"`
+	Job           wfstore.ExecutionJob   `json:"job"`
+	Step          wfstore.ExecutionStep  `json:"step"`
+	Execution     wfstore.Execution      `json:"execution"`
+	Recovered     int                    `json:"recovered,omitempty"`
+	Inputs        map[string]any         `json:"inputs,omitempty"`
+	SkippedInputs []wfstore.SkippedInput `json:"skippedInputs,omitempty"`
 }
 
 type dispatchJobResponse struct {
@@ -115,12 +117,14 @@ func claimJob(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	}
 	if result.Job.Status == wfstore.JobWaiting {
 		core.WriteJSON(w, http.StatusOK, ClaimJobResponse{
-			Claimed:   true,
-			Binding:   result.Binding,
-			Job:       result.Job,
-			Step:      result.Step,
-			Execution: result.Execution,
-			Recovered: result.Recovered,
+			Claimed:       true,
+			Binding:       result.Binding,
+			Job:           result.Job,
+			Step:          result.Step,
+			Execution:     result.Execution,
+			Recovered:     result.Recovered,
+			Inputs:        result.Inputs,
+			SkippedInputs: result.SkippedInputs,
 		})
 		return
 	}
@@ -145,13 +149,15 @@ func claimJob(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	core.WriteJSON(w, http.StatusOK, ClaimJobResponse{
-		Claimed:   true,
-		JobToken:  token,
-		Binding:   result.Binding,
-		Job:       result.Job,
-		Step:      result.Step,
-		Execution: result.Execution,
-		Recovered: result.Recovered,
+		Claimed:       true,
+		JobToken:      token,
+		Binding:       result.Binding,
+		Job:           result.Job,
+		Step:          result.Step,
+		Execution:     result.Execution,
+		Recovered:     result.Recovered,
+		Inputs:        result.Inputs,
+		SkippedInputs: result.SkippedInputs,
 	})
 }
 

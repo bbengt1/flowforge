@@ -518,6 +518,8 @@ func ParkApprovalClaim(s *core.Server, ctx context.Context, scope isolation.Scop
 		_, _ = s.Approvals.Create(ctx, scope, *seed)
 	}
 	waited.Recovered = result.Recovered
+	waited.Inputs = result.Inputs
+	waited.SkippedInputs = result.SkippedInputs
 	return waited, nil
 }
 

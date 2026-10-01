@@ -148,7 +148,7 @@ func (r *Runner) claimOne(ctx context.Context, tenantSlug, workbenchKey, workspa
 	if err := r.api.Heartbeat(ctx, tenantSlug, workbenchKey, *claim); err != nil {
 		return true, err
 	}
-	decision := Decide(claim.Step, claim.Job)
+	decision := Decide(claim.Step, claim.Job, claim.Inputs, claim.SkippedInputs)
 	if decision.Skip {
 		r.log.Info("local worker skipped claimed job", "job_id", claim.Job.ID, "reason", decision.Reason)
 		return true, nil

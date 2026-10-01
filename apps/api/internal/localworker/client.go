@@ -26,14 +26,17 @@ const (
 // Claim is a successful POST /jobs/claim ticket.
 // TraceParent and TraceState are the W3C context from the claim
 // response so later heartbeats continue the enqueue trace.
+// Inputs and SkippedInputs are worker-only wired ports.
 type Claim struct {
-	JobToken    string
-	Binding     wfstore.JobBinding
-	Job         wfstore.ExecutionJob
-	Step        wfstore.ExecutionStep
-	Execution   wfstore.Execution
-	TraceParent string
-	TraceState  string
+	JobToken      string
+	Binding       wfstore.JobBinding
+	Job           wfstore.ExecutionJob
+	Step          wfstore.ExecutionStep
+	Execution     wfstore.Execution
+	Inputs        map[string]any
+	SkippedInputs []wfstore.SkippedInput
+	TraceParent   string
+	TraceState    string
 }
 
 // API is the control-plane surface the local worker needs.
@@ -129,12 +132,14 @@ func (h *HTTP) Claim(ctx context.Context, tenantSlug, workbenchKey string) (*Cla
 		return nil, fmt.Errorf("claim: %s", formatProblem(status, raw))
 	}
 	var payload struct {
-		Claimed   bool                  `json:"claimed"`
-		JobToken  string                `json:"jobToken"`
-		Binding   wfstore.JobBinding    `json:"binding"`
-		Job       wfstore.ExecutionJob  `json:"job"`
-		Step      wfstore.ExecutionStep `json:"step"`
-		Execution wfstore.Execution     `json:"execution"`
+		Claimed       bool                   `json:"claimed"`
+		JobToken      string                 `json:"jobToken"`
+		Binding       wfstore.JobBinding     `json:"binding"`
+		Job           wfstore.ExecutionJob   `json:"job"`
+		Step          wfstore.ExecutionStep  `json:"step"`
+		Execution     wfstore.Execution      `json:"execution"`
+		Inputs        map[string]any         `json:"inputs"`
+		SkippedInputs []wfstore.SkippedInput `json:"skippedInputs"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return nil, err
@@ -152,13 +157,15 @@ func (h *HTTP) Claim(ctx context.Context, tenantSlug, workbenchKey string) (*Cla
 		state = ""
 	}
 	return &Claim{
-		JobToken:    payload.JobToken,
-		Binding:     payload.Binding,
-		Job:         payload.Job,
-		Step:        payload.Step,
-		Execution:   payload.Execution,
-		TraceParent: parent,
-		TraceState:  state,
+		JobToken:      payload.JobToken,
+		Binding:       payload.Binding,
+		Job:           payload.Job,
+		Step:          payload.Step,
+		Execution:     payload.Execution,
+		Inputs:        payload.Inputs,
+		SkippedInputs: payload.SkippedInputs,
+		TraceParent:   parent,
+		TraceState:    state,
 	}, nil
 }
 

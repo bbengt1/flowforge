@@ -130,6 +130,7 @@ func (m *Memory) ClaimJob(ctx context.Context, scope isolation.Scope, now time.T
 	step.FencingToken = job.FencingToken
 	applyStepStatus(&step, ExecutionRunning, now)
 	chosen.steps[stepIdx] = step
+	inputs, skipped := resolveInputs(step.NodeID, chosen.edges, snapsFromSteps(chosen.steps))
 
 	applyExecutionStatus(&chosen.record, ExecutionRunning, now)
 	m.executions[chosen.record.ID] = *chosen
@@ -147,11 +148,13 @@ func (m *Memory) ClaimJob(ctx context.Context, scope isolation.Scope, now time.T
 	observability.NoteLeaseClaim(ctx, "claimed", now.Sub(job.AvailableAt))
 	observability.NoteQueueLeft(ctx, 1)
 	return DispatchResult{
-		Execution: cloneExecution(chosen.record, wf.record),
-		Step:      cloneStep(step),
-		Job:       cloneJob(job),
-		Binding:   binding,
-		Recovered: recovered,
+		Execution:     cloneExecution(chosen.record, wf.record),
+		Step:          cloneStep(step),
+		Job:           cloneJob(job),
+		Binding:       binding,
+		Recovered:     recovered,
+		Inputs:        inputs,
+		SkippedInputs: skipped,
 	}, nil
 }
 

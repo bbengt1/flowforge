@@ -69,7 +69,7 @@ func (d *Dispatcher) Execute(ctx context.Context, scope isolation.Scope, perms [
 		return Decision{Skip: true, Reason: "waiting"}
 	}
 	if workflow.IsCoreNeutral(job.Step.NodeType) {
-		return decideCore(job.Step)
+		return decideCore(job.Step, job.Inputs, job.SkippedInputs)
 	}
 	switch job.Step.NodeType {
 	case "kubernetes.apply", "kubernetes.get", "kubernetes.list", "kubernetes.rolloutStatus":
@@ -91,40 +91,35 @@ func (d *Dispatcher) Execute(ctx context.Context, scope isolation.Scope, perms [
 	}
 }
 
-func decideCore(step wfstore.ExecutionStep) Decision {
+func decideCore(step wfstore.ExecutionStep, inputs map[string]any, skipped []wfstore.SkippedInput) Decision {
 	if step.NodeType == "flow.delay" {
 		// The claim loop parks flow.delay before Execute. A direct call
 		// still fails closed so a delay is never an in-process sleep.
 		return fail(CodeUnsupported, "Production runner does not schedule durable flow.delay waits.")
 	}
-	res, errs := workflow.Evaluate(step.NodeType, step.Input, map[string]any{})
-	if len(errs) > 0 {
-		code := errs[0].Code
-		if code == "" {
-			code = "eval-failed"
-		}
-		return fail(code, errs[0].Message)
+	return decisionFromOutcome(workflow.EvaluateStep(step.NodeType, step.Input, inputs, skippedPorts(skipped)))
+}
+
+func skippedPorts(in []wfstore.SkippedInput) []workflow.SkippedPort {
+	if len(in) == 0 {
+		return nil
 	}
-	out := map[string]any{}
-	if res != nil && res.Outputs != nil {
-		out = res.Outputs
+	out := make([]workflow.SkippedPort, len(in))
+	for i, s := range in {
+		out[i] = workflow.SkippedPort{Port: s.Port, From: s.From}
 	}
-	if res != nil && res.Terminal != nil {
-		switch res.Terminal.Status {
-		case "failure", "canceled":
-			code := strings.TrimSpace(res.Terminal.Code)
-			if code == "" {
-				code = res.Terminal.Status
-			}
-			return Decision{
-				Fail:    true,
-				Output:  out,
-				Error:   map[string]any{"code": code, "message": res.Terminal.Message},
-				Message: res.Terminal.Message,
-			}
-		}
+	return out
+}
+
+func decisionFromOutcome(o workflow.StepOutcome) Decision {
+	if !o.Fail {
+		return Decision{Output: o.Output}
 	}
-	return Decision{Output: out}
+	err := map[string]any{"code": o.Code, "message": o.Message}
+	if o.Output == nil {
+		return fail(o.Code, o.Message)
+	}
+	return Decision{Fail: true, Output: o.Output, Error: err, Message: o.Message}
 }
 
 func (d *Dispatcher) kubernetes(ctx context.Context, scope isolation.Scope, perms []string, job Job) Decision {

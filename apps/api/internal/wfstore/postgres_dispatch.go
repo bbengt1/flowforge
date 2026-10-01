@@ -188,6 +188,10 @@ func (p *Postgres) ClaimJob(ctx context.Context, scope isolation.Scope, now time
 	if err != nil {
 		return DispatchResult{}, err
 	}
+	inputs, skipped, err := resolveInputsTx(ctx, tx, job.ExecutionID, step.NodeID)
+	if err != nil {
+		return DispatchResult{}, err
+	}
 	if err := touchExecutionRunningTx(ctx, tx, job.ExecutionID, now); err != nil {
 		return DispatchResult{}, err
 	}
@@ -211,11 +215,13 @@ func (p *Postgres) ClaimJob(ctx context.Context, scope isolation.Scope, now time
 	observability.NoteLeaseClaim(ctx, "claimed", lag)
 	observability.NoteQueueLeft(ctx, 1)
 	return DispatchResult{
-		Execution: exec,
-		Step:      step,
-		Job:       job,
-		Binding:   buildBinding(scope, exec, step, job, now.Add(ttl), leaseExp),
-		Recovered: recovered,
+		Execution:     exec,
+		Step:          step,
+		Job:           job,
+		Binding:       buildBinding(scope, exec, step, job, now.Add(ttl), leaseExp),
+		Recovered:     recovered,
+		Inputs:        inputs,
+		SkippedInputs: skipped,
 	}, nil
 }
 
