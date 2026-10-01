@@ -8,7 +8,7 @@
 # Digest pin is the multi-arch index for node:25-alpine
 # (Node 25.9.0 on Alpine 3.23; see docs/deployment.md#refreshing-dockerfile-base-digests).
 
-FROM node:25-alpine@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4ced6eb02ef4 AS base
+FROM node:26-alpine@sha256:0b36e8c136b94cd4fcf02188228e76c31ad5872eef3fec8cbd2eee500cfd9e80 AS base
 # Node 25 no longer ships corepack. Pin the same pnpm the lockfile expects.
 RUN npm install -g pnpm@10.33.3
 WORKDIR /app
@@ -26,7 +26,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY apps/web ./apps/web
 RUN pnpm --filter @flowforge/web build
 
-FROM node:25-alpine@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4ced6eb02ef4 AS runner
+FROM node:26-alpine@sha256:0b36e8c136b94cd4fcf02188228e76c31ad5872eef3fec8cbd2eee500cfd9e80 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
