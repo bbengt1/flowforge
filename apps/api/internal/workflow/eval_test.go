@@ -62,6 +62,56 @@ func TestEvaluateDelayDoesNotSleep(t *testing.T) {
 	assertHasCode(t, errs, CodeInvalidWith)
 }
 
+func TestDelayPassthroughAndLiteralClassification(t *testing.T) {
+	got, errs := DelayPassthrough(map[string]any{"token": "[redacted]", "authorization": "[redacted]"}, true)
+	if len(errs) != 0 || got["token"] != "[redacted]" || got["authorization"] != "[redacted]" {
+		t.Fatalf("passthrough %#v %+v", got, errs)
+	}
+	wrapped, errs := DelayPassthrough("demo", true)
+	if len(errs) != 0 || wrapped["value"] != "demo" {
+		t.Fatalf("scalar %#v %+v", wrapped, errs)
+	}
+	empty, errs := DelayPassthrough(nil, false)
+	if len(errs) != 0 || len(empty) != 0 {
+		t.Fatalf("missing %#v %+v", empty, errs)
+	}
+	_, errs = DelayPassthrough(map[string]any{"body": strings.Repeat("a", 20<<10)}, true)
+	assertHasCode(t, errs, CodeOutputTooLarge)
+
+	_, errs = Evaluate("flow.delay", map[string]any{
+		"duration": "PT1S",
+		"token":    "literal",
+	}, nil)
+	assertHasCode(t, errs, CodeClassificationDenied)
+
+	res, errs := Evaluate("flow.delay", map[string]any{"duration": "PT1S"}, map[string]any{
+		"input": map[string]any{"token": "[redacted]"},
+	})
+	if len(errs) != 0 {
+		t.Fatalf("runtime input %+v", errs)
+	}
+	got, _ = res.Outputs["result"].(map[string]any)
+	if got["token"] != "[redacted]" {
+		t.Fatalf("runtime passthrough %#v", res.Outputs)
+	}
+}
+
+func TestDelayKeepsConfidentialInputClassification(t *testing.T) {
+	res, errs := Evaluate("flow.delay", map[string]any{"duration": "PT1S"}, map[string]any{
+		"input": map[string]any{"classification": ClassConfidential, "ticket": "CHG-1"},
+	})
+	if len(errs) != 0 {
+		t.Fatalf("%+v", errs)
+	}
+	if res.Classification != ClassConfidential {
+		t.Fatalf("class = %s", res.Classification)
+	}
+	got := res.Outputs["result"].(map[string]any)
+	if got["ticket"] != "CHG-1" || got["classification"] != ClassConfidential {
+		t.Fatalf("passthrough %#v", got)
+	}
+}
+
 func TestEvaluateDataSet(t *testing.T) {
 	res, errs := Evaluate("data.set", map[string]any{
 		"value": map[string]any{"env": "staging", "replicas": int64(2)},

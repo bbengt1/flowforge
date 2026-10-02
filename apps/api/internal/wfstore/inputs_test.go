@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,7 +60,7 @@ func TestResolveInputsRule(t *testing.T) {
 	t.Run("wait nodes pass their input not their output", func(t *testing.T) {
 		snaps := map[string]succeededSnap{
 			"seed": {NodeType: "data.set", Output: map[string]any{"result": map[string]any{"ticket": "CHG-1"}}},
-			"wait": {NodeType: "flow.delay", With: map[string]any{"duration": "PT1S"}, Output: map[string]any{"port": "result", "decision": "result"}},
+			"wait": {NodeType: "flow.delay", Output: map[string]any{"port": "result", "decision": "result"}},
 			"gate": {NodeType: "flow.approval", Output: map[string]any{"port": "approved", "decision": "approved"}},
 		}
 		edges := []execEdge{
@@ -88,7 +89,7 @@ func TestResolveInputsRule(t *testing.T) {
 	t.Run("scalar through a delay is wrapped", func(t *testing.T) {
 		snaps := map[string]succeededSnap{
 			"run":  {NodeType: "ssh.run", Output: map[string]any{"stdout": "demo"}},
-			"wait": {NodeType: "flow.delay", With: map[string]any{"duration": "PT1S"}, Output: map[string]any{"port": "result", "decision": "result"}},
+			"wait": {NodeType: "flow.delay", Output: map[string]any{"port": "result", "decision": "result"}},
 		}
 		edges := []execEdge{
 			{FromNode: "run", FromPort: "stdout", ToNode: "wait", ToPort: "input", Satisfied: true, Resolved: true},
@@ -114,7 +115,7 @@ func TestResolveInputsRule(t *testing.T) {
 
 	t.Run("unwired delay input is an empty object", func(t *testing.T) {
 		snaps := map[string]succeededSnap{
-			"wait": {NodeType: "flow.delay", With: map[string]any{"duration": "PT1S"}, Output: map[string]any{"port": "result", "decision": "result"}},
+			"wait": {NodeType: "flow.delay", Output: map[string]any{"port": "result", "decision": "result"}},
 		}
 		edges := []execEdge{{
 			FromNode: "wait", FromPort: "result", ToNode: "mapped", ToPort: "input", Satisfied: true, Resolved: true,
@@ -144,6 +145,35 @@ func TestResolveInputsRule(t *testing.T) {
 		assertEmptyObject(t, inputs["input"])
 		if _, ok := inputs["decision"]; ok {
 			t.Fatal("decision flowed")
+		}
+	})
+
+	t.Run("redacted secret keys pass through a delay", func(t *testing.T) {
+		inputs, skipped := resolveInputs("checked", echoDelayEdges(), echoDelaySnaps(map[string]any{
+			"token": redactedMarker, "authorization": redactedMarker,
+		}))
+		if skipped != nil {
+			t.Fatalf("skipped %#v", skipped)
+		}
+		got, _ := inputs["value"].(map[string]any)
+		if got["token"] != redactedMarker || got["authorization"] != redactedMarker {
+			t.Fatalf("validate input %#v", inputs["value"])
+		}
+	})
+
+	t.Run("oversized delay passthrough names the delay", func(t *testing.T) {
+		inputs, skipped := resolveInputs("checked", echoDelayEdges(), echoDelaySnaps(map[string]any{
+			"body": strings.Repeat("a", 20<<10),
+		}))
+		if _, ok := inputs["value"]; ok {
+			t.Fatal("oversized value was forwarded")
+		}
+		if len(skipped) != 1 || skipped[0].Code != workflow.CodeOutputTooLarge || !strings.Contains(skipped[0].Message, "wait") {
+			t.Fatalf("skipped %#v", skipped)
+		}
+		out := workflow.EvaluateStep("data.validate", map[string]any{"schema": map[string]any{"type": "object"}}, inputs, portsOf(skipped))
+		if out.Code != workflow.CodeOutputTooLarge || !strings.Contains(out.Message, "wait") {
+			t.Fatalf("%+v", out)
 		}
 	})
 }
@@ -366,6 +396,115 @@ func TestMemoryResolveInputs(t *testing.T) {
 			t.Fatal("decision flowed")
 		}
 	})
+
+	t.Run("redacted http body passes through a delay", func(t *testing.T) {
+		store := NewMemory()
+		_ = startMemory(t, ctx, store, scope, echoDelayValidateYAML)
+		call := claimMemory(t, ctx, store, scope, now, "call")
+		completeMemory(t, ctx, store, scope, now, call, map[string]any{"result": map[string]any{
+			"token": redactedMarker, "authorization": redactedMarker,
+		}})
+		recoverDelay(t, ctx, store, scope, now)
+		checked := claimMemory(t, ctx, store, scope, now, "checked")
+		got, _ := checked.Inputs["value"].(map[string]any)
+		if got["token"] != redactedMarker || got["authorization"] != redactedMarker {
+			t.Fatalf("validate input %#v", checked.Inputs)
+		}
+	})
+
+	t.Run("oversized body through a delay names the delay", func(t *testing.T) {
+		store := NewMemory()
+		_ = startMemory(t, ctx, store, scope, echoDelayValidateYAML)
+		call := claimMemory(t, ctx, store, scope, now, "call")
+		completeMemory(t, ctx, store, scope, now, call, map[string]any{"result": map[string]any{
+			"body": strings.Repeat("a", 20<<10),
+		}})
+		recoverDelay(t, ctx, store, scope, now)
+		checked := claimMemory(t, ctx, store, scope, now, "checked")
+		out := workflow.EvaluateStep(checked.Step.NodeType, checked.Step.Input, checked.Inputs, portsOf(checked.SkippedInputs))
+		if out.Code != workflow.CodeOutputTooLarge || !strings.Contains(out.Message, "wait") {
+			t.Fatalf("%+v", out)
+		}
+	})
+
+	t.Run("oversized body through nested delays names the inner delay", func(t *testing.T) {
+		store := NewMemory()
+		_ = startMemory(t, ctx, store, scope, nestedDelayValidateYAML)
+		call := claimMemory(t, ctx, store, scope, now, "call")
+		completeMemory(t, ctx, store, scope, now, call, map[string]any{"result": map[string]any{
+			"body": strings.Repeat("a", 20<<10),
+		}})
+		recoverDelayNode(t, ctx, store, scope, now, "inner")
+		recoverDelayNode(t, ctx, store, scope, now, "outer")
+		checked := claimMemory(t, ctx, store, scope, now, "checked")
+		out := workflow.EvaluateStep(checked.Step.NodeType, checked.Step.Input, checked.Inputs, portsOf(checked.SkippedInputs))
+		if out.Code != workflow.CodeOutputTooLarge || !strings.Contains(out.Message, "inner") {
+			t.Fatalf("%+v", out)
+		}
+	})
+
+	t.Run("oversized body through a delay and an approval names the inner delay", func(t *testing.T) {
+		store := NewMemory()
+		_ = startMemory(t, ctx, store, scope, delayApprovalValidateYAML)
+		call := claimMemory(t, ctx, store, scope, now, "call")
+		completeMemory(t, ctx, store, scope, now, call, map[string]any{"result": map[string]any{
+			"body": strings.Repeat("a", 20<<10),
+		}})
+		recoverDelayNode(t, ctx, store, scope, now, "inner")
+		gate := claimMemory(t, ctx, store, scope, now, "gate")
+		if _, err := store.WaitJob(ctx, scope, now, WaitJobInput{JobID: gate.Job.ID, AvailableAt: now.Add(time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.ResumeWait(ctx, scope, now, ResumeWaitInput{JobID: gate.Job.ID, Port: "approved"}); err != nil {
+			t.Fatal(err)
+		}
+		checked := claimMemory(t, ctx, store, scope, now, "checked")
+		out := workflow.EvaluateStep(checked.Step.NodeType, checked.Step.Input, checked.Inputs, portsOf(checked.SkippedInputs))
+		if out.Code != workflow.CodeOutputTooLarge || !strings.Contains(out.Message, "inner") {
+			t.Fatalf("%+v", out)
+		}
+	})
+}
+
+func echoDelaySnaps(body map[string]any) map[string]succeededSnap {
+	return map[string]succeededSnap{
+		"call": {NodeType: "http.request", Output: map[string]any{"result": body}},
+		"wait": {NodeType: "flow.delay", Output: map[string]any{"port": "result", "decision": "result"}},
+	}
+}
+
+func echoDelayEdges() []execEdge {
+	return []execEdge{
+		{FromNode: "call", FromPort: "result", ToNode: "wait", ToPort: "input", Satisfied: true, Resolved: true},
+		{FromNode: "wait", FromPort: "result", ToNode: "checked", ToPort: "value", Satisfied: true, Resolved: true},
+	}
+}
+
+func portsOf(in []SkippedInput) []workflow.SkippedPort {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]workflow.SkippedPort, len(in))
+	for i, s := range in {
+		out[i] = workflow.SkippedPort{Port: s.Port, From: s.From, Code: s.Code, Message: s.Message}
+	}
+	return out
+}
+
+func recoverDelay(t *testing.T, ctx context.Context, store *Memory, scope isolation.Scope, now time.Time) {
+	t.Helper()
+	recoverDelayNode(t, ctx, store, scope, now, "wait")
+}
+
+func recoverDelayNode(t *testing.T, ctx context.Context, store *Memory, scope isolation.Scope, now time.Time, node string) {
+	t.Helper()
+	wait := claimMemory(t, ctx, store, scope, now, node)
+	if _, err := store.WaitJob(ctx, scope, now, WaitJobInput{JobID: wait.Job.ID, AvailableAt: now.Add(-time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecoverExpiredLeases(ctx, scope, now); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func assertEmptyObject(t *testing.T, v any) {
@@ -614,6 +753,123 @@ spec:
   edges:
     - from: gate.approved
       to: mapped.input
+`
+
+const echoDelayValidateYAML = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: echo-delay-validate
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: call
+      type: http.request
+      name: Call
+      with:
+        connectionId: 11111111-1111-4111-8111-111111111111
+        method: GET
+        path: /
+    - id: wait
+      type: flow.delay
+      name: Wait
+      with:
+        duration: PT1S
+    - id: checked
+      type: data.validate
+      name: Check
+      with:
+        schema:
+          type: object
+  edges:
+    - from: call.result
+      to: wait.input
+    - from: wait.result
+      to: checked.value
+`
+
+const nestedDelayValidateYAML = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: nested-delay-validate
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: call
+      type: http.request
+      name: Call
+      with:
+        connectionId: 11111111-1111-4111-8111-111111111111
+        method: GET
+        path: /
+    - id: inner
+      type: flow.delay
+      name: Inner
+      with:
+        duration: PT1S
+    - id: outer
+      type: flow.delay
+      name: Outer
+      with:
+        duration: PT1S
+    - id: checked
+      type: data.validate
+      name: Check
+      with:
+        schema:
+          type: object
+  edges:
+    - from: call.result
+      to: inner.input
+    - from: inner.result
+      to: outer.input
+    - from: outer.result
+      to: checked.value
+`
+
+const delayApprovalValidateYAML = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: delay-approval-validate
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: call
+      type: http.request
+      name: Call
+      with:
+        connectionId: 11111111-1111-4111-8111-111111111111
+        method: GET
+        path: /
+    - id: inner
+      type: flow.delay
+      name: Inner
+      with:
+        duration: PT1S
+    - id: gate
+      type: flow.approval
+      name: Gate
+      with:
+        approverRole: approver
+        expiresIn: PT1H
+    - id: checked
+      type: data.validate
+      name: Check
+      with:
+        schema:
+          type: object
+  edges:
+    - from: call.result
+      to: inner.input
+    - from: inner.result
+      to: gate.request
+    - from: gate.approved
+      to: checked.value
 `
 
 const httpThenMapYAML = `apiVersion: flowforge/v1

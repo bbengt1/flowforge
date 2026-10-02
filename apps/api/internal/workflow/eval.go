@@ -188,22 +188,21 @@ func evalDelay(with, inputs map[string]any) (*EvalResult, ErrorList) {
 	if secs <= 0 || secs > MaxDelaySeconds {
 		return nil, ErrorList{fieldError("with.duration", 0, 0, CodeDurationLimit, fmt.Sprintf("duration must be between 1 and %d seconds.", MaxDelaySeconds))}
 	}
-	result := any(map[string]any{})
-	class := ClassPublic
-	if raw, ok := inputs["input"]; ok {
-		if encodedBytes(raw) > MaxPortBytes {
-			return nil, ErrorList{fieldError("inputs.input", 0, 0, CodeOutputTooLarge, fmt.Sprintf("input exceeds the %d byte limit.", MaxPortBytes))}
+	class, classErrs := classifyLiteral(with)
+	if len(classErrs) > 0 {
+		return nil, relocateErrors(classErrs, "with")
+	}
+	raw, present := inputs["input"]
+	result, shapeErrs := DelayPassthrough(raw, present)
+	if len(shapeErrs) > 0 {
+		return nil, shapeErrs
+	}
+	if present {
+		inputClass, _ := classifyLiteral(redactValue(raw))
+		if inputClass == ClassSecret {
+			inputClass = ClassConfidential
 		}
-		if m, ok := raw.(map[string]any); ok {
-			result = m
-		} else {
-			result = map[string]any{"value": raw}
-		}
-		if c, errs := classifyLiteral(raw); len(errs) > 0 {
-			return nil, relocateErrors(errs, "inputs.input")
-		} else {
-			class = c
-		}
+		class = maxClassification(class, inputClass)
 	}
 	return &EvalResult{
 		Outputs:        map[string]any{"result": result},
@@ -211,6 +210,23 @@ func evalDelay(with, inputs map[string]any) (*EvalResult, ErrorList) {
 		Delay:          &DelayPlan{DurationSeconds: secs},
 		Audit:          map[string]any{"durationSeconds": secs},
 	}, nil
+}
+
+// DelayPassthrough is the value a flow.delay forwards.
+// A missing input is {}. A map passes through. Any other value is wrapped
+// as {"value": raw}. The 16 KiB cap applies. This does not run
+// classifyLiteral: that check is only for literals authors write in YAML.
+func DelayPassthrough(raw any, present bool) (map[string]any, ErrorList) {
+	if !present {
+		return map[string]any{}, nil
+	}
+	if encodedBytes(raw) > MaxPortBytes {
+		return nil, ErrorList{fieldError("inputs.input", 0, 0, CodeOutputTooLarge, fmt.Sprintf("input exceeds the %d byte limit.", MaxPortBytes))}
+	}
+	if m, ok := raw.(map[string]any); ok {
+		return m, nil
+	}
+	return map[string]any{"value": raw}, nil
 }
 
 func evalDataSet(with map[string]any) (*EvalResult, ErrorList) {

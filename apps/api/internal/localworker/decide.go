@@ -38,7 +38,7 @@ func skippedPorts(in []wfstore.SkippedInput) []workflow.SkippedPort {
 	}
 	out := make([]workflow.SkippedPort, len(in))
 	for i, s := range in {
-		out[i] = workflow.SkippedPort{Port: s.Port, From: s.From}
+		out[i] = workflow.SkippedPort{Port: s.Port, From: s.From, Code: s.Code, Message: s.Message}
 	}
 	return out
 }

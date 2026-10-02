@@ -22,7 +22,7 @@ func resolveInputsTx(ctx context.Context, tx pgx.Tx, executionID, nodeID string)
 		return inputs, skipped, nil
 	}
 	rows, err := tx.Query(ctx, `
-		SELECT DISTINCT ON (node_id) node_id, node_type, input_redacted, output_redacted
+		SELECT DISTINCT ON (node_id) node_id, node_type, output_redacted
 		FROM execution_steps
 		WHERE execution_id = $1::uuid AND status = 'succeeded' AND node_id = ANY($2::text[])
 		ORDER BY node_id, attempt DESC
@@ -34,15 +34,11 @@ func resolveInputsTx(ctx context.Context, tx pgx.Tx, executionID, nodeID string)
 	snaps := map[string]succeededSnap{}
 	for rows.Next() {
 		var id, nodeType string
-		var inputRaw, outputRaw []byte
-		if err := rows.Scan(&id, &nodeType, &inputRaw, &outputRaw); err != nil {
+		var outputRaw []byte
+		if err := rows.Scan(&id, &nodeType, &outputRaw); err != nil {
 			return nil, nil, mapDBErr(err)
 		}
-		snaps[id] = succeededSnap{
-			NodeType: nodeType,
-			With:     unmarshalObject(inputRaw),
-			Output:   unmarshalObject(outputRaw),
-		}
+		snaps[id] = succeededSnap{NodeType: nodeType, Output: unmarshalObject(outputRaw)}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, nil, mapDBErr(err)

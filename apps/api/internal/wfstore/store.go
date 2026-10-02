@@ -621,11 +621,16 @@ type JobBinding struct {
 	LeaseExpiresAt    time.Time `json:"leaseExpiresAt"`
 }
 
-// SkippedInput is a worker-only port whose incoming edge did not fire.
-// From is fromNode.fromPort. The port key is absent from Inputs.
+// SkippedInput is a worker-only port whose incoming edge did not fire,
+// or a wired port the resolver could not forward. From is fromNode.fromPort.
+// The port key is absent from Inputs. Code, when set, is the failure the
+// next step reports instead of required-input. upstream-skipped leaves Code
+// empty and is derived from a required port.
 type SkippedInput struct {
-	Port string `json:"port"`
-	From string `json:"from"`
+	Port    string `json:"port"`
+	From    string `json:"from"`
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
 // DispatchResult is a job mutation plus its parent step/execution.

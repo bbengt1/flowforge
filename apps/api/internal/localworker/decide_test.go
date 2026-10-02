@@ -1,6 +1,7 @@
 package localworker
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
@@ -100,6 +101,19 @@ func TestDecideInputParity(t *testing.T) {
 	}, job, nil, []wfstore.SkippedInput{{Port: "input", From: "left.result"}})
 	if !skipped.Fail || skipped.Error["code"] != "upstream-skipped" {
 		t.Fatalf("skipped %+v", skipped)
+	}
+
+	tooBig := Decide(wfstore.ExecutionStep{
+		NodeType: "data.validate",
+		Input:    map[string]any{"schema": map[string]any{"type": "object"}},
+	}, job, nil, []wfstore.SkippedInput{{
+		Port: "value", From: "wait.result", Code: "output-too-large", Message: "wait: input exceeds the 16384 byte limit.",
+	}})
+	if !tooBig.Fail || tooBig.Error["code"] != "output-too-large" || tooBig.Error["message"] == "required-input" {
+		t.Fatalf("oversized %+v", tooBig)
+	}
+	if msg, _ := tooBig.Error["message"].(string); !strings.Contains(msg, "wait") {
+		t.Fatalf("detail %+v", tooBig.Error)
 	}
 
 	optionalSkip := Decide(wfstore.ExecutionStep{

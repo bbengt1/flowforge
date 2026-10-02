@@ -3,6 +3,7 @@ package wfstore
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -254,6 +255,131 @@ func TestPostgresResolveInputs(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+
+	t.Run("redacted http body passes through a delay", func(t *testing.T) {
+		exec := startGraph(t, ctx, store, scope, echoDelayValidateYAML)
+		call := claimNode(t, ctx, store, scope, now(), "call")
+		completeJob(t, ctx, store, scope, now(), call, map[string]any{"result": map[string]any{
+			"token": redactedMarker, "authorization": redactedMarker,
+		}})
+		recoverDelayPostgres(t, ctx, store, scope, now)
+		checked := claimNode(t, ctx, store, scope, now(), "checked")
+		got, _ := checked.Inputs["value"].(map[string]any)
+		if got["token"] != redactedMarker || got["authorization"] != redactedMarker {
+			t.Fatalf("validate input %#v", checked.Inputs)
+		}
+		if _, err := store.CancelExecution(ctx, scope, now(), exec.ID); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("oversized body through a delay names the delay", func(t *testing.T) {
+		exec := startGraph(t, ctx, store, scope, echoDelayValidateYAML)
+		call := claimNode(t, ctx, store, scope, now(), "call")
+		completeJob(t, ctx, store, scope, now(), call, map[string]any{"result": map[string]any{
+			"body": strings.Repeat("a", 20<<10),
+		}})
+		recoverDelayPostgres(t, ctx, store, scope, now)
+		checked := claimNode(t, ctx, store, scope, now(), "checked")
+		out := workflow.EvaluateStep(checked.Step.NodeType, checked.Step.Input, checked.Inputs, toPorts(checked.SkippedInputs))
+		if out.Code != workflow.CodeOutputTooLarge || !strings.Contains(out.Message, "wait") {
+			t.Fatalf("%+v", out)
+		}
+		if _, err := store.FailJob(ctx, scope, now(), JobActionInput{
+			JobID: checked.Job.ID, WorkerID: "edge-worker", FencingToken: checked.Job.FencingToken,
+			Error: map[string]any{"code": out.Code, "message": out.Message},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		failed := stepByNode(t, listSteps(t, ctx, store, scope, exec.ID), "checked")
+		if failed.Error["code"] != workflow.CodeOutputTooLarge {
+			t.Fatalf("step error %#v", failed.Error)
+		}
+		msg, _ := failed.Error["message"].(string)
+		if !strings.Contains(msg, "wait") {
+			t.Fatalf("detail %#v", failed.Error)
+		}
+	})
+
+	t.Run("oversized body through nested delays names the inner delay", func(t *testing.T) {
+		exec := startGraph(t, ctx, store, scope, nestedDelayValidateYAML)
+		call := claimNode(t, ctx, store, scope, now(), "call")
+		completeJob(t, ctx, store, scope, now(), call, map[string]any{"result": map[string]any{
+			"body": strings.Repeat("a", 20<<10),
+		}})
+		recoverDelayNodePostgres(t, ctx, store, scope, now, "inner")
+		recoverDelayNodePostgres(t, ctx, store, scope, now, "outer")
+		checked := claimNode(t, ctx, store, scope, now(), "checked")
+		out := workflow.EvaluateStep(checked.Step.NodeType, checked.Step.Input, checked.Inputs, toPorts(checked.SkippedInputs))
+		if out.Code != workflow.CodeOutputTooLarge || !strings.Contains(out.Message, "inner") {
+			t.Fatalf("%+v", out)
+		}
+		if _, err := store.FailJob(ctx, scope, now(), JobActionInput{
+			JobID: checked.Job.ID, WorkerID: "edge-worker", FencingToken: checked.Job.FencingToken,
+			Error: map[string]any{"code": out.Code, "message": out.Message},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		failed := stepByNode(t, listSteps(t, ctx, store, scope, exec.ID), "checked")
+		if failed.Error["code"] != workflow.CodeOutputTooLarge {
+			t.Fatalf("step error %#v", failed.Error)
+		}
+		msg, _ := failed.Error["message"].(string)
+		if !strings.Contains(msg, "inner") {
+			t.Fatalf("detail %#v", failed.Error)
+		}
+	})
+
+	t.Run("oversized body through a delay and an approval names the inner delay", func(t *testing.T) {
+		exec := startGraph(t, ctx, store, scope, delayApprovalValidateYAML)
+		call := claimNode(t, ctx, store, scope, now(), "call")
+		completeJob(t, ctx, store, scope, now(), call, map[string]any{"result": map[string]any{
+			"body": strings.Repeat("a", 20<<10),
+		}})
+		recoverDelayNodePostgres(t, ctx, store, scope, now, "inner")
+		gate := claimNode(t, ctx, store, scope, now(), "gate")
+		if _, err := store.WaitJob(ctx, scope, now(), WaitJobInput{JobID: gate.Job.ID, AvailableAt: now().Add(time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.ResumeWait(ctx, scope, now(), ResumeWaitInput{JobID: gate.Job.ID, Port: "approved"}); err != nil {
+			t.Fatal(err)
+		}
+		checked := claimNode(t, ctx, store, scope, now(), "checked")
+		out := workflow.EvaluateStep(checked.Step.NodeType, checked.Step.Input, checked.Inputs, toPorts(checked.SkippedInputs))
+		if out.Code != workflow.CodeOutputTooLarge || !strings.Contains(out.Message, "inner") {
+			t.Fatalf("%+v", out)
+		}
+		if _, err := store.FailJob(ctx, scope, now(), JobActionInput{
+			JobID: checked.Job.ID, WorkerID: "edge-worker", FencingToken: checked.Job.FencingToken,
+			Error: map[string]any{"code": out.Code, "message": out.Message},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		failed := stepByNode(t, listSteps(t, ctx, store, scope, exec.ID), "checked")
+		if failed.Error["code"] != workflow.CodeOutputTooLarge {
+			t.Fatalf("step error %#v", failed.Error)
+		}
+		msg, _ := failed.Error["message"].(string)
+		if !strings.Contains(msg, "inner") {
+			t.Fatalf("detail %#v", failed.Error)
+		}
+	})
+}
+
+func recoverDelayPostgres(t *testing.T, ctx context.Context, store *Postgres, scope isolation.Scope, now func() time.Time) {
+	t.Helper()
+	recoverDelayNodePostgres(t, ctx, store, scope, now, "wait")
+}
+
+func recoverDelayNodePostgres(t *testing.T, ctx context.Context, store *Postgres, scope isolation.Scope, now func() time.Time, node string) {
+	t.Helper()
+	wait := claimNode(t, ctx, store, scope, now(), node)
+	if _, err := store.WaitJob(ctx, scope, now(), WaitJobInput{JobID: wait.Job.ID, AvailableAt: now().Add(-time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecoverExpiredLeases(ctx, scope, now()); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func finishCore(t *testing.T, ctx context.Context, store *Postgres, scope isolation.Scope, now time.Time, claimed DispatchResult) {
@@ -271,7 +397,7 @@ func toPorts(in []SkippedInput) []workflow.SkippedPort {
 	}
 	out := make([]workflow.SkippedPort, len(in))
 	for i, s := range in {
-		out[i] = workflow.SkippedPort{Port: s.Port, From: s.From}
+		out[i] = workflow.SkippedPort{Port: s.Port, From: s.From, Code: s.Code, Message: s.Message}
 	}
 	return out
 }

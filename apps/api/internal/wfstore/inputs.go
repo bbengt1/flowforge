@@ -3,28 +3,27 @@ package wfstore
 import (
 	"encoding/json"
 	"sort"
+	"strings"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
 // succeededSnap is the latest succeeded attempt of one node.
-// Output is output_redacted. With is the redacted step input, which a
-// delay needs in order to evaluate duration. Plaintext output is never
-// stored here.
+// Output is output_redacted. Plaintext output is never stored here.
 type succeededSnap struct {
 	NodeType string
-	With     map[string]any
 	Output   map[string]any
 }
 
 // resolveInputs applies the wired-input rule for nodeID.
 // A satisfied edge sets inputs[to_port] from the upstream from_port.
 // An unsatisfied edge contributes nothing: the key is absent, never null,
-// and the port is recorded in skipped. flow.delay forwards Evaluate
-// result: a map passes through, a scalar is wrapped as {"value": raw},
-// and an unwired input is {}. flow.approval forwards its resolved
-// request, or {} when that port is unwired. Values are cloned. The
-// 16 KiB per-port cap stays inside Evaluate.
+// and the port is recorded in skipped. flow.delay forwards DelayPassthrough:
+// a map passes through, a scalar is wrapped as {"value": raw}, and an
+// unwired input is {}. A passthrough error is recorded on that port with
+// its own code so the next step does not report required-input.
+// flow.approval forwards its resolved request, or {} when that port is
+// unwired. Values are cloned.
 func resolveInputs(nodeID string, edges []execEdge, snaps map[string]succeededSnap) (map[string]any, []SkippedInput) {
 	return resolveSeen(nodeID, edges, snaps, map[string]bool{})
 }
@@ -52,7 +51,16 @@ func resolveSeen(nodeID string, edges []execEdge, snaps map[string]succeededSnap
 			skipped = append(skipped, SkippedInput{Port: e.ToPort, From: e.FromNode + "." + e.FromPort})
 			continue
 		}
-		value, ok := valueFrom(e, edges, snaps, stack)
+		value, ok, fail := valueFrom(e, edges, snaps, stack)
+		if fail != nil {
+			skipped = append(skipped, SkippedInput{
+				Port:    e.ToPort,
+				From:    e.FromNode + "." + e.FromPort,
+				Code:    fail.Code,
+				Message: fail.Message,
+			})
+			continue
+		}
 		if !ok || value == nil {
 			continue
 		}
@@ -67,46 +75,86 @@ func resolveSeen(nodeID string, edges []execEdge, snaps map[string]succeededSnap
 	return inputs, skipped
 }
 
+// inputFailure is a passthrough error the next step must report.
+// Code is the helper's own code. Message names the upstream node.
+type inputFailure struct {
+	Code    string
+	Message string
+}
+
 // valueFrom reads one satisfied edge. A wait node is resolved recursively
 // from its own inputs. The stack is set only here, before that recursion,
 // so the wait node's own resolveSeen still sees its upstream. A cycle
 // omits the value. Nil and missing ports are omitted so a stored
 // "false": null cannot flow. Empty string and boolean false do flow.
 // An empty object from a wait node is present: it is not a missing port.
-func valueFrom(e execEdge, edges []execEdge, snaps map[string]succeededSnap, stack map[string]bool) (any, bool) {
+// A delay passthrough error is returned so the caller records it.
+
+func valueFrom(e execEdge, edges []execEdge, snaps map[string]succeededSnap, stack map[string]bool) (any, bool, *inputFailure) {
 	snap, ok := snaps[e.FromNode]
 	if !ok {
-		return nil, false
+		return nil, false, nil
 	}
 	if snap.NodeType == "flow.delay" || snap.NodeType == "flow.approval" {
 		if stack[e.FromNode] {
-			return nil, false
+			return nil, false, nil
 		}
 		stack[e.FromNode] = true
 		defer delete(stack, e.FromNode)
-		nested, _ := resolveSeen(e.FromNode, edges, snaps, stack)
+		nested, nestedSkipped := resolveSeen(e.FromNode, edges, snaps, stack)
 		if snap.NodeType == "flow.delay" {
-			res, errs := workflow.Evaluate("flow.delay", snap.With, nested)
-			if len(errs) > 0 || res == nil || res.Outputs == nil {
-				return nil, false
+			for _, s := range nestedSkipped {
+				if s.Code != "" {
+					return nil, false, &inputFailure{Code: s.Code, Message: s.Message}
+				}
 			}
-			return cloneInputValue(res.Outputs["result"])
+			var raw any
+			present := false
+			if nested != nil {
+				raw, present = nested["input"]
+			}
+			shaped, errs := workflow.DelayPassthrough(raw, present)
+			if len(errs) > 0 {
+				return nil, false, passthroughFailure(e.FromNode, errs[0])
+			}
+			value, ok := cloneInputValue(shaped)
+			return value, ok, nil
+		}
+		for _, s := range nestedSkipped {
+			if s.Code != "" {
+				return nil, false, &inputFailure{Code: s.Code, Message: s.Message}
+			}
 		}
 		if nested != nil {
 			if value, present := nested["request"]; present && value != nil {
-				return cloneInputValue(value)
+				cloned, ok := cloneInputValue(value)
+				return cloned, ok, nil
 			}
 		}
-		return cloneInputValue(map[string]any{})
+		cloned, ok := cloneInputValue(map[string]any{})
+		return cloned, ok, nil
 	}
 	if snap.Output == nil {
-		return nil, false
+		return nil, false, nil
 	}
 	value, present := snap.Output[e.FromPort]
 	if !present || value == nil {
-		return nil, false
+		return nil, false, nil
 	}
-	return cloneInputValue(value)
+	cloned, ok := cloneInputValue(value)
+	return cloned, ok, nil
+}
+
+func passthroughFailure(nodeID string, err workflow.FieldError) *inputFailure {
+	code := err.Code
+	if code == "" {
+		code = "eval-failed"
+	}
+	msg := err.Message
+	if nodeID != "" && !strings.Contains(msg, nodeID) {
+		msg = nodeID + ": " + msg
+	}
+	return &inputFailure{Code: code, Message: msg}
 }
 
 func cloneInputValue(v any) (any, bool) {
@@ -182,7 +230,7 @@ func snapsFromSteps(steps []ExecutionStep, ids []string) map[string]succeededSna
 	}
 	out := make(map[string]succeededSnap, len(best))
 	for id, step := range best {
-		out[id] = succeededSnap{NodeType: step.NodeType, With: step.Input, Output: step.Output}
+		out[id] = succeededSnap{NodeType: step.NodeType, Output: step.Output}
 	}
 	return out
 }

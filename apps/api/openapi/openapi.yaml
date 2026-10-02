@@ -8547,7 +8547,7 @@ components:
           description: Worker-only wired inputs resolved at claim. Absent when empty.
         skippedInputs:
           type: array
-          description: Worker-only ports whose incoming edge did not fire.
+          description: Worker-only ports. An edge that did not fire is listed here. A wired port the resolver could not forward is listed here too, and code and message carry that failure.
           items:
             type: object
             additionalProperties: false
@@ -8555,6 +8555,8 @@ components:
             properties:
               port: {type: string}
               from: {type: string}
+              code: {type: string, description: "Set when a wired port could not be forwarded. Empty when the edge did not fire."}
+              message: {type: string, description: "Failure detail. Names the upstream node when a delay passthrough cannot be forwarded."}
     JobActionRequest:
       type: object
       required: [jobToken, workerId]
