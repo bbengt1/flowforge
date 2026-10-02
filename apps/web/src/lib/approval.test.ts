@@ -6,6 +6,7 @@ import { describe, it } from "node:test";
 import {
   approvalClosedExplanation,
   approvalCloseReasonSentence,
+  closedApprovalGateLines,
   approvalDecideOutcome,
   APPROVAL_WRONG_APPROVER_MESSAGE,
   canDecideApproval,
@@ -763,6 +764,42 @@ describe("approval decide 403", () => {
     assert.match(execution, /<ApprovalCloseReason/);
     assert.match(reason, /approvalClosedExplanation/);
     assert.equal(reason.includes("title="), false);
+  });
+
+  it("repeats the closed-gate sentence for expired and invalidated approvals", () => {
+    const lines = closedApprovalGateLines(
+      [
+        { status: "expired", binding: { nodeId: "gate" } },
+        { status: "invalidated", binding: { nodeId: "review" } },
+        { status: "canceled", closeReason: "run_canceled", binding: { nodeId: "other" } },
+        { status: "expired", binding: { nodeId: "  " } },
+        { status: "approved", binding: { nodeId: "done" } },
+      ],
+      "succeeded",
+    );
+    assert.deepEqual(
+      lines.map((line) => line.text),
+      [
+        "Approval gate gate: Closed because it expired before anyone decided.",
+        "Approval gate review: Closed because it was invalidated before anyone decided.",
+      ],
+    );
+    assert.equal(
+      lines.some((line) => line.text.includes("run_canceled")),
+      false,
+    );
+    const detail = readFileSync(
+      join(here, "../components/executions/ExecutionDetail.tsx"),
+      "utf8",
+    );
+    const replay = readFileSync(
+      join(here, "../components/executions/ExecutionReplay.tsx"),
+      "utf8",
+    );
+    assert.match(detail, /closedApprovalGateLines/);
+    assert.match(replay, /closedApprovalGateLines/);
+    assert.equal(detail.includes("dangerouslySetInnerHTML"), false);
+    assert.equal(replay.includes("dangerouslySetInnerHTML"), false);
   });
 
   it("wires decide controls to the outcome, not a raw problem code", () => {

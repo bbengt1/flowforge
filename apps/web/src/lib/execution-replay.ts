@@ -33,6 +33,7 @@ import {
   isSecretFieldName,
   jobStatusesForStep,
   normalizeExecutionStatus,
+  stepIoPresentation,
   stripSecretFields,
 } from "./execution.ts";
 import {
@@ -89,6 +90,8 @@ export type ReplayStepView = {
   waiting: boolean;
   current: boolean;
   outputText: string;
+  /** Failed-step error (code and message). Null when the step did not fail. */
+  errorText: string | null;
   /** Plain failed sentence for a failed approval gate. Null otherwise. */
   failureText: string | null;
 };
@@ -470,6 +473,7 @@ export function replayStepViews(
   const jobs = options.jobs ?? [];
   return steps.map((step) => {
     const durationMs = stepDurationMs(step);
+    const presented = stepIoPresentation(step);
     return {
       step,
       nodeId: step.nodeId,
@@ -486,7 +490,8 @@ export function replayStepViews(
         !terminal &&
         (waiting.has(step.nodeId) || isExecutionAwaitingApproval(step.status)),
       current: step.nodeId === current,
-      outputText: boundRedactedDisplay(step.output ?? step.error ?? step.input).text,
+      outputText: presented.outputText ?? "—",
+      errorText: presented.errorText,
       failureText: gateStepFailureCopy(step),
     };
   });

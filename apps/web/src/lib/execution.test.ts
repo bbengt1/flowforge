@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import { textMentionsHostname } from "./url-safety.ts";
 import {
@@ -75,9 +78,14 @@ import {
   isDownloadGrantExpired,
   parseDownloadGrant,
   parseExecutionArtifact,
+  executionFailureReasonText,
   executionKnowsWorkflowDeleted,
+  executionLogsAreEmpty,
+  executionStatusReasonSentence,
   parseExecutionDetail,
   readExecutionStatusReason,
+  stepFailureErrorText,
+  stepIoPresentation,
   parseExecutionJob,
   parseExecutionList,
   parseExecutionLogs,
@@ -1141,5 +1149,123 @@ describe("execution statusReason", () => {
     assert.equal(unknown?.statusReason, undefined);
     assert.equal(executionKnowsWorkflowDeleted(unknown), false);
     assert.equal(readExecutionStatusReason("workflow_deleted_extra"), "");
+  });
+
+  it("maps every known statusReason to a sentence and never echoes an unknown code", () => {
+    assert.equal(
+      executionStatusReasonSentence("requirement_unresolvable"),
+      "Failed because an approval requirement could no longer be met.",
+    );
+    assert.equal(
+      executionStatusReasonSentence("workflow_deleted"),
+      "Failed because the workflow was deleted.",
+    );
+    assert.equal(
+      executionStatusReasonSentence("no-worker"),
+      "No worker is claiming jobs.",
+    );
+    assert.equal(executionStatusReasonSentence("not-a-reason"), null);
+    assert.equal(executionStatusReasonSentence(undefined), null);
+    const fromReason = executionFailureReasonText({
+      status: "failed",
+      statusReason: "requirement_unresolvable",
+      steps: [
+        {
+          status: "failed",
+          error: { code: "requirement_unresolvable", message: "should not win" },
+        },
+      ],
+    });
+    assert.equal(
+      fromReason,
+      "Failed because an approval requirement could no longer be met.",
+    );
+    const fromStep = executionFailureReasonText({
+      status: "failed",
+      statusReason: "not-a-reason",
+      steps: [
+        {
+          status: "failed",
+          error: { code: "not-a-reason", message: "The gate could not be evaluated." },
+        },
+      ],
+    });
+    assert.equal(fromStep, "The gate could not be evaluated.");
+    assert.equal(fromStep?.includes("not-a-reason"), false);
+    assert.equal(
+      executionFailureReasonText({
+        status: "failed",
+        statusReason: "not-a-reason",
+        steps: [{ status: "failed", error: { code: "not-a-reason" } }],
+      }),
+      null,
+    );
+    assert.equal(
+      executionFailureReasonText({
+        status: "failed",
+        steps: [{ status: "succeeded", error: { message: "ignored" } }],
+      }),
+      null,
+    );
+    assert.equal(
+      executionFailureReasonText({
+        status: "queued",
+        statusReason: "no-worker",
+      }),
+      "No worker is claiming jobs.",
+    );
+    const detail = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../components/executions/ExecutionDetail.tsx"),
+      "utf8",
+    );
+    assert.match(detail, /executionFailureReasonText/);
+  });
+});
+
+describe("step output when logs are empty", () => {
+  it("shows output and a failed-step error, and keeps — when both are empty", () => {
+    const output = { applied: true, note: "<b>not html</b>" };
+    const withOutput = stepIoPresentation(
+      {
+        status: "failed",
+        output,
+        error: { code: "script_failed", message: "notify exploded", token: "hunter2" },
+      },
+      { lines: [""], text: "—" },
+    );
+    assert.equal(withOutput.logsText, null);
+    assert.match(withOutput.outputText ?? "", /"applied": true/);
+    assert.match(withOutput.outputText ?? "", /<b>not html<\/b>/);
+    assert.equal(withOutput.bodyText, withOutput.outputText);
+    assert.equal(withOutput.errorText, "script_failed: notify exploded");
+    assert.equal(withOutput.errorText?.includes("hunter2"), false);
+    assert.equal(executionLogsAreEmpty({ lines: ["", "  "], text: "\n  " }), true);
+    assert.equal(executionLogsAreEmpty({ lines: ["applied namespace"], text: "applied namespace" }), false);
+
+    const logsWin = stepIoPresentation(
+      { status: "succeeded", output: { applied: true } },
+      { lines: ["applied namespace"], text: "applied namespace" },
+    );
+    assert.equal(logsWin.bodyText, "applied namespace");
+    assert.equal(logsWin.logsText, "applied namespace");
+    assert.match(logsWin.outputText ?? "", /"applied": true/);
+
+    const empty = stepIoPresentation(
+      { status: "succeeded", output: null, error: null },
+      { lines: ["   "], text: "   " },
+    );
+    assert.equal(empty.bodyText, "—");
+    assert.equal(empty.outputText, null);
+    assert.equal(empty.errorText, null);
+    assert.equal(
+      stepFailureErrorText({ status: "succeeded", error: { code: "x", message: "y" } }),
+      null,
+    );
+    const detail = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../components/executions/ExecutionDetail.tsx"),
+      "utf8",
+    );
+    assert.match(detail, /stepIoPresentation/);
+    assert.equal(detail.includes("dangerouslySetInnerHTML"), false);
   });
 });

@@ -1004,6 +1004,45 @@ export function approvalClosedExplanation(input: {
   return null;
 }
 
+export type ClosedApprovalGateLine = {
+  nodeId: string;
+  text: string;
+};
+
+/**
+ * One line per approval gate that closed as expired or invalidated.
+ * Copy comes from approvalClosedExplanation. A missing node id is omitted.
+ */
+export function closedApprovalGateLines(
+  approvals: readonly {
+    status: string;
+    closeReason?: unknown;
+    binding?: { nodeId?: string };
+  }[],
+  runStatus?: string,
+): ClosedApprovalGateLine[] {
+  const lines: ClosedApprovalGateLine[] = [];
+  for (const approval of approvals) {
+    if (approval.status !== "expired" && approval.status !== "invalidated") {
+      continue;
+    }
+    const sentence = approvalClosedExplanation({
+      status: approval.status,
+      closeReason: approval.closeReason,
+      runStatus,
+    });
+    const nodeId = approval.binding?.nodeId?.trim() ?? "";
+    if (!sentence || !nodeId) {
+      continue;
+    }
+    lines.push({
+      nodeId,
+      text: `Approval gate ${nodeId}: ${sentence}`,
+    });
+  }
+  return lines;
+}
+
 export function approvalStatusLabel(status: ApprovalStatus): string {
   switch (status) {
     case "pending":

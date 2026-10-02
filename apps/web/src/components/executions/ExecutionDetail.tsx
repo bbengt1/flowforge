@@ -35,14 +35,17 @@ import {
 } from "@/lib/execution-contract";
 import { manualStartHref } from "@/lib/manual-start-contract";
 import { useExecutionDetailQuery } from "@/components/executions/useExecutionDetailQuery";
+import { closedApprovalGateLines } from "@/lib/approval";
 import {
   boundRedactedDisplay,
   canCancelExecution,
   downloadGrantFailureMessage,
   executionDetailDisplay,
+  executionFailureReasonText,
   isExecutionForbidden,
   isIndeterminateStatus,
   retentionStatusMessage,
+  stepIoPresentation,
 } from "@/lib/execution";
 import {
   retryCapabilityAffordance,
@@ -196,6 +199,16 @@ export function ExecutionDetail({
 
   const forbidden = isExecutionForbidden(problem);
   const view = detail && !forbidden && !denied ? executionDetailDisplay(detail) : null;
+  const failureReason = view
+    ? executionFailureReasonText({
+        status: detail?.status,
+        statusReason: detail?.statusReason,
+        steps: view.steps,
+      })
+    : null;
+  const closedGates = view
+    ? closedApprovalGateLines(approvals, detail?.status)
+    : [];
   const canCancel =
     Boolean(view) &&
     canCancelExecution({
@@ -512,6 +525,16 @@ export function ExecutionDetail({
               </div>
               <ExecutionStatusBadge status={view.header.status} />
             </div>
+            {failureReason ? (
+              <p className="mt-3 text-sm">{failureReason}</p>
+            ) : null}
+            {closedGates.length > 0 ? (
+              <ul className="mt-3 space-y-1 text-sm">
+                {closedGates.map((gate) => (
+                  <li key={gate.text}>{gate.text}</li>
+                ))}
+              </ul>
+            ) : null}
             {view.header.indeterminate ? (
               <p className="mt-3 text-sm font-semibold">
                 {executionHasSshRun(view.steps) ||
@@ -728,14 +751,16 @@ export function ExecutionDetail({
             artifacts={view.artifacts}
             selection={selection}
             onSelect={setSelection}
-            logsText={
-              selection.kind === "node"
-                ? stepLogs[
-                    view.steps.find((step) => step.nodeId === selection.id)?.id ??
-                      ""
-                  ]?.text
-                : undefined
-            }
+            logsText={(() => {
+              if (selection.kind !== "node") {
+                return undefined;
+              }
+              const step = view.steps.find((item) => item.nodeId === selection.id);
+              if (!step) {
+                return undefined;
+              }
+              return stepIoPresentation(step, stepLogs[step.id]).logsText ?? undefined;
+            })()}
           />
 
           <ExecutionApprovalState
@@ -868,6 +893,13 @@ export function ExecutionDetail({
                         {gateFailure}
                       </p>
                     ) : null}
+                    {closedGates
+                      .filter((gate) => gate.nodeId === step.nodeId)
+                      .map((gate) => (
+                        <p key={gate.text} className="mt-2 text-sm">
+                          {gate.text}
+                        </p>
+                      ))}
                     {step.workerId || step.leaseId || step.fencingToken != null ? (
                       <p className={`mt-2 font-mono text-xs ${FF_INBOX_MUTED_CLASS}`}>
                         {step.workerId ? `worker ${step.workerId}` : ""}
@@ -976,22 +1008,21 @@ export function ExecutionDetail({
                         })()
                       : null}
                     {(() => {
-                      const logs =
-                        stepLogs[step.id] ??
-                        boundRedactedDisplay(
-                          step.output ?? step.error ?? step.input,
-                        );
+                      const presented = stepIoPresentation(step, stepLogs[step.id]);
                       return (
                         <div className="mt-3">
+                          {presented.errorText ? (
+                            <p className="mb-2 text-sm">{presented.errorText}</p>
+                          ) : null}
                           <p className={`text-xs font-medium ${FF_INBOX_MUTED_CLASS}`}>
                             Bounded logs / output
                           </p>
                           <pre className={`mt-1 overflow-auto rounded-lg p-3 font-mono text-xs ${FF_INBOX_PANEL_CLASS}`}>
-                            {logs.text}
+                            {presented.bodyText}
                           </pre>
-                          {logs.truncated ? (
+                          {presented.truncated ? (
                             <p className={`mt-1 text-xs ${FF_INBOX_MUTED_CLASS}`}>
-                              Output truncated at {logs.maxBytes} characters.
+                              Output truncated at {presented.maxBytes} characters.
                             </p>
                           ) : null}
                         </div>

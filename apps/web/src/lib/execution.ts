@@ -419,6 +419,175 @@ export function readExecutionStatusReason(
     : "";
 }
 
+/** Plain sentences for every known execution statusReason. Unknown codes are omitted. */
+export const EXECUTION_STATUS_REASON_SENTENCES: Record<
+  ExecutionStatusReason,
+  string
+> = {
+  requirement_unresolvable:
+    "Failed because an approval requirement could no longer be met.",
+  workflow_deleted: "Failed because the workflow was deleted.",
+  "no-worker": "No worker is claiming jobs.",
+};
+
+/** Sentence for a known statusReason. Unknown and missing values return null. */
+export function executionStatusReasonSentence(reason: unknown): string | null {
+  const known = readExecutionStatusReason(reason);
+  if (!known) {
+    return null;
+  }
+  return EXECUTION_STATUS_REASON_SENTENCES[known];
+}
+
+function readPlainErrorParts(error: unknown): { code: string; message: string } {
+  let cleaned: unknown;
+  try {
+    cleaned = stripSecretFields(error, []);
+  } catch {
+    return { code: "", message: "" };
+  }
+  if (typeof cleaned === "string") {
+    return { code: "", message: cleaned.trim() };
+  }
+  const row = asRecord(cleaned);
+  if (!row) {
+    return { code: "", message: "" };
+  }
+  const code = typeof row.code === "string" ? row.code.trim() : "";
+  const message =
+    typeof row.message === "string"
+      ? row.message.trim()
+      : typeof row.detail === "string"
+        ? row.detail.trim()
+        : "";
+  return { code, message };
+}
+
+/**
+ * Failed-step error as plain text. A failed step with both fields reads
+ * "code: message". Succeeded steps and empty errors return null.
+ */
+export function stepFailureErrorText(step: {
+  status?: string;
+  error?: unknown;
+}): string | null {
+  if (normalizeExecutionStatus(step.status) !== "failed") {
+    return null;
+  }
+  const { code, message } = readPlainErrorParts(step.error);
+  if (code && message) {
+    return `${code}: ${message}`;
+  }
+  if (message) {
+    return message;
+  }
+  if (code) {
+    return code;
+  }
+  return null;
+}
+
+/**
+ * Run-page failure sentence. A known statusReason wins. Otherwise a failed
+ * run uses the failed step's error message. The raw reason code is never
+ * returned.
+ */
+export function executionFailureReasonText(input: {
+  status?: string;
+  statusReason?: unknown;
+  steps?: readonly { status?: string; error?: unknown }[];
+}): string | null {
+  const sentence = executionStatusReasonSentence(input.statusReason);
+  if (sentence) {
+    return sentence;
+  }
+  if (normalizeExecutionStatus(input.status) !== "failed") {
+    return null;
+  }
+  const raw =
+    typeof input.statusReason === "string" ? input.statusReason.trim() : "";
+  for (const step of input.steps ?? []) {
+    if (normalizeExecutionStatus(step.status) !== "failed") {
+      continue;
+    }
+    const message = readPlainErrorParts(step.error).message;
+    if (!message || message === raw) {
+      continue;
+    }
+    return message;
+  }
+  return null;
+}
+
+/** True when a log slice has no lines, or only blank lines. */
+export function executionLogsAreEmpty(
+  logs: { lines?: readonly string[]; text?: string } | null | undefined,
+): boolean {
+  if (!logs) {
+    return true;
+  }
+  const lines = logs.lines ?? [];
+  if (lines.some((line) => line.trim().length > 0)) {
+    return false;
+  }
+  if (lines.length > 0) {
+    return true;
+  }
+  const text = (logs.text ?? "").trim();
+  return text.length === 0 || text === "—";
+}
+
+export type StepIoPresentation = {
+  /** Real log text. Null when logs are missing or blank. */
+  logsText: string | null;
+  /** Pretty-printed redacted output. Null when output is empty. */
+  outputText: string | null;
+  /** Failed-step error. Null when the step did not fail or has no error. */
+  errorText: string | null;
+  /** Logs when present, otherwise output, otherwise "—". */
+  bodyText: string;
+  truncated: boolean;
+  maxBytes: number;
+};
+
+/**
+ * Step panel text. Empty logs fall back to the step output already on the
+ * execution. Output is not copied into the log slice. Both empty stays "—".
+ */
+export function stepIoPresentation(
+  step: { status?: string; output?: unknown; error?: unknown },
+  logs?: {
+    lines?: readonly string[];
+    text?: string;
+    truncated?: boolean;
+    maxBytes?: number;
+  } | null,
+): StepIoPresentation {
+  const output = boundRedactedDisplay(step.output);
+  const outputText =
+    output.text.trim().length > 0 && output.text.trim() !== "—"
+      ? output.text
+      : null;
+  const errorText = stepFailureErrorText(step);
+  const logsText = executionLogsAreEmpty(logs)
+    ? null
+    : (logs?.text ?? null);
+  const usingLogs = logsText != null && logsText.trim().length > 0 && logsText.trim() !== "—";
+  const shownLogs = usingLogs ? logsText : null;
+  return {
+    logsText: shownLogs,
+    outputText,
+    errorText,
+    bodyText: shownLogs ?? outputText ?? "—",
+    truncated: usingLogs
+      ? Boolean(logs?.truncated)
+      : Boolean(outputText && output.truncated),
+    maxBytes: usingLogs
+      ? (logs?.maxBytes ?? output.maxBytes)
+      : output.maxBytes,
+  };
+}
+
 /** The execution payload already says the workflow was deleted. */
 export function executionKnowsWorkflowDeleted(detail: {
   statusReason?: string;
