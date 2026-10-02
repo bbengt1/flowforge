@@ -2,6 +2,7 @@
 
 import { ExecutionStatusBadge } from "@/components/executions/ExecutionStatusBadge";
 import { WorkflowCanvas, type EditorSelection } from "@/components/workflows/WorkflowCanvas";
+import { closedApprovalGateLines } from "@/lib/approval";
 import type { ApprovalRequest } from "@/lib/approval-types";
 import {
   GRAPH_REPLAY_HELP,
@@ -29,7 +30,7 @@ import {
   replayStepViews,
   waitingApprovalNodeIds,
 } from "@/lib/execution-replay";
-import { boundRedactedDisplay } from "@/lib/execution";
+import { boundRedactedDisplay, executionLogsAreEmpty } from "@/lib/execution";
 import type { ExecutionArtifact, ExecutionDetail } from "@/lib/execution-types";
 import type { ActionLibraryEntry } from "@/lib/workflow-action-library";
 import type { WorkflowCatalog, WorkflowVersion } from "@/lib/workflow-types";
@@ -97,6 +98,14 @@ export function ExecutionReplay({
   const selectedId =
     selection.kind === "node" ? selection.id : currentNodeId;
   const selected = views.find((item) => item.nodeId === selectedId) ?? views.find((item) => item.current);
+  const closedGates = closedApprovalGateLines(approvals, detail.status);
+  const selectedGates = selected
+    ? closedGates.filter((gate) => gate.nodeId === selected.nodeId)
+    : [];
+  const selectedLogs =
+    logsText && !executionLogsAreEmpty({ text: logsText, lines: [] })
+      ? logsText
+      : null;
   const selectedArtifacts = artifacts.filter(
     (item) => item.executionStepId && selected && item.executionStepId === selected.step.id,
   );
@@ -251,17 +260,25 @@ export function ExecutionReplay({
               {selected.failureText}
             </p>
           ) : null}
+          {selected.errorText ? (
+            <p className="mt-3 text-sm">{selected.errorText}</p>
+          ) : null}
+          {selectedGates.map((gate) => (
+            <p key={gate.text} className="mt-3 text-sm">
+              {gate.text}
+            </p>
+          ))}
           <div className="mt-3">
             <p className={`text-xs font-medium ${FF_INBOX_MUTED_CLASS}`}>Safe outputs</p>
             <pre className={`mt-1 overflow-auto rounded-lg p-3 font-mono text-xs ${FF_INBOX_PANEL_CLASS}`}>
               {selected.outputText}
             </pre>
           </div>
-          {logsText ? (
+          {selectedLogs ? (
             <div className="mt-3">
               <p className={`text-xs font-medium ${FF_INBOX_MUTED_CLASS}`}>Redacted logs</p>
               <pre className={`mt-1 overflow-auto rounded-lg p-3 font-mono text-xs ${FF_INBOX_PANEL_CLASS}`}>
-                {logsText}
+                {selectedLogs}
               </pre>
             </div>
           ) : null}
