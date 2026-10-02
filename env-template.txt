@@ -191,6 +191,13 @@ PLATFORM_ADMINS=https://idp.example|admin-1
 # SCIM_BEARER_TOKEN=
 # SCIM_ISSUER=
 # SCIM_DEFAULT_ROLE=viewer
+# MFA_SECRET_KEY encrypts stored TOTP secrets. 32 bytes as base64
+# (std or URL, padded or raw) or 64 hex. Leave unset to keep MFA enroll
+# at 503. Malformed is a boot-fail and the error never prints the key.
+# Generate with: openssl rand -base64 32
+# Keep it stable. Changing or losing it makes already-enrolled factors
+# undecryptable. Apply with: docker compose up -d --force-recreate api
+# MFA_SECRET_KEY=
 
 # --- Embed assertions (E11.1 / ADV-006 / ADV-022) ---
 # Preferred: Ed25519 PKCS#8 PEM (crypto/x509.ParsePKCS8PrivateKey).
