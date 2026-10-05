@@ -8,6 +8,7 @@ import {
   formatSessionCountdown,
   isCsrfProblem,
   isStaleSessionProblem,
+  passwordChangeUnauthenticatedKeepsSession,
   parseBrowserSession,
   remainingSessionMs,
   sessionExpiryBannerState,
@@ -173,6 +174,47 @@ describe("session problem mapping", () => {
     );
     assert.equal(
       isStaleSessionProblem(problem({ status: 403, code: "forbidden" })),
+      false,
+    );
+  });
+
+  it("keeps a 401 on POST /session/password off the stale-session latch", () => {
+    const rejected = problem({
+      status: 401,
+      code: "unauthenticated",
+      detail: "Current password was not accepted.",
+    });
+    assert.equal(isStaleSessionProblem(rejected), true);
+    assert.equal(
+      passwordChangeUnauthenticatedKeepsSession(
+        "POST",
+        "/api/v1/session/password",
+        rejected,
+      ),
+      true,
+    );
+    assert.equal(
+      passwordChangeUnauthenticatedKeepsSession(
+        "POST",
+        "/api/control-plane/session/password",
+        rejected,
+      ),
+      true,
+    );
+    assert.equal(
+      passwordChangeUnauthenticatedKeepsSession(
+        "POST",
+        "/api/v1/workspaces",
+        rejected,
+      ),
+      false,
+    );
+    assert.equal(
+      passwordChangeUnauthenticatedKeepsSession(
+        "GET",
+        "/api/v1/session/password",
+        rejected,
+      ),
       false,
     );
   });

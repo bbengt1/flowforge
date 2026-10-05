@@ -1,5 +1,9 @@
 import type { ProblemDetails } from "./problem.ts";
-import { SESSION_PROBLEM_CODES } from "./session-contract.ts";
+import {
+  normalizeApiPath,
+  SESSION_PASSWORD_PATH,
+  SESSION_PROBLEM_CODES,
+} from "./session-contract.ts";
 
 export const SESSION_WARNING_MS = 5 * 60 * 1000;
 
@@ -245,6 +249,23 @@ export function isStaleSessionProblem(problem: ProblemDetails): boolean {
     problem.status === 401 &&
     problem.code === SESSION_PROBLEM_CODES.unauthenticated
   );
+}
+
+/**
+ * POST /session/password answers 401 when the current password is wrong.
+ * That rejection stays on the change-password form. It is not an expired
+ * session: do not clear chrome, do not call logout, and do not open Login.
+ */
+export function passwordChangeUnauthenticatedKeepsSession(
+  method: string,
+  instance: string,
+  problem: Pick<ProblemDetails, "status">,
+): boolean {
+  if (method.toUpperCase() !== "POST" || problem.status !== 401) {
+    return false;
+  }
+  const path = normalizeApiPath((instance.split("?")[0] ?? instance).trim());
+  return path === SESSION_PASSWORD_PATH;
 }
 
 export function isCsrfProblem(problem: ProblemDetails): boolean {

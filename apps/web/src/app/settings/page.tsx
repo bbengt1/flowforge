@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { ApiDocsLinks } from "@/components/ApiDocsLinks";
 import { ApiHealthCard } from "@/components/ApiHealthCard";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
+import { ChangePasswordAccountLink } from "@/components/session/ChangePasswordAccountLink";
 import { MfaAccountPanel } from "@/components/session/MfaAccountPanel";
 import { BootstrapSettings } from "@/components/settings/BootstrapSettings";
 import { DeveloperSettings } from "@/components/settings/DeveloperSettings";
@@ -58,6 +59,7 @@ export default async function SettingsPage() {
       />
       <BootstrapSettings />
       <MfaAccountPanel />
+      <ChangePasswordAccountLink />
       <IsolationIdentityPanel />
       <div id="health">
         <ApiHealthCard
