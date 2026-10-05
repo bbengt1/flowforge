@@ -28,12 +28,17 @@ type Store interface {
 	LookupLocalLoginByUser(ctx context.Context, userID string) (LocalLogin, error)
 	// HasLocalLogins is true when at least one local credential exists.
 	HasLocalLogins(ctx context.Context) (bool, error)
-	// InsertBootstrapLocalLogin inserts the first-run one-time credential
+	// InsertBootstrapLocalLogin inserts the first-run admin credential
 	// only when the table is empty. Never updates an existing row.
+	// must_change_password stays false; the hash may be unusable.
 	InsertBootstrapLocalLogin(ctx context.Context, userID, identifier, passwordHash string) (created bool, err error)
 	// ChangeLocalPassword replaces the hash for userID and clears
 	// must_change_password. Missing login is ErrNotFound.
 	ChangeLocalPassword(ctx context.Context, userID, passwordHash string) error
+	// RequireLocalPasswordChange sets must_change_password on an
+	// existing local login. Admin-initiated resets use this. The
+	// first-run seed does not. Missing login is ErrNotFound.
+	RequireLocalPasswordChange(ctx context.Context, userID string) error
 
 	CreateTenant(ctx context.Context, slug, name string) (Tenant, error)
 	GetTenant(ctx context.Context, id string) (Tenant, error)

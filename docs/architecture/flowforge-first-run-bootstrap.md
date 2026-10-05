@@ -2,7 +2,7 @@
 
 Status: **B.1–B.8 landed** (this page is the contract map).
 
-**Baseline:** localseed lives at `apps/api/internal/localseed` (compose / trusted-dev). Sessions are standalone `POST /login` (local email/username + password), `POST /embed/exchange` (embed), or trusted-dev `POST /session` (non-prod fail-closed). When `local_logins` is empty, first boot seeds a one-time `admin` / `admin` credential (`must_change_password`) — rotate via `POST /session/password`. That identity is **not** `PLATFORM_ADMINS`. Settings already hold session/health/OpenAPI.
+**Baseline:** localseed lives at `apps/api/internal/localseed` (compose / trusted-dev). Sessions are standalone `POST /login` (local email/username + password), `POST /embed/exchange` (embed), or trusted-dev `POST /session` (non-prod fail-closed). When `local_logins` is empty, first boot seeds identifier `admin` with no usable password. `POST /api/v1/bootstrap/admin-password` consumes a one-time setup token and sets that password before any login. That identity is **not** `PLATFORM_ADMINS`. Settings already hold session/health/OpenAPI.
 
 ---
 
@@ -11,7 +11,7 @@ Status: **B.1–B.8 landed** (this page is the contract map).
 | Constraint | Rule |
 | --- | --- |
 | Standalone only | Wizard **never** gates or appears on `/embed/v1`. This status endpoint is not an embed router. |
-| No secrets / KEK | Passwords, private keys, KEK, hashes, PEMs never enter browser, JSON responses, logs, or `localStorage`. |
+| No secrets / KEK | Passwords, private keys, KEK, hashes, and PEMs never enter the browser, JSON responses, or `localStorage`. The generated setup token is printed once on the API log; only its SHA-256 digest is stored. An operator-supplied `FLOWFORGE_SETUP_TOKEN` is not printed. |
 | ADV-021 / ADV-024 | Embed chrome from `GET /session` `session.embed` only. Membership / isolation stay grant-gated. |
 | Drafts never run | Wizard does not change publish-then-run. YAML `flowforge/v1` is unchanged. |
 | After complete | Wizard never reappears. URL / TLS / users / persistence edits live in **Settings** only. |
@@ -56,7 +56,7 @@ Do **not** auto-complete at runtime when B.3 creates the first admin or B.4 stor
 
 `GET /api/v1/bootstrap`
 
-OpenAPI: `apps/api/openapi/openapi.yaml` (`BootstrapStatus`). Same-origin web proxy: `GET /api/control-plane/bootstrap`, `POST /api/control-plane/bootstrap/persistence`, `POST /api/control-plane/bootstrap/admins`, `POST /api/control-plane/bootstrap/public-url`, and `POST /api/control-plane/bootstrap/tls`.
+OpenAPI: `apps/api/openapi/openapi.yaml` (`BootstrapStatus`, `BootstrapAdminPasswordResult`). Same-origin web proxy: `GET /api/control-plane/bootstrap`, `POST /api/control-plane/bootstrap/persistence`, `POST /api/control-plane/bootstrap/admins`, `POST /api/control-plane/bootstrap/admin-password`, `POST /api/control-plane/bootstrap/public-url`, and `POST /api/control-plane/bootstrap/tls`.
 
 ### Auth
 
@@ -108,7 +108,7 @@ TLS step offers **Create self-signedUpload PEMSkip for now**. Skip is a first-cl
 
 Incomplete **non-prod / path-2** chrome may pre-fill first-admin issuer `http://localhost`, subject `admin-1`, and public URL `http://localhost`. Fields stay editable. Persistence is unchanged. Production builds stay blank (fail-closed). Complete installs and localseed skip still do not remount the wizard.
 
-The one-time Login password stays orthogonal. Wizard chrome still does not collect, pre-fill, POST, or echo a password (B.3 `admin` is shorter than the stored-password minimum and is the Login seed only).
+The seeded admin password stays off the wizard. Wizard chrome does not collect, pre-fill, POST, or echo a password. B.3 does not accept one. The operator sets it with `POST /api/v1/bootstrap/admin-password` (path 1 and path 2) before Login.
 
 When the operator chooses **Create** or **Upload** (not Skip) and the remembered public URL is still `http://localhost` (or HTTP with hostname `localhost`, including a port), chrome re-POSTs `https://localhost` **while incomplete** (`SetPublicURL` already overwrites) and shows a loud toast: “Public URL set to https://localhost because TLS is enabled.” The toast stays mounted until it can be read; Sign in / workflows navigation is deferred. Skip does not rewrite. A non-localhost URL is never clobbered. Toast only if the URL actually changed. Never on `/embed/v1`. Never `localStorage`.
 
@@ -123,7 +123,7 @@ Prefix: `/api/v1/bootstrap/…`. CSRF on every cookie mutation (`X-CSRF-Token`).
 | Story | Method / path | Body (once) | Success | Notes |
 | --- | --- | --- | --- | --- |
 | **B.2 Persistence** (landed) | `POST /api/v1/bootstrap/persistence` | `{confirm:true}` only — **no DSN / password / `DATABASE_URL` in JSON** (process already uses `DATABASE_URL`) | `200` `BootstrapStatus`; `steps.persistence.ready=true` via `Store.SetStep` | Operator-facing check is a server-side PostgreSQL ping. Fail closed if PostgreSQL is not ready (`503`). Does not mark `complete`. Already `complete` → **`409 Conflict`** (Settings-only; not `404`). Same incomplete-install openness as B.1 GET. Same-origin proxy: `POST /api/control-plane/bootstrap/persistence`. |
-| **B.3 First admin** (landed) | `POST /api/v1/bootstrap/admins` | `{issuer, external_subject, display_name?, password?}` — optional password POST once; stored only as a bcrypt hash for `POST /login` (identifier = `external_subject`). Omit password to create identity without a local-login credential. Prefer existing identity upsert (`localseed.ProvisionAdmin` / `UpsertUser`) | `201` `BootstrapStatus`; `steps.firstAdmin.ready=true` via `Store.SetStep` | Never return password / hash / KEK. Too-short password is **`400`** and is not stored. Reject if persistence is not ready (**`409`** fail-closed order). Already `complete` → **`409 Conflict`** (Settings-only). Same incomplete-install openness as B.1/B.2. Embed sessions are `403`. CSRF required when `ff_session` is present. Create-or-binds workspace admin on the default localseed tenant/workbench (`local` / `default`, created if missing so path-2 `SEED_LOCAL_DEFAULTS=0` still has a selectable workbench after `POST /login`). `platform.administer` remains the process `PLATFORM_ADMINS` allowlist (operators should include this `issuer\|subject`). Does **not** mark `complete`. Same-origin proxy: `POST /api/control-plane/bootstrap/admins`. |
+| **B.3 First admin** (landed) | `POST /api/v1/bootstrap/admins` | `{issuer, external_subject, display_name?}` — no password. A `password` or `setup_token` field is `400` and is not stored. Prefer existing identity upsert (`localseed.ProvisionAdmin` / `UpsertUser`) | `201` `BootstrapStatus`; `steps.firstAdmin.ready=true` via `Store.SetStep` | Never return a password / hash / KEK. Reject if persistence is not ready (**`409`** fail-closed order). Already `complete` → **`409 Conflict`** (Settings-only). Same incomplete-install openness as B.1/B.2. Embed sessions are `403`. CSRF required when `ff_session` is present. Create-or-binds workspace admin on the default localseed tenant/workbench (`local` / `default`, created if missing so path-2 `SEED_LOCAL_DEFAULTS=0` still has a selectable workbench after `POST /login`). `platform.administer` remains the process `PLATFORM_ADMINS` allowlist (operators should include this `issuer\|subject`). Does **not** mark `complete`. Same-origin proxy: `POST /api/control-plane/bootstrap/admins`. The seeded `admin` password is the next row. |
 | **B.4 Public URL** (landed) | `POST /api/v1/bootstrap/public-url` | `{publicBaseUrl}` — HTTPS preferred; HTTP is allowed for local (for example `http://localhost:3000`). Origin only: no userinfo, query, fragment, or path | `200` `BootstrapStatus`; `steps.publicUrl.ready=true` via `Store.SetPublicURL` | Persist on server (`instance_bootstrap.public_base_url`). **Do not echo the URL** on this response or `GET /bootstrap` (Settings read is later). Reject if first admin is not ready (**`409`** fail-closed order). Already `complete` → **`409 Conflict`** (Settings-only). Same incomplete-install openness as B.1–B.3. Embed sessions are `403`. CSRF required when `ff_session` is present. Does **not** mark `complete`. Same-origin proxy: `POST /api/control-plane/bootstrap/public-url`. |
 | **B.5 TLS** (landed) | `POST /api/v1/bootstrap/tls` | `{action:"create-self-signed"}` **or** `{action:"upload", certPem, keyPem}` — PEM POST once | `200` `BootstrapStatus`; `steps.tls.ready=true`; `steps.tls.mode` (`self_signed` \| `uploaded`); then `Store.MarkComplete` so `complete=true` | Never return key/PEM/KEK. ACME / Let’s Encrypt is **out of scope** (`400`). Reject if public URL is not ready (**`409`** fail-closed order). Already `complete` → **`409 Conflict`** (Settings-only). Same incomplete-install openness as B.1–B.4. Embed sessions are `403`. CSRF required when `ff_session` is present. Materials are written to process `TLS_CERT_FILE` / `TLS_KEY_FILE` (`internal/tlsmaterial`, 0600, atomic replace). `instance_bootstrap` stores **status only** (`tls_ready`, `tls_mode`) — never the PEM. Missing/unwritable TLS paths → **`503`**. Same-origin proxy: `POST /api/control-plane/bootstrap/tls`. **This is the only wizard step that calls `MarkComplete`.** |
 | **B.7 Skip TLS** (landed API + chrome) | `POST /api/v1/bootstrap/tls` | `{action:"skip"}` — no PEM/key | `200` `BootstrapStatus`; `steps.tls.ready=true`; `steps.tls.mode` `skipped`; then `Store.MarkComplete` so `complete=true` | Same fail-closed gates as B.5 (public URL ready, already complete → **`409`**, embed → **`403`**). Writes **no** PEM or key; never echoes secrets. Does **not** require `TLS_CERT_FILE` / `TLS_KEY_FILE`. Skip is not a permanent lockout — Settings `#tls` can enable create/upload later. ACME still out of scope. Top-level `skipped` stays false (that flag is localseed / migrate backfill only). Wizard chrome: **Skip for now** + loud HTTP-until-Settings copy. |
@@ -131,6 +131,18 @@ Prefix: `/api/v1/bootstrap/…`. CSRF on every cookie mutation (`X-CSRF-Token`).
 Settings-only after complete: wizard mutations reject with **`409 Conflict`** when `complete` is already true. Settings later reads `GET /bootstrap` `steps.tls.ready` / `steps.tls.mode` (and other step flags) — never files, PEMs, or `public_base_url`. Further TLS / URL / user / persistence edits live under Settings (no `/api/v1/settings/…` alias in this story).
 
 Store methods: `SetStep`, `SetPublicURL`, `SetTLS`, `MarkComplete`. Private keys never enter `internal/bootstrap`.
+
+### Seeded admin password
+
+When `local_logins` is empty, boot seeds identifier `admin` (issuer `local`) with no usable password. Path 1 (localseed skip, wizard already complete) and path 2 (wizard incomplete) both require this step before any login. `POST /login` with the retired password is `401`.
+
+While the password is unset, the API stores only the SHA-256 hex of a one-time setup token in `instance_bootstrap.setup_token_hash` (migration `000041_setup_token.sql`). A generated token is printed once on the API log. `FLOWFORGE_SETUP_TOKEN`, when set, is used instead and is not printed. The plaintext is never stored and never returned. A boot without that environment variable replaces the digest.
+
+| Story | Method / path | Body (once) | Success | Notes |
+| --- | --- | --- | --- | --- |
+| **Admin password** | `POST /api/v1/bootstrap/admin-password` | `{setup_token, password}` — both password-type. Never a query parameter. | `201` `{adminPasswordSet:true, mustChangePassword:false, loginReady:true, identifier:"admin", bootstrap}` | Does not mint `ff_session`. Next step is `POST /login`, which omits `must_change_password`. Token consumed in the same transaction as the password write, with a row lock. `409` `conflict` for the race loser, an already-consumed token, setup already complete, or no admin identity. A token that does not match an outstanding digest is `401` `unauthenticated`. Per-IP limit is `429` `rate-limited` with `Retry-After` (default 10/minute). Embed is `403`. CSRF matches the other bootstrap POSTs. Standalone only. Works when the wizard is already complete. Audit event `bootstrap.admin_password_set` (no token, no password). Same-origin proxy: `POST /api/control-plane/bootstrap/admin-password`. |
+
+`must_change_password` stays for an administrator-initiated reset. After this first-run write, login is normal and product routes such as `GET /workflows` succeed. An upgraded row that still has `must_change_password` and the retired default hash is cleared on boot and must use this endpoint.
 
 ---
 
@@ -140,7 +152,7 @@ Table `instance_bootstrap` (migration `000024_instance_bootstrap.sql`; `tls_mode
 
 - Singleton `id='default'`
 - Flags: `complete`, `skipped`, `persistence_ready`, `first_admin_ready`, `public_url_ready`, `tls_ready`
-- Server-only: `public_base_url` (never in GET JSON), `tls_mode` (status enum)
+- Server-only: `public_base_url` (never in GET JSON), `tls_mode` (status enum), `setup_token_hash` (SHA-256 hex of the one-time setup token, or NULL; plaintext is never stored)
 - **No FORCE RLS** — instance substrate, like `browser_sessions`. `flowforge_app` SELECT/INSERT/UPDATE only. Not workspace-owned.
 - **TLS files:** B.5 writes the certificate and private key to `TLS_CERT_FILE` / `TLS_KEY_FILE` (same pairing as `ListenAndServeTLS`). B.7 skip writes nothing and does not require the paths. The bootstrap table never stores PEMs. Operators mount a durable volume at those paths; a process restart picks up in-process TLS. Ingress-terminated installs still persist the pair there so Settings can later report status-only metadata (`steps.tls.mode`) without reading the key. Empty TLS paths fail closed (`503`) on create/upload — do not invent database storage or a process-internal fallback when env is unset. Local compose sets explicit `/tmp/flowforge-tls/{cert,key}.pem` on the existing `/tmp` tmpfs so path-2 wizard B.5 can write (UID 65532; `tlsmaterial` mkdir). Do not copy those localhost defaults into `deploy/k8s`.
 

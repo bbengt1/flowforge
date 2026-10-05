@@ -221,10 +221,9 @@ func (m *Memory) InsertBootstrapLocalLogin(_ context.Context, userID, identifier
 		return false, ErrConflict
 	}
 	m.localLogins[userID] = localLogin{
-		userID:             userID,
-		identifier:         identifier,
-		passwordHash:       passwordHash,
-		mustChangePassword: true,
+		userID:       userID,
+		identifier:   identifier,
+		passwordHash: passwordHash,
 	}
 	m.localByID[identifier] = userID
 	return true, nil
@@ -244,6 +243,22 @@ func (m *Memory) ChangeLocalPassword(_ context.Context, userID, passwordHash str
 	}
 	login.passwordHash = passwordHash
 	login.mustChangePassword = false
+	m.localLogins[userID] = login
+	return nil
+}
+
+func (m *Memory) RequireLocalPasswordChange(_ context.Context, userID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return ErrInvalid
+	}
+	login, ok := m.localLogins[userID]
+	if !ok {
+		return ErrNotFound
+	}
+	login.mustChangePassword = true
 	m.localLogins[userID] = login
 	return nil
 }

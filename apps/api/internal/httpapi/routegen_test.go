@@ -48,6 +48,7 @@ func TestRouteTableIsRegisteredAndClassified(t *testing.T) {
 		"GET /api/v1/bootstrap",
 		"POST /api/v1/bootstrap/persistence",
 		"POST /api/v1/bootstrap/admins",
+		"POST /api/v1/bootstrap/admin-password",
 		"POST /api/v1/bootstrap/public-url",
 		"POST /api/v1/bootstrap/tls",
 		"POST /api/v1/login",

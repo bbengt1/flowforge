@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
+	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 	"github.com/bbengt1/flowforge/apps/api/internal/machine"
@@ -614,6 +615,27 @@ func TestLoadSeedLocalDefaultsGate(t *testing.T) {
 	}
 	if cfg.SeedLocalDefaults {
 		t.Fatal("explicit opt-out must disable seed")
+	}
+}
+
+func TestLoadSetupTokenFailClosed(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	t.Setenv("EMBED_AUDIENCE", "")
+	t.Setenv("APP_ENV", "development")
+	secret := "s3cret-tok"
+	t.Setenv(bootstrap.EnvSetupToken, secret)
+	_, err := loadTestConfig(t)
+	if err == nil {
+		t.Fatal("short setup token must fail closed")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("error echoed the token: %v", err)
+	}
+
+	t.Setenv(bootstrap.EnvSetupToken, "setup-token-value1")
+	if _, err := loadTestConfig(t); err != nil {
+		t.Fatal(err)
 	}
 }
 

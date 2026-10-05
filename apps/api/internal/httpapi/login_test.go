@@ -198,12 +198,20 @@ func TestBootstrapPasswordThenLocalLogin(t *testing.T) {
 	})
 
 	create := httptest.NewRecorder()
-	h.ServeHTTP(create, firstAdminRequest(`{"issuer":"https://idp.example","external_subject":"ops@example.com","password":"correct-horse"}`))
+	h.ServeHTTP(create, firstAdminRequest(`{"issuer":"https://idp.example","external_subject":"ops@example.com"}`))
 	if create.Code != http.StatusCreated {
 		t.Fatalf("bootstrap admin: %d %s", create.Code, create.Body.String())
 	}
-	if strings.Contains(create.Body.String(), "correct-horse") {
-		t.Fatal("bootstrap must not echo password")
+	user, err := store.FindUser(t.Context(), "https://idp.example", "ops@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := localauth.HashPassword("correct-horse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetLocalPassword(t.Context(), user.ID, "ops@example.com", hash); err != nil {
+		t.Fatal(err)
 	}
 
 	rec := httptest.NewRecorder()
@@ -241,7 +249,7 @@ func TestBootstrapPath2LoginListsDefaultWorkbench(t *testing.T) {
 
 	secret := "correct-horse-path2"
 	create := httptest.NewRecorder()
-	h.ServeHTTP(create, firstAdminRequest(`{"issuer":"https://idp.example","external_subject":"admin-1","display_name":"Operator","password":"`+secret+`"}`))
+	h.ServeHTTP(create, firstAdminRequest(`{"issuer":"https://idp.example","external_subject":"admin-1","display_name":"Operator"}`))
 	if create.Code != http.StatusCreated {
 		t.Fatalf("B.3: %d %s", create.Code, create.Body.String())
 	}
@@ -249,8 +257,15 @@ func TestBootstrapPath2LoginListsDefaultWorkbench(t *testing.T) {
 		t.Fatal("B.3 must not echo password")
 	}
 
-	user, err := store.UpsertUser(t.Context(), "https://idp.example", "admin-1", "Operator")
+	user, err := store.FindUser(t.Context(), "https://idp.example", "admin-1")
 	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := localauth.HashPassword(secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetLocalPassword(t.Context(), user.ID, "admin-1", hash); err != nil {
 		t.Fatal(err)
 	}
 	memberships, err := store.ListWorkspacesForUser(t.Context(), user.ID)

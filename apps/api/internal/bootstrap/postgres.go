@@ -29,7 +29,7 @@ func NewPostgres(db DB) *Postgres {
 const selectSQL = `
 	SELECT complete, skipped, persistence_ready, first_admin_ready,
 	       public_url_ready, tls_ready, public_base_url, tls_mode,
-	       completed_at, updated_at
+	       completed_at, updated_at, setup_token_hash
 	FROM instance_bootstrap
 	WHERE id = $1
 `
@@ -39,10 +39,11 @@ const selectSQL = `
 func (p *Postgres) Get(ctx context.Context) (State, error) {
 	var s State
 	var completedAt *time.Time
+	var setupHash *string
 	err := p.db.QueryRow(ctx, selectSQL, SingletonID).Scan(
 		&s.Complete, &s.Skipped, &s.PersistenceReady, &s.FirstAdminReady,
 		&s.PublicURLReady, &s.TLSReady, &s.PublicBaseURL, &s.TLSMode,
-		&completedAt, &s.UpdatedAt,
+		&completedAt, &s.UpdatedAt, &setupHash,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -51,6 +52,9 @@ func (p *Postgres) Get(ctx context.Context) (State, error) {
 		return State{}, ErrUnavailable
 	}
 	s.CompletedAt = completedAt
+	if setupHash != nil {
+		s.SetupTokenHash = *setupHash
+	}
 	if strings.TrimSpace(s.TLSMode) == "" {
 		s.TLSMode = TLSModeNone
 	}
@@ -147,6 +151,35 @@ func (p *Postgres) MarkSeedSkip(ctx context.Context, skip SeedSkip) error {
 		    updated_at = now()
 		WHERE id = $1
 	`, SingletonID, url)
+	if err != nil {
+		return ErrUnavailable
+	}
+	return nil
+}
+
+// SetSetupTokenHash stores a SHA-256 hex digest. Plaintext is rejected.
+func (p *Postgres) SetSetupTokenHash(ctx context.Context, hash string) error {
+	if !ValidSetupTokenHash(hash) {
+		return ErrInvalid
+	}
+	_, err := p.db.Exec(ctx, `
+		UPDATE instance_bootstrap
+		SET setup_token_hash = $2, updated_at = now()
+		WHERE id = $1
+	`, SingletonID, hash)
+	if err != nil {
+		return ErrUnavailable
+	}
+	return nil
+}
+
+// ClearSetupTokenHash removes any outstanding digest.
+func (p *Postgres) ClearSetupTokenHash(ctx context.Context) error {
+	_, err := p.db.Exec(ctx, `
+		UPDATE instance_bootstrap
+		SET setup_token_hash = NULL, updated_at = now()
+		WHERE id = $1
+	`, SingletonID)
 	if err != nil {
 		return ErrUnavailable
 	}

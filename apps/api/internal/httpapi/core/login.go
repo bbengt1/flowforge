@@ -65,6 +65,9 @@ func (s *Server) postLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	verified := localauth.Verify(password, cred.PasswordHash)
+	if verified && localauth.IsOneTimePassword(password) {
+		verified = false
+	}
 	if cred.User.Status != "active" {
 		s.AuditLoginRejected(r, "invalid credentials")
 		WriteProblem(w, r, http.StatusUnauthorized, CodeUnauthenticated, "Unauthenticated", InvalidCredentialsDetail)

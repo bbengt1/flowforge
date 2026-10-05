@@ -10,6 +10,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
 	"github.com/bbengt1/flowforge/apps/api/internal/vault"
 )
 
@@ -386,11 +387,11 @@ func TestEnsureBootstrapLoginSeedsOnlyWhenEmpty(t *testing.T) {
 	if login.User.Issuer != BootstrapIssuer || login.User.ExternalSubject != BootstrapSubject {
 		t.Fatalf("bootstrap user %+v", login.User)
 	}
-	if !login.MustChangePassword || login.PasswordHash == "" {
-		t.Fatalf("must_change + hash required: %+v", login)
+	if login.MustChangePassword || login.PasswordHash != localauth.UnusablePasswordHash {
+		t.Fatalf("seed must have no usable password: %+v", login)
 	}
-	if login.PasswordHash == "admin" {
-		t.Fatal("must store a hash, not the one-time password")
+	if localauth.Verify(localauth.OneTimePassword, login.PasswordHash) {
+		t.Fatal("retired password must not verify")
 	}
 	memberships, err := store.ListWorkspacesForUser(ctx, login.User.ID)
 	if err != nil {
@@ -408,7 +409,7 @@ func TestEnsureBootstrapLoginSeedsOnlyWhenEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again.PasswordHash != firstHash || !again.MustChangePassword {
+	if again.PasswordHash != firstHash || again.MustChangePassword {
 		t.Fatalf("second seed must not overwrite: %+v", again)
 	}
 }

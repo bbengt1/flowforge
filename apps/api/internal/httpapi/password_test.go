@@ -29,61 +29,65 @@ func assertNoPasswordField(t *testing.T, body string) {
 	}
 }
 
-func TestBootstrapLoginFirstSignInForcesChange(t *testing.T) {
+// adminResetPassword is a real secret used when a test needs the
+// administrator-initiated must_change_password gate. The seeded admin
+// has no usable password.
+const adminResetPassword = "temporary-pass"
+
+func seedMustChangeAdmin(t *testing.T, store *identity.Memory) {
+	t.Helper()
+	if err := localseed.EnsureBootstrapLogin(t.Context(), store, nil); err != nil {
+		t.Fatal(err)
+	}
+	cred, err := store.LookupLocalLogin(t.Context(), localauth.OneTimeIdentifier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := localauth.HashPassword(adminResetPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetLocalPassword(t.Context(), cred.User.ID, cred.Identifier, hash); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RequireLocalPasswordChange(t.Context(), cred.User.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBootstrapLoginRejectsRetiredDefault(t *testing.T) {
 	store, h := newLoginEnv(t)
 	if err := localseed.EnsureBootstrapLogin(t.Context(), store, nil); err != nil {
 		t.Fatal(err)
 	}
+	cred, err := store.LookupLocalLogin(t.Context(), "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cred.MustChangePassword || localauth.PasswordHashUsable(cred.PasswordHash) {
+		t.Fatalf("seed must have no usable password: %+v", cred)
+	}
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, loginRequest(`{"identifier":"admin","password":"admin"}`))
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("one-time login: %d %s", rec.Code, rec.Body.String())
-	}
-	if strings.Contains(rec.Body.String(), `"password":`) {
-		t.Fatal("login must not echo a password value")
+	assertProblem(t, rec, http.StatusUnauthorized, CodeUnauthenticated, "caller-request-16")
+	if !strings.Contains(rec.Body.String(), invalidCredentialsDetail) {
+		t.Fatalf("retired pair: %s", rec.Body.String())
 	}
 	assertNoPasswordField(t, rec.Body.String())
-	assertSessionCookies(t, rec, false)
-
-	var payload sessionResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
-		t.Fatal(err)
-	}
-	if !payload.Session.MustChangePassword {
-		t.Fatal("first one-time sign-in must set must_change_password")
-	}
-	if payload.Session.Embed != nil {
-		t.Fatal("login session must omit session.embed")
-	}
-	if payload.Principal.Issuer != localseed.BootstrapIssuer || payload.Principal.ExternalSubject != localseed.BootstrapSubject {
-		t.Fatalf("principal %+v", payload.Principal)
-	}
-
-	token, csrf := sessionPair(t, rec)
-	get := httptest.NewRecorder()
-	h.ServeHTTP(get, sessionAPIRequest(http.MethodGet, "/api/v1/session", "", token, csrf))
-	if get.Code != http.StatusOK {
-		t.Fatalf("GET /session: %d %s", get.Code, get.Body.String())
-	}
-	assertNoPasswordField(t, get.Body.String())
-	var current sessionResponse
-	if err := json.Unmarshal(get.Body.Bytes(), &current); err != nil {
-		t.Fatal(err)
-	}
-	if !current.Session.MustChangePassword {
-		t.Fatal("GET /session must expose must_change_password for Chloe")
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == session.CookieName && c.Value != "" && c.MaxAge != -1 {
+			t.Fatal("retired pair must not mint ff_session")
+		}
 	}
 }
 
 func TestChangePasswordClearsFlagAndKillsOneTime(t *testing.T) {
 	store, h := newLoginEnv(t)
-	if err := localseed.EnsureBootstrapLogin(t.Context(), store, nil); err != nil {
-		t.Fatal(err)
-	}
+	seedMustChangeAdmin(t, store)
 
 	login := httptest.NewRecorder()
-	h.ServeHTTP(login, loginRequest(`{"identifier":"Admin","password":"admin"}`))
+	h.ServeHTTP(login, loginRequest(`{"identifier":"Admin","password":"`+adminResetPassword+`"}`))
 	if login.Code != http.StatusCreated {
 		t.Fatalf("login: %d %s", login.Code, login.Body.String())
 	}
@@ -149,11 +153,9 @@ func TestChangePasswordClearsFlagAndKillsOneTime(t *testing.T) {
 
 func TestChangePasswordRejectsOneTimeAndReuse(t *testing.T) {
 	store, h := newLoginEnv(t)
-	if err := localseed.EnsureBootstrapLogin(t.Context(), store, nil); err != nil {
-		t.Fatal(err)
-	}
+	seedMustChangeAdmin(t, store)
 	login := httptest.NewRecorder()
-	h.ServeHTTP(login, loginRequest(`{"identifier":"admin","password":"admin"}`))
+	h.ServeHTTP(login, loginRequest(`{"identifier":"admin","password":"`+adminResetPassword+`"}`))
 	token, csrf := sessionPair(t, login)
 
 	oneTime := httptest.NewRecorder()
@@ -165,7 +167,7 @@ func TestChangePasswordRejectsOneTimeAndReuse(t *testing.T) {
 	assertNoPasswordField(t, oneTime.Body.String())
 
 	reuse := httptest.NewRecorder()
-	h.ServeHTTP(reuse, sessionAPIRequest(http.MethodPost, "/api/v1/session/password", `{"password":"admin"}`, token, csrf))
+	h.ServeHTTP(reuse, sessionAPIRequest(http.MethodPost, "/api/v1/session/password", `{"password":"`+adminResetPassword+`"}`, token, csrf))
 	assertProblem(t, reuse, http.StatusBadRequest, CodeInvalidRequest, "caller-request-16")
 
 	short := httptest.NewRecorder()
@@ -179,18 +181,16 @@ func TestChangePasswordRejectsOneTimeAndReuse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cred.MustChangePassword || !localauth.Verify(localauth.OneTimePassword, cred.PasswordHash) {
-		t.Fatal("rejected change must leave the one-time hash in place")
+	if !cred.MustChangePassword || !localauth.Verify(adminResetPassword, cred.PasswordHash) {
+		t.Fatal("rejected change must leave the must-change hash in place")
 	}
 }
 
 func TestChangePasswordRequiresCSRF(t *testing.T) {
 	store, h := newLoginEnv(t)
-	if err := localseed.EnsureBootstrapLogin(t.Context(), store, nil); err != nil {
-		t.Fatal(err)
-	}
+	seedMustChangeAdmin(t, store)
 	login := httptest.NewRecorder()
-	h.ServeHTTP(login, loginRequest(`{"identifier":"admin","password":"admin"}`))
+	h.ServeHTTP(login, loginRequest(`{"identifier":"admin","password":"`+adminResetPassword+`"}`))
 	token, _ := sessionPair(t, login)
 
 	rec := httptest.NewRecorder()
@@ -299,9 +299,7 @@ func sessionWorkspaceRequest(method, path, token, csrf string, tenant identity.T
 
 func TestMustChangePasswordBlocksAuthenticatedAPI(t *testing.T) {
 	store := identity.NewMemory()
-	if err := localseed.EnsureBootstrapLogin(t.Context(), store, nil); err != nil {
-		t.Fatal(err)
-	}
+	seedMustChangeAdmin(t, store)
 	h := NewWithDeps(Deps{
 		Store:     store,
 		Sessions:  session.NewMemory(),
@@ -311,7 +309,7 @@ func TestMustChangePasswordBlocksAuthenticatedAPI(t *testing.T) {
 	tenant, ws := bootstrapWorkspace(t, store)
 
 	login := httptest.NewRecorder()
-	h.ServeHTTP(login, loginRequest(`{"identifier":"admin","password":"admin"}`))
+	h.ServeHTTP(login, loginRequest(`{"identifier":"admin","password":"`+adminResetPassword+`"}`))
 	if login.Code != http.StatusCreated {
 		t.Fatalf("login: %d %s", login.Code, login.Body.String())
 	}
@@ -361,7 +359,7 @@ func TestMustChangePasswordBlocksAuthenticatedAPI(t *testing.T) {
 	assertProblem(t, afterLogout, http.StatusUnauthorized, CodeUnauthenticated, "caller-request-16")
 
 	login = httptest.NewRecorder()
-	h.ServeHTTP(login, loginRequest(`{"identifier":"admin","password":"admin"}`))
+	h.ServeHTTP(login, loginRequest(`{"identifier":"admin","password":"`+adminResetPassword+`"}`))
 	if login.Code != http.StatusCreated {
 		t.Fatalf("relogin: %d %s", login.Code, login.Body.String())
 	}
@@ -389,9 +387,7 @@ func TestMustChangePasswordBlocksAuthenticatedAPI(t *testing.T) {
 
 func TestMustChangePasswordDoesNotBlockIncompleteWizard(t *testing.T) {
 	store := identity.NewMemory()
-	if err := localseed.EnsureBootstrapLogin(t.Context(), store, nil); err != nil {
-		t.Fatal(err)
-	}
+	seedMustChangeAdmin(t, store)
 	h := NewWithDeps(Deps{
 		Store:     store,
 		Sessions:  session.NewMemory(),
@@ -402,7 +398,7 @@ func TestMustChangePasswordDoesNotBlockIncompleteWizard(t *testing.T) {
 	})
 
 	login := httptest.NewRecorder()
-	h.ServeHTTP(login, loginRequest(`{"identifier":"admin","password":"admin"}`))
+	h.ServeHTTP(login, loginRequest(`{"identifier":"admin","password":"`+adminResetPassword+`"}`))
 	if login.Code != http.StatusCreated {
 		t.Fatalf("login: %d %s", login.Code, login.Body.String())
 	}
@@ -430,6 +426,13 @@ func TestMustChangePasswordDoesNotBlockIncompleteWizard(t *testing.T) {
 func TestPasswordChangeGateAppliesToTrustedDevOfLocalLogin(t *testing.T) {
 	store := identity.NewMemory()
 	if err := localseed.EnsureBootstrapLogin(t.Context(), store, nil); err != nil {
+		t.Fatal(err)
+	}
+	cred, err := store.LookupLocalLogin(t.Context(), localauth.OneTimeIdentifier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RequireLocalPasswordChange(t.Context(), cred.User.ID); err != nil {
 		t.Fatal(err)
 	}
 	h := NewWithDeps(Deps{
@@ -472,8 +475,15 @@ func TestPasswordChangeGateSkipsEmbedSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := store.RequireLocalPasswordChange(t.Context(), cred.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	cred, err = store.LookupLocalLogin(t.Context(), "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !cred.MustChangePassword {
-		t.Fatal("bootstrap login must still require a password change")
+		t.Fatal("admin-initiated reset must still require a password change")
 	}
 	tenant, ws := bootstrapWorkspace(t, store)
 	issued, err := sessions.Create(t.Context(), cred.User.ID, time.Now().UTC(), 30*time.Minute, 12*time.Hour, session.CreateOpts{
@@ -512,12 +522,23 @@ func TestPasswordChangeGateFailsClosedOnLookupError(t *testing.T) {
 	if err := localseed.EnsureBootstrapLogin(t.Context(), base, nil); err != nil {
 		t.Fatal(err)
 	}
+	cred, err := base.LookupLocalLogin(t.Context(), "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := localauth.HashPassword("correct-horse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := base.SetLocalPassword(t.Context(), cred.User.ID, cred.Identifier, hash); err != nil {
+		t.Fatal(err)
+	}
 	h := NewWithDeps(Deps{
 		Store:    lookupByUserErrorStore{Memory: base, err: errors.New("db down")},
 		Sessions: session.NewMemory(),
 	})
 	login := httptest.NewRecorder()
-	h.ServeHTTP(login, loginRequest(`{"identifier":"admin","password":"admin"}`))
+	h.ServeHTTP(login, loginRequest(`{"identifier":"admin","password":"correct-horse"}`))
 	if login.Code != http.StatusCreated {
 		t.Fatalf("login: %d %s", login.Code, login.Body.String())
 	}

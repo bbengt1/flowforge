@@ -271,7 +271,7 @@ func TestMemoryBootstrapLocalLoginOnlyWhenEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.MustChangePassword || got.PasswordHash != "$2a$10$bootstrap-hash" {
+	if got.MustChangePassword || got.PasswordHash != "$2a$10$bootstrap-hash" {
 		t.Fatalf("bootstrap lookup: %+v", got)
 	}
 	other, err := store.UpsertUser(ctx, "local", "other", "Other")
@@ -289,7 +289,7 @@ func TestMemoryBootstrapLocalLoginOnlyWhenEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.PasswordHash != "$2a$10$bootstrap-hash" || !got.MustChangePassword {
+	if got.PasswordHash != "$2a$10$bootstrap-hash" || got.MustChangePassword {
 		t.Fatalf("existing credential overwritten: %+v", got)
 	}
 	if err := store.ChangeLocalPassword(ctx, user.ID, "$2a$10$rotated-hash"); err != nil {

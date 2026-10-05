@@ -111,21 +111,25 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
  `POST /api/v1/bootstrap/tls` use the same incomplete-install
  openness; after complete they are `409` (Settings-only). Persistence
  confirm is `{confirm:true}` only — never a DSN or password. First
- admin is `{issuer, external_subject, display_name?, password?}`.
- Optional `password` is POSTed once, stored only as a bcrypt hash on
- `local_logins` (identifier = `external_subject`), and is **never
- echoed**. When `local_logins` is empty (fresh / path-2 first boot),
- the API seeds a **one-time** operator identifier `admin` with
- password `admin` and `must_change_password=true`. This is not a
- permanent default and never overwrites an existing credential.
- `POST /login` verifies that hash and mints the same
- standalone `ff_session` / `ff_csrf` pair (Lax / Strict, `Path=/api/v1`)
- plus session claim `must_change_password` when the flag is set.
- `GET /session` exposes the same flag so chrome can gate Overview
- until `POST /session/password` (CSRF) replaces the hash. After
- change, `admin`/`admin` is the same `401` as unknown. Production
- still allows Login, but the same gate stays up until the one-time
- is rotated — do not leave `admin`/`admin` usable. Unknown identifier
+ admin is `{issuer, external_subject, display_name?}`. A password
+ field is `400` and is not stored.
+ `POST /api/v1/bootstrap/admin-password` sets the seeded admin
+ password. Body is `{setup_token, password}` (password-type fields,
+ never a query string). While setup is incomplete the API stores only
+ a SHA-256 digest. A generated token is printed once in the API log;
+ `FLOWFORGE_SETUP_TOKEN` is used when set and is not printed. Success
+ is `201` and does not mint a session. The token is consumed in the
+ same transaction as the password write (`409` `conflict` for a
+ consumed token, a completed setup, or the race loser; `401` when an
+ outstanding token does not match; `429` per IP). When `local_logins`
+ is empty, the API seeds identifier `admin` with no usable password.
+ It never overwrites an existing credential. There is no default
+ password that can log in. `POST /login` then mints the same
+ standalone `ff_session` / `ff_csrf` pair (Lax / Strict, `Path=/api/v1`).
+ `must_change_password` stays for an administrator-initiated reset.
+ `GET /session` exposes that flag so chrome can gate Overview until
+ `POST /session/password` (CSRF) replaces the hash. The literal
+ password `admin` is the same `401` as unknown. Unknown identifier
  and wrong password are the same `401` without
  saying which field failed. `POST /login` is rate-limited by IP
  (default 60/min) and identifier (default 30/min) **before** lookup

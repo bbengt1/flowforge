@@ -67,7 +67,10 @@ info:
       `GET /readiness` stay unauthenticated for Kubernetes probes. `GET /bootstrap` is the standalone first-run gate
       (incomplete installs may call it without a session; complete requires
       normal auth).       `POST /bootstrap/persistence` is wizard step 1 (B.2).
-      `POST /bootstrap/admins` is wizard step 2 (B.3).
+      `POST /bootstrap/admins` is wizard step 2 (B.3) and does not
+      accept a password.
+      `POST /bootstrap/admin-password` sets the seeded admin password
+      with a one-time setup token (standalone only; no session minted).
       `POST /bootstrap/public-url` is wizard step 3 (B.4).
       `POST /bootstrap/tls` is wizard step 4 (B.5 / B.7) and marks
       bootstrap complete (`create-self-signed`, `upload`, or `skip`).

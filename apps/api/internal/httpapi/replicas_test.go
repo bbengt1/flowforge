@@ -29,7 +29,7 @@ func TestReplicasRefuseMemorySession(t *testing.T) {
 	for _, name := range strings.Split(err.Error()[open+1:close], ", ") {
 		has[name] = true
 	}
-	for _, want := range []string{"session", "rate", "login-rate", "embed-rate", "machine-rate"} {
+	for _, want := range []string{"session", "rate", "login-rate", "embed-rate", "machine-rate", "setup-rate"} {
 		if !has[want] {
 			t.Fatalf("missing %s in %v", want, err)
 		}

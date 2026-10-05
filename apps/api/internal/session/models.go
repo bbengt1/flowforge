@@ -50,8 +50,12 @@ const (
 	EventOriginRejected  = "session.origin_rejected"
 	EventPrivilegeDenied = "session.privilege_denied"
 	EventAuthRejected    = "session.auth_rejected"
-	OutcomeAllowed       = "allowed"
-	OutcomeDenied        = "denied"
+	// EventBootstrapAdminPasswordSet is the first-run setup-token
+	// success. It is not a session cookie event. The reason and this
+	// type never carry the token or the password.
+	EventBootstrapAdminPasswordSet = "bootstrap.admin_password_set"
+	OutcomeAllowed                 = "allowed"
+	OutcomeDenied                  = "denied"
 )
 
 // Binding is the optional embed workspace identity stored on a session

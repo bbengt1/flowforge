@@ -34,13 +34,17 @@ const (
 	// MaxIdentifierLength matches users.external_subject.
 	MaxIdentifierLength = 256
 
-	// OneTimeIdentifier is the documented first-run operator.
+	// OneTimeIdentifier is the seeded first-run operator username.
 	// Seeded only when local_logins is empty; never overwrites.
+	// It is not a password.
 	OneTimeIdentifier = "admin"
-	// OneTimePassword is the documented first-run password. It is
-	// shorter than MinPasswordLength and is rejected as a replacement.
-	// Never log or echo this value.
+	// OneTimePassword is the retired first-run password string.
+	// It is never seeded as a usable hash. Login and both password
+	// writes reject it. Never log or echo this value.
 	OneTimePassword = "admin"
+	// UnusablePasswordHash is stored when the seeded admin has no
+	// password yet. It is not a bcrypt hash. Verify never succeeds.
+	UnusablePasswordHash = "!"
 )
 
 var dummyHash []byte
@@ -88,8 +92,15 @@ func HashPassword(password string) (string, error) {
 	return hashPassword(password)
 }
 
-// HashOneTimePassword hashes the documented first-run password without
-// applying the normal minimum length. Used only by the empty-table seed.
+// PasswordHashUsable reports whether hash is a bcrypt encoding.
+// The unusable sentinel and an empty string are not usable.
+func PasswordHashUsable(hash string) bool {
+	return strings.HasPrefix(hash, "$2a$") || strings.HasPrefix(hash, "$2b$") || strings.HasPrefix(hash, "$2y$")
+}
+
+// HashOneTimePassword hashes the retired first-run password without
+// applying the normal minimum length. Used only to recognize an
+// upgraded row. The seed does not store this hash.
 func HashOneTimePassword() (string, error) {
 	if OneTimePassword == "" || len(OneTimePassword) > MaxPasswordLength {
 		return "", ErrInvalidPassword

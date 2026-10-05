@@ -32,6 +32,12 @@ export const GENERATED_PROXY_ROUTES: readonly GeneratedProxyRoute[] = [
   },
   {
     methods: ["POST"],
+    pattern: ["bootstrap", "admin-password"],
+    auth: "public",
+    params: {},
+  },
+  {
+    methods: ["POST"],
     pattern: ["bootstrap", "public-url"],
     auth: "public",
     params: {},

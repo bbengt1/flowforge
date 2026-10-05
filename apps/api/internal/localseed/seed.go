@@ -122,11 +122,11 @@ func Hook(in Input) func(context.Context, *pgxpool.Pool) error {
 	}
 }
 
-// BootstrapLoginHook seeds the one-time admin/admin credential after
-// migrate when local_logins is empty. Runs on path-1 and path-2 first
-// boot, including production-locked processes — Login still works, but
-// GET /session exposes must_change_password so chrome can gate until
-// the operator rotates. Never overwrites an existing credential.
+// BootstrapLoginHook creates the admin identity with no usable password
+// after migrate when local_logins is empty. Runs on path-1 and path-2
+// first boot, including production-locked processes. Login stays closed
+// until POST /bootstrap/admin-password consumes the setup token.
+// Never overwrites an existing credential.
 func BootstrapLoginHook(log *slog.Logger) func(context.Context, *pgxpool.Pool) error {
 	return func(ctx context.Context, db *pgxpool.Pool) error {
 		if db == nil {
@@ -136,10 +136,11 @@ func BootstrapLoginHook(log *slog.Logger) func(context.Context, *pgxpool.Pool) e
 	}
 }
 
-// EnsureBootstrapLogin inserts identifier `admin` with the documented
-// one-time password only when zero local_logins exist. The user is
-// create-or-bound as workspace admin on local/default so first sign-in
-// has a selectable workbench. PLATFORM_ADMINS are not this identity.
+// EnsureBootstrapLogin inserts identifier `admin` with no usable
+// password only when zero local_logins exist. The user is
+// create-or-bound as workspace admin on local/default so the later
+// login has a selectable workbench. PLATFORM_ADMINS are not this
+// identity. must_change_password stays false.
 func EnsureBootstrapLogin(ctx context.Context, store identity.Store, log *slog.Logger) error {
 	if store == nil {
 		return fmt.Errorf("bootstrap login: identity store is required")
@@ -159,11 +160,7 @@ func EnsureBootstrapLogin(ctx context.Context, store identity.Store, log *slog.L
 	if err != nil {
 		return err
 	}
-	hash, err := localauth.HashOneTimePassword()
-	if err != nil {
-		return err
-	}
-	created, err := store.InsertBootstrapLocalLogin(ctx, user.ID, ident, hash)
+	created, err := store.InsertBootstrapLocalLogin(ctx, user.ID, ident, localauth.UnusablePasswordHash)
 	if err != nil {
 		if errors.Is(err, identity.ErrConflict) {
 			return nil
@@ -171,9 +168,8 @@ func EnsureBootstrapLogin(ctx context.Context, store identity.Store, log *slog.L
 		return err
 	}
 	if created {
-		logger(log).Warn("first-run local login seeded; rotate the one-time password immediately",
+		logger(log).Warn("first-run admin identity created without a password",
 			"identifier", localauth.OneTimeIdentifier,
-			"must_change_password", true,
 		)
 	}
 	return nil

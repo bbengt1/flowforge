@@ -75,6 +75,9 @@ type Deps struct {
 	// LoginLimits rate-limits POST /login before bcrypt. Separate from
 	// embed exchange so those IP budgets do not share a counter.
 	LoginLimits localauth.Limits
+	// SetupIPLimit is the per-IP budget for POST /bootstrap/admin-password.
+	// Zero uses the documented default. Negative is unlimited.
+	SetupIPLimit int
 	// Quota is the per-workspace token bucket. Zero uses documented
 	// defaults. HTTP unit tests set Unlimited. QuotaStore overrides the
 	// store; nil selects PostgreSQL when DB is a pool and memory otherwise.
@@ -428,6 +431,16 @@ func newServer(d Deps) *API {
 		ExchangePrincipal: -1,
 		MintPrincipal:     -1,
 	})
+	s.SetupIPLimit = d.SetupIPLimit
+	if s.SetupIPLimit == 0 {
+		s.SetupIPLimit = bootstrap.DefaultSetupIPLimit
+	}
+	s.SetupLimiter = embed.NewLimiter(embed.Limits{
+		Window:            bootstrap.DefaultSetupWindow,
+		ExchangeIP:        -1,
+		ExchangePrincipal: -1,
+		MintPrincipal:     -1,
+	})
 	if d.PlatformAdmins != nil {
 		s.PlatformAdmins = append([]authz.PrincipalRef(nil), d.PlatformAdmins...)
 	} else {
@@ -457,6 +470,7 @@ func newServer(d Deps) *API {
 		s.EmbedLimiter.UseShared(shared)
 		s.LoginLimiter.UseShared(shared)
 		s.MachineLimiter.UseShared(shared)
+		s.SetupLimiter.UseShared(shared)
 	}
 	if s.Quota == nil {
 		s.Quota = quota.NewMemory()
@@ -567,6 +581,9 @@ func newServer(d Deps) *API {
 	}
 	if !s.LoginLimiter.Shared() {
 		unshared = append(unshared, "login-rate")
+	}
+	if s.SetupLimiter != nil && !s.SetupLimiter.Shared() {
+		unshared = append(unshared, "setup-rate")
 	}
 	if !s.EmbedLimiter.Shared() {
 		unshared = append(unshared, "embed-rate")
