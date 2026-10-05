@@ -252,16 +252,26 @@ export function isStaleSessionProblem(problem: ProblemDetails): boolean {
 }
 
 /**
- * POST /session/password answers 401 when the current password is wrong.
- * That rejection stays on the change-password form. It is not an expired
- * session: do not clear chrome, do not call logout, and do not open Login.
+ * Jonny's #582 wrong-current detail. Any other 401 on this POST
+ * (missing session, expired cookie, generic unauthenticated) is expiry.
+ */
+export const PASSWORD_CHANGE_WRONG_CURRENT_DETAIL =
+  "Current password was not accepted.";
+
+/**
+ * Keep the browser session only when this POST rejected the current
+ * password. The detail must match that sentence exactly. Every other
+ * 401 still marks the session stale and opens Login.
  */
 export function passwordChangeUnauthenticatedKeepsSession(
   method: string,
   instance: string,
-  problem: Pick<ProblemDetails, "status">,
+  problem: Pick<ProblemDetails, "status"> & { detail?: string },
 ): boolean {
   if (method.toUpperCase() !== "POST" || problem.status !== 401) {
+    return false;
+  }
+  if (problem.detail !== PASSWORD_CHANGE_WRONG_CURRENT_DETAIL) {
     return false;
   }
   const path = normalizeApiPath((instance.split("?")[0] ?? instance).trim());

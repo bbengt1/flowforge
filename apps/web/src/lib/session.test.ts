@@ -8,6 +8,7 @@ import {
   formatSessionCountdown,
   isCsrfProblem,
   isStaleSessionProblem,
+  PASSWORD_CHANGE_WRONG_CURRENT_DETAIL,
   passwordChangeUnauthenticatedKeepsSession,
   parseBrowserSession,
   remainingSessionMs,
@@ -178,12 +179,16 @@ describe("session problem mapping", () => {
     );
   });
 
-  it("keeps a 401 on POST /session/password off the stale-session latch", () => {
+  it("keeps the session only for the wrong-current detail on POST /session/password", () => {
     const rejected = problem({
       status: 401,
       code: "unauthenticated",
-      detail: "Current password was not accepted.",
+      detail: PASSWORD_CHANGE_WRONG_CURRENT_DETAIL,
     });
+    assert.equal(
+      PASSWORD_CHANGE_WRONG_CURRENT_DETAIL,
+      "Current password was not accepted.",
+    );
     assert.equal(isStaleSessionProblem(rejected), true);
     assert.equal(
       passwordChangeUnauthenticatedKeepsSession(
@@ -215,6 +220,28 @@ describe("session problem mapping", () => {
         "/api/v1/session/password",
         rejected,
       ),
+      false,
+    );
+    for (const detail of [
+      "Authentication is required.",
+      "Session expired.",
+      `${PASSWORD_CHANGE_WRONG_CURRENT_DETAIL} `,
+      "current password was not accepted.",
+    ]) {
+      assert.equal(
+        passwordChangeUnauthenticatedKeepsSession(
+          "POST",
+          "/api/v1/session/password",
+          problem({ status: 401, code: "unauthenticated", detail }),
+        ),
+        false,
+        detail,
+      );
+    }
+    assert.equal(
+      passwordChangeUnauthenticatedKeepsSession("POST", "/api/v1/session/password", {
+        status: 401,
+      }),
       false,
     );
   });

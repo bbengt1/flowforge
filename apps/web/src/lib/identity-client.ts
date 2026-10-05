@@ -272,7 +272,7 @@ export async function fetchSameOriginProxy<T>(options: {
             echoed,
             "The control plane returned a problem response that could not be parsed.",
           );
-      // POST /session/password 401 is a wrong current password, not expiry.
+      // Keep the session only for the wrong-current detail on this POST.
       if (
         isStaleSessionProblem(problem) &&
         !passwordChangeUnauthenticatedKeepsSession(

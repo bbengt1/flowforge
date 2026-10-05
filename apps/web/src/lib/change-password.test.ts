@@ -579,4 +579,38 @@ describe("#376 Change-password chrome", () => {
     assert.equal(getSessionSnapshot().active, false);
     assert.equal(getSessionSnapshot().stale, true);
   });
+
+  it("marks the session stale when change-password 401 is not a wrong current password", async () => {
+    setActiveSession({ ...active, mustChangePassword: false });
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          type: "urn:flowforge:problem:unauthenticated",
+          title: "Unauthenticated",
+          status: 401,
+          detail: "Authentication is required.",
+          instance: "/api/v1/session/password",
+          code: "unauthenticated",
+          request_id: "req-expired",
+        }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/problem+json" },
+        },
+      )) as typeof fetch;
+
+    const result = await changeLocalPassword(FIXTURE_ROTATED, "now-secret");
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.statusCode, 401);
+      assert.equal(
+        changePasswordFailureMessage(result.statusCode, result.problem.detail),
+        CHANGE_PASSWORD_UNAUTHENTICATED,
+      );
+    }
+    const snapshot = getSessionSnapshot();
+    assert.equal(snapshot.active, false);
+    assert.equal(snapshot.stale, true);
+    assert.equal(snapshot.session.sessionId, "");
+  });
 });

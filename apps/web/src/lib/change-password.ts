@@ -12,6 +12,7 @@
  */
 
 import { LOGIN_SUCCESS_HREF } from "./local-login.ts";
+import { PASSWORD_CHANGE_WRONG_CURRENT_DETAIL } from "./session.ts";
 import { R7_HARD_LINE } from "./rewrite-embed-mount.ts";
 import { FF_ACCENT, FF_CANVAS } from "./visual-tokens.ts";
 
@@ -47,7 +48,7 @@ export const CHANGE_PASSWORD_FORCED_HELP =
 export const CHANGE_PASSWORD_CURRENT_REQUIRED = "Enter your current password.";
 /** Matches POST /session/password 401 when the current secret is wrong. */
 export const CHANGE_PASSWORD_CURRENT_REJECTED =
-  "Current password was not accepted.";
+  PASSWORD_CHANGE_WRONG_CURRENT_DETAIL;
 export const CHANGE_PASSWORD_EMBED_FORBIDDEN =
   "This password cannot be changed from an embed session.";
 export const CHANGE_PASSWORD_FAILED = "Could not change password.";
@@ -200,7 +201,7 @@ export function changePasswordFailureMessage(
   detail?: string | null,
 ): string {
   if (statusCode === 401) {
-    if (detail?.trim() === CHANGE_PASSWORD_CURRENT_REJECTED) {
+    if (detail === CHANGE_PASSWORD_CURRENT_REJECTED) {
       return CHANGE_PASSWORD_CURRENT_REJECTED;
     }
     return CHANGE_PASSWORD_UNAUTHENTICATED;
