@@ -179,7 +179,8 @@ export async function refreshSession(): Promise<IdentityClientResult<SessionPayl
 /**
  * Change the local password. Password POST once; never persist the value.
  * Pass `currentPassword` on a voluntary change. Omit it on a forced reset.
- * A 401 from this POST stays on the form and does not clear the session.
+ * A 401 stays on the form only when the detail is exactly
+ * "Current password was not accepted." Any other 401 clears the session.
  */
 export async function changeLocalPassword(
   password: string,
