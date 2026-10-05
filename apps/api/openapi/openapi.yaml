@@ -7132,7 +7132,12 @@ components:
       additionalProperties: false
       description: |
         New local-login password. POST once; never echoed. Must not
-        match the current secret or the one-time default `admin`.
+        match the current secret or the retired default `admin`.
+        `current_password` is required when `must_change_password` is
+        false. An administrator-initiated reset may omit it. A missing
+        or blank current password on a voluntary change is `400`
+        `invalid-request`. A wrong current password is `401`
+        `unauthenticated`. Neither response echoes the password.
       properties:
         password:
           type: string
@@ -7146,6 +7151,15 @@ components:
           maxLength: 72
           format: password
           description: Alias for password.
+        current_password:
+          type: string
+          maxLength: 72
+          format: password
+          description: |
+            Current password. Required when `must_change_password` is
+            false. Optional on an administrator-initiated reset; a
+            supplied value must still match the stored hash. POST once.
+            Never returned.
     CreateSessionRequest:
       type: object
       properties:

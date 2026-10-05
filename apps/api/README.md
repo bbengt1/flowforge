@@ -53,7 +53,7 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 | `GET` | `/api/v1/session` | Current browser session (cookie required). Exposes `session.must_change_password` so chrome can gate until rotation. |
 | `POST` | `/api/v1/session/refresh` | Extend idle expiry; rotate CSRF. |
 | `POST` | `/api/v1/session/logout` | Revoke session; clear cookies. |
-| `POST` | `/api/v1/session/password` | Change local-login password (CSRF). New ≠ old, ≠ the retired default, min length. Success clears `must_change_password`. Embed is `403`. Never echoes the password. |
+| `POST` | `/api/v1/session/password` | Change local-login password (CSRF). A voluntary change requires `current_password` (`400` if missing, `401` if wrong). An administrator-initiated reset (`must_change_password`) may omit it. New ≠ old, ≠ the retired default, min length. Success clears `must_change_password`. Embed is `403`. Never echoes the password. |
 | `GET` | `/api/v1/session/audit-events` | Caller's secret-free session audit events. |
 | `GET` | `/api/v1/embed/catalog` | Versioned embed SDK/contract. No auth required. Membership/isolation omitted unless the peeked session grants `workspace.administer` or `platform.administer`. `frameAncestors` always published. |
 | `GET` | `/api/v1/embed/jwks` | Public embed keys (active + overlap). |

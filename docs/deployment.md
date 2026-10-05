@@ -356,8 +356,9 @@ bootstrap POSTs: required only when `ff_session` is already present.
 `must_change_password` remains for an administrator-initiated reset.
 While that flag is set, the API allows `GET /session`,
 `POST /session/password`, and `POST /session/logout`; other
-authenticated calls return `403` `password_change_required`. The
-first-run set-password step does not set the flag.
+authenticated calls return `403` `password_change_required`. That
+reset may omit `current_password`. A voluntary change requires it.
+The first-run set-password step does not set the flag.
 
 An upgraded install whose seeded `admin` still has
 `must_change_password` and the retired default hash has that password

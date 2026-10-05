@@ -186,6 +186,153 @@ func TestChangePasswordRejectsOneTimeAndReuse(t *testing.T) {
 	}
 }
 
+func TestVoluntaryPasswordChangeRequiresCurrentPassword(t *testing.T) {
+	store, h := newLoginEnv(t)
+	const current = "correct-horse"
+	const rotated = "battery-staple"
+	const wrong = "wrong-horse"
+	seedLocalLogin(t, store, "https://idp.example", "ops@example.com", "Ops", current)
+
+	login := httptest.NewRecorder()
+	h.ServeHTTP(login, loginRequest(`{"identifier":"ops@example.com","password":"`+current+`"}`))
+	if login.Code != http.StatusCreated {
+		t.Fatalf("login: %d %s", login.Code, login.Body.String())
+	}
+	var signedIn sessionResponse
+	if err := json.Unmarshal(login.Body.Bytes(), &signedIn); err != nil {
+		t.Fatal(err)
+	}
+	if signedIn.Session.MustChangePassword {
+		t.Fatal("voluntary session must not have must_change_password")
+	}
+	token, csrf := sessionPair(t, login)
+
+	missing := httptest.NewRecorder()
+	h.ServeHTTP(missing, sessionAPIRequest(http.MethodPost, "/api/v1/session/password", `{"password":"`+rotated+`"}`, token, csrf))
+	assertProblem(t, missing, http.StatusBadRequest, CodeInvalidRequest, "caller-request-16")
+	if !strings.Contains(missing.Body.String(), currentPasswordRequiredDetail) {
+		t.Fatalf("missing current: %s", missing.Body.String())
+	}
+	assertNoPasswordField(t, missing.Body.String())
+	if strings.Contains(missing.Body.String(), rotated) || strings.Contains(missing.Body.String(), current) {
+		t.Fatal("400 must not echo a password")
+	}
+
+	blank := httptest.NewRecorder()
+	h.ServeHTTP(blank, sessionAPIRequest(http.MethodPost, "/api/v1/session/password", `{"password":"`+rotated+`","current_password":""}`, token, csrf))
+	assertProblem(t, blank, http.StatusBadRequest, CodeInvalidRequest, "caller-request-16")
+	if !strings.Contains(blank.Body.String(), currentPasswordRequiredDetail) {
+		t.Fatalf("blank current: %s", blank.Body.String())
+	}
+
+	bad := httptest.NewRecorder()
+	h.ServeHTTP(bad, sessionAPIRequest(http.MethodPost, "/api/v1/session/password", `{"password":"`+rotated+`","current_password":"`+wrong+`"}`, token, csrf))
+	assertProblem(t, bad, http.StatusUnauthorized, CodeUnauthenticated, "caller-request-16")
+	if !strings.Contains(bad.Body.String(), currentPasswordRejectedDetail) {
+		t.Fatalf("wrong current: %s", bad.Body.String())
+	}
+	assertNoPasswordField(t, bad.Body.String())
+	if strings.Contains(bad.Body.String(), wrong) || strings.Contains(bad.Body.String(), rotated) || strings.Contains(bad.Body.String(), current) {
+		t.Fatal("401 must not echo a password")
+	}
+
+	cred, err := store.LookupLocalLogin(t.Context(), "ops@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cred.MustChangePassword || !localauth.Verify(current, cred.PasswordHash) {
+		t.Fatal("rejected voluntary change must leave the current hash")
+	}
+
+	okRec := httptest.NewRecorder()
+	h.ServeHTTP(okRec, sessionAPIRequest(http.MethodPost, "/api/v1/session/password", `{"new_password":"`+rotated+`","current_password":"`+current+`"}`, token, csrf))
+	if okRec.Code != http.StatusOK {
+		t.Fatalf("voluntary change: %d %s", okRec.Code, okRec.Body.String())
+	}
+	assertNoPasswordField(t, okRec.Body.String())
+	if strings.Contains(okRec.Body.String(), rotated) || strings.Contains(okRec.Body.String(), current) {
+		t.Fatal("success must not echo a password")
+	}
+	var after sessionResponse
+	if err := json.Unmarshal(okRec.Body.Bytes(), &after); err != nil {
+		t.Fatal(err)
+	}
+	if after.Session.MustChangePassword {
+		t.Fatal("voluntary change must not set must_change_password")
+	}
+
+	stale := httptest.NewRecorder()
+	h.ServeHTTP(stale, loginRequest(`{"identifier":"ops@example.com","password":"`+current+`"}`))
+	assertProblem(t, stale, http.StatusUnauthorized, CodeUnauthenticated, "caller-request-16")
+
+	next := httptest.NewRecorder()
+	h.ServeHTTP(next, loginRequest(`{"identifier":"ops@example.com","password":"`+rotated+`"}`))
+	if next.Code != http.StatusCreated {
+		t.Fatalf("rotated login: %d %s", next.Code, next.Body.String())
+	}
+	var rotatedPayload sessionResponse
+	if err := json.Unmarshal(next.Body.Bytes(), &rotatedPayload); err != nil {
+		t.Fatal(err)
+	}
+	if rotatedPayload.Session.MustChangePassword {
+		t.Fatal("rotated password must not require another change")
+	}
+}
+
+func TestForcedPasswordChangeOmitsCurrentPassword(t *testing.T) {
+	store, h := newLoginEnv(t)
+	seedMustChangeAdmin(t, store)
+
+	login := httptest.NewRecorder()
+	h.ServeHTTP(login, loginRequest(`{"identifier":"admin","password":"`+adminResetPassword+`"}`))
+	if login.Code != http.StatusCreated {
+		t.Fatalf("login: %d %s", login.Code, login.Body.String())
+	}
+	var signedIn sessionResponse
+	if err := json.Unmarshal(login.Body.Bytes(), &signedIn); err != nil {
+		t.Fatal(err)
+	}
+	if !signedIn.Session.MustChangePassword {
+		t.Fatal("forced reset must expose must_change_password")
+	}
+	token, csrf := sessionPair(t, login)
+	const rotated = "correct-horse"
+
+	wrong := httptest.NewRecorder()
+	h.ServeHTTP(wrong, sessionAPIRequest(http.MethodPost, "/api/v1/session/password", `{"password":"`+rotated+`","current_password":"wrong-horse"}`, token, csrf))
+	assertProblem(t, wrong, http.StatusUnauthorized, CodeUnauthenticated, "caller-request-16")
+	if !strings.Contains(wrong.Body.String(), currentPasswordRejectedDetail) {
+		t.Fatalf("wrong current on reset: %s", wrong.Body.String())
+	}
+	if strings.Contains(wrong.Body.String(), "wrong-horse") || strings.Contains(wrong.Body.String(), rotated) {
+		t.Fatal("401 must not echo a password")
+	}
+	cred, err := store.LookupLocalLogin(t.Context(), "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cred.MustChangePassword || !localauth.Verify(adminResetPassword, cred.PasswordHash) {
+		t.Fatal("rejected reset must leave the temporary hash")
+	}
+
+	change := httptest.NewRecorder()
+	h.ServeHTTP(change, sessionAPIRequest(http.MethodPost, "/api/v1/session/password", `{"password":"`+rotated+`"}`, token, csrf))
+	if change.Code != http.StatusOK {
+		t.Fatalf("forced change: %d %s", change.Code, change.Body.String())
+	}
+	assertNoPasswordField(t, change.Body.String())
+	if strings.Contains(change.Body.String(), rotated) || strings.Contains(change.Body.String(), adminResetPassword) {
+		t.Fatal("success must not echo a password")
+	}
+	var after sessionResponse
+	if err := json.Unmarshal(change.Body.Bytes(), &after); err != nil {
+		t.Fatal(err)
+	}
+	if after.Session.MustChangePassword {
+		t.Fatal("forced change must clear must_change_password")
+	}
+}
+
 func TestChangePasswordRequiresCSRF(t *testing.T) {
 	store, h := newLoginEnv(t)
 	seedMustChangeAdmin(t, store)
