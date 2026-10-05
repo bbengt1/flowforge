@@ -52,7 +52,7 @@ func main() {
 		_ = observability.Shutdown(ctx)
 	}()
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadRunner()
 	if err != nil {
 		log.Error("runner configuration is invalid")
 		os.Exit(1)
@@ -62,9 +62,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	userID, issuer, subject := runnerIdentity()
+	userID, issuer, subject, err := runner.ResolveIdentity(runner.IdentityConfig{
+		ProductionLocked: authz.ProductionLocked(appEnv, requireTLS),
+		UserID:           os.Getenv("RUNNER_USER_ID"),
+		Issuer:           os.Getenv("RUNNER_ISSUER"),
+		Subject:          os.Getenv("RUNNER_SUBJECT"),
+		PlatformAdmins:   os.Getenv(authz.EnvPlatformAdmins),
+		PlatformAdmin:    os.Getenv(authz.EnvPlatformAdmin),
+	})
+	if err != nil {
+		log.Error("production runner refused to start without an explicit identity", "error", err)
+		os.Exit(1)
+	}
 	if userID == "" && (issuer == "" || subject == "") {
-		log.Error("production runner identity is required (RUNNER_USER_ID or RUNNER_ISSUER/RUNNER_SUBJECT or PLATFORM_ADMINS)")
+		log.Error("production runner identity is required (RUNNER_USER_ID or RUNNER_ISSUER and RUNNER_SUBJECT)")
 		os.Exit(1)
 	}
 	workerID := strings.TrimSpace(os.Getenv("WORKER_ID"))
@@ -141,20 +152,6 @@ func waitReady(ctx context.Context, pool *postgres.Pool) error {
 		case <-ticker.C:
 		}
 	}
-}
-
-func runnerIdentity() (userID, issuer, subject string) {
-	userID = strings.TrimSpace(os.Getenv("RUNNER_USER_ID"))
-	issuer = strings.TrimSpace(os.Getenv("RUNNER_ISSUER"))
-	subject = strings.TrimSpace(os.Getenv("RUNNER_SUBJECT"))
-	if userID != "" || (issuer != "" && subject != "") {
-		return userID, issuer, subject
-	}
-	admins := authz.ParsePlatformAdmins(os.Getenv(authz.EnvPlatformAdmins), os.Getenv(authz.EnvPlatformAdmin))
-	if len(admins) == 0 {
-		return userID, issuer, subject
-	}
-	return "", admins[0].Issuer, admins[0].Subject
 }
 
 func durationEnv(name string, fallback time.Duration) time.Duration {

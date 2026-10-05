@@ -51,7 +51,8 @@ data:
   POSTGRES_SSLMODE: "require"
   # Exact UI origins only. Empty = fail-closed for foreign Origin.
   # CORS_ALLOWED_ORIGINS: "https://app.example.com"
-  # Required durable EMBED_SIGNING_KEY lives on the Secret (boot-fail if missing).
+  # Required durable EMBED_SIGNING_KEY lives on the Secret (API boot-fail if missing).
+  # /usr/local/bin/runner does not load that key.
   # Required issuer allowlists. Empty = fail-closed (403 on embed/Portal mint and exchange).
   # EMBED_ISSUER: "https://idp.example"
   # EMBED_ISSUER_ALLOWLIST: "https://host-a.example,https://host-b.example"

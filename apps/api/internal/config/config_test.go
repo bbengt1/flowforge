@@ -237,6 +237,62 @@ func TestLoadProductionMissingSigningKeyFails(t *testing.T) {
 	}
 }
 
+func TestLoadRunnerIgnoresEmbedSigningKey(t *testing.T) {
+	requireHMACSecrets(t)
+	for _, key := range []string{
+		"EMBED_SIGNING_KEY",
+		"EMBED_SIGNING_KEY_FILE",
+		"EMBED_AUDIENCE",
+		"EMBED_ISSUER",
+		"EMBED_ISSUER_ALLOWLIST",
+		"EMBED_OVERLAP_KEYS",
+		"REQUIRE_TLS",
+		"FLOWFORGE_ENV",
+		"TRUSTED_DEV_IDENTITY_HEADERS",
+		"SEED_LOCAL_DEFAULTS",
+		"PUBLIC_BASE_URL",
+		"CREDENTIAL_KEK",
+		"CREDENTIAL_KEK_FILE",
+		"KMS_PROVIDER",
+		"MFA_SECRET_KEY",
+		"SCIM_BEARER_TOKEN",
+		"SCIM_ISSUER",
+		"OIDC_ISSUER",
+		"OIDC_CLIENT_ID",
+		"OIDC_CLIENT_SECRET",
+		"OIDC_REDIRECT_URI",
+		"OIDC_STATE_KEY",
+		"ARTIFACT_S3_ENDPOINT",
+		"ARTIFACT_S3_BUCKET",
+		"ARTIFACT_S3_ACCESS_KEY_ID",
+		"ARTIFACT_S3_SECRET_ACCESS_KEY",
+		"ARTIFACT_S3_SESSION_TOKEN",
+		"ARTIFACT_S3_SSE",
+		"ARTIFACT_S3_SSE_KMS_KEY_ID",
+		"ARTIFACT_S3_PREFIX",
+		"ARTIFACT_S3_CREATE_BUCKET",
+		"ARTIFACT_S3_USE_PATH_STYLE",
+	} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("EMBED_SIGNING_KEY", "not-an-ed25519-key")
+	t.Setenv("EMBED_OVERLAP_KEYS", "not-json")
+	t.Setenv("EMBED_AUDIENCE", "someone-else")
+	t.Setenv("EMBED_ISSUER", "http://idp.example")
+
+	cfg, err := LoadRunner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.EmbedKeys.Ready() {
+		t.Fatal("runner must not load embed signing material")
+	}
+	if _, err := Load(); err == nil {
+		t.Fatal("API load must still refuse a missing or invalid EMBED_SIGNING_KEY")
+	}
+}
+
 func TestLoadMergesSharedHostAllowlist(t *testing.T) {
 	t.Setenv("EMBED_SIGNING_KEY", "")
 	t.Setenv("EMBED_SIGNING_KEY_FILE", "")

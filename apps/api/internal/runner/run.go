@@ -26,11 +26,41 @@ type Config struct {
 
 // Runner claims jobs and dispatches them through Dispatcher.
 type Runner struct {
-	queue Queue
-	disp  *Dispatcher
-	cfg   Config
-	log   *slog.Logger
-	now   func() time.Time
+	queue    Queue
+	disp     *Dispatcher
+	cfg      Config
+	log      *slog.Logger
+	now      func() time.Time
+	bindings bindingLog
+}
+
+// bindingSource is optional. StoreQueue records it during Workspaces.
+type bindingSource interface {
+	BindingView() (BindingView, bool)
+}
+
+// bindingLog remembers the last membership counts so an unbound
+// principal warns once, then again only when those counts change.
+type bindingLog struct {
+	seen        bool
+	memberships int
+	claimable   int
+}
+
+func (b *bindingLog) observe(log *slog.Logger, view BindingView) {
+	if b.seen && b.memberships == view.Memberships && b.claimable == view.Claimable {
+		return
+	}
+	b.seen = true
+	b.memberships = view.Memberships
+	b.claimable = view.Claimable
+	if view.Claimable > 0 {
+		return
+	}
+	log.Warn("runner identity has no workspace binding that allows claiming",
+		"claimable", view.Claimable,
+		"memberships", view.Memberships,
+	)
 }
 
 // NewRunner returns a poll loop. now defaults to time.Now.
@@ -155,6 +185,11 @@ func (r *Runner) PollOnce(ctx context.Context) (int, error) {
 	items, err := r.queue.Workspaces(ctx)
 	if err != nil {
 		return 0, err
+	}
+	if src, ok := r.queue.(bindingSource); ok {
+		if view, ok := src.BindingView(); ok {
+			r.bindings.observe(r.log, view)
+		}
 	}
 	claimed := 0
 	for _, ws := range items {
