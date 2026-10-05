@@ -72,7 +72,11 @@ export const SESSION_PROBLEM_CODES = {
   staleSession: "stale-session",
   csrfRequired: "csrf-required",
   csrfInvalid: "csrf-invalid",
+  passwordChangeRequired: "password_change_required",
 } as const;
+
+/** One-time admin password. JSON body only. Never a query parameter. */
+export const SESSION_ADMIN_PASSWORD_PATH = "/bootstrap/admin-password";
 
 export type SessionEstablishBody = {
   issuer: string;

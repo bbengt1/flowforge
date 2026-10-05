@@ -7,6 +7,7 @@ import type { ItemList } from "./identity-types.ts";
 import { generateRequestId, REQUEST_ID_HEADER } from "./request-id.ts";
 import { isUnauthenticatedProblem, parseBrowserSession } from "./session.ts";
 import { localLoginBody } from "./local-login.ts";
+import { adminPasswordBody, SET_PASSWORD_API_PATH } from "./set-password.ts";
 import {
   CSRF_HEADER,
   SESSION_AUDIT_PATH,
@@ -57,6 +58,31 @@ export async function loginWithPassword(
     rememberSessionPayload(result.data);
   }
   return result;
+}
+
+/** One-time admin password. Body is setup_token + password. Does not mint a session. */
+export async function setAdminPassword(input: {
+  setupToken: string;
+  password: string;
+}): Promise<IdentityClientResult<unknown>> {
+  const requestId = generateRequestId();
+  const body = adminPasswordBody(input.setupToken, input.password);
+  const headers: Record<string, string> = {
+    Accept: "application/json, application/problem+json",
+    "Content-Type": "application/json",
+    [REQUEST_ID_HEADER]: requestId,
+  };
+  const token = resolveCsrfToken();
+  if (token) {
+    attachCsrfHeader(headers, token);
+  }
+  return fetchSameOriginProxy<unknown>({
+    instance: SET_PASSWORD_API_PATH,
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+    requestId,
+  });
 }
 
 export async function establishSession(

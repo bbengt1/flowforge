@@ -42,6 +42,7 @@ const FIELD_SURFACES = [
   "src/components/credentials/DeleteImpactDialog.tsx",
   "src/components/session/LoginChrome.tsx",
   "src/components/session/ChangePasswordChrome.tsx",
+  "src/components/session/SetPasswordChrome.tsx",
   "src/components/session/MfaChrome.tsx",
   "src/components/bootstrap/FirstRunWizard.tsx",
   "src/components/membership/IdentityBootstrap.tsx",

@@ -323,7 +323,7 @@ describe("session-embed-contract", () => {
     assert.doesNotMatch(EMBED_EXCHANGE_HELP, /Part of #/);
     assert.doesNotMatch(EMBED_VERIFIED_HELP, /Part of #/);
     assert.match(EMBED_CHROME_MISSING_SESSION_MESSAGE, /not chrome authority/);
-    assert.doesNotMatch(gate, /LoginChrome|FirstRunWizard|ChangePasswordChrome/);
-    assert.doesNotMatch(chrome, /LoginChrome|FirstRunWizard|ChangePasswordChrome/);
+    assert.doesNotMatch(gate, /LoginChrome|FirstRunWizard|ChangePasswordChrome|SetPasswordChrome/);
+    assert.doesNotMatch(chrome, /LoginChrome|FirstRunWizard|ChangePasswordChrome|SetPasswordChrome/);
   });
 });

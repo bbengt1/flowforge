@@ -220,6 +220,15 @@ export function formatSessionCountdown(
   return `Expires in ${seconds}s`;
 }
 
+export function isPasswordChangeRequiredProblem(
+  problem: Pick<ProblemDetails, "code" | "status">,
+): boolean {
+  return (
+    problem.status === 403 &&
+    problem.code === SESSION_PROBLEM_CODES.passwordChangeRequired
+  );
+}
+
 export function isUnauthenticatedProblem(problem: ProblemDetails): boolean {
   return (
     problem.status === 401 &&

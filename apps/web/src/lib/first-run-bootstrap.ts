@@ -59,6 +59,7 @@ export const FIRST_RUN_BOOTSTRAP_BRIEF =
 export const BOOTSTRAP_STATUS_PATH = "/bootstrap";
 export const BOOTSTRAP_PERSISTENCE_PATH = "/bootstrap/persistence";
 export const BOOTSTRAP_ADMINS_PATH = "/bootstrap/admins";
+export const BOOTSTRAP_ADMIN_PASSWORD_PATH = "/bootstrap/admin-password";
 export const BOOTSTRAP_PUBLIC_URL_PATH = "/bootstrap/public-url";
 export const BOOTSTRAP_TLS_PATH = "/bootstrap/tls";
 
@@ -204,6 +205,7 @@ export const WIZARD_STALE_SESSION_HELP =
 export const BOOTSTRAP_WIZARD_MUTATION_PATHS = [
   BOOTSTRAP_PERSISTENCE_PATH,
   BOOTSTRAP_ADMINS_PATH,
+  BOOTSTRAP_ADMIN_PASSWORD_PATH,
   BOOTSTRAP_PUBLIC_URL_PATH,
   BOOTSTRAP_TLS_PATH,
 ] as const;

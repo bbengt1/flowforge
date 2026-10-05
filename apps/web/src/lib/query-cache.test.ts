@@ -194,7 +194,7 @@ describe("query cache conventions", () => {
       /localStorage|sessionStorage|persistQueryClient|dehydrate/,
     );
     assert.match(layout, /QueryProvider/);
-    assert.doesNotMatch(layout, /LoginChrome|ChangePasswordChrome|FirstRunWizard/);
+    assert.doesNotMatch(layout, /LoginChrome|ChangePasswordChrome|SetPasswordChrome|FirstRunWizard/);
     const names = Object.keys({
       ...pkg.dependencies,
       ...pkg.devDependencies,

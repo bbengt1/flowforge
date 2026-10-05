@@ -147,7 +147,7 @@ describe("G.3.9 zinc chrome on design tokens", () => {
     assert.match(layout, /data-ff-tokens=\{FF_SHELL_ROOT_VALUE\}/);
     assert.match(layout, /data-ff-theme=\{colorTheme\(cookieStore\.get\(THEME_COOKIE\)\?\.value\)\}/);
     assert.match(layout, /colorTheme=\{colorTheme\(cookieStore\.get\(THEME_COOKIE\)\?\.value\)\}/);
-    assert.doesNotMatch(layout, /LoginChrome|ChangePasswordChrome|FirstRunWizard/);
+    assert.doesNotMatch(layout, /LoginChrome|ChangePasswordChrome|SetPasswordChrome|FirstRunWizard/);
     assert.match(shell, /<ThemePreferenceControl theme=\{colorTheme\} \/>/);
     const embedBranchStart = shell.indexOf("const shell = embed ? (");
     const embedBranchEnd = shell.indexOf(") : (", embedBranchStart);
@@ -162,13 +162,15 @@ describe("G.3.9 zinc chrome on design tokens", () => {
     assert.match(gate, /var\(--ff-accent-foreground\)/);
     assert.match(gate, /var\(--ff-accent\)/);
     assert.match(gate, /var\(--ff-warning\)/);
-    assert.doesNotMatch(gate, /LoginChrome|FirstRunWizard|ChangePasswordChrome|ThemePreferenceControl/);
-    assert.doesNotMatch(embedChrome, /LoginChrome|FirstRunWizard|ChangePasswordChrome|ThemePreferenceControl/);
+    assert.doesNotMatch(gate, /LoginChrome|FirstRunWizard|ChangePasswordChrome|SetPasswordChrome|ThemePreferenceControl/);
+    assert.doesNotMatch(embedChrome, /LoginChrome|FirstRunWizard|ChangePasswordChrome|SetPasswordChrome|ThemePreferenceControl/);
     assert.match(source("src/components/session/LoginChrome.tsx"), /ThemePreferenceControl/);
     assert.match(source("src/components/session/ChangePasswordChrome.tsx"), /ThemePreferenceControl/);
+    assert.match(source("src/components/session/SetPasswordChrome.tsx"), /ThemePreferenceControl/);
     assert.match(source("src/components/bootstrap/FirstRunWizard.tsx"), /ThemePreferenceControl/);
     assert.equal(source("src/components/session/LoginChrome.tsx").includes("localStorage"), false);
     assert.equal(source("src/components/session/ChangePasswordChrome.tsx").includes("localStorage"), false);
+    assert.equal(source("src/components/session/SetPasswordChrome.tsx").includes("localStorage"), false);
     assert.equal(source("src/components/bootstrap/FirstRunWizard.tsx").includes("localStorage"), false);
   });
 

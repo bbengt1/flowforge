@@ -27,6 +27,7 @@
  */
 
 import { embedSourceMountsChangePassword } from "./change-password.ts";
+import { embedSourceMountsSetPassword } from "./set-password.ts";
 import { EMBED_CHROME_MISSING_SESSION_MESSAGE } from "./embed-contract.ts";
 import {
   EXPLORER_CONTEXT_MENU,
@@ -302,12 +303,17 @@ export function embedExplorerNeverMountsStandaloneDoors(input: {
     !embedSourceMountsLogin(input.embedShellBranch) &&
     !embedSourceMountsChangePassword(input.embedChrome) &&
     !embedSourceMountsChangePassword(input.embedShellBranch) &&
+    !embedSourceMountsSetPassword(input.embedChrome) &&
+    !embedSourceMountsSetPassword(input.embedShellBranch) &&
     !input.embedChrome.includes("FirstRunWizard") &&
     !input.embedShellBranch.includes("FirstRunWizard") &&
     !input.embedChrome.includes("BootstrapGate") &&
+    !input.embedChrome.includes("SetPasswordChrome") &&
     !input.embedShellBranch.includes("ChangePasswordChrome") &&
+    !input.embedShellBranch.includes("SetPasswordChrome") &&
     !input.home.includes("FirstRunWizard") &&
     !input.home.includes("ChangePasswordChrome") &&
+    !input.home.includes("SetPasswordChrome") &&
     !input.home.includes("LoginChrome") &&
     SETTINGS_WIZARD_VISUAL.wizardNeverOnEmbedV1
   );

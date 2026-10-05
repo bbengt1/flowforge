@@ -1,10 +1,13 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { LoginChrome } from "@/components/session/LoginChrome";
+import { SetPasswordChrome } from "@/components/session/SetPasswordChrome";
 import { useEmbedMode } from "@/components/embed/EmbedMode";
-import { LOGIN_SUCCESS_HREF } from "@/lib/local-login";
+import { CHANGE_PASSWORD_HREF } from "@/lib/change-password";
+import { LOGIN_HREF, LOGIN_SUCCESS_HREF } from "@/lib/local-login";
+import { decideSetPasswordChrome } from "@/lib/set-password";
 import { loadCurrentSession } from "@/lib/session-client";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 import {
@@ -19,12 +22,18 @@ type SignedOutGateProps = {
 export function SignedOutGate({ children }: SignedOutGateProps) {
   const embed = useEmbedMode();
   const router = useRouter();
+  const pathname = usePathname();
   const snapshot = useSyncExternalStore(
     subscribeSession,
     getSessionSnapshot,
     getSessionSnapshot,
   );
   const [checked, setChecked] = useState(false);
+  const signedOutChrome = decideSetPasswordChrome({
+    embed,
+    pathname,
+    sessionActive: snapshot.active,
+  });
 
   useEffect(() => {
     if (embed) {
@@ -66,6 +75,18 @@ export function SignedOutGate({ children }: SignedOutGateProps) {
   }
 
   if (!snapshot.active) {
+    if (signedOutChrome === "set-password") {
+      return (
+        <SetPasswordChrome
+          onSuccess={(href = LOGIN_HREF) => {
+            router.replace(href);
+          }}
+          onPasswordChangeRequired={(href = CHANGE_PASSWORD_HREF) => {
+            router.replace(href);
+          }}
+        />
+      );
+    }
     return (
       <LoginChrome
         onSuccess={(href = LOGIN_SUCCESS_HREF) => {
