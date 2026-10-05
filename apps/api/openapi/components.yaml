@@ -1519,6 +1519,7 @@ components:
             - artifact-unsigned
             - artifact-scan-failed
             - mfa-required
+            - password_change_required
             - workflow_has_active_executions
             - workflow_slug_reserved
             - workflow_deleted
@@ -1869,7 +1870,11 @@ components:
             True after first-run one-time local login until
             `POST /session/password` succeeds. Chloe gates Overview /
             product chrome to the change-password screen. Omitted when
-            false. Never a password or hash.
+            false. Never a password or hash. While true, an authenticated
+            call for that user other than `GET /session`, `POST /session/password`,
+            and `POST /session/logout` is `403` `password_change_required`.
+            Unauthenticated calls stay `401`. Embed-bound sessions and
+            principals with no local login are not gated.
         embed:
           $ref: "#/components/schemas/SessionEmbedBinding"
     SessionEmbedBinding:
