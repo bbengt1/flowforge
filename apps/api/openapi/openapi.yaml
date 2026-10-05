@@ -7093,7 +7093,8 @@ components:
             call for that user other than `GET /session`, `POST /session/password`,
             and `POST /session/logout` is `403` `password_change_required`.
             Unauthenticated calls stay `401`. Embed-bound sessions and
-            principals with no local login are not gated.
+            principals with no local login are not gated. The incomplete
+            first-run wizard's session check is not this gate.
         embed:
           $ref: "#/components/schemas/SessionEmbedBinding"
     SessionEmbedBinding:

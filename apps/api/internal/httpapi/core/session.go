@@ -242,6 +242,17 @@ func (s *Server) RequireSessionPrincipal(w http.ResponseWriter, r *http.Request,
 	return user, true
 }
 
+// RequireIncompleteWizardSession validates a presented ff_session for the
+// incomplete first-run wizard only. CSRF, expiry, and the embed check
+// that follows stay in force. The password-change gate does not: a
+// leftover must_change session must not stick path-2 on 403, and the
+// wizard clears cookies only on 401. Product routes must not call this.
+func (s *Server) RequireIncompleteWizardSession(w http.ResponseWriter, r *http.Request, token string) (identity.User, bool) {
+	setIncompleteWizardSessionCheck(r, true)
+	defer setIncompleteWizardSessionCheck(r, false)
+	return s.RequireSessionPrincipal(w, r, token)
+}
+
 func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 	if !s.RequireStore(w, r) || !s.RequireSessions(w, r) {
 		return
@@ -458,12 +469,31 @@ func embedSessionExempt(rec *session.Record) bool {
 	return session.NormalizeAuthMethod(rec.AuthMethod) == session.AuthMethodEmbed
 }
 
+type incompleteWizardSessionKey struct{}
+
+func setIncompleteWizardSessionCheck(r *http.Request, on bool) {
+	if r == nil {
+		return
+	}
+	*r = *r.WithContext(context.WithValue(r.Context(), incompleteWizardSessionKey{}, on))
+}
+
+func incompleteWizardSessionCheck(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	on, _ := r.Context().Value(incompleteWizardSessionKey{}).(bool)
+	return on
+}
+
 // allowPasswordChange denies authenticated product calls while the
 // caller's local login has must_change_password set. Missing local
 // login (OIDC, machine, platform, SCIM principals) is not this gate.
-// A lookup error fails closed. False means the response is written.
+// The incomplete-wizard session check is the only other skip, and it
+// is cleared before that handler returns. A lookup error fails closed.
+// False means the response is written.
 func (s *Server) allowPasswordChange(w http.ResponseWriter, r *http.Request, user identity.User, rec *session.Record) bool {
-	if passwordChangeAllowed(r) || embedSessionExempt(rec) {
+	if passwordChangeAllowed(r) || embedSessionExempt(rec) || incompleteWizardSessionCheck(r) {
 		return true
 	}
 	if s.Store == nil || strings.TrimSpace(user.ID) == "" {

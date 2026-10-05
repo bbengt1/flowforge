@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
@@ -384,6 +385,46 @@ func TestMustChangePasswordBlocksAuthenticatedAPI(t *testing.T) {
 	if strings.Contains(opened.Body.String(), "password_change_required") {
 		t.Fatalf("cleared flag must not keep gating: %s", opened.Body.String())
 	}
+}
+
+func TestMustChangePasswordDoesNotBlockIncompleteWizard(t *testing.T) {
+	store := identity.NewMemory()
+	if err := localseed.EnsureBootstrapLogin(t.Context(), store, nil); err != nil {
+		t.Fatal(err)
+	}
+	h := NewWithDeps(Deps{
+		Store:     store,
+		Sessions:  session.NewMemory(),
+		Bootstrap: bootstrap.NewMemory(),
+		DB:        readyPersistenceDB(),
+		Workflows: wfstore.NewMemory(),
+		Quota:     quota.Unlimited(),
+	})
+
+	login := httptest.NewRecorder()
+	h.ServeHTTP(login, loginRequest(`{"identifier":"admin","password":"admin"}`))
+	if login.Code != http.StatusCreated {
+		t.Fatalf("login: %d %s", login.Code, login.Body.String())
+	}
+	token, csrf := sessionPair(t, login)
+
+	wizard := httptest.NewRecorder()
+	h.ServeHTTP(wizard, sessionAPIRequest(http.MethodPost, "/api/v1/bootstrap/persistence", `{"confirm":true}`, token, csrf))
+	if wizard.Code != http.StatusOK {
+		t.Fatalf("incomplete wizard: %d %s", wizard.Code, wizard.Body.String())
+	}
+	if strings.Contains(wizard.Body.String(), CodePasswordChangeRequired) {
+		t.Fatalf("wizard must not require a password change: %s", wizard.Body.String())
+	}
+	assertNoPasswordField(t, wizard.Body.String())
+	status := decodeBootstrapStatus(t, wizard)
+	if status.Complete || !status.Incomplete || !status.Steps.Persistence.Ready {
+		t.Fatalf("wizard step must succeed while incomplete: %+v", status)
+	}
+
+	product := httptest.NewRecorder()
+	h.ServeHTTP(product, sessionAPIRequest(http.MethodGet, "/api/v1/workflows", "", token, csrf))
+	assertProblem(t, product, http.StatusForbidden, CodePasswordChangeRequired, "caller-request-16")
 }
 
 func TestPasswordChangeGateAppliesToTrustedDevOfLocalLogin(t *testing.T) {

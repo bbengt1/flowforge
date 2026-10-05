@@ -310,10 +310,12 @@ func postBootstrapTLS(s *core.Server, w http.ResponseWriter, r *http.Request) {
 
 // allowIncompleteWizard reuses B.1 incomplete openness. A presented
 // session cookie is validated (CSRF on POST). Embed-bound sessions are
-// forbidden — the wizard is standalone only.
+// forbidden — the wizard is standalone only. A leftover
+// must_change_password session is accepted here and nowhere else:
+// product routes stay 403 password_change_required.
 func allowIncompleteWizard(s *core.Server, w http.ResponseWriter, r *http.Request) bool {
 	if token := core.SessionCookieValue(r); token != "" {
-		if _, ok := s.RequireSessionPrincipal(w, r, token); !ok {
+		if _, ok := s.RequireIncompleteWizardSession(w, r, token); !ok {
 			return false
 		}
 		if core.EmbedSessionBound(r) {
