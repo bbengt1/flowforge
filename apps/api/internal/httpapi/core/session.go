@@ -188,6 +188,9 @@ func (s *Server) requireHeaderPrincipal(w http.ResponseWriter, r *http.Request) 
 		WriteForbidden(w, r)
 		return identity.User{}, false
 	}
+	if !s.allowPasswordChange(w, r, user, nil) {
+		return identity.User{}, false
+	}
 	attachPrincipal(r, user, nil, "")
 	return user, true
 }
@@ -232,8 +235,22 @@ func (s *Server) RequireSessionPrincipal(w http.ResponseWriter, r *http.Request,
 		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "Session identity does not match the supplied identity headers.")
 		return identity.User{}, false
 	}
+	if !s.allowPasswordChange(w, r, user, &rec) {
+		return identity.User{}, false
+	}
 	attachPrincipal(r, user, &rec, token)
 	return user, true
+}
+
+// RequireIncompleteWizardSession validates a presented ff_session for the
+// incomplete first-run wizard only. CSRF, expiry, and the embed check
+// that follows stay in force. The password-change gate does not: a
+// leftover must_change session must not stick path-2 on 403, and the
+// wizard clears cookies only on 401. Product routes must not call this.
+func (s *Server) RequireIncompleteWizardSession(w http.ResponseWriter, r *http.Request, token string) (identity.User, bool) {
+	setIncompleteWizardSessionCheck(r, true)
+	defer setIncompleteWizardSessionCheck(r, false)
+	return s.RequireSessionPrincipal(w, r, token)
 }
 
 func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
@@ -414,6 +431,93 @@ func (s *Server) viewSessionForUser(ctx context.Context, rec session.Record, use
 		view.MustChangePassword = s.localLoginMustChange(ctx, userID)
 	}
 	return view
+}
+
+// PasswordChangeRequiredDetail is the public 403 detail while a local
+// login still requires rotation. It never includes a password or hash.
+const PasswordChangeRequiredDetail = "Change your password before using other API routes."
+
+// passwordChangeAllowed is the session door that stays open while
+// must_change_password is set: read the session, rotate the password,
+// or log out. Logout also skips RequirePrincipal; the allowlist keeps
+// the same three routes if that changes.
+func passwordChangeAllowed(r *http.Request) bool {
+	if r == nil || r.URL == nil {
+		return false
+	}
+	switch r.URL.Path {
+	case "/api/v1/session":
+		return r.Method == http.MethodGet
+	case "/api/v1/session/password", "/api/v1/session/logout":
+		return r.Method == http.MethodPost
+	default:
+		return false
+	}
+}
+
+// embedSessionExempt reports an embed-bound session. Those sessions
+// cannot call POST /session/password (standalone only). Gating them
+// would leave /embed/v1 with no way to clear the flag. Embed exchange
+// itself never reaches this check.
+func embedSessionExempt(rec *session.Record) bool {
+	if rec == nil {
+		return false
+	}
+	if rec.Binding.Bound() {
+		return true
+	}
+	return session.NormalizeAuthMethod(rec.AuthMethod) == session.AuthMethodEmbed
+}
+
+type incompleteWizardSessionKey struct{}
+
+func setIncompleteWizardSessionCheck(r *http.Request, on bool) {
+	if r == nil {
+		return
+	}
+	*r = *r.WithContext(context.WithValue(r.Context(), incompleteWizardSessionKey{}, on))
+}
+
+func incompleteWizardSessionCheck(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	on, _ := r.Context().Value(incompleteWizardSessionKey{}).(bool)
+	return on
+}
+
+// allowPasswordChange denies authenticated product calls while the
+// caller's local login has must_change_password set. Missing local
+// login (OIDC, machine, platform, SCIM principals) is not this gate.
+// The incomplete-wizard session check is the only other skip, and it
+// is cleared before that handler returns. A lookup error fails closed.
+// False means the response is written.
+func (s *Server) allowPasswordChange(w http.ResponseWriter, r *http.Request, user identity.User, rec *session.Record) bool {
+	if passwordChangeAllowed(r) || embedSessionExempt(rec) || incompleteWizardSessionCheck(r) {
+		return true
+	}
+	if s.Store == nil || strings.TrimSpace(user.ID) == "" {
+		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "Identity store is not available.")
+		return false
+	}
+	cred, err := s.Store.LookupLocalLoginByUser(r.Context(), user.ID)
+	if err != nil {
+		if errors.Is(err, identity.ErrNotFound) {
+			return true
+		}
+		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "Identity store is not available.")
+		return false
+	}
+	if !cred.MustChangePassword {
+		return true
+	}
+	audited := session.Record{UserID: user.ID}
+	if rec != nil {
+		audited = *rec
+	}
+	s.AuditSession(r, audited, session.EventPrivilegeDenied, session.OutcomeDenied, "password change required")
+	WriteProblem(w, r, http.StatusForbidden, CodePasswordChangeRequired, "Password Change Required", PasswordChangeRequiredDetail)
+	return false
 }
 
 func (s *Server) localLoginMustChange(ctx context.Context, userID string) bool {

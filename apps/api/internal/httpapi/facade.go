@@ -35,6 +35,7 @@ const (
 	CodeMethodNotAllowed               = core.CodeMethodNotAllowed
 	CodeNotFound                       = core.CodeNotFound
 	CodePackageInstallDenied           = core.CodePackageInstallDenied
+	CodePasswordChangeRequired         = core.CodePasswordChangeRequired
 	CodeRateLimited                    = core.CodeRateLimited
 	CodeRequestTooLarge                = core.CodeRequestTooLarge
 	CodeResourceLimit                  = core.CodeResourceLimit

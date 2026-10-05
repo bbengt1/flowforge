@@ -1,16 +1,22 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
+	"github.com/bbengt1/flowforge/apps/api/internal/quota"
 	"github.com/bbengt1/flowforge/apps/api/internal/session"
+	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
 
 func assertNoPasswordField(t *testing.T, body string) {
@@ -281,4 +287,265 @@ func TestTrustedDevSessionOmitsMustChangeClaim(t *testing.T) {
 	if payload.Principal.ExternalSubject != "admin-1" {
 		t.Fatalf("trusted-dev principal %+v", payload.Principal)
 	}
+}
+
+func sessionWorkspaceRequest(method, path, token, csrf string, tenant identity.Tenant, ws identity.Workspace) *http.Request {
+	req := sessionAPIRequest(method, path, "", token, csrf)
+	req.Header.Set(headerTenantID, tenant.ID)
+	req.Header.Set(headerTenantSlug, tenant.Slug)
+	req.Header.Set(headerWorkbenchKey, ws.WorkbenchKey)
+	return req
+}
+
+func TestMustChangePasswordBlocksAuthenticatedAPI(t *testing.T) {
+	store := identity.NewMemory()
+	if err := localseed.EnsureBootstrapLogin(t.Context(), store, nil); err != nil {
+		t.Fatal(err)
+	}
+	h := NewWithDeps(Deps{
+		Store:     store,
+		Sessions:  session.NewMemory(),
+		Workflows: wfstore.NewMemory(),
+		Quota:     quota.Unlimited(),
+	})
+	tenant, ws := bootstrapWorkspace(t, store)
+
+	login := httptest.NewRecorder()
+	h.ServeHTTP(login, loginRequest(`{"identifier":"admin","password":"admin"}`))
+	if login.Code != http.StatusCreated {
+		t.Fatalf("login: %d %s", login.Code, login.Body.String())
+	}
+	token, csrf := sessionPair(t, login)
+
+	blocked := httptest.NewRecorder()
+	h.ServeHTTP(blocked, sessionWorkspaceRequest(http.MethodGet, "/api/v1/workflows", token, csrf, tenant, ws))
+	assertProblem(t, blocked, http.StatusForbidden, CodePasswordChangeRequired, "caller-request-16")
+	if !strings.Contains(blocked.Body.String(), passwordChangeRequiredDetail) {
+		t.Fatalf("detail: %s", blocked.Body.String())
+	}
+	assertNoPasswordField(t, blocked.Body.String())
+
+	anon := httptest.NewRecorder()
+	anonReq := httptest.NewRequest(http.MethodGet, "/api/v1/workflows", nil)
+	anonReq.Header.Set(headerTenantID, tenant.ID)
+	anonReq.Header.Set(headerTenantSlug, tenant.Slug)
+	anonReq.Header.Set(headerWorkbenchKey, ws.WorkbenchKey)
+	anonReq.Header.Set(RequestIDHeader, "caller-request-16")
+	h.ServeHTTP(anon, anonReq)
+	assertProblem(t, anon, http.StatusUnauthorized, CodeUnauthenticated, "caller-request-16")
+
+	refresh := httptest.NewRecorder()
+	h.ServeHTTP(refresh, sessionAPIRequest(http.MethodPost, "/api/v1/session/refresh", "", token, csrf))
+	assertProblem(t, refresh, http.StatusForbidden, CodePasswordChangeRequired, "caller-request-16")
+
+	get := httptest.NewRecorder()
+	h.ServeHTTP(get, sessionAPIRequest(http.MethodGet, "/api/v1/session", "", token, csrf))
+	if get.Code != http.StatusOK {
+		t.Fatalf("GET /session: %d %s", get.Code, get.Body.String())
+	}
+	var current sessionResponse
+	if err := json.Unmarshal(get.Body.Bytes(), &current); err != nil {
+		t.Fatal(err)
+	}
+	if !current.Session.MustChangePassword {
+		t.Fatal("GET /session must stay open and keep must_change_password")
+	}
+
+	logout := httptest.NewRecorder()
+	h.ServeHTTP(logout, sessionAPIRequest(http.MethodPost, "/api/v1/session/logout", "", token, csrf))
+	if logout.Code != http.StatusNoContent {
+		t.Fatalf("logout: %d %s", logout.Code, logout.Body.String())
+	}
+	afterLogout := httptest.NewRecorder()
+	h.ServeHTTP(afterLogout, sessionAPIRequest(http.MethodGet, "/api/v1/session", "", token, csrf))
+	assertProblem(t, afterLogout, http.StatusUnauthorized, CodeUnauthenticated, "caller-request-16")
+
+	login = httptest.NewRecorder()
+	h.ServeHTTP(login, loginRequest(`{"identifier":"admin","password":"admin"}`))
+	if login.Code != http.StatusCreated {
+		t.Fatalf("relogin: %d %s", login.Code, login.Body.String())
+	}
+	token, csrf = sessionPair(t, login)
+	blocked = httptest.NewRecorder()
+	h.ServeHTTP(blocked, sessionWorkspaceRequest(http.MethodGet, "/api/v1/workflows", token, csrf, tenant, ws))
+	assertProblem(t, blocked, http.StatusForbidden, CodePasswordChangeRequired, "caller-request-16")
+
+	change := httptest.NewRecorder()
+	h.ServeHTTP(change, sessionAPIRequest(http.MethodPost, "/api/v1/session/password", `{"password":"correct-horse"}`, token, csrf))
+	if change.Code != http.StatusOK {
+		t.Fatalf("change-password: %d %s", change.Code, change.Body.String())
+	}
+	assertNoPasswordField(t, change.Body.String())
+
+	opened := httptest.NewRecorder()
+	h.ServeHTTP(opened, sessionWorkspaceRequest(http.MethodGet, "/api/v1/workflows", token, csrf, tenant, ws))
+	if opened.Code != http.StatusOK {
+		t.Fatalf("workflows after change: %d %s", opened.Code, opened.Body.String())
+	}
+	if strings.Contains(opened.Body.String(), "password_change_required") {
+		t.Fatalf("cleared flag must not keep gating: %s", opened.Body.String())
+	}
+}
+
+func TestMustChangePasswordDoesNotBlockIncompleteWizard(t *testing.T) {
+	store := identity.NewMemory()
+	if err := localseed.EnsureBootstrapLogin(t.Context(), store, nil); err != nil {
+		t.Fatal(err)
+	}
+	h := NewWithDeps(Deps{
+		Store:     store,
+		Sessions:  session.NewMemory(),
+		Bootstrap: bootstrap.NewMemory(),
+		DB:        readyPersistenceDB(),
+		Workflows: wfstore.NewMemory(),
+		Quota:     quota.Unlimited(),
+	})
+
+	login := httptest.NewRecorder()
+	h.ServeHTTP(login, loginRequest(`{"identifier":"admin","password":"admin"}`))
+	if login.Code != http.StatusCreated {
+		t.Fatalf("login: %d %s", login.Code, login.Body.String())
+	}
+	token, csrf := sessionPair(t, login)
+
+	wizard := httptest.NewRecorder()
+	h.ServeHTTP(wizard, sessionAPIRequest(http.MethodPost, "/api/v1/bootstrap/persistence", `{"confirm":true}`, token, csrf))
+	if wizard.Code != http.StatusOK {
+		t.Fatalf("incomplete wizard: %d %s", wizard.Code, wizard.Body.String())
+	}
+	if strings.Contains(wizard.Body.String(), CodePasswordChangeRequired) {
+		t.Fatalf("wizard must not require a password change: %s", wizard.Body.String())
+	}
+	assertNoPasswordField(t, wizard.Body.String())
+	status := decodeBootstrapStatus(t, wizard)
+	if status.Complete || !status.Incomplete || !status.Steps.Persistence.Ready {
+		t.Fatalf("wizard step must succeed while incomplete: %+v", status)
+	}
+
+	product := httptest.NewRecorder()
+	h.ServeHTTP(product, sessionAPIRequest(http.MethodGet, "/api/v1/workflows", "", token, csrf))
+	assertProblem(t, product, http.StatusForbidden, CodePasswordChangeRequired, "caller-request-16")
+}
+
+func TestPasswordChangeGateAppliesToTrustedDevOfLocalLogin(t *testing.T) {
+	store := identity.NewMemory()
+	if err := localseed.EnsureBootstrapLogin(t.Context(), store, nil); err != nil {
+		t.Fatal(err)
+	}
+	h := NewWithDeps(Deps{
+		Store:    store,
+		Sessions: session.NewMemory(),
+		Security: Security{TrustIdentityHeaders: true},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/permission-matrix", nil)
+	req.Header.Set(headerIssuer, localseed.BootstrapIssuer)
+	req.Header.Set(headerSubject, localseed.BootstrapSubject)
+	req.Header.Set(RequestIDHeader, "caller-request-16")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	assertProblem(t, rec, http.StatusForbidden, CodePasswordChangeRequired, "caller-request-16")
+}
+
+func TestPasswordChangeGateSkipsPrincipalsWithoutLocalLogin(t *testing.T) {
+	store := identity.NewMemory()
+	sessions := session.NewMemory()
+	h := NewWithDeps(Deps{Store: store, Sessions: sessions})
+	_, issued := issueTestSession(t, store, sessions, "https://idp.example", "machine-1", "Machine")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, sessionAPIRequest(http.MethodGet, "/api/v1/permission-matrix", "", issued.Token, issued.CSRF))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("principal without local login: %d %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), CodePasswordChangeRequired) {
+		t.Fatalf("machine/platform principal was gated: %s", rec.Body.String())
+	}
+}
+
+func TestPasswordChangeGateSkipsEmbedSession(t *testing.T) {
+	store := identity.NewMemory()
+	if err := localseed.EnsureBootstrapLogin(t.Context(), store, nil); err != nil {
+		t.Fatal(err)
+	}
+	sessions := session.NewMemory()
+	h := NewWithDeps(Deps{Store: store, Sessions: sessions, Quota: quota.Unlimited()})
+	cred, err := store.LookupLocalLogin(t.Context(), "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cred.MustChangePassword {
+		t.Fatal("bootstrap login must still require a password change")
+	}
+	tenant, ws := bootstrapWorkspace(t, store)
+	issued, err := sessions.Create(t.Context(), cred.User.ID, time.Now().UTC(), 30*time.Minute, 12*time.Hour, session.CreateOpts{
+		AuthMethod: session.AuthMethodEmbed,
+		Binding: session.Binding{
+			TenantID:     tenant.ID,
+			WorkbenchKey: ws.WorkbenchKey,
+			WorkspaceID:  ws.ID,
+			Capabilities: []string{"workflow.view"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, sessionAPIRequest(http.MethodGet, "/api/v1/permission-matrix", "", issued.Token, issued.CSRF))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("embed session: %d %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), CodePasswordChangeRequired) {
+		t.Fatalf("embed session was gated: %s", rec.Body.String())
+	}
+}
+
+type lookupByUserErrorStore struct {
+	*identity.Memory
+	err error
+}
+
+func (s lookupByUserErrorStore) LookupLocalLoginByUser(context.Context, string) (identity.LocalLogin, error) {
+	return identity.LocalLogin{}, s.err
+}
+
+func TestPasswordChangeGateFailsClosedOnLookupError(t *testing.T) {
+	base := identity.NewMemory()
+	if err := localseed.EnsureBootstrapLogin(t.Context(), base, nil); err != nil {
+		t.Fatal(err)
+	}
+	h := NewWithDeps(Deps{
+		Store:    lookupByUserErrorStore{Memory: base, err: errors.New("db down")},
+		Sessions: session.NewMemory(),
+	})
+	login := httptest.NewRecorder()
+	h.ServeHTTP(login, loginRequest(`{"identifier":"admin","password":"admin"}`))
+	if login.Code != http.StatusCreated {
+		t.Fatalf("login: %d %s", login.Code, login.Body.String())
+	}
+	token, csrf := sessionPair(t, login)
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, sessionAPIRequest(http.MethodGet, "/api/v1/permission-matrix", "", token, csrf))
+	assertProblem(t, rec, http.StatusServiceUnavailable, CodeDependencyUnavailable, "caller-request-16")
+	if strings.Contains(rec.Body.String(), "db down") {
+		t.Fatal("store error must not leak to the client")
+	}
+
+	get := httptest.NewRecorder()
+	h.ServeHTTP(get, sessionAPIRequest(http.MethodGet, "/api/v1/session", "", token, csrf))
+	if get.Code != http.StatusOK {
+		t.Fatalf("GET /session stays available: %d %s", get.Code, get.Body.String())
+	}
+}
+
+func bootstrapWorkspace(t *testing.T, store identity.Store) (identity.Tenant, identity.Workspace) {
+	t.Helper()
+	tenant, err := store.GetTenantBySlug(t.Context(), localseed.TenantSlug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, _, err := store.ResolveWorkspace(t.Context(), tenant.ID, localseed.TenantSlug, localseed.WorkbenchKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tenant, ws
 }

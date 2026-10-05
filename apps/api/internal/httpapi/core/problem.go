@@ -42,6 +42,10 @@ const (
 	// CodeMFARequired is the step-up denial for platform.administer and
 	// credential.* on a local-login or OIDC session.
 	CodeMFARequired = "mfa-required"
+	// CodePasswordChangeRequired is the denial while the caller's local
+	// login still has must_change_password set. GET /session, POST
+	// /session/password, and POST /session/logout stay available.
+	CodePasswordChangeRequired = "password_change_required"
 	// Soft-delete conflicts. Underscores match the workflow contract.
 	CodeWorkflowHasActiveExecutions = "workflow_has_active_executions"
 	CodeWorkflowSlugReserved        = "workflow_slug_reserved"
