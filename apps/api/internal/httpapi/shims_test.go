@@ -66,6 +66,8 @@ var writeJSON = core.WriteJSON
 type pageResponse[T any] = core.PageResponse[T]
 
 const changePasswordReuseDetail = core.ChangePasswordReuseDetail
+const currentPasswordRequiredDetail = core.CurrentPasswordRequiredDetail
+const currentPasswordRejectedDetail = core.CurrentPasswordRejectedDetail
 const passwordChangeRequiredDetail = core.PasswordChangeRequiredDetail
 
 type downloadGrantResponse = workflowhttp.DownloadGrantResponse

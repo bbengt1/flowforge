@@ -135,7 +135,10 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
  standalone `ff_session` / `ff_csrf` pair (Lax / Strict, `Path=/api/v1`).
  `must_change_password` stays for an administrator-initiated reset.
  `GET /session` exposes that flag so chrome can gate Overview until
- `POST /session/password` (CSRF) replaces the hash. The literal
+ `POST /session/password` (CSRF) replaces the hash. A voluntary change
+ requires `current_password` and verifies it against the stored hash
+ (`400` if missing, `401` if wrong). The administrator-initiated reset
+ may omit `current_password`. The literal
  password `admin` is the same `401` as unknown. Unknown identifier
  and wrong password are the same `401` without
  saying which field failed. `POST /login` is rate-limited by IP
