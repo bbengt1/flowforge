@@ -444,7 +444,7 @@ func TestBootstrapAdminsCompleteIs409(t *testing.T) {
 	assertBootstrapBodyHasNoSecrets(t, rec.Body.Bytes())
 }
 
-func TestBootstrapAdminsStoresPasswordWithoutEcho(t *testing.T) {
+func TestBootstrapAdminsRejectsPasswordField(t *testing.T) {
 	store := bootstrap.NewMemory()
 	if err := store.SetStep(t.Context(), bootstrap.StepPersistence, true); err != nil {
 		t.Fatal(err)
@@ -455,30 +455,20 @@ func TestBootstrapAdminsStoresPasswordWithoutEcho(t *testing.T) {
 	secretBody := `{"issuer":"https://idp.example","external_subject":"admin-1","password":"super-secret-hunter2"}`
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, firstAdminRequest(secretBody))
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("create admin with password: %d %s", rec.Code, rec.Body.String())
-	}
+	assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "caller-request-16")
 	if strings.Contains(rec.Body.String(), "super-secret-hunter2") {
-		t.Fatal("success must not echo credentials")
+		t.Fatal("rejection must not echo credentials")
 	}
-	assertBootstrapBodyHasNoSecrets(t, rec.Body.Bytes())
 
 	st, err := store.Get(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !st.FirstAdminReady {
-		t.Fatal("password POST must still set firstAdmin ready")
+	if st.FirstAdminReady {
+		t.Fatal("rejected password must not set firstAdmin ready")
 	}
-	cred, err := idStore.LookupLocalLogin(t.Context(), "admin-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cred.User.ExternalSubject != "admin-1" || cred.PasswordHash == "" || strings.Contains(cred.PasswordHash, "super-secret-hunter2") {
-		t.Fatalf("stored login: user=%+v hash=%q", cred.User, cred.PasswordHash)
-	}
-	if cred.MustChangePassword {
-		t.Fatal("B.3 operator-chosen password must not require change")
+	if _, err := idStore.LookupLocalLogin(t.Context(), "admin-1"); err == nil {
+		t.Fatal("B.3 must not store a local login")
 	}
 }
 
@@ -1240,6 +1230,12 @@ func (unavailableBootstrap) MarkComplete(context.Context) error {
 	return bootstrap.ErrUnavailable
 }
 func (unavailableBootstrap) MarkSeedSkip(context.Context, bootstrap.SeedSkip) error {
+	return bootstrap.ErrUnavailable
+}
+func (unavailableBootstrap) SetSetupTokenHash(context.Context, string) error {
+	return bootstrap.ErrUnavailable
+}
+func (unavailableBootstrap) ClearSetupTokenHash(context.Context) error {
 	return bootstrap.ErrUnavailable
 }
 

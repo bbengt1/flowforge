@@ -15,10 +15,12 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/approval"
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
 	"github.com/bbengt1/flowforge/apps/api/internal/buildinfo"
 	"github.com/bbengt1/flowforge/apps/api/internal/config"
 	"github.com/bbengt1/flowforge/apps/api/internal/ha"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi"
+	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 	"github.com/bbengt1/flowforge/apps/api/internal/machine"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
@@ -71,6 +73,9 @@ func main() {
 			}
 		}
 		if err := bootstrapLogin(ctx, db); err != nil {
+			return err
+		}
+		if err := localseed.PrepareAdminPassword(ctx, identity.NewPostgres(db), bootstrap.NewPostgres(db), log, os.Getenv(bootstrap.EnvSetupToken)); err != nil {
 			return err
 		}
 		// Compose starts this API process. Resync logs and returns; a

@@ -163,6 +163,10 @@ services:
       # Default on when APP_ENV is development|dev|local|test and REQUIRE_TLS
       # is false. Set 0 to skip. Do not set in deploy/k8s.
       SEED_LOCAL_DEFAULTS: ${SEED_LOCAL_DEFAULTS:-}
+      # Optional one-time admin setup token. Empty: the API generates
+      # one and prints it once. A set value is not printed. Never a
+      # default password.
+      FLOWFORGE_SETUP_TOKEN: ${FLOWFORGE_SETUP_TOKEN:-}
       # Operator-facing origin stored by localseed bootstrap skip (B.1).
       # Never returned by GET /api/v1/bootstrap. Do not copy to k8s.
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}

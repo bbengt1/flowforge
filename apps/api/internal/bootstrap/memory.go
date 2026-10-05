@@ -98,6 +98,51 @@ func (m *Memory) MarkSeedSkip(_ context.Context, skip SeedSkip) error {
 	return nil
 }
 
+// SetSetupTokenHash stores a SHA-256 hex digest.
+func (m *Memory) SetSetupTokenHash(_ context.Context, hash string) error {
+	if !ValidSetupTokenHash(hash) {
+		return ErrInvalid
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.state.SetupTokenHash = hash
+	m.state.UpdatedAt = time.Now().UTC()
+	return nil
+}
+
+// ClearSetupTokenHash removes any outstanding digest.
+func (m *Memory) ClearSetupTokenHash(_ context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.state.SetupTokenHash = ""
+	m.state.UpdatedAt = time.Now().UTC()
+	return nil
+}
+
+// CommitSetupToken checks presentedHash under the store mutex, runs
+// write, then clears the digest. write runs while the mutex is held so
+// two callers cannot both succeed. A nil write fails closed.
+func (m *Memory) CommitSetupToken(ctx context.Context, presentedHash string, write func(context.Context) error) error {
+	if write == nil {
+		return ErrUnavailable
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	stored := m.state.SetupTokenHash
+	if stored == "" {
+		return ErrSetupComplete
+	}
+	if !setupHashEqual(stored, presentedHash) {
+		return ErrSetupToken
+	}
+	if err := write(ctx); err != nil {
+		return err
+	}
+	m.state.SetupTokenHash = ""
+	m.state.UpdatedAt = time.Now().UTC()
+	return nil
+}
+
 func markComplete(s *State, skipped bool) {
 	now := time.Now().UTC()
 	s.Complete = true

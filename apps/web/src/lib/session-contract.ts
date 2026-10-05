@@ -193,6 +193,7 @@ export function csrfRequiredFor(method: string, proxyPath: string): boolean {
     method.toUpperCase() === "POST" &&
     (normalized === "/bootstrap/persistence" ||
       normalized === "/bootstrap/admins" ||
+      normalized === "/bootstrap/admin-password" ||
       normalized === "/bootstrap/public-url" ||
       normalized === "/bootstrap/tls")
   ) {

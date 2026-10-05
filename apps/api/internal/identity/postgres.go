@@ -184,7 +184,7 @@ func (p *Postgres) InsertBootstrapLocalLogin(ctx context.Context, userID, identi
 	}
 	tag, err := p.db.Exec(ctx, `
 		INSERT INTO local_logins (user_id, identifier, password_hash, must_change_password)
-		SELECT $1::uuid, $2, $3, true
+		SELECT $1::uuid, $2, $3, false
 		WHERE NOT EXISTS (SELECT 1 FROM local_logins)
 	`, userID, identifier, passwordHash)
 	if err != nil {
@@ -206,6 +206,26 @@ func (p *Postgres) ChangeLocalPassword(ctx context.Context, userID, passwordHash
 		       updated_at = now()
 		 WHERE user_id = $1::uuid
 	`, userID, passwordHash)
+	if err != nil {
+		return mapDBErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (p *Postgres) RequireLocalPasswordChange(ctx context.Context, userID string) error {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return ErrInvalid
+	}
+	tag, err := p.db.Exec(ctx, `
+		UPDATE local_logins
+		   SET must_change_password = true,
+		       updated_at = now()
+		 WHERE user_id = $1::uuid
+	`, userID)
 	if err != nil {
 		return mapDBErr(err)
 	}

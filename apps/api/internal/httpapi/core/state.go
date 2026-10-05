@@ -71,6 +71,10 @@ type Server struct {
 	LoginLimiter     *embed.Limiter
 	MachineLimiter   *embed.Limiter
 	LoginLimits      localauth.Limits
+	// SetupLimiter rate-limits POST /bootstrap/admin-password per IP.
+	// It does not share the login or embed counters.
+	SetupLimiter     *embed.Limiter
+	SetupIPLimit     int
 	Quota            quota.Taker
 	QuotaLimits      quota.Limits
 	Machines         machine.Store

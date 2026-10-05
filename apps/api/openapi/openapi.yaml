@@ -68,7 +68,10 @@ info:
       `GET /readiness` stay unauthenticated for Kubernetes probes. `GET /bootstrap` is the standalone first-run gate
       (incomplete installs may call it without a session; complete requires
       normal auth).       `POST /bootstrap/persistence` is wizard step 1 (B.2).
-      `POST /bootstrap/admins` is wizard step 2 (B.3).
+      `POST /bootstrap/admins` is wizard step 2 (B.3) and does not
+      accept a password.
+      `POST /bootstrap/admin-password` sets the seeded admin password
+      with a one-time setup token (standalone only; no session minted).
       `POST /bootstrap/public-url` is wizard step 3 (B.4).
       `POST /bootstrap/tls` is wizard step 4 (B.5 / B.7) and marks
       bootstrap complete (`create-self-signed`, `upload`, or `skip`).
@@ -107,6 +110,11 @@ x-flowforge-routes:
     auth: public
     proxy: browser
     pattern: /api/v1/bootstrap/admins
+  - method: POST
+    path: /bootstrap/admin-password
+    auth: public
+    proxy: browser
+    pattern: /api/v1/bootstrap/admin-password
   - method: POST
     path: /bootstrap/public-url
     auth: public
@@ -1564,6 +1572,8 @@ paths:
           $ref: "#/components/responses/MethodNotAllowed"
         "500":
           $ref: "#/components/responses/InternalError"
+  /bootstrap/admin-password:
+    $ref: "#/components/pathItems/BootstrapAdminPassword"
   /bootstrap/public-url:
     post:
       operationId: postBootstrapPublicUrl
@@ -5547,6 +5557,49 @@ components:
             $ref: "#/components/responses/NotFound"
           "409":
             $ref: "#/components/responses/Conflict"
+    BootstrapAdminPassword:
+      post:
+        operationId: postBootstrapAdminPassword
+        summary: Set the seeded admin password with a one-time setup token
+        description: |
+          Standalone only. Sets the password for the seeded `admin`
+          identity and consumes the one-time setup token in the same
+          transaction. Works while the wizard is incomplete and after
+          localseed has already marked bootstrap complete. Does not mint
+          `ff_session`. CSRF matches the other bootstrap POSTs: required
+          when `ff_session` is present, not required when it is absent.
+          Embed-bound sessions are forbidden. `setup_token` and
+          `password` belong in this body, never the query string.
+          Success does not return the password or the token.
+          A per-IP limit returns 429 with `Retry-After`.
+        parameters:
+          - $ref: "#/components/parameters/RequestID"
+          - $ref: "#/components/parameters/CSRFToken"
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BootstrapAdminPasswordRequest"
+        responses:
+          "201":
+            description: Password set and setup token consumed. Login is ready.
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/BootstrapAdminPasswordResult"
+          "400":
+            $ref: "#/components/responses/InvalidRequest"
+          "401":
+            $ref: "#/components/responses/Unauthenticated"
+          "403":
+            $ref: "#/components/responses/Forbidden"
+          "409":
+            $ref: "#/components/responses/Conflict"
+          "429":
+            $ref: "#/components/responses/RateLimited"
+          "503":
+            $ref: "#/components/responses/DependencyUnavailable"
   parameters:
     PageLimit:
       name: limit
@@ -6586,9 +6639,9 @@ components:
       required: [issuer, external_subject]
       description: |
         First admin identity. Prefer existing localseed /
-        PLATFORM_ADMINS upsert (issuer + external_subject). Optional
-        `password` is stored as a bcrypt hash for `POST /login`
-        (`external_subject` is the email or username). Never echoed.
+        PLATFORM_ADMINS upsert (issuer + external_subject). This step
+        does not accept a password. The seeded admin password is
+        POST /bootstrap/admin-password.
       properties:
         issuer:
           type: string
@@ -6603,14 +6656,52 @@ components:
         display_name:
           type: string
           maxLength: 200
+    BootstrapAdminPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [setup_token, password]
+      description: |
+        One-time setup token and the new admin password. Both are
+        password-type fields. Never send them as query parameters.
+        Neither value is returned.
+      properties:
+        setup_token:
+          type: string
+          format: password
+          minLength: 16
+          maxLength: 256
+          description: One-time token from the API log or FLOWFORGE_SETUP_TOKEN.
         password:
           type: string
+          format: password
           minLength: 8
           maxLength: 72
-          format: password
-          description: |
-            POST once for local login. Stored as a hash keyed by
-            `external_subject`. Never returned.
+          description: New admin password. Must not be the retired default and must not equal setup_token.
+    BootstrapAdminPasswordResult:
+      type: object
+      additionalProperties: false
+      required: [adminPasswordSet, mustChangePassword, loginReady, identifier, bootstrap]
+      description: |
+        Password is set and the setup token is consumed. No session is
+        minted. The next step is POST /login. The password and the
+        token are absent.
+      properties:
+        adminPasswordSet:
+          type: boolean
+          enum: [true]
+        mustChangePassword:
+          type: boolean
+          enum: [false]
+          description: First-run set-password does not require another change. POST /login omits must_change_password.
+        loginReady:
+          type: boolean
+          enum: [true]
+        identifier:
+          type: string
+          enum: [admin]
+          description: Seeded username. Not a secret.
+        bootstrap:
+          $ref: "#/components/schemas/BootstrapStatus"
     BootstrapPublicURL:
       type: object
       additionalProperties: false

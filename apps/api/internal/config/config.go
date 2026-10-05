@@ -270,6 +270,9 @@ func load(skipEmbed bool) (Config, error) {
 		return Config{}, fmt.Errorf("%s: %w", bootstrap.EnvPublicBaseURL, err)
 	}
 	cfg.PublicBaseURL = publicURL
+	if err := bootstrap.ValidateSetupToken(os.Getenv(bootstrap.EnvSetupToken)); err != nil {
+		return Config{}, fmt.Errorf("%s: %w", bootstrap.EnvSetupToken, err)
+	}
 	requireHTTPS := authz.ProductionLocked(appEnv, cfg.RequireTLS)
 	keys, err := vault.ResolveKeys(context.Background(), requireHTTPS)
 	if err != nil {

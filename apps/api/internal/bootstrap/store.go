@@ -44,6 +44,14 @@ var ErrUnavailable = errors.New("bootstrap store unavailable")
 // ErrInvalid is returned when a step name or public URL is rejected.
 var ErrInvalid = errors.New("bootstrap input invalid")
 
+// ErrSetupComplete means the setup token was already consumed, the
+// admin password is already set, or this caller lost the race.
+var ErrSetupComplete = errors.New("bootstrap setup complete")
+
+// ErrSetupToken means an outstanding token did not match. The token
+// value must not be included in the error text.
+var ErrSetupToken = errors.New("bootstrap setup token rejected")
+
 // State is the durable singleton. PublicBaseURL is server-only.
 type State struct {
 	Complete         bool
@@ -56,6 +64,10 @@ type State struct {
 	TLSMode          string
 	CompletedAt      *time.Time
 	UpdatedAt        time.Time
+	// SetupTokenHash is the SHA-256 hex of the outstanding setup token.
+	// Empty means none. Status() never includes it. The plaintext is
+	// never stored here.
+	SetupTokenHash string
 }
 
 // Status is the secret-free GET /api/v1/bootstrap body.
@@ -94,6 +106,11 @@ type Store interface {
 	SetTLS(ctx context.Context, ready bool, mode string) error
 	MarkComplete(ctx context.Context) error
 	MarkSeedSkip(ctx context.Context, skip SeedSkip) error
+	// SetSetupTokenHash stores a SHA-256 hex digest. The plaintext
+	// never enters this method.
+	SetSetupTokenHash(ctx context.Context, hash string) error
+	// ClearSetupTokenHash removes any outstanding digest.
+	ClearSetupTokenHash(ctx context.Context) error
 }
 
 // Status projects secret-free flags. PublicBaseURL is omitted.
