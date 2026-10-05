@@ -909,7 +909,7 @@ function CanvasNode({
       {readOnly ? (
         <pre
           data-replay-port-output={node.id}
-          className={`mt-2 max-h-16 overflow-auto font-mono text-[10px] break-all whitespace-pre-wrap ${FF_EDITOR_MUTED_CLASS}`}
+          className={`mt-2 font-mono text-[10px] break-all whitespace-pre-wrap ${FF_EDITOR_MUTED_CLASS}`}
         >
           {node.replayPortText ?? "—"}
         </pre>

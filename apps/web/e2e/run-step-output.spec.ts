@@ -261,7 +261,9 @@ test("empty step logs fall back to output and the failed-step error", async ({ p
     has: page.locator("#graph-replay-heading"),
   });
   await expect(replay.getByText("Safe outputs")).toBeVisible();
-  await expect(replay.locator("pre").filter({ hasText: OUTPUT_JSON_SNIPPET })).toBeVisible();
+  await expect(
+    replay.getByText("Safe outputs", { exact: true }).locator("xpath=following-sibling::pre"),
+  ).toContainText(OUTPUT_JSON_SNIPPET);
   await expect(replay.getByText(STEP_ERROR)).toBeVisible();
   const notifyPort = page.locator("[data-canvas-node='notify']");
   await expect(notifyPort.locator("[data-replay-port-output]")).toContainText(OUTPUT_JSON_SNIPPET);
