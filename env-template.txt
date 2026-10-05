@@ -147,8 +147,14 @@ PLATFORM_ADMINS=https://idp.example|admin-1
 # SEED_LOCAL_DEFAULTS=1
 # One-time token for POST /api/v1/bootstrap/admin-password while the
 # seeded admin has no usable password. Leave unset to generate a token
-# and print it once in the API log. A set value is not printed. Only
-# the SHA-256 digest is stored. 16–256 characters, no spaces.
+# and print it once per boot while setup is incomplete. A restart
+# without this variable re-mints and overwrites the digest, so the
+# previous log line is stale. A set value is never printed. Only the
+# SHA-256 digest is stored. 16–256 characters, no spaces. When
+# FLOWFORGE_REPLICAS is above 1, set the same value on every API
+# replica before first-run. Without that shared token, each boot
+# overwrites instance_bootstrap.setup_token_hash, and a token copied
+# from an older pod's log is 401. That fail-closed is intentional.
 # FLOWFORGE_SETUP_TOKEN=
 # Operator-facing origin persisted by localseed skip (B.1). Never
 # returned by GET /api/v1/bootstrap. Compose defaults localhost.

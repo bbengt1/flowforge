@@ -11,7 +11,7 @@ Status: **B.1–B.8 landed** (this page is the contract map).
 | Constraint | Rule |
 | --- | --- |
 | Standalone only | Wizard **never** gates or appears on `/embed/v1`. This status endpoint is not an embed router. |
-| No secrets / KEK | Passwords, private keys, KEK, hashes, and PEMs never enter the browser, JSON responses, or `localStorage`. The generated setup token is printed once on the API log; only its SHA-256 digest is stored. An operator-supplied `FLOWFORGE_SETUP_TOKEN` is not printed. |
+| No secrets / KEK | Passwords, private keys, KEK, hashes, and PEMs never enter the browser, JSON responses, or `localStorage`. A generated setup token is printed once per boot while setup is incomplete; only its SHA-256 digest is stored. A restart without a shared `FLOWFORGE_SETUP_TOKEN` re-mints and overwrites the digest, so the previous log line is stale. An env-supplied token is never printed. |
 | ADV-021 / ADV-024 | Embed chrome from `GET /session` `session.embed` only. Membership / isolation stay grant-gated. |
 | Drafts never run | Wizard does not change publish-then-run. YAML `flowforge/v1` is unchanged. |
 | After complete | Wizard never reappears. URL / TLS / users / persistence edits live in **Settings** only. |
@@ -136,7 +136,7 @@ Store methods: `SetStep`, `SetPublicURL`, `SetTLS`, `MarkComplete`. Private keys
 
 When `local_logins` is empty, boot seeds identifier `admin` (issuer `local`) with no usable password. Path 1 (localseed skip, wizard already complete) and path 2 (wizard incomplete) both require this step before any login. `POST /login` with the retired password is `401`.
 
-While the password is unset, the API stores only the SHA-256 hex of a one-time setup token in `instance_bootstrap.setup_token_hash` (migration `000041_setup_token.sql`). A generated token is printed once on the API log. `FLOWFORGE_SETUP_TOKEN`, when set, is used instead and is not printed. The plaintext is never stored and never returned. A boot without that environment variable replaces the digest.
+While the password is unset, the API stores only the SHA-256 hex of a one-time setup token in `instance_bootstrap.setup_token_hash` (migration `000041_setup_token.sql`). A generated token is printed once per boot while setup is incomplete. A restart without a shared `FLOWFORGE_SETUP_TOKEN` re-mints and overwrites the digest, so the previous log line is stale. An env-supplied token is never printed. The plaintext is never stored and never returned. When `FLOWFORGE_REPLICAS` is above 1, set the same `FLOWFORGE_SETUP_TOKEN` on every API replica before first-run. Without that shared token, each boot overwrites the digest, and a token copied from an older pod's log is `401`. That fail-closed is intentional.
 
 | Story | Method / path | Body (once) | Success | Notes |
 | --- | --- | --- | --- | --- |

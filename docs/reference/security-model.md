@@ -116,8 +116,15 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
  `POST /api/v1/bootstrap/admin-password` sets the seeded admin
  password. Body is `{setup_token, password}` (password-type fields,
  never a query string). While setup is incomplete the API stores only
- a SHA-256 digest. A generated token is printed once in the API log;
- `FLOWFORGE_SETUP_TOKEN` is used when set and is not printed. Success
+ a SHA-256 digest. A generated token is printed once per boot while
+ setup is incomplete. A restart without a shared
+ `FLOWFORGE_SETUP_TOKEN` re-mints and overwrites the digest, so the
+ previous log line is stale. An env-supplied token is never printed.
+ When `FLOWFORGE_REPLICAS` is above 1, set the same token on every API
+ replica before first-run. Without that shared token, each boot
+ overwrites `instance_bootstrap.setup_token_hash`, and a token copied
+ from an older pod's log is `401`. That fail-closed is intentional.
+ Success
  is `201` and does not mint a session. The token is consumed in the
  same transaction as the password write (`409` `conflict` for a
  consumed token, a completed setup, or the race loser; `401` when an

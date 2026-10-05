@@ -99,7 +99,7 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `APP_ENV` / `FLOWFORGE_ENV` | empty (production) | Process environment. Empty, `production`, and unknown values are production-locked. Trusted-dev identity and local seed require `development`, `dev`, `local`, or `test`. |
 | `TRUSTED_DEV_IDENTITY_HEADERS` | unset / false | **Local/dev only.** When `1`/`true`/`yes`/`on` **and** `APP_ENV` is an explicit non-production value **and** `REQUIRE_TLS` is false, the API accepts self-asserted `X-FlowForge-Issuer` / `X-FlowForge-Subject` and `POST /session` principal upsert. Empty/missing config denies that path. The process **refuses to start** if the flag is set in production or with `REQUIRE_TLS=true`, so it cannot stay on accidentally. Production identity is the cookie session from `POST /embed/exchange`. Compose local defaults enable this; `deploy/k8s` must not set the flag. |
 | `SEED_LOCAL_DEFAULTS` | unset (on in local/dev/test) | **Local/dev only.** When `APP_ENV` is `development`/`dev`/`local`/`test` and `REQUIRE_TLS` is false, the API seeds one tenant (`local`), workbench (`default`), attaches `PLATFORM_ADMINS` as workspace admin, writes demo vault credentials if `CREDENTIAL_KEK` is set, and marks first-run bootstrap **complete** (wizard skip) when that admin + public URL exist. Set `0`/`false`/`off` to opt out. Explicit `1` with production-locked `APP_ENV` or `REQUIRE_TLS=true` is a **boot-fail**. `deploy/k8s` must not set this. |
-| `FLOWFORGE_SETUP_TOKEN` | unset (API generates one) | One-time token for `POST /api/v1/bootstrap/admin-password` while the seeded `admin` has no usable password. Empty means the API generates a token and prints it **once** in the API log. A set value (16–256 characters, no spaces) is used instead and is **not** printed. Only the SHA-256 digest is stored. A short, spaced, or retired-default value is a **boot-fail**. The plaintext never appears in responses or PostgreSQL. |
+| `FLOWFORGE_SETUP_TOKEN` | unset (API generates one) | One-time token for `POST /api/v1/bootstrap/admin-password` while the seeded `admin` has no usable password. Empty means the API generates a token and prints it once per boot while setup is incomplete. A restart without this variable re-mints and overwrites the digest, so the previous log line is stale. A set value (16–256 characters, no spaces) is used instead and is never printed. Only the SHA-256 digest is stored. A short, spaced, or retired-default value is a **boot-fail**. The plaintext never appears in responses or PostgreSQL. When `FLOWFORGE_REPLICAS` is above 1, set the same token on every API replica before first-run. Without that shared token, each boot overwrites `instance_bootstrap.setup_token_hash`, and a token copied from an older pod's log is `401`. That fail-closed is intentional. |
 | `PUBLIC_BASE_URL` | empty (compose default `http://localhost:3000`) | Operator-facing origin stored server-side by localseed skip (B.1/B.4). `http` or `https` origin only — no userinfo, query, or fragment. Never returned by `GET /api/v1/bootstrap`. Do not copy the compose localhost default into `deploy/k8s`. |
 | `EMBED_ISSUER` / `EMBED_ISSUER_ALLOWLIST` | empty | Required allowed assertion `iss` for embed mint. Empty fails closed (`403` on mint; exchange also `403` when Portal is empty). Compose seeds `https://idp.example`. Production ConfigMap must set an explicit **https** list — `http://`, relative, or opaque issuers are a boot-fail when `APP_ENV` is empty/`production` or `REQUIRE_TLS=true` (ADV-018). Mint/exchange also `403` a non-https `iss`. Local/dev/test may use `http://`. |
 | `EMBED_EXCHANGE_RATE_LIMIT_IP` | `120` | Max `POST /embed/exchange` per client IP per window. Raise if a Portal shared egress IP remounts many iframes. Negative is unlimited. |
@@ -131,7 +131,7 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `DATABASE_URL` | built from `POSTGRES_*` | Preferred DSN. Compose URL-encodes the password into this. |
 | `POSTGRES_HOST` / `USER` / `PASSWORD` / `DB` / `PORT` / `SSLMODE` | see `env-template.txt` | Used only when `DATABASE_URL` is unset. Production ConfigMap sets `POSTGRES_SSLMODE=require`. |
 | `SHUTDOWN_TIMEOUT` | `10s` (`25s` on `deploy/k8s`) | Graceful HTTP shutdown after the scheduler resigns. Kubernetes `preStop` is 15s and `terminationGracePeriodSeconds` is 45, so 25s fits the remaining grace. |
-| `FLOWFORGE_REPLICAS` | `1` when unset | API only. Integer 1–1000. `deploy/k8s` sets `2`, at least the Deployment replicas and the HPA minReplicas. Above 1, boot-fails when a session, store, or rate limiter is in-memory or a pod-local artifact filesystem. Shared Postgres and S3 stay. Do not set Service `sessionAffinity`. |
+| `FLOWFORGE_REPLICAS` | `1` when unset | API only. Integer 1–1000. `deploy/k8s` sets `2`, at least the Deployment replicas and the HPA minReplicas. Above 1, boot-fails when a session, store, or rate limiter is in-memory or a pod-local artifact filesystem. Shared Postgres and S3 stay. Do not set Service `sessionAffinity`. On first-run, also set the same `FLOWFORGE_SETUP_TOKEN` on every API replica. Each replica otherwise overwrites the setup-token digest, and a token from an older pod's log is `401`. |
 | `MIGRATE_TIMEOUT` | `5m` | Deadline for applying migrations after PostgreSQL is reachable (separate from the 5s connect/ping). |
 | `BUILD_SHA` | `unknown` (ldflags) | Non-secret git SHA published on `GET /api/v1/health` and `/readiness`. Compose and CI pass it as a Docker **build arg** into Go ldflags (`apps/api/Dockerfile`). `smoke.yml` sets `BUILD_SHA=${{ github.sha }}`. Local: `BUILD_SHA=$(git rev-parse HEAD) docker compose up --build`. Runtime env overrides the baked value. Unsafe/missing → `unknown`. Never a secret. Health stays 200. |
 | `BUILD_VERSION` | `dev` (ldflags) | Non-secret tag/version on the same probes. Same injection path as `BUILD_SHA`. Unsafe/missing → `dev`. |
@@ -188,7 +188,7 @@ Local compose is intentionally loose so membership/embed bootstrap works.
 | Compose web `API_INTERNAL_URL=http://api:8080` and `NEXT_PUBLIC_API_URL=http://localhost:8080` | `deploy/k8s/web-deployment.yaml` sets `API_INTERNAL_URL=http://flowforge-api:8080`. Rebuild the web image with the public https `NEXT_PUBLIC_API_URL`. Do not copy localhost. |
 | `CREDENTIAL_KEK` optional to boot; compose may set a local-only plaintext default | Plaintext `CREDENTIAL_KEK` is a **boot-fail**. Set `KMS_PROVIDER` and `CREDENTIAL_KEK_WRAPPED` (see [KEK rotation](operations/kek-rotation.md)). Do not copy `local:compose`. |
 | Compose MinIO (`ARTIFACT_S3_*`, `ARTIFACT_S3_CREATE_BUCKET=true`, local root password) | S3-compatible bucket required. **Boot-fail** without bucket + access key + secret. `ARTIFACT_S3_CREATE_BUCKET` is a boot-fail. Do not copy the MinIO password. Object-store egress is not opened by the default NetworkPolicy. |
-| Seeded Login `admin` with no usable password when `local_logins` is empty | **Set a password with the one-time setup token** (`POST /api/v1/bootstrap/admin-password`) before any login. There is no default password that can log in. |
+| Seeded Login `admin` with no usable password when `local_logins` is empty | **Set a password with the one-time setup token** (`POST /api/v1/bootstrap/admin-password`) before any login. There is no default password that can log in. With `FLOWFORGE_REPLICAS` above 1, set the same `FLOWFORGE_SETUP_TOKEN` on every API replica first. A token from an older pod's log is `401`. |
 | Local tenant/workbench seed (`SEED_LOCAL_DEFAULTS` unset in `APP_ENV=development`) | **Unset.** Production-locked `APP_ENV` or `REQUIRE_TLS=true` keeps the path inactive. Explicit `1` in that state is a boot-fail. |
 | `WEB_HSTS` unset (correct for `http://localhost:3000`) | HSTS from HTTPS / `X-Forwarded-Proto` / `WEB_HSTS=1` behind a terminator that does not forward proto. |
 | OpenAPI/metrics via trusted-dev headers | `Authorization: Bearer <ff_session>` for a `PLATFORM_ADMINS` principal. |
@@ -328,10 +328,15 @@ usable password. It never overwrites an existing credential.
 
 While that password is unset, the API stores only a SHA-256 digest of
 a one-time setup token on `instance_bootstrap`. A generated token is
-printed **once** in the API log. Set `FLOWFORGE_SETUP_TOKEN` to supply
-the token instead; that value is not printed. A restart without the
-environment variable replaces the digest, so an earlier log line is
-no longer valid.
+printed once per boot while setup is incomplete. A restart without a
+shared `FLOWFORGE_SETUP_TOKEN` re-mints and overwrites the digest, so
+the previous log line is stale. An env-supplied token is never printed.
+
+When `FLOWFORGE_REPLICAS` is above 1, set the same
+`FLOWFORGE_SETUP_TOKEN` on every API replica before first-run. Without
+that shared token, each boot regenerates and overwrites
+`instance_bootstrap.setup_token_hash`, and a token copied from an older
+pod's log is `401`. That fail-closed is intentional.
 
 `POST /api/v1/bootstrap/admin-password` with `setup_token` and
 `password` in the JSON body sets the password and consumes the token
@@ -373,8 +378,11 @@ To exercise the first-run wizard (path-2 / B.1–B.5), set
 B.3 still create-or-binds tenant `local` / workbench `default` for the
 first admin (no demo vault credentials) and does not accept a password.
 If `local_logins` is still empty, the API seeds `admin` with no usable
-password. Read the one-time setup token from the API log (or set
-`FLOWFORGE_SETUP_TOKEN`) and `POST /api/v1/bootstrap/admin-password`
+password. Read the generated token from the current API log (once per
+boot while setup is incomplete; an earlier boot's line is stale) or set
+`FLOWFORGE_SETUP_TOKEN` (never printed). With more than one API replica,
+that value must be the same shared token on every pod; a log line from
+an older pod is `401`. Then `POST /api/v1/bootstrap/admin-password`
 before `POST /login`. After that login, the workbench is listed and
 selectable. Wizard complete is not required before the password write.
 
@@ -651,7 +659,7 @@ echoed). The in-process loop does not log in as the principal.
 
 `JOB_BINDING_SECRET` and `SCRIPT_SIGNING_KEY` are keys on the shared `flowforge-api` Secret mounted by every API and runner replica. The process boot-fails if either is missing or malformed. It does not mint a per-pod key. A ticket or script signature from one replica verifies on the others. Fencing tokens stay in PostgreSQL; a different worker id or a stale token fails closed.
 
-`FLOWFORGE_REPLICAS` (API container, `2`) must be at least Deployment `replicas` and HPA `minReplicas`. Unset means one process. Above one, boot refuses in-memory or pod-local session, store, and rate-limit backends (session, JTI, lockout, vault, workflow, artifact `memory` / `filesystem`, workspace quota, login, embed, machine-token, and first-run admin-setup windows). Shared Postgres and S3 continue. Do not set Service `sessionAffinity`. Workspace quotas are a token bucket in `workspace_quotas` (FORCE RLS). Login, embed mint/exchange, machine token, and `POST /bootstrap/admin-password` keep separate fixed windows in `auth_rate_windows` (hashed keys, no workspace scope). A store error on either table is 503, not a silent in-memory fallback.
+`FLOWFORGE_REPLICAS` (API container, `2`) must be at least Deployment `replicas` and HPA `minReplicas`. Unset means one process. Above one, boot refuses in-memory or pod-local session, store, and rate-limit backends (session, JTI, lockout, vault, workflow, artifact `memory` / `filesystem`, workspace quota, login, embed, machine-token, and first-run admin-setup windows). Shared Postgres and S3 continue. Do not set Service `sessionAffinity`. Workspace quotas are a token bucket in `workspace_quotas` (FORCE RLS). Login, embed mint/exchange, machine token, and `POST /bootstrap/admin-password` keep separate fixed windows in `auth_rate_windows` (hashed keys, no workspace scope). A store error on either table is 503, not a silent in-memory fallback. On first-run, set the same `FLOWFORGE_SETUP_TOKEN` on every API replica. Without it, each boot regenerates and overwrites `instance_bootstrap.setup_token_hash`, and a token copied from an older pod's log is `401`. That fail-closed is intentional.
 
 A single-node cluster can still schedule both pods (anti-affinity is preferred). `kubectl apply` of a Deployment resets the live replica count to 2; the HPA owns the count between applies. Size Postgres `max_connections` for `(6 + 4) × 8` application connections plus backup and admin headroom. Details: [deploy/k8s/README.md](../deploy/k8s/README.md).
 
