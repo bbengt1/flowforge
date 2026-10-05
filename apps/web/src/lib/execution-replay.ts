@@ -372,9 +372,26 @@ export function overlayExecutionOnGraph(
           state = canvasStateFromExecutionStatus(options.runStatus);
         }
       }
-      return { ...node, state };
+      const replayPortText = replayPortPanelText(step);
+      return { ...node, state, replayPortText };
     }),
   };
+}
+
+/**
+ * Plain text for a replay canvas port panel. Uses the step output already
+ * on the execution. Does not read logs and does not copy output into them.
+ * Missing steps and empty output stay "—".
+ */
+export function replayPortPanelText(step: {
+  status?: string;
+  output?: unknown;
+  error?: unknown;
+} | null | undefined): string {
+  if (!step) {
+    return "—";
+  }
+  return stepIoPresentation(step).bodyText;
 }
 
 export function currentReplayNodeId(

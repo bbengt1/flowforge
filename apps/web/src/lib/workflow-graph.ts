@@ -74,7 +74,57 @@ export type GraphNode = {
   outputs: CatalogPort[];
   state: CanvasNodeState;
   startLine: number;
+  /**
+   * Plain step output for a replay port panel. Set only by execution
+   * overlay. The editor leaves it unset. Never HTML.
+   */
+  replayPortText?: string;
 };
+
+export type CanvasPortChrome = {
+  /** Not a connection target. */
+  disabled: boolean;
+  /** Editor-only: incompatible type or the same node. Replay is never this. */
+  incompatible: boolean;
+  title: string;
+  /** Screen-reader suffix after the port name. Empty when there is nothing extra. */
+  suffix: string;
+};
+
+/**
+ * Port-button copy. The editor marks an incompatible target unavailable.
+ * Graph replay is read-only, so its ports must not say "unavailable {kind}".
+ */
+export function canvasPortChrome(input: {
+  readOnly: boolean;
+  available: boolean;
+  direction: "in" | "out";
+  name: string;
+  kind: string;
+}): CanvasPortChrome {
+  if (input.readOnly) {
+    return {
+      disabled: true,
+      incompatible: false,
+      title: `${input.direction} ${input.name}`,
+      suffix: "",
+    };
+  }
+  if (!input.available) {
+    return {
+      disabled: true,
+      incompatible: true,
+      title: `${input.name} unavailable: incompatible type or same node`,
+      suffix: `unavailable ${input.kind}`.trim(),
+    };
+  }
+  return {
+    disabled: false,
+    incompatible: false,
+    title: `${input.direction} ${input.name} (${input.kind})`,
+    suffix: input.kind,
+  };
+}
 
 export type GraphEdge = {
   id: string;

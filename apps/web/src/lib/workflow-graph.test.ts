@@ -8,6 +8,7 @@ import {
 import {
   canConnectPorts,
   canSaveWorkflowEditor,
+  canvasPortChrome,
   canvasYamlRoundTrip,
   connectGraphEdge,
   disconnectGraphEdge,
@@ -256,5 +257,46 @@ describe("save eligibility and validation groups", () => {
     assert.equal(buckets.node.length, 1);
     assert.equal(buckets.edge.length, 1);
     assert.equal(buckets.node[0]?.nodeId, "seed");
+  });
+});
+
+describe("canvas port chrome", () => {
+  it("keeps the editor unavailable label and omits it on replay", () => {
+    const blocked = canvasPortChrome({
+      readOnly: false,
+      available: false,
+      direction: "in",
+      name: "input",
+      kind: "any",
+    });
+    assert.equal(blocked.incompatible, true);
+    assert.equal(blocked.disabled, true);
+    assert.equal(blocked.suffix, "unavailable any");
+    assert.match(blocked.title, /unavailable/);
+
+    const open = canvasPortChrome({
+      readOnly: false,
+      available: true,
+      direction: "out",
+      name: "result",
+      kind: "object",
+    });
+    assert.equal(open.disabled, false);
+    assert.equal(open.incompatible, false);
+    assert.equal(open.suffix, "object");
+
+    for (const kind of ["any", "object"]) {
+      const replay = canvasPortChrome({
+        readOnly: true,
+        available: false,
+        direction: kind === "any" ? "in" : "out",
+        name: kind === "any" ? "input" : "result",
+        kind,
+      });
+      assert.equal(replay.incompatible, false);
+      assert.equal(replay.suffix, "");
+      assert.equal(replay.title.includes("unavailable"), false);
+      assert.equal(replay.title.includes(kind), false);
+    }
   });
 });

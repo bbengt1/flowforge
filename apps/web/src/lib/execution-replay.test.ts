@@ -28,6 +28,7 @@ import {
   projectPinnedVersionGraph,
   publishedRunVersions,
   replayNodeStateLabel,
+  replayPortPanelText,
   replayStepViews,
   retryBlockedForIndeterminate,
   waitingApprovalNodeIds,
@@ -318,6 +319,30 @@ describe("graph replay overlay", () => {
     ]);
     assert.equal(overlaid.nodes.find((node) => node.id === "seed")?.state, "succeeded");
     assert.equal(overlaid.nodes.find((node) => node.id === "done")?.state, "indeterminate");
+    const withOutput = overlayExecutionOnGraph(graph, [
+      sampleStep({
+        nodeId: "seed",
+        status: "succeeded",
+        output: { applied: true, note: "<b>not html</b>" },
+      }),
+    ]);
+    const seedText = withOutput.nodes.find((node) => node.id === "seed")?.replayPortText ?? "";
+    const doneText = withOutput.nodes.find((node) => node.id === "done")?.replayPortText ?? "";
+    assert.match(seedText, /"applied": true/);
+    assert.match(seedText, /<b>not html<\/b>/);
+    assert.equal(seedText.includes("unavailable"), false);
+    assert.equal(doneText, "—");
+    assert.equal(replayPortPanelText(null), "—");
+    assert.equal(replayPortPanelText(sampleStep({ output: null, error: null })), "—");
+    const canvas = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../components/workflows/WorkflowCanvas.tsx"),
+      "utf8",
+    );
+    assert.match(canvas, /data-replay-port-output/);
+    assert.match(canvas, /canvasPortChrome/);
+    assert.match(canvas, /replayPortText/);
+    assert.equal(canvas.includes("unavailable"), false);
+    assert.equal(canvas.includes("dangerouslySetInnerHTML"), false);
     assert.equal(
       currentReplayNodeId([
         sampleStep({ nodeId: "seed", status: "succeeded" }),
@@ -696,6 +721,25 @@ describe("terminal runs do not look like they are waiting on approval", () => {
     assert.equal(views[0]?.failureText, generic);
     assert.equal(views[0]?.presentation.label, "Failed");
     assert.equal(views[0]?.failureText?.includes(unknown), false);
+    const unresolvable = replayStepViews(
+      [
+        sampleStep({
+          nodeId: "gate",
+          nodeType: "flow.approval",
+          status: "failed",
+          error: {
+            code: "requirement_unresolvable",
+            message: "The approval requirement could not be rebuilt.",
+          },
+        }),
+      ],
+      { runStatus: "failed" },
+    );
+    assert.equal(
+      unresolvable[0]?.errorText,
+      "The approval requirement could not be rebuilt.",
+    );
+    assert.equal(unresolvable[0]?.errorText?.includes("requirement_unresolvable"), false);
     const detail = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), "../components/executions/ExecutionDetail.tsx"),
       "utf8",

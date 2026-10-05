@@ -21,6 +21,7 @@ const STEP_ERROR = "script_failed: notify exploded";
 const STEP_MESSAGE = "notify exploded";
 const UNRESOLVABLE =
   "Failed because an approval requirement could no longer be met.";
+const GATE_ERROR_MESSAGE = "The approval requirement could not be rebuilt.";
 const EXPIRED_LINE =
   "Approval gate gate: Closed because it expired before anyone decided.";
 const INVALIDATED_LINE =
@@ -91,7 +92,10 @@ function reasonExecution() {
         attempt: 1,
         status: "failed",
         output: { closed: true },
-        error: { code: "gate_failed", message: "The requirement could not be rebuilt." },
+        error: {
+          code: "requirement_unresolvable",
+          message: GATE_ERROR_MESSAGE,
+        },
       },
     ],
   };
@@ -203,6 +207,36 @@ async function installRun(
       await route.fallback();
     },
   );
+  await page.route(
+    (url) => isControlPlane(url, "/workflows/catalog"),
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          apiVersion: "flowforge/v1",
+          triggers: [],
+          nodes: [
+            {
+              type: "data.set",
+              phase: "core",
+              inputs: [{ name: "input", kind: "any" }],
+              outputs: [{ name: "result", kind: "object" }],
+            },
+            {
+              type: "flow.approval",
+              phase: "core",
+              inputs: [{ name: "input", kind: "any" }],
+              outputs: [
+                { name: "approved", kind: "object" },
+                { name: "rejected", kind: "object" },
+              ],
+            },
+          ],
+        }),
+      });
+    },
+  );
 }
 
 test("empty step logs fall back to output and the failed-step error", async ({ page }) => {
@@ -229,6 +263,14 @@ test("empty step logs fall back to output and the failed-step error", async ({ p
   await expect(replay.getByText("Safe outputs")).toBeVisible();
   await expect(replay.locator("pre").filter({ hasText: OUTPUT_JSON_SNIPPET })).toBeVisible();
   await expect(replay.getByText(STEP_ERROR)).toBeVisible();
+  const notifyPort = page.locator("[data-canvas-node='notify']");
+  await expect(notifyPort.locator("[data-replay-port-output]")).toContainText(OUTPUT_JSON_SNIPPET);
+  await expect(notifyPort.locator("[data-replay-port-output]")).toContainText(HTML_NOTE);
+  await expect(notifyPort.locator("img")).toHaveCount(0);
+  await expect(notifyPort.getByText("unavailable any")).toHaveCount(0);
+  await expect(notifyPort.getByText("unavailable object")).toHaveCount(0);
+  await expect(page.getByText("unavailable any")).toHaveCount(0);
+  await expect(page.getByText("unavailable object")).toHaveCount(0);
   await expect(page.getByText(STEP_MESSAGE).first()).toBeVisible();
   await expect(page.locator("main")).toHaveCount(1);
   await expectNoBlockingAxeViolations(page);
@@ -242,7 +284,20 @@ test("a failed run shows the statusReason sentence and not the raw code", async 
   );
   await expect(page.getByRole("heading", { level: 1, name: "Execution" })).toBeVisible();
   await expect(page.getByText(UNRESOLVABLE)).toBeVisible();
+  await expect(page.getByText(GATE_ERROR_MESSAGE).first()).toBeVisible();
   await expect(page.getByText("requirement_unresolvable")).toHaveCount(0);
+  await expect(
+    page.getByText(`requirement_unresolvable: ${GATE_ERROR_MESSAGE}`),
+  ).toHaveCount(0);
+  const steps = page.locator("section").filter({
+    has: page.getByRole("heading", { name: "Steps", level: 2 }),
+  });
+  const gate = steps.locator("li").filter({ hasText: "gate" });
+  await expect(gate.getByText(GATE_ERROR_MESSAGE)).toBeVisible();
+  await expect(gate.getByText("requirement_unresolvable")).toHaveCount(0);
+  const gatePort = page.locator("[data-canvas-node='gate']");
+  await expect(gatePort.locator("[data-replay-port-output]")).toContainText('"closed": true');
+  await expect(gatePort.getByText("requirement_unresolvable")).toHaveCount(0);
   await expect(page.getByText("not-a-reason")).toHaveCount(0);
   await expectNoBlockingAxeViolations(page);
   await expectNoSecretsInBrowserStorage(page);

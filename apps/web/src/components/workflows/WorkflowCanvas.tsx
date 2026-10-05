@@ -48,6 +48,7 @@ import {
   canvasNodeStateDescription,
   canvasNodeStateIcon,
   canvasNodeStateLabel,
+  canvasPortChrome,
   formatPortRef,
   layoutGraphNodes,
   type GraphEdge,
@@ -886,7 +887,8 @@ function CanvasNode({
               key={`in-${port.name}`}
               port={port}
               direction="in"
-              available={!readOnly && inputAvailable(node, nodes, port, linkFrom, entries)}
+              readOnly={Boolean(readOnly)}
+              available={inputAvailable(node, nodes, port, linkFrom, entries)}
               onClick={() => onInput(port.name)}
             />
           ))}
@@ -897,12 +899,21 @@ function CanvasNode({
               key={`out-${port.name}`}
               port={port}
               direction="out"
-              available={!readOnly}
+              readOnly={Boolean(readOnly)}
+              available
               onClick={() => onOutput(port.name)}
             />
           ))}
         </div>
       </div>
+      {readOnly ? (
+        <pre
+          data-replay-port-output={node.id}
+          className={`mt-2 max-h-16 overflow-auto font-mono text-[10px] break-all whitespace-pre-wrap ${FF_EDITOR_MUTED_CLASS}`}
+        >
+          {node.replayPortText ?? "—"}
+        </pre>
+      ) : null}
     </div>
   );
 }
@@ -937,36 +948,56 @@ function inputAvailable(
 function PortButton({
   port,
   direction,
+  readOnly,
   available,
   onClick,
 }: {
   port: CatalogPort;
   direction: "in" | "out";
+  readOnly: boolean;
   available: boolean;
   onClick: () => void;
 }) {
+  const chrome = canvasPortChrome({
+    readOnly,
+    available,
+    direction,
+    name: port.name,
+    kind: port.kind,
+  });
+  const label = direction === "in" ? `● ${port.name}` : `${port.name} ●`;
+  const suffix = chrome.suffix ? (
+    <span className="sr-only"> {chrome.suffix}</span>
+  ) : null;
+  const className = `block font-mono text-[10px] ${FF_EDITOR_PORT_CLASS} ${
+    chrome.incompatible ? "cursor-not-allowed line-through opacity-50" : ""
+  }`;
+  if (readOnly) {
+    return (
+      <span
+        data-port={`${direction}:${port.name}`}
+        title={chrome.title}
+        className={className}
+      >
+        {label}
+        {suffix}
+      </span>
+    );
+  }
   return (
     <button
       type="button"
       data-port={`${direction}:${port.name}`}
-      disabled={!available}
-      title={
-        available
-          ? `${direction} ${port.name} (${port.kind})`
-          : `${port.name} unavailable: incompatible type or same node`
-      }
+      disabled={chrome.disabled}
+      title={chrome.title}
       onClick={(event) => {
         event.stopPropagation();
         onClick();
       }}
-      className={`block font-mono text-[10px] ${FF_EDITOR_PORT_CLASS} ${
-        available ? "" : "cursor-not-allowed line-through opacity-50"
-      }`}
+      className={className}
     >
-      {direction === "in" ? `● ${port.name}` : `${port.name} ●`}
-      <span className="sr-only">
-        {available ? "" : " unavailable"} {port.kind}
-      </span>
+      {label}
+      {suffix}
     </button>
   );
 }

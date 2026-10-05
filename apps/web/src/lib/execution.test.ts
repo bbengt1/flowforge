@@ -1268,4 +1268,68 @@ describe("step output when logs are empty", () => {
     assert.match(detail, /stepIoPresentation/);
     assert.equal(detail.includes("dangerouslySetInnerHTML"), false);
   });
+
+  it("drops a known statusReason code from the step error", () => {
+    const sentence = "Failed because an approval requirement could no longer be met.";
+    const message = "The approval requirement could not be rebuilt.";
+    assert.equal(
+      stepFailureErrorText({
+        status: "failed",
+        error: { code: "requirement_unresolvable", message },
+      }),
+      message,
+    );
+    assert.equal(
+      stepFailureErrorText({
+        status: "failed",
+        error: {
+          code: "requirement_unresolvable",
+          message: `requirement_unresolvable: ${message}`,
+        },
+      }),
+      message,
+    );
+    assert.equal(
+      stepFailureErrorText({
+        status: "failed",
+        error: { code: "requirement_unresolvable", message: "saw requirement_unresolvable again" },
+      }),
+      sentence,
+    );
+    assert.equal(
+      stepFailureErrorText({
+        status: "failed",
+        error: { code: "requirement_unresolvable" },
+      }),
+      sentence,
+    );
+    assert.equal(
+      stepFailureErrorText({
+        status: "failed",
+        error: { code: "workflow_deleted", message: "The workflow was deleted." },
+      }),
+      "The workflow was deleted.",
+    );
+    assert.equal(
+      stepFailureErrorText({
+        status: "failed",
+        error: { code: "no-worker" },
+      }),
+      "No worker is claiming jobs.",
+    );
+    assert.equal(
+      stepFailureErrorText({
+        status: "failed",
+        error: { code: "script_failed", message: "notify exploded" },
+      }),
+      "script_failed: notify exploded",
+    );
+    const presented = stepIoPresentation({
+      status: "failed",
+      output: { closed: true },
+      error: { code: "requirement_unresolvable", message },
+    });
+    assert.equal(presented.errorText, message);
+    assert.equal(presented.errorText?.includes("requirement_unresolvable"), false);
+  });
 });
