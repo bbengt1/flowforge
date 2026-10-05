@@ -68,6 +68,22 @@ export function setActiveSession(
   emit();
 }
 
+/** Authenticated 403 password_change_required. Embed chrome stays off this door. */
+export function requirePasswordChange(): void {
+  if (
+    !snapshot.active ||
+    snapshot.embedChrome ||
+    snapshot.session.mustChangePassword === true
+  ) {
+    return;
+  }
+  snapshot = {
+    ...snapshot,
+    session: { ...snapshot.session, mustChangePassword: true },
+  };
+  emit();
+}
+
 export function markSessionStale(): void {
   snapshot = {
     active: false,

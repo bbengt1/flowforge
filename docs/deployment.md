@@ -364,7 +364,13 @@ An upgraded install whose seeded `admin` still has
 cleared on boot. Use the setup token to set a new one.
 
 Incomplete installs still open the wizard first. After complete (or
-localseed skip), signed-out standalone chrome is Login. Embed /
+localseed skip), signed-out standalone chrome is Login. The same
+signed-out shell links to `/set-password`, which POSTs
+`{setup_token, password}` and opens Login on 201. The setup token is
+typed into a masked field. It is not taken from the address bar and
+is not stored in the browser. `/set-password` does not mount on
+`/embed/v1`. An authenticated `403` `password_change_required` opens
+`/change-password`. Embed /
 `POST /embed/exchange` / ADV-021 are untouched. Path 1 (localseed skip)
 and path 2 (wizard) both require this set-password step before any
 login.

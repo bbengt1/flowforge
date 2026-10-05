@@ -12,6 +12,7 @@ import {
   loginFormIsSubmittable,
   type LocalLoginForm,
 } from "@/lib/local-login";
+import { SET_PASSWORD_HREF } from "@/lib/set-password";
 import {
   OIDC_UNAVAILABLE,
   isSafeAuthorizationUrl,
@@ -232,6 +233,11 @@ export function LoginChrome({ onSuccess }: LoginChromeProps) {
               </p>
             ) : null}
           </div>
+          <p className="mt-4 text-sm" style={{ color: "var(--ff-muted)" }}>
+            New install?{" "}
+            <a href={SET_PASSWORD_HREF}>Set the admin password</a>
+            {" "}before you sign in.
+          </p>
         </section>
       </main>
     </div>

@@ -20,11 +20,12 @@ import {
 } from "./problem.ts";
 import { generateRequestId, REQUEST_ID_HEADER, resolveRequestId } from "./request-id.ts";
 import { noteMfaRequiredProblem } from "./oidc-mfa.ts";
-import { isStaleSessionProblem } from "./session.ts";
+import { isPasswordChangeRequiredProblem, isStaleSessionProblem } from "./session.ts";
 import { sameOriginProxyUrl } from "./session-contract.ts";
 import {
   getSessionSnapshot,
   markSessionStale,
+  requirePasswordChange,
 } from "./session-store.ts";
 
 export type IdentityClientSuccess<T> = {
@@ -39,6 +40,8 @@ export type IdentityClientFailure = {
   statusCode: number;
   requestId: string;
   problem: ProblemDetails;
+  /** Delta-seconds from Retry-After. Absent when the header is missing or not an integer. */
+  retryAfterSeconds?: number;
 };
 
 export type IdentityClientResult<T> =
@@ -193,6 +196,7 @@ export async function streamIdentityProxy(
       if (isStaleSessionProblem(problem)) {
         markSessionStale();
       }
+      notePasswordChange(problem);
       noteMfaRequiredProblem(instance, problem);
       return {
         ok: false,
@@ -267,13 +271,9 @@ export async function fetchSameOriginProxy<T>(options: {
       if (isStaleSessionProblem(problem)) {
         markSessionStale();
       }
+      notePasswordChange(problem);
       noteMfaRequiredProblem(options.instance, problem);
-      return {
-        ok: false,
-        statusCode: response.status,
-        requestId: problem.request_id || echoed,
-        problem,
-      };
+      return failed(response.status, problem.request_id || echoed, problem, response.headers);
     }
 
     if (response.ok) {
@@ -285,12 +285,12 @@ export async function fetchSameOriginProxy<T>(options: {
       };
     }
 
-    return {
-      ok: false,
-      statusCode: response.status,
-      requestId: echoed,
-      problem: upstreamProblem(response.status, options.instance, echoed),
-    };
+    return failed(
+      response.status,
+      echoed,
+      upstreamProblem(response.status, options.instance, echoed),
+      response.headers,
+    );
   } catch {
     const generated = resolveRequestId(options.requestId);
     return {
@@ -300,6 +300,40 @@ export async function fetchSameOriginProxy<T>(options: {
       problem: unreachableProblem(options.instance, generated),
     };
   }
+}
+
+function notePasswordChange(problem: ProblemDetails): void {
+  if (isPasswordChangeRequiredProblem(problem)) {
+    requirePasswordChange();
+  }
+}
+
+function retryAfterSeconds(headers: Headers): number | undefined {
+  const raw = headers.get("Retry-After")?.trim() ?? "";
+  if (!/^\d+$/.test(raw)) {
+    return undefined;
+  }
+  const seconds = Number(raw);
+  if (!Number.isSafeInteger(seconds) || seconds < 1 || seconds > 86400) {
+    return undefined;
+  }
+  return seconds;
+}
+
+function failed(
+  statusCode: number,
+  requestId: string,
+  problem: ProblemDetails,
+  headers: Headers,
+): IdentityClientFailure {
+  const retryAfter = retryAfterSeconds(headers);
+  return {
+    ok: false,
+    statusCode,
+    requestId,
+    problem,
+    ...(retryAfter !== undefined ? { retryAfterSeconds: retryAfter } : {}),
+  };
 }
 
 const BLOCKED_CLIENT_HEADERS = new Set([

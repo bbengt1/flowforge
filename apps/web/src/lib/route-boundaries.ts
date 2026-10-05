@@ -154,9 +154,12 @@ export const STANDALONE_ONLY_CHROME_TOKENS = [
   "ChangePasswordLanding",
   "ChangePasswordChrome",
   "MustChangePasswordGate",
+  "SetPasswordLanding",
+  "SetPasswordChrome",
   "SignedOutGate",
   'href="/login"',
   'href="/change-password"',
+  'href="/set-password"',
 ] as const;
 
 export const INVENTED_EMBED_BOUNDARY_FILES = [

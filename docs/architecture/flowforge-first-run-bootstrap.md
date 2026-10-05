@@ -112,6 +112,8 @@ The seeded admin password stays off the wizard. Wizard chrome does not collect, 
 
 When the operator chooses **Create** or **Upload** (not Skip) and the remembered public URL is still `http://localhost` (or HTTP with hostname `localhost`, including a port), chrome re-POSTs `https://localhost` **while incomplete** (`SetPublicURL` already overwrites) and shows a loud toast: “Public URL set to https://localhost because TLS is enabled.” The toast stays mounted until it can be read; Sign in / workflows navigation is deferred. Skip does not rewrite. A non-localhost URL is never clobbered. Toast only if the URL actually changed. Never on `/embed/v1`. Never `localStorage`.
 
+Standalone set-password chrome is `/set-password`, also linked from Login. It POSTs `{setup_token, password}` and opens Login on 201. The setup token is a masked field. A query string carrying it is discarded and is not copied into the form. The value is not written to `localStorage` or `sessionStorage`. The screen does not mount on `/embed/v1`. An authenticated `403` `password_change_required` opens `/change-password`.
+
 ---
 
 ## 3. B.2–B.5 / B.7 landed API

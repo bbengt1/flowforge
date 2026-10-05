@@ -543,7 +543,7 @@ describe("execution detail query cache", () => {
     assert.match(chrome, /downloadGrantFailureMessage/);
     assert.match(chrome, /canOfferScriptEmergencyStop/);
     assert.doesNotMatch(cache, /localStorage|sessionStorage|publishDraft|runPublished/);
-    assert.doesNotMatch(chrome, /LoginChrome|ChangePasswordChrome|FirstRunWizard/);
+    assert.doesNotMatch(chrome, /LoginChrome|ChangePasswordChrome|SetPasswordChrome|FirstRunWizard/);
   });
 });
 
