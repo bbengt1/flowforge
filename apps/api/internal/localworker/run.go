@@ -2,7 +2,9 @@ package localworker
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
@@ -107,6 +109,14 @@ func (r *Runner) PollOnce(ctx context.Context) (int, error) {
 			continue
 		}
 		ok, err := r.claimOne(ctx, slug, key, item.Workspace.ID)
+		if errors.Is(err, ErrWorkspaceForbidden) {
+			r.log.Warn("local worker skipped workspace",
+				"tenant_slug", slug,
+				"workbench_key", key,
+				"status", http.StatusForbidden,
+			)
+			continue
+		}
 		if err != nil {
 			return claimed, err
 		}

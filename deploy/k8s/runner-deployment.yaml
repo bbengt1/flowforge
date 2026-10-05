@@ -106,6 +106,8 @@ spec:
             limits:
               cpu: "1"
               memory: 512Mi
+          # Process liveness. The runner does not listen on 8080.
+          # The image HEALTHCHECK uses the same rule for this command.
           livenessProbe:
             exec:
               command: ["kill", "-0", "1"]

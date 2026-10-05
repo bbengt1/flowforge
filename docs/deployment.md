@@ -17,7 +17,7 @@ Migrations are forward-only and recorded in `schema_migrations` (version, name, 
 Compose hardening (UID/GID **65532** except postgres):
 
 - **api** (`` / G.0.9): read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, `/tmp` tmpfs, CPU/memory/PID limits, and `HEALTHCHECK` on `GET /api/v1/health` (liveness; not PostgreSQL). Matches `deploy/k8s` probes for the health path.
-- **worker** (local/dev only): same image and least-privilege defaults as `api`, `command: ["/usr/local/bin/worker"]`. Disables the inherited image `HEALTHCHECK` (the worker does not listen on 8080). Not present in `deploy/k8s`. The image also contains `/usr/local/bin/runner`; compose does not start it.
+- **worker** (local/dev only): same image and least-privilege defaults as `api`, `command: ["/usr/local/bin/worker"]`. Compose disables the image `HEALTHCHECK`. That probe does not call port 8080 for this command. Not present in `deploy/k8s`. The image also contains `/usr/local/bin/runner`; compose does not start it.
 - **web** (``): the same least-privilege defaults via the `x-security` YAML anchor, plus tmpfs on `/tmp` and `/app/apps/web/.next/cache`, and `mem_limit` / `cpus` / `pids_limit` (same compose-native limits as `api`; do not also set `deploy.resources`, which conflicts with `pids_limit`). Compose builds `web` from the repository root so `pnpm-lock.yaml` is in the context.
 - **postgres**: `no-new-privileges` only. The official image starts as root then drops; `cap_drop: ALL` would break that.
 - **minio** (local/dev artifact store): built from the newest AGPL community tag in `deploy/local/minio` (no registry pull; Quay anonymous pull is 401 and AIStor denies S3 without a license). UID 65532, `cap_drop: ALL`, `no-new-privileges`. Volume `minio_data` keeps ciphertext across API restarts. Do not add this service to `deploy/k8s`. Production sets `ARTIFACT_S3_*` and opens allowlisted object-store egress.
@@ -41,7 +41,7 @@ The Kubernetes files are a foundation only: configure the database egress policy
 
 API image (`` / G.0.9):
 
-- `apps/api/Dockerfile`: `USER 65532:65532`, digest-pinned `golang:1.26-alpine` (build) and `alpine:3.20` (runtime) multi-arch indexes, `HEALTHCHECK` on `GET /api/v1/health`. Compose `worker` disables that probe. How to refresh pins: [Refreshing Dockerfile base digests](#refreshing-dockerfile-base-digests).
+- `apps/api/Dockerfile`: `USER 65532:65532`, digest-pinned `golang:1.26-alpine` (build) and `alpine:3.20` (runtime) multi-arch indexes. `HEALTHCHECK` runs `/usr/local/bin/healthcheck`. When pid 1 is the API it calls `GET /api/v1/health` on port 8080. When pid 1 is the runner, local worker, migrate, or kek-rotate, the probe succeeds without that port. Compose `api` still probes `GET /api/v1/health`. Compose `worker` disables the probe. How to refresh pins: [Refreshing Dockerfile base digests](#refreshing-dockerfile-base-digests).
 
 Web image and Next.js headers (``):
 
@@ -84,7 +84,7 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `ARTIFACT_MAX_BYTES` | `1048576` | File artifact upload cap. |
 | `WEB_HSTS` | unset | Force Next.js HSTS when a TLS terminator does not forward proto. Leave unset for local HTTP. |
 | `WEB_CSP_CONNECT_SRC` | unset | Extra CSP `connect-src` origins (space-separated). `NEXT_PUBLIC_API_URL` is always included. |
-| `EMBED_SIGNING_KEY` | **required in production** (boot-fail) | Durable Ed25519 **PKCS#8 PEM** (`crypto/x509.ParsePKCS8PrivateKey`). Generate with `openssl genpkey -algorithm ED25519`. Empty/`production` `APP_ENV` or `REQUIRE_TLS` refuses to start without it. Compose mounts a local-only PKCS#8 file. A raw 32-byte seed / 64-byte key as base64 or hex is accepted only for compatibility. Ephemeral process keys are non-production only and come from `crypto/rand` — never a committed Go seed. |
+| `EMBED_SIGNING_KEY` | **required on the API in production** (boot-fail) | Durable Ed25519 **PKCS#8 PEM** (`crypto/x509.ParsePKCS8PrivateKey`). Generate with `openssl genpkey -algorithm ED25519`. Empty/`production` `APP_ENV` or `REQUIRE_TLS` refuses to start the API without it. `/usr/local/bin/runner` does not serve embed and does not load this key (or `EMBED_SIGNING_KEY_FILE` / `EMBED_OVERLAP_KEYS`). Compose mounts a local-only PKCS#8 file for the API. A raw 32-byte seed / 64-byte key as base64 or hex is accepted only for compatibility. Ephemeral process keys are non-production only and come from `crypto/rand` — never a committed Go seed. |
 | `EMBED_SIGNING_KEY_FILE` | empty | File form of `EMBED_SIGNING_KEY` (preferred: PKCS#8 PEM). Used when the env value is empty. |
 | `EMBED_SIGNING_KEY_ID` | `env:EMBED_SIGNING_KEY` | Public `kid`. Never a secret. Never `ephemeral:process` in production. |
 | `EMBED_AUDIENCE` | `flowforge` | Must stay `flowforge`. |
@@ -141,8 +141,8 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `SCHEDULER_ENABLED` | on | API leader ticks schedule dispatch, lease recovery, and retention purge. `0`/`false`/`no`/`off` opts out. Any other non-empty value is a **boot-fail**. See [Leader-elected scheduler](#leader-elected-scheduler). |
 | `SCHEDULER_INTERVAL` | `30s` | Go duration `1s`–`24h` shared by those three ticks. Invalid is a **boot-fail**. |
 | `RUNNER` | unset (on when production-locked) | **Production runner only.** `0`/`false`/`off`/`no` exits 0. Any value in `development`/`dev`/`local`/`test` with `REQUIRE_TLS` false is a **boot-fail** (`use cmd/worker`). |
-| `RUNNER_USER_ID` | empty | Existing user UUID the runner claims as. Does not upsert. |
-| `RUNNER_ISSUER` / `RUNNER_SUBJECT` | first `PLATFORM_ADMINS` pair | Lookup of an existing principal (`FindUser`, no upsert) when `RUNNER_USER_ID` is empty. Must have `workflow.execute`. |
+| `RUNNER_USER_ID` | empty | Existing user UUID the runner claims as. Does not upsert. A production-locked runner exits when this and `RUNNER_ISSUER` / `RUNNER_SUBJECT` are unset. |
+| `RUNNER_ISSUER` / `RUNNER_SUBJECT` | empty | Both required when `RUNNER_USER_ID` is empty. Lookup of an existing principal (`FindUser`, no upsert). Must have `workflow.execute` via role `operator`. A production-locked process does not fall back to `PLATFORM_ADMINS`. |
 | `API_URL` | `http://127.0.0.1:8080` (compose: `http://api:8080`) | Origin the local worker calls. The production runner does not use it. |
 | `WORKER_ID` | `compose-local` (runner default `production-runner`) | Worker id sent on claim/heartbeat/complete. `deploy/k8s` sets this to the pod name so replicas are distinct fence holders. Do not pin every replica to one literal. |
 | `WORKER_DRAIN_TIMEOUT` | `30s` | Production runner only. After SIGTERM, finish the in-flight claim for this long and do not start another. `deploy/k8s` sets `30s` inside `terminationGracePeriodSeconds: 40`. A claim that outlives the budget is left for lease recovery. A stale HMAC token still cannot complete. |
@@ -398,7 +398,9 @@ does not start an in-process runner.
 
 Identity is the compose trusted-dev principal (`PLATFORM_ADMINS`,
 default `https://idp.example|admin-1`). The worker lists
-`GET /workspaces` and claims each membership. Host-supplied workspace
+`GET /workspaces` and claims each membership. A workspace that returns
+403 on claim is skipped; later memberships in that pass are still
+polled. Any other claim error stops the pass. Host-supplied workspace
 ids are not sent (400).
 
 ### Opt in / opt out
@@ -437,9 +439,50 @@ job id, node type, and error code only.
 | `notification.email` | `ExecuteEmail`. No mailer configured → `delivery-failed`. |
 | `INTEGRATION_ACTIONS_ENABLED=false` | HTTP and notification nodes fail `integration-disabled` before `Execute`. |
 
-Identity is `RUNNER_USER_ID` or `RUNNER_ISSUER` + `RUNNER_SUBJECT`
-(else the first `PLATFORM_ADMINS` pair). Lookup does not upsert.
-`CREDENTIAL_KEK` must be ready or the process exits 1.
+Identity is `RUNNER_USER_ID`, or both `RUNNER_ISSUER` and
+`RUNNER_SUBJECT`. Lookup does not upsert. A production-locked process
+(`REQUIRE_TLS=true`, or `APP_ENV` empty, `production`, or any value
+other than `development` / `dev` / `local` / `test`) exits 1 when
+neither form is set. It does not claim as `PLATFORM_ADMINS`. Platform
+admin stays separate from workspace membership. `CREDENTIAL_KEK` must
+be ready or the process exits 1. The runner does not load
+`EMBED_SIGNING_KEY`.
+
+Bind that principal to each workspace it should claim, as role
+`operator`. That is the narrowest catalog role that grants
+`workflow.execute`. Do not use role `admin` for the runner.
+
+On the wizard path, leave `SEED_LOCAL_DEFAULTS` unset (production
+refuses it). The first admin from the wizard is a workspace admin, not
+the runner. After that workspace exists, sign in as the workspace
+admin and add the runner principal on members admin (`/membership`),
+or call `PUT /api/v1/workspace/members` with the workspace selected
+and this body (unknown fields are rejected; do not send a workspace
+id):
+
+```json
+{"issuer":"https://idp.example","external_subject":"runner-1","role_keys":["operator"]}
+```
+
+The response returns the user id and a display name. Set
+`RUNNER_ISSUER` and `RUNNER_SUBJECT` to that same principal, or set
+`RUNNER_USER_ID` to the returned user id. Do not add the runner pair
+to `PLATFORM_ADMINS`.
+
+The production path is the same membership after the workspace exists.
+`deploy/k8s` puts `RUNNER_USER_ID` or `RUNNER_ISSUER` plus
+`RUNNER_SUBJECT` on the API Secret. The runner Deployment loads that
+Secret. Leave `SEED_LOCAL_DEFAULTS` unset.
+
+When the principal has no membership that grants `workflow.execute`,
+the process logs one warning with `claimable` 0 and the membership
+count, then keeps polling. It logs that warning again only when those
+counts change.
+
+The API image `HEALTHCHECK` (`/usr/local/bin/healthcheck`) reports the
+runner healthy when it is pid 1. It does not call port 8080.
+`deploy/k8s/runner-deployment.yaml` liveness is `kill -0 1`. The
+runner NetworkPolicy still has no ingress.
 
 The runner NetworkPolicy allows PostgreSQL and cluster DNS only.
 Provider CIDRs are an operator allowlist. Do not open `0.0.0.0/0`.

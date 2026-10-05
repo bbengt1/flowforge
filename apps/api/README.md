@@ -173,7 +173,7 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `ARTIFACT_STORE_DIR` | empty | Non-production filesystem root (`{dir}/{tenant}/{workspace}/{ref}`). Used only when no `ARTIFACT_S3_*` intent is set. Empty then uses in-process memory. Both are refused in a production-locked process. |
 | `ARTIFACT_DOWNLOAD_TTL` | `60s` | Lifetime of a download grant (max 5m). |
 | `ARTIFACT_MAX_BYTES` | `1048576` | Upload cap for `file` artifacts. Logs cap at 256KiB; step output at 16KiB. |
-| `EMBED_SIGNING_KEY` | **required in production** (boot-fail) | Durable Ed25519 PKCS#8 PEM (`crypto/x509.ParsePKCS8PrivateKey`) for embed assertions (E11.1 / ADV-022). Empty/`production` `APP_ENV` or `REQUIRE_TLS` refuses to start without it. Compose mounts a local-only PKCS#8 file. A raw 32-byte seed / 64-byte key as base64/hex is compatibility-only. Non-prod ephemeral keys use `crypto/rand` (no committed seed). Never returned from an API. |
+| `EMBED_SIGNING_KEY` | **required on the API in production** (boot-fail) | Durable Ed25519 PKCS#8 PEM (`crypto/x509.ParsePKCS8PrivateKey`) for embed assertions (E11.1 / ADV-022). Empty/`production` `APP_ENV` or `REQUIRE_TLS` refuses to start the API without it. `/usr/local/bin/runner` does not serve embed and does not load this key. Compose mounts a local-only PKCS#8 file. A raw 32-byte seed / 64-byte key as base64/hex is compatibility-only. Non-prod ephemeral keys use `crypto/rand` (no committed seed). Never returned from an API. |
 | `EMBED_SIGNING_KEY_FILE` | empty | File form of `EMBED_SIGNING_KEY` (preferred: PKCS#8 PEM). Used when the env value is empty. |
 | `EMBED_SIGNING_KEY_ID` | `env:EMBED_SIGNING_KEY` | Public `kid`. |
 | `EMBED_AUDIENCE` | `flowforge` | Must stay `flowforge`. |
@@ -192,7 +192,7 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `WORKER_ID` | `production-runner` when unset | Claim/heartbeat/complete id. `deploy/k8s` sets the pod name so replicas are distinct fence holders. |
 | `WORKER_DRAIN_TIMEOUT` | `30s` | After SIGTERM, finish the in-flight claim and do not start another. Zero or invalid uses 30s. |
 | `FLOWFORGE_REPLICAS` | `1` when unset | API pod count. `deploy/k8s` sets `2` (at least Deployment replicas and HPA minReplicas). Above 1, boot-fails if a session, store, or rate limiter is in-memory or pod-local. Postgres and S3 stay. Invalid values boot-fail. |
-| `RUNNER_USER_ID` or `RUNNER_ISSUER` / `RUNNER_SUBJECT` | `PLATFORM_ADMINS` pair | Existing principal for in-process claim. Lookup does not upsert. |
+| `RUNNER_USER_ID` or `RUNNER_ISSUER` / `RUNNER_SUBJECT` | empty | Existing principal for in-process claim. Lookup does not upsert. A production-locked runner exits when both forms are unset. It does not use `PLATFORM_ADMINS`. Bind the principal as role `operator` (`workflow.execute`). |
 | `API_URL` | `http://127.0.0.1:8080` | API origin for `cmd/worker` (compose: `http://api:8080`). Not used by `cmd/runner`. |
 | `LOCKOUT_MAX_FAILURES` | `5` | Durable failed-password threshold (1–50) in `auth_lockouts`. Unset uses 5. `0`, negative, and non-integers are a boot-fail. Separate from `LOGIN_RATE_LIMIT_*`. |
 | `QUOTA_MUTATE_PER_MINUTE` | `120` | Per-workspace mutation refill (validate, normalize, publish, ops writes, other mutations). Negative is unlimited. |
@@ -233,7 +233,8 @@ go run ./cmd/api
 APP_ENV=development TRUSTED_DEV_IDENTITY_HEADERS=1 go run ./cmd/worker
 # Production-locked runner. Refuses APP_ENV=development. Claims in-process.
 # Requires DATABASE_URL, JOB_BINDING_SECRET, SCRIPT_SIGNING_KEY, CREDENTIAL_KEK,
-# EMBED_SIGNING_KEY, and RUNNER_USER_ID or RUNNER_ISSUER/RUNNER_SUBJECT.
+# and RUNNER_USER_ID or RUNNER_ISSUER plus RUNNER_SUBJECT.
+# Does not require EMBED_SIGNING_KEY. Does not fall back to PLATFORM_ADMINS.
 # APP_ENV=production go run ./cmd/runner
 ```
 
@@ -317,7 +318,7 @@ Conventions:
 - Build context: `apps/api` (this Dockerfile)
 - Image user: UID/GID `65532` (non-root). Compose and `deploy/k8s` also set a read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, and CPU/memory/PID limits.
 - Base images are digest-pinned (`golang:1.26-alpine` build, `alpine:3.20` runtime). Refresh: [docs/deployment.md](../../docs/deployment.md#refreshing-dockerfile-base-digests).
-- Image `HEALTHCHECK` hits `GET /api/v1/health` (liveness, no PostgreSQL). Compose `worker` sets `healthcheck.disable` because that command does not listen.
+- Image `HEALTHCHECK` runs `/usr/local/bin/healthcheck` (liveness, no PostgreSQL). The API command calls `GET /api/v1/health`. The runner, local worker, migrate, and kek-rotate commands are healthy without port 8080. Compose `worker` sets `healthcheck.disable`.
 - Same image can run migrations as a one-shot or the local worker. The image uses `CMD` (not `ENTRYPOINT`), so compose `command: ["/usr/local/bin/migrate"]` or `command: ["/usr/local/bin/worker"]` replaces the API process. The worker is local/dev only.
 - UI (`apps/web`) should call `http://api:8080` from the compose network, or `http://localhost:8080` from the host
 - Kubernetes / TLS / supply-chain foundation: [`deploy/`](../../deploy/)

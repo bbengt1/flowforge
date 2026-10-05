@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/approval"
@@ -61,6 +62,18 @@ type StoreQueue struct {
 	Lease     time.Duration
 	Now       func() time.Time
 	Fixed     []Workspace
+
+	bindingMu sync.Mutex
+	binding   BindingView
+	bindingOK bool
+}
+
+// BindingView is the runner principal's workspace membership.
+// Claimable counts memberships that grant workflow.execute.
+// Memberships counts every membership returned for that principal.
+type BindingView struct {
+	Memberships int
+	Claimable   int
 }
 
 func (q *StoreQueue) now() time.Time {
@@ -74,6 +87,7 @@ func (q *StoreQueue) Workspaces(ctx context.Context) ([]Workspace, error) {
 	if q.Fixed != nil {
 		out := make([]Workspace, len(q.Fixed))
 		copy(out, q.Fixed)
+		q.setBinding(BindingView{Memberships: len(out), Claimable: len(out)})
 		return out, nil
 	}
 	if q.Identity == nil {
@@ -106,7 +120,22 @@ func (q *StoreQueue) Workspaces(ctx context.Context) ([]Workspace, error) {
 			Permissions:  append([]string(nil), item.Permissions...),
 		})
 	}
+	q.setBinding(BindingView{Memberships: len(memberships), Claimable: len(out)})
 	return out, nil
+}
+
+func (q *StoreQueue) setBinding(view BindingView) {
+	q.bindingMu.Lock()
+	q.binding = view
+	q.bindingOK = true
+	q.bindingMu.Unlock()
+}
+
+// BindingView returns the counts from the latest Workspaces call.
+func (q *StoreQueue) BindingView() (BindingView, bool) {
+	q.bindingMu.Lock()
+	defer q.bindingMu.Unlock()
+	return q.binding, q.bindingOK
 }
 
 func (q *StoreQueue) lookupUser(ctx context.Context) (identity.User, error) {

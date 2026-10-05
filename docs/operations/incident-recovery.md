@@ -23,10 +23,13 @@ Kubernetes (`deploy/k8s/api-deployment.yaml`):
 - Liveness: `/api/v1/health` every 15s
 - Readiness: `/api/v1/readiness` every 5s
 
-The API image `HEALTHCHECK` and compose `api.healthcheck` use the same
-liveness path (`GET /api/v1/health` every 15s). Compose `--wait` waits
-on that probe only. The local `worker` service disables the inherited
-check because `/usr/local/bin/worker` does not listen on 8080.
+The API image `HEALTHCHECK` runs `/usr/local/bin/healthcheck` every 15s.
+When pid 1 is the API, that probe calls `GET /api/v1/health` and does
+not check PostgreSQL. When pid 1 is `/usr/local/bin/runner`, the local
+worker, migrate, or kek-rotate, the probe succeeds without port 8080.
+Compose `api.healthcheck` still calls `GET /api/v1/health`. Compose
+`--wait` waits on that API probe only. The local `worker` service
+disables the image check. Kubernetes runner liveness is `kill -0 1`.
 
 There are no `/healthz` / `/readyz` aliases. Probe paths stay reachable
 over plain HTTP even when `REQUIRE_TLS=true`, so kubelet can hit the

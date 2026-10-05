@@ -36,7 +36,8 @@ RUN go build -trimpath \
     -o /out/runner ./cmd/runner \
  && go build -trimpath \
     -ldflags="-s -w -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.Version=${BUILD_VERSION} -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.SHA=${BUILD_SHA}" \
-    -o /out/kek-rotate ./cmd/kek-rotate
+    -o /out/kek-rotate ./cmd/kek-rotate \
+ && go build -trimpath -o /out/healthcheck ./cmd/healthcheck
 
 FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 RUN addgroup -S -g 65532 app && adduser -S -u 65532 -G app app \
@@ -48,6 +49,7 @@ COPY --from=build --chown=65532:65532 /out/migrate /usr/local/bin/migrate
 COPY --from=build --chown=65532:65532 /out/worker /usr/local/bin/worker
 COPY --from=build --chown=65532:65532 /out/runner /usr/local/bin/runner
 COPY --from=build --chown=65532:65532 /out/kek-rotate /usr/local/bin/kek-rotate
+COPY --from=build --chown=65532:65532 /out/healthcheck /usr/local/bin/healthcheck
 
 USER 65532:65532
 EXPOSE 8080
@@ -57,11 +59,13 @@ LABEL org.opencontainers.image.source="https://github.com/bbengt1/flowforge" \
       org.opencontainers.image.description="FlowForge control-plane API"
 
 # Liveness only (process serving). Does not check PostgreSQL — that is
-# GET /api/v1/readiness (k8s readinessProbe). Compose --wait uses this
-# probe. The worker command does not listen; compose disables HEALTHCHECK
-# on that service. Busybox wget is part of the alpine base (no extra pkg).
+# GET /api/v1/readiness (k8s readinessProbe). When pid 1 is the API,
+# /usr/local/bin/healthcheck calls GET /api/v1/health on port 8080.
+# When pid 1 is /usr/local/bin/runner, the local worker, migrate, or
+# kek-rotate, the probe succeeds without that port. Compose worker
+# still disables this check.
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:8080/api/v1/health || exit 1
+  CMD ["/usr/local/bin/healthcheck"]
 
 # CMD (not ENTRYPOINT) so compose `command:` can run /usr/local/bin/migrate
 # or /usr/local/bin/worker. /usr/local/bin/worker is local/dev only.

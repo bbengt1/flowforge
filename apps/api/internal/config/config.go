@@ -157,7 +157,21 @@ type Config struct {
 // Load reads configuration from the process environment.
 // A .env file in the working directory (or the API module root) is loaded
 // first when present; existing environment variables always win.
+// The API process uses Load. The runner uses LoadRunner.
 func Load() (Config, error) {
+	return load(false)
+}
+
+// LoadRunner reads the same environment as Load but does not require
+// embed signing material. The runner does not mint or verify embed
+// assertions, so EMBED_SIGNING_KEY (and its file and overlap keys),
+// EMBED_AUDIENCE, and the embed issuer allowlist are not boot checks.
+// The API process must use Load.
+func LoadRunner() (Config, error) {
+	return load(true)
+}
+
+func load(skipEmbed bool) (Config, error) {
 	loadDotEnv()
 
 	proxies, err := parseCIDRs(os.Getenv("TRUSTED_PROXY_CIDRS"))
@@ -180,9 +194,12 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	embedKeys, err := embed.LoadMaterial()
-	if err != nil {
-		return Config{}, err
+	var embedKeys embed.Material
+	if !skipEmbed {
+		embedKeys, err = embed.LoadMaterial()
+		if err != nil {
+			return Config{}, err
+		}
 	}
 
 	cfg := Config{
@@ -233,7 +250,7 @@ func Load() (Config, error) {
 	if cfg.EmbedTTL < embed.MinTTL || cfg.EmbedTTL > embed.MaxTTL {
 		cfg.EmbedTTL = embed.DefaultTTL
 	}
-	if cfg.EmbedAudience != embed.DefaultAudience {
+	if !skipEmbed && cfg.EmbedAudience != embed.DefaultAudience {
 		return Config{}, fmt.Errorf("EMBED_AUDIENCE must be %q", embed.DefaultAudience)
 	}
 	appEnv := firstNonEmpty(os.Getenv(authz.EnvAppEnv), os.Getenv(authz.EnvFlowforgeEnv))
@@ -259,8 +276,10 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg.VaultKeys = keys
-	if err := embed.ValidateIssuerAllowlist(cfg.EmbedIssuers, requireHTTPS); err != nil {
-		return Config{}, fmt.Errorf("%s / %s: %w", embed.EnvIssuer, embed.EnvIssuerAllow, err)
+	if !skipEmbed {
+		if err := embed.ValidateIssuerAllowlist(cfg.EmbedIssuers, requireHTTPS); err != nil {
+			return Config{}, fmt.Errorf("%s / %s: %w", embed.EnvIssuer, embed.EnvIssuerAllow, err)
+		}
 	}
 	if err := embed.ValidateIssuerAllowlist(cfg.PortalIssuers, requireHTTPS); err != nil {
 		return Config{}, fmt.Errorf("%s / %s: %w", portal.EnvIssuer, portal.EnvIssuerAllow, err)

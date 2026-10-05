@@ -231,7 +231,8 @@ services:
       WORKER_SUBJECT: ${WORKER_SUBJECT:-}
     depends_on:
       - api
-    # Same image HEALTHCHECK hits :8080; this process does not listen.
+    # Image HEALTHCHECK does not call port 8080 for this command.
+    # Compose still disables it. This service is local/dev only.
     healthcheck:
       disable: true
     # on-failure so LOCAL_WORKER=0 (exit 0) stays down. Crashes still retry.

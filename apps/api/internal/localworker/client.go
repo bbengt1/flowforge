@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,6 +23,10 @@ const (
 	headerTenantSlug   = "X-FlowForge-Tenant-Slug"
 	headerWorkbenchKey = "X-FlowForge-Workbench-Key"
 )
+
+// ErrWorkspaceForbidden is a claim the caller may skip. The workspace
+// denied workflow.execute. The response body is not included.
+var ErrWorkspaceForbidden = errors.New("workspace claim forbidden")
 
 // Claim is a successful POST /jobs/claim ticket.
 // TraceParent and TraceState are the W3C context from the claim
@@ -127,6 +132,9 @@ func (h *HTTP) Claim(ctx context.Context, tenantSlug, workbenchKey string) (*Cla
 	}
 	if status == http.StatusNoContent {
 		return nil, nil
+	}
+	if status == http.StatusForbidden {
+		return nil, ErrWorkspaceForbidden
 	}
 	if status != http.StatusOK {
 		return nil, fmt.Errorf("claim: %s", formatProblem(status, raw))
