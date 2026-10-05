@@ -12,6 +12,7 @@
  */
 
 import { LOGIN_SUCCESS_HREF } from "./local-login.ts";
+import { PASSWORD_CHANGE_WRONG_CURRENT_DETAIL } from "./session.ts";
 import { R7_HARD_LINE } from "./rewrite-embed-mount.ts";
 import { FF_ACCENT, FF_CANVAS } from "./visual-tokens.ts";
 
@@ -39,6 +40,15 @@ export const CHANGE_PASSWORD_UNAVAILABLE =
   "Password change is temporarily unavailable. Try again shortly.";
 export const CHANGE_PASSWORD_UNAUTHENTICATED =
   "Sign-in is required to change this password.";
+/** Voluntary change-password help. No one-time bootstrap wording. */
+export const CHANGE_PASSWORD_VOLUNTARY_HELP = "Change your password.";
+/** Forced reset (`must_change_password`). The gate cannot be skipped. */
+export const CHANGE_PASSWORD_FORCED_HELP =
+  "A one-time bootstrap password must be changed before you can continue. This cannot be skipped.";
+export const CHANGE_PASSWORD_CURRENT_REQUIRED = "Enter your current password.";
+/** Matches POST /session/password 401 when the current secret is wrong. */
+export const CHANGE_PASSWORD_CURRENT_REJECTED =
+  PASSWORD_CHANGE_WRONG_CURRENT_DETAIL;
 export const CHANGE_PASSWORD_EMBED_FORBIDDEN =
   "This password cannot be changed from an embed session.";
 export const CHANGE_PASSWORD_FAILED = "Could not change password.";
@@ -74,6 +84,7 @@ export const CHANGE_PASSWORD_SOURCES = [
   "src/lib/session-client.ts",
   "src/components/session/ChangePasswordChrome.tsx",
   "src/components/session/ChangePasswordLanding.tsx",
+  "src/components/session/ChangePasswordAccountLink.tsx",
   "src/components/session/MustChangePasswordGate.tsx",
   "src/components/session/LoginChrome.tsx",
   "src/components/session/LoginLanding.tsx",
@@ -88,8 +99,14 @@ export const MUST_CHANGE_GATE_SOURCE =
   "src/components/session/MustChangePasswordGate.tsx" as const;
 
 export type ChangePasswordForm = {
+  currentPassword: string;
   password: string;
   confirm: string;
+};
+
+export type ChangePasswordRequestBody = {
+  password: string;
+  current_password?: string;
 };
 
 export type MustChangeChrome = "change-password" | "home" | "ignore";
@@ -106,7 +123,14 @@ export type MustChangeGateInput = {
 };
 
 export function emptyChangePasswordForm(): ChangePasswordForm {
-  return { password: "", confirm: "" };
+  return { currentPassword: "", password: "", confirm: "" };
+}
+
+/** Voluntary change proves the current secret. A forced reset omits it. */
+export function changePasswordRequiresCurrentPassword(
+  mustChangePassword: boolean,
+): boolean {
+  return mustChangePassword !== true;
 }
 
 /** Password POSTs once. Caller must drop both fields after submit. */
@@ -114,8 +138,29 @@ export function clearChangePasswordForm(): ChangePasswordForm {
   return emptyChangePasswordForm();
 }
 
-export function changePasswordFormIsSubmittable(form: ChangePasswordForm): boolean {
+export function changePasswordFormIsSubmittable(
+  form: ChangePasswordForm,
+  requireCurrentPassword = false,
+): boolean {
+  if (requireCurrentPassword && form.currentPassword.trim() === "") {
+    return false;
+  }
   return Boolean(form.password && form.confirm);
+}
+
+/**
+ * JSON body for POST /session/password. `current_password` is included
+ * only when the caller supplied a value. A forced reset omits the field.
+ */
+export function changePasswordRequestBody(
+  password: string,
+  currentPassword?: string,
+): ChangePasswordRequestBody {
+  const body: ChangePasswordRequestBody = { password };
+  if (currentPassword != null && currentPassword !== "") {
+    body.current_password = currentPassword;
+  }
+  return body;
 }
 
 export function isOneTimeBootstrapPassword(password: string): boolean {
@@ -124,9 +169,18 @@ export function isOneTimeBootstrapPassword(password: string): boolean {
 
 /**
  * Cheap client checks before POST. Server 4xx still wins.
- * Does not compare against the previous secret (chrome never holds it).
+ * The current password lives in form state only until submit clears it.
  */
-export function changePasswordClientError(form: ChangePasswordForm): string | null {
+export function changePasswordClientError(
+  form: ChangePasswordForm,
+  options?: { requireCurrentPassword?: boolean },
+): string | null {
+  if (
+    options?.requireCurrentPassword === true &&
+    form.currentPassword.trim() === ""
+  ) {
+    return CHANGE_PASSWORD_CURRENT_REQUIRED;
+  }
   if (!form.password || !form.confirm) {
     return CHANGE_PASSWORD_EMPTY;
   }
@@ -147,6 +201,9 @@ export function changePasswordFailureMessage(
   detail?: string | null,
 ): string {
   if (statusCode === 401) {
+    if (detail === CHANGE_PASSWORD_CURRENT_REJECTED) {
+      return CHANGE_PASSWORD_CURRENT_REJECTED;
+    }
     return CHANGE_PASSWORD_UNAUTHENTICATED;
   }
   if (statusCode === 403) {

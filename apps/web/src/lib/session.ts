@@ -1,5 +1,9 @@
 import type { ProblemDetails } from "./problem.ts";
-import { SESSION_PROBLEM_CODES } from "./session-contract.ts";
+import {
+  normalizeApiPath,
+  SESSION_PASSWORD_PATH,
+  SESSION_PROBLEM_CODES,
+} from "./session-contract.ts";
 
 export const SESSION_WARNING_MS = 5 * 60 * 1000;
 
@@ -245,6 +249,33 @@ export function isStaleSessionProblem(problem: ProblemDetails): boolean {
     problem.status === 401 &&
     problem.code === SESSION_PROBLEM_CODES.unauthenticated
   );
+}
+
+/**
+ * Jonny's #582 wrong-current detail. Any other 401 on this POST
+ * (missing session, expired cookie, generic unauthenticated) is expiry.
+ */
+export const PASSWORD_CHANGE_WRONG_CURRENT_DETAIL =
+  "Current password was not accepted.";
+
+/**
+ * Keep the browser session only when this POST rejected the current
+ * password. The detail must match that sentence exactly. Every other
+ * 401 still marks the session stale and opens Login.
+ */
+export function passwordChangeUnauthenticatedKeepsSession(
+  method: string,
+  instance: string,
+  problem: Pick<ProblemDetails, "status"> & { detail?: string },
+): boolean {
+  if (method.toUpperCase() !== "POST" || problem.status !== 401) {
+    return false;
+  }
+  if (problem.detail !== PASSWORD_CHANGE_WRONG_CURRENT_DETAIL) {
+    return false;
+  }
+  const path = normalizeApiPath((instance.split("?")[0] ?? instance).trim());
+  return path === SESSION_PASSWORD_PATH;
 }
 
 export function isCsrfProblem(problem: ProblemDetails): boolean {

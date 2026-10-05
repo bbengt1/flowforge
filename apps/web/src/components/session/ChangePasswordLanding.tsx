@@ -1,11 +1,17 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useSyncExternalStore } from "react";
-import { CHANGE_PASSWORD_SUCCESS_HREF } from "@/lib/change-password";
+import { useSyncExternalStore } from "react";
+import { useEmbedMode } from "@/components/embed/EmbedMode";
+import { ChangePasswordChrome } from "@/components/session/ChangePasswordChrome";
+import {
+  CHANGE_PASSWORD_EMBED_FORBIDDEN,
+  CHANGE_PASSWORD_SUCCESS_HREF,
+} from "@/lib/change-password";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 
 export function ChangePasswordLanding() {
+  const embed = useEmbedMode();
   const router = useRouter();
   const snapshot = useSyncExternalStore(
     subscribeSession,
@@ -14,17 +20,28 @@ export function ChangePasswordLanding() {
   );
   const mustChange = snapshot.session.mustChangePassword === true;
 
-  useEffect(() => {
-    if (snapshot.active && !mustChange) {
-      router.replace(CHANGE_PASSWORD_SUCCESS_HREF);
-    }
-  }, [mustChange, router, snapshot.active]);
+  if (embed) {
+    return (
+      <p role="status" className="px-6 py-16 text-sm" style={{ color: "var(--ff-muted)" }}>
+        {CHANGE_PASSWORD_EMBED_FORBIDDEN}
+      </p>
+    );
+  }
+
+  if (snapshot.active && !mustChange) {
+    return (
+      <ChangePasswordChrome
+        variant="embedded"
+        onSuccess={(href = CHANGE_PASSWORD_SUCCESS_HREF) => {
+          router.replace(href);
+        }}
+      />
+    );
+  }
 
   const status = !snapshot.active
     ? "Sign in to continue."
-    : mustChange
-      ? "Change your password to continue."
-      : "Opening workflows…";
+    : "Change your password to continue.";
 
   return (
     <main

@@ -7,9 +7,12 @@ import {
   CHANGE_PASSWORD,
   CHANGE_PASSWORD_API_PR,
   CHANGE_PASSWORD_CHROME_SOURCE,
+  CHANGE_PASSWORD_CURRENT_REJECTED,
+  CHANGE_PASSWORD_CURRENT_REQUIRED,
   CHANGE_PASSWORD_EMPTY,
   CHANGE_PASSWORD_EMBED_FORBIDDEN,
   CHANGE_PASSWORD_FAILED,
+  CHANGE_PASSWORD_FORCED_HELP,
   CHANGE_PASSWORD_HREF,
   CHANGE_PASSWORD_ID,
   CHANGE_PASSWORD_MIN_LENGTH,
@@ -21,12 +24,15 @@ import {
   CHANGE_PASSWORD_TOO_SHORT,
   CHANGE_PASSWORD_UNAUTHENTICATED,
   CHANGE_PASSWORD_UNAVAILABLE,
+  CHANGE_PASSWORD_VOLUNTARY_HELP,
   MUST_CHANGE_GATE_SOURCE,
   ONE_TIME_BOOTSTRAP_PASSWORD,
   afterLocalLoginHref,
   changePasswordClientError,
   changePasswordFailureMessage,
   changePasswordFormIsSubmittable,
+  changePasswordRequestBody,
+  changePasswordRequiresCurrentPassword,
   changePasswordHoldsHardLines,
   changePasswordSourceConsumesV1Tokens,
   changePasswordSourceHasBypass,
@@ -39,6 +45,7 @@ import {
   mustChangePasswordBlocksProduct,
 } from "./change-password.ts";
 import { LOGIN_SUCCESS_HREF } from "./local-login.ts";
+import { fetchSameOriginProxy } from "./identity-client.ts";
 import { changeLocalPassword } from "./session-client.ts";
 import { clearSession, getSessionSnapshot, setActiveSession } from "./session-store.ts";
 import type { BrowserSession } from "./session.ts";
@@ -98,6 +105,7 @@ describe("#376 Change-password chrome", () => {
         "src/lib/session-client.ts",
         "src/components/session/ChangePasswordChrome.tsx",
         "src/components/session/ChangePasswordLanding.tsx",
+        "src/components/session/ChangePasswordAccountLink.tsx",
         "src/components/session/MustChangePasswordGate.tsx",
         "src/components/session/LoginChrome.tsx",
         "src/components/session/LoginLanding.tsx",
@@ -111,11 +119,17 @@ describe("#376 Change-password chrome", () => {
   it("is full-dark change-password chrome: masked pair, one submit, no skip", () => {
     const chrome = source(CHANGE_PASSWORD_CHROME_SOURCE);
     assert.match(chrome, /Change password/);
+    assert.match(chrome, /Current password/);
     assert.match(chrome, /New password/);
     assert.match(chrome, /Confirm password/);
-    assert.match(chrome, /one-time bootstrap/);
-    assert.match(chrome, /cannot be skipped/);
-    assert.equal((chrome.match(/type="password"/g) ?? []).length, 2);
+    assert.match(chrome, /mustChangePassword/);
+    assert.match(chrome, /CHANGE_PASSWORD_FORCED_HELP/);
+    assert.match(chrome, /CHANGE_PASSWORD_VOLUNTARY_HELP/);
+    assert.match(CHANGE_PASSWORD_FORCED_HELP, /one-time bootstrap/);
+    assert.match(CHANGE_PASSWORD_FORCED_HELP, /cannot be skipped/);
+    assert.equal(CHANGE_PASSWORD_VOLUNTARY_HELP, "Change your password.");
+    assert.doesNotMatch(CHANGE_PASSWORD_VOLUNTARY_HELP, /cannot be skipped|one-time bootstrap/);
+    assert.equal((chrome.match(/type="password"/g) ?? []).length, 3);
     assert.match(chrome, /changeLocalPassword/);
     assert.match(chrome, /clearChangePasswordForm/);
     assert.match(chrome, /CHANGE_PASSWORD_SUCCESS_HREF/);
@@ -136,23 +150,44 @@ describe("#376 Change-password chrome", () => {
   });
 
   it("rejects empty, mismatch, and one-time reuse before POST", () => {
-    assert.deepEqual(emptyChangePasswordForm(), { password: "", confirm: "" });
-    assert.deepEqual(clearChangePasswordForm(), { password: "", confirm: "" });
+    assert.deepEqual(emptyChangePasswordForm(), {
+      currentPassword: "",
+      password: "",
+      confirm: "",
+    });
+    assert.deepEqual(clearChangePasswordForm(), {
+      currentPassword: "",
+      password: "",
+      confirm: "",
+    });
     assert.equal(changePasswordFormIsSubmittable(emptyChangePasswordForm()), false);
     assert.equal(
-      changePasswordFormIsSubmittable({ password: FIXTURE_ROTATED, confirm: "" }),
+      changePasswordFormIsSubmittable({
+        currentPassword: "",
+        password: FIXTURE_ROTATED,
+        confirm: "",
+      }),
       false,
     );
     assert.equal(
-      changePasswordClientError({ password: "", confirm: "" }),
+      changePasswordClientError({
+        currentPassword: "",
+        password: "",
+        confirm: "",
+      }),
       CHANGE_PASSWORD_EMPTY,
     );
     assert.equal(
-      changePasswordClientError({ password: FIXTURE_ROTATED, confirm: "other-horse" }),
+      changePasswordClientError({
+        currentPassword: "",
+        password: FIXTURE_ROTATED,
+        confirm: "other-horse",
+      }),
       CHANGE_PASSWORD_MISMATCH,
     );
     assert.equal(
       changePasswordClientError({
+        currentPassword: "",
         password: ONE_TIME_BOOTSTRAP_PASSWORD,
         confirm: ONE_TIME_BOOTSTRAP_PASSWORD,
       }),
@@ -160,12 +195,80 @@ describe("#376 Change-password chrome", () => {
     );
     assert.equal(CHANGE_PASSWORD_MIN_LENGTH, 8);
     assert.equal(
-      changePasswordClientError({ password: "shortpw", confirm: "shortpw" }),
+      changePasswordClientError({
+        currentPassword: "",
+        password: "shortpw",
+        confirm: "shortpw",
+      }),
       CHANGE_PASSWORD_TOO_SHORT,
     );
     assert.equal(
-      changePasswordClientError({ password: FIXTURE_ROTATED, confirm: FIXTURE_ROTATED }),
+      changePasswordClientError({
+        currentPassword: "",
+        password: FIXTURE_ROTATED,
+        confirm: FIXTURE_ROTATED,
+      }),
       null,
+    );
+    assert.equal(changePasswordRequiresCurrentPassword(false), true);
+    assert.equal(changePasswordRequiresCurrentPassword(true), false);
+    assert.equal(
+      changePasswordClientError(
+        {
+          currentPassword: "   ",
+          password: FIXTURE_ROTATED,
+          confirm: FIXTURE_ROTATED,
+        },
+        { requireCurrentPassword: true },
+      ),
+      CHANGE_PASSWORD_CURRENT_REQUIRED,
+    );
+    assert.equal(
+      changePasswordClientError(
+        {
+          currentPassword: "",
+          password: "",
+          confirm: "",
+        },
+        { requireCurrentPassword: true },
+      ),
+      CHANGE_PASSWORD_CURRENT_REQUIRED,
+    );
+    assert.equal(
+      changePasswordFormIsSubmittable(
+        {
+          currentPassword: "",
+          password: FIXTURE_ROTATED,
+          confirm: FIXTURE_ROTATED,
+        },
+        true,
+      ),
+      false,
+    );
+    assert.equal(
+      changePasswordClientError(
+        {
+          currentPassword: "now-secret",
+          password: FIXTURE_ROTATED,
+          confirm: FIXTURE_ROTATED,
+        },
+        { requireCurrentPassword: true },
+      ),
+      null,
+    );
+    assert.deepEqual(changePasswordRequestBody(FIXTURE_ROTATED, "now-secret"), {
+      password: FIXTURE_ROTATED,
+      current_password: "now-secret",
+    });
+    assert.deepEqual(changePasswordRequestBody(FIXTURE_ROTATED), {
+      password: FIXTURE_ROTATED,
+    });
+    assert.deepEqual(changePasswordRequestBody(FIXTURE_ROTATED, ""), {
+      password: FIXTURE_ROTATED,
+    });
+    assert.equal(
+      Object.hasOwn(changePasswordRequestBody(FIXTURE_ROTATED), "current_password"),
+      false,
     );
   });
 
@@ -173,6 +276,14 @@ describe("#376 Change-password chrome", () => {
     assert.equal(
       changePasswordFailureMessage(401, "anything"),
       CHANGE_PASSWORD_UNAUTHENTICATED,
+    );
+    assert.equal(
+      changePasswordFailureMessage(401, CHANGE_PASSWORD_CURRENT_REJECTED),
+      CHANGE_PASSWORD_CURRENT_REJECTED,
+    );
+    assert.equal(
+      changePasswordFailureMessage(400, "current_password is required."),
+      "current_password is required.",
     );
     assert.equal(
       changePasswordFailureMessage(403, "Embed sessions cannot change a local password."),
@@ -268,6 +379,20 @@ describe("#376 Change-password chrome", () => {
     const successLanding = source("src/components/session/ChangePasswordLanding.tsx");
     assert.match(successLanding, /CHANGE_PASSWORD_SUCCESS_HREF/);
     assert.match(successLanding, /mustChangePassword/);
+    assert.match(successLanding, /if \(embed\)/);
+    assert.match(successLanding, /CHANGE_PASSWORD_EMBED_FORBIDDEN/);
+    assert.match(successLanding, /variant="embedded"/);
+    assert.ok(
+      successLanding.indexOf("if (embed)") <
+        successLanding.indexOf("<ChangePasswordChrome"),
+    );
+    const accountLink = source("src/components/session/ChangePasswordAccountLink.tsx");
+    assert.match(accountLink, /if \(embed\)/);
+    assert.match(accountLink, /CHANGE_PASSWORD_HREF/);
+    assert.equal(accountLink.includes("ChangePasswordChrome"), false);
+    assert.equal(accountLink.includes("changeLocalPassword"), false);
+    assert.equal(accountLink.includes("localStorage"), false);
+    assert.match(source("src/app/settings/page.tsx"), /ChangePasswordAccountLink/);
   });
 
   it("mounts the gate after the wizard and signed-out doors, never on embed", () => {
@@ -342,6 +467,7 @@ describe("#376 Change-password chrome", () => {
     assert.equal(seen.method, "POST");
     assert.equal(seen.url, "/api/v1/session/password");
     assert.equal(seen.body, JSON.stringify({ password: FIXTURE_ROTATED }));
+    assert.equal(Object.hasOwn(JSON.parse(seen.body ?? "{}"), "current_password"), false);
     const snapshot = getSessionSnapshot();
     assert.equal(snapshot.active, true);
     assert.equal(snapshot.session.mustChangePassword, false);
@@ -352,5 +478,139 @@ describe("#376 Change-password chrome", () => {
     assert.match(client, /SESSION_PASSWORD_PATH/);
     assert.equal(client.includes("localStorage"), false);
     assert.doesNotMatch(client, /searchParams.*password|password=.*\?/);
+  });
+
+  it("includes current_password on a voluntary change and omits it when blank", async () => {
+    setActiveSession({ ...active, mustChangePassword: false });
+    const seen: { body?: string } = {};
+    globalThis.fetch = (async (_input, init) => {
+      seen.body = String(init?.body ?? "");
+      return new Response(
+        JSON.stringify({
+          session: { id: "sess-1", must_change_password: false },
+          principal: { issuer: "local", external_subject: "admin" },
+          csrf_token: "csrf-ok",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const voluntary = await changeLocalPassword(FIXTURE_ROTATED, "now-secret");
+    assert.equal(voluntary.ok, true);
+    assert.equal(
+      seen.body,
+      JSON.stringify({
+        password: FIXTURE_ROTATED,
+        current_password: "now-secret",
+      }),
+    );
+    assert.equal(JSON.stringify(getSessionSnapshot()).includes("now-secret"), false);
+    assert.equal(JSON.stringify(getSessionSnapshot()).includes(FIXTURE_ROTATED), false);
+
+    const omitted = await changeLocalPassword(FIXTURE_ROTATED, "");
+    assert.equal(omitted.ok, true);
+    assert.equal(seen.body, JSON.stringify({ password: FIXTURE_ROTATED }));
+  });
+
+  it("keeps the session when change-password returns 401", async () => {
+    setActiveSession({ ...active, mustChangePassword: false });
+    const calls: string[] = [];
+    globalThis.fetch = (async (input) => {
+      calls.push(String(input));
+      return new Response(
+        JSON.stringify({
+          type: "urn:flowforge:problem:unauthenticated",
+          title: "Unauthenticated",
+          status: 401,
+          detail: CHANGE_PASSWORD_CURRENT_REJECTED,
+          instance: "/api/v1/session/password",
+          code: "unauthenticated",
+          request_id: "req-current",
+        }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/problem+json" },
+        },
+      );
+    }) as typeof fetch;
+
+    const result = await changeLocalPassword(FIXTURE_ROTATED, "wrong-current");
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.statusCode, 401);
+      assert.equal(
+        changePasswordFailureMessage(result.statusCode, result.problem.detail),
+        CHANGE_PASSWORD_CURRENT_REJECTED,
+      );
+    }
+    assert.deepEqual(calls, ["/api/v1/session/password"]);
+    const snapshot = getSessionSnapshot();
+    assert.equal(snapshot.active, true);
+    assert.equal(snapshot.stale, false);
+    assert.equal(snapshot.session.sessionId, "sess-1");
+    assert.equal(snapshot.session.csrfToken, "csrf-ok");
+    assert.equal(snapshot.session.mustChangePassword, false);
+
+    const proxied = await fetchSameOriginProxy({
+      instance: "/api/control-plane/session/password",
+      method: "POST",
+      headers: {
+        Accept: "application/json, application/problem+json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        password: FIXTURE_ROTATED,
+        current_password: "wrong-current",
+      }),
+      requestId: "req-proxy-password",
+    });
+    assert.equal(proxied.ok, false);
+    assert.equal(getSessionSnapshot().active, true);
+    assert.equal(getSessionSnapshot().stale, false);
+    assert.equal(getSessionSnapshot().session.sessionId, "sess-1");
+
+    const other = await fetchSameOriginProxy({
+      instance: "/api/v1/workspaces",
+      method: "GET",
+      headers: { Accept: "application/problem+json" },
+      requestId: "req-other-401",
+    });
+    assert.equal(other.ok, false);
+    assert.equal(getSessionSnapshot().active, false);
+    assert.equal(getSessionSnapshot().stale, true);
+  });
+
+  it("marks the session stale when change-password 401 is not a wrong current password", async () => {
+    setActiveSession({ ...active, mustChangePassword: false });
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          type: "urn:flowforge:problem:unauthenticated",
+          title: "Unauthenticated",
+          status: 401,
+          detail: "Authentication is required.",
+          instance: "/api/v1/session/password",
+          code: "unauthenticated",
+          request_id: "req-expired",
+        }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/problem+json" },
+        },
+      )) as typeof fetch;
+
+    const result = await changeLocalPassword(FIXTURE_ROTATED, "now-secret");
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.statusCode, 401);
+      assert.equal(
+        changePasswordFailureMessage(result.statusCode, result.problem.detail),
+        CHANGE_PASSWORD_UNAUTHENTICATED,
+      );
+    }
+    const snapshot = getSessionSnapshot();
+    assert.equal(snapshot.active, false);
+    assert.equal(snapshot.stale, true);
+    assert.equal(snapshot.session.sessionId, "");
   });
 });

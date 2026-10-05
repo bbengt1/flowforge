@@ -246,5 +246,13 @@ describe("session-client", () => {
     assert.equal(seen.headers?.get(CSRF_HEADER), "csrf-ok");
     assert.equal(seen.body, JSON.stringify({ password: "correct-horse" }));
     assert.equal(getSessionSnapshot().session.mustChangePassword, false);
+
+    const voluntary = await changeLocalPassword("correct-horse", "now-secret");
+    assert.equal(voluntary.ok, true);
+    assert.equal(
+      seen.body,
+      JSON.stringify({ password: "correct-horse", current_password: "now-secret" }),
+    );
+    assert.equal(JSON.stringify(getSessionSnapshot()).includes("now-secret"), false);
   });
 });

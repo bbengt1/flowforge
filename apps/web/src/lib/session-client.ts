@@ -6,6 +6,7 @@ import { fetchSameOriginProxy, type IdentityClientResult } from "./identity-clie
 import type { ItemList } from "./identity-types.ts";
 import { generateRequestId, REQUEST_ID_HEADER } from "./request-id.ts";
 import { isUnauthenticatedProblem, parseBrowserSession } from "./session.ts";
+import { changePasswordRequestBody } from "./change-password.ts";
 import { localLoginBody } from "./local-login.ts";
 import { adminPasswordBody, SET_PASSWORD_API_PATH } from "./set-password.ts";
 import {
@@ -175,9 +176,15 @@ export async function refreshSession(): Promise<IdentityClientResult<SessionPayl
   return result;
 }
 
-/** First-run change-password. Password POST once; never persist the value. */
+/**
+ * Change the local password. Password POST once; never persist the value.
+ * Pass `currentPassword` on a voluntary change. Omit it on a forced reset.
+ * A 401 stays on the form only when the detail is exactly
+ * "Current password was not accepted." Any other 401 clears the session.
+ */
 export async function changeLocalPassword(
   password: string,
+  currentPassword?: string,
 ): Promise<IdentityClientResult<SessionPayload>> {
   const requestId = generateRequestId();
   const instance = sessionBrowserPath(SESSION_PASSWORD_PATH);
@@ -196,7 +203,7 @@ export async function changeLocalPassword(
     instance,
     method: "POST",
     headers,
-    body: JSON.stringify({ password }),
+    body: JSON.stringify(changePasswordRequestBody(password, currentPassword)),
     requestId,
   });
   if (result.ok) {

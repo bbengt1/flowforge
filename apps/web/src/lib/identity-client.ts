@@ -20,7 +20,11 @@ import {
 } from "./problem.ts";
 import { generateRequestId, REQUEST_ID_HEADER, resolveRequestId } from "./request-id.ts";
 import { noteMfaRequiredProblem } from "./oidc-mfa.ts";
-import { isPasswordChangeRequiredProblem, isStaleSessionProblem } from "./session.ts";
+import {
+  isPasswordChangeRequiredProblem,
+  isStaleSessionProblem,
+  passwordChangeUnauthenticatedKeepsSession,
+} from "./session.ts";
 import { sameOriginProxyUrl } from "./session-contract.ts";
 import {
   getSessionSnapshot,
@@ -268,7 +272,15 @@ export async function fetchSameOriginProxy<T>(options: {
             echoed,
             "The control plane returned a problem response that could not be parsed.",
           );
-      if (isStaleSessionProblem(problem)) {
+      // Keep the session only for the wrong-current detail on this POST.
+      if (
+        isStaleSessionProblem(problem) &&
+        !passwordChangeUnauthenticatedKeepsSession(
+          options.method,
+          options.instance,
+          problem,
+        )
+      ) {
         markSessionStale();
       }
       notePasswordChange(problem);
