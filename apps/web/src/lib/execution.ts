@@ -464,8 +464,33 @@ function readPlainErrorParts(error: unknown): { code: string; message: string } 
 }
 
 /**
- * Failed-step error as plain text. A failed step with both fields reads
- * "code: message". Succeeded steps and empty errors return null.
+ * Step-panel copy for an error code that already has a run-level sentence.
+ * Returns the message without the raw code, or the sentence when the
+ * message is missing or still contains that code. Unknown codes return null.
+ */
+function knownStatusReasonErrorText(code: string, message: string): string | null {
+  const sentence = executionStatusReasonSentence(code);
+  if (!sentence) {
+    return null;
+  }
+  let rest = message.trim();
+  const prefixed = `${code}:`;
+  if (rest === code) {
+    rest = "";
+  } else if (rest.startsWith(prefixed)) {
+    rest = rest.slice(prefixed.length).trim();
+  }
+  if (!rest || rest.includes(code)) {
+    return sentence;
+  }
+  return rest;
+}
+
+/**
+ * Failed-step error as plain text. An unknown code with a message reads
+ * "code: message". A known statusReason code uses that sentence, or the
+ * message alone, and never the raw code. Succeeded steps and empty errors
+ * return null.
  */
 export function stepFailureErrorText(step: {
   status?: string;
@@ -475,6 +500,10 @@ export function stepFailureErrorText(step: {
     return null;
   }
   const { code, message } = readPlainErrorParts(step.error);
+  const known = knownStatusReasonErrorText(code, message);
+  if (known) {
+    return known;
+  }
   if (code && message) {
     return `${code}: ${message}`;
   }
