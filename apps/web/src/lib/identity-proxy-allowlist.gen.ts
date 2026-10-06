@@ -98,6 +98,30 @@ export const GENERATED_PROXY_ROUTES: readonly GeneratedProxyRoute[] = [
   },
   {
     methods: ["GET", "POST"],
+    pattern: ["workspace", "groups"],
+    auth: "authenticated",
+    params: {},
+  },
+  {
+    methods: ["GET", "PATCH", "DELETE"],
+    pattern: ["workspace", "groups", "{groupId}"],
+    auth: "authenticated",
+    params: {groupId: "uuid"},
+  },
+  {
+    methods: ["POST"],
+    pattern: ["workspace", "groups", "{groupId}", "members"],
+    auth: "authenticated",
+    params: {groupId: "uuid"},
+  },
+  {
+    methods: ["DELETE"],
+    pattern: ["workspace", "groups", "{groupId}", "members", "{userId}"],
+    auth: "authenticated",
+    params: {groupId: "uuid", userId: "uuid"},
+  },
+  {
+    methods: ["GET", "POST"],
     pattern: ["workspace", "records"],
     auth: "authenticated",
     params: {},

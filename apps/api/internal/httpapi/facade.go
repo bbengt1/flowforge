@@ -50,6 +50,8 @@ const (
 	CodeStepAttemptSuperseded          = core.CodeStepAttemptSuperseded
 	CodeApprovalClosed                 = core.CodeApprovalClosed
 	CodeApprovalRequirementUnavailable = core.CodeApprovalRequirementUnavailable
+	CodeGroupNameTaken                 = core.CodeGroupNameTaken
+	CodeGroupMemberNotInWorkspace      = core.CodeGroupMemberNotInWorkspace
 	MaxRequestBody                     = core.MaxRequestBody
 	RequestIDHeader                    = core.RequestIDHeader
 	AuthPublic                         = rt.AuthPublic

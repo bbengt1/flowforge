@@ -272,6 +272,9 @@ func stubOperation(rt Route) (*yaml.Node, error) {
 	if rt.Method == "POST" && rt.Pattern == "/api/v1/approvals/{approvalId}/decide" {
 		return approvalDecideOperation(rt)
 	}
+	if op, ok := workspaceGroupOps[rt.Method+" "+rt.Pattern]; ok {
+		return workspaceGroupOperation(rt, op)
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "operationId: %s\n", operationID(rt.Method, rt.OpenAPIPath()))
 	fmt.Fprintf(&b, "summary: %s %s\n", rt.Method, rt.OpenAPIPath())

@@ -265,6 +265,7 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 		CodeExecutionNotRetryable: true, CodeStepAttemptSuperseded: true,
 		CodeApprovalClosed: true, CodeApprovalRequirementUnavailable: true,
 		CodePasswordChangeRequired: true,
+		CodeGroupNameTaken:         true, CodeGroupMemberNotInWorkspace: true,
 	}
 	for _, v := range enums {
 		s, _ := v.(string)

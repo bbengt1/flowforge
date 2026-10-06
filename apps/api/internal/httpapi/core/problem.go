@@ -68,6 +68,14 @@ const (
 	// rebuilding the pinned requirement hits a database, network, or timeout
 	// error. The approval is unchanged and nothing is recorded.
 	CodeApprovalRequirementUnavailable = "approval_requirement_unavailable"
+	// CodeGroupNameTaken is a workspace group display name already used in
+	// the workspace, compared without regard to case. errors[].path is
+	// displayName. The unique-index race maps here too.
+	CodeGroupNameTaken = "group_name_taken"
+	// CodeGroupMemberNotInWorkspace refuses a group member add for a user
+	// who is not active or has no role binding in the workspace.
+	// errors[].path is userId.
+	CodeGroupMemberNotInWorkspace = "group_member_not_in_workspace"
 )
 
 // FieldError is a YAML-path validation failure returned on invalid-workflow.

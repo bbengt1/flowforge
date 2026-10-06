@@ -26,5 +26,12 @@ func Routes2(s *Server) []rt.Route {
 		rt.R(http.MethodGet, "/api/v1/workspace/members", rt.AuthAuthenticated, rt.ProxyBrowser, s.listMembers),
 		rt.R(http.MethodPut, "/api/v1/workspace/members", rt.AuthAuthenticated, rt.ProxyBrowser, s.PutMember),
 		rt.R(http.MethodDelete, "/api/v1/workspace/members/{userID}", rt.AuthAuthenticated, rt.ProxyBrowser, s.deleteMember),
+		rt.R(http.MethodGet, "/api/v1/workspace/groups", rt.AuthAuthenticated, rt.ProxyBrowser, s.listWorkspaceGroups),
+		rt.R(http.MethodPost, "/api/v1/workspace/groups", rt.AuthAuthenticated, rt.ProxyBrowser, s.createWorkspaceGroup),
+		rt.R(http.MethodGet, "/api/v1/workspace/groups/{groupId}", rt.AuthAuthenticated, rt.ProxyBrowser, s.getWorkspaceGroup),
+		rt.R(http.MethodPatch, "/api/v1/workspace/groups/{groupId}", rt.AuthAuthenticated, rt.ProxyBrowser, s.renameWorkspaceGroup),
+		rt.R(http.MethodDelete, "/api/v1/workspace/groups/{groupId}", rt.AuthAuthenticated, rt.ProxyBrowser, s.deleteWorkspaceGroup),
+		rt.R(http.MethodPost, "/api/v1/workspace/groups/{groupId}/members", rt.AuthAuthenticated, rt.ProxyBrowser, s.addWorkspaceGroupMember),
+		rt.R(http.MethodDelete, "/api/v1/workspace/groups/{groupId}/members/{userId}", rt.AuthAuthenticated, rt.ProxyBrowser, s.removeWorkspaceGroupMember),
 	}
 }
