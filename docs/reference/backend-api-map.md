@@ -181,7 +181,7 @@ Workspace identity is resolved only from `X-FlowForge-Tenant-ID` or `X-FlowForge
 
 ### Workspace groups
 
-Groups are named sets of workspace members used only to target approvals. A group never grants a permission, and membership never grants `approval.decide`. Every route requires `workspace.administer`, goes through the browser identity proxy, and refuses an embed session with `403` before any permission is read. There is no `/embed/v1` group surface. Responses never include an email address. Another workspace's group is `404`.
+Groups are named sets of workspace members used only to target approvals. A group never grants a permission, and membership never grants `approval.decide`. Every route requires `workspace.administer`, goes through the browser identity proxy, and refuses an embed session with `403` before any permission is read. There is no `/embed/v1` group surface. Responses never include an email address. Another workspace's group is `404`. A path `{groupId}` that is not a UUID is also `404`, after the permission check, matching the other resource routes and the identity proxy. A path `{userId}` on member removal that is not a UUID is `400` `invalid-request`, matching workspace member removal.
 
 | Route | Purpose | Success | Failure |
 | --- | --- | --- | --- |
@@ -191,9 +191,9 @@ Groups are named sets of workspace members used only to target approvals. A grou
 | `PATCH /api/v1/workspace/groups/{groupId}` | Rename. Same rules as create. | `200` group | `400` `401` `403` `404` `409` |
 | `DELETE /api/v1/workspace/groups/{groupId}` | Hard delete; member rows go with it. A workflow that still names the deleted id targets nobody. | `204` | `401` `403` `404` |
 | `POST /api/v1/workspace/groups/{groupId}/members` | Add `{userId}`. Idempotent. The user must be active and bound in this workspace. | `204` | `400` `401` `403` `404` |
-| `DELETE /api/v1/workspace/groups/{groupId}/members/{userId}` | Remove a member. Idempotent. | `204` | `401` `403` `404` |
+| `DELETE /api/v1/workspace/groups/{groupId}/members/{userId}` | Remove a member. Idempotent. | `204` | `400` `401` `403` `404` |
 
-Problem codes: `409 group_name_taken` (`errors[].path` `displayName`, including a lost race on the unique index); `400 group_member_not_in_workspace` (`errors[].path` `userId`) for an unknown, disabled, or unbound user; `400 invalid-request` with `errors[].path` `displayName` for an empty or too-long name, or `userId` when it is not a UUID. Each change writes one `audit_events` row in the same transaction (`resource_type` `workspace_group`; actions `workspace_group.create`, `.rename`, `.delete`, `.member_add`, `.member_remove`; details are ids only). An idempotent add or remove that changes nothing writes no row.
+Problem codes: `409 group_name_taken` (`errors[].path` `displayName`, including a lost race on the unique index); `400 group_member_not_in_workspace` (`errors[].path` `userId`) for an unknown, disabled, or unbound user; `400 invalid-request` with `errors[].path` `displayName` for an empty or too-long name, or `userId` (in the add body or the removal path) when it is not a UUID. Each change writes one `audit_events` row in the same transaction (`resource_type` `workspace_group`; actions `workspace_group.create`, `.rename`, `.delete`, `.member_add`, `.member_remove`; details are ids only). An idempotent add or remove, or a rename to the exact current name, changes nothing and writes no row.
 
 ## Workspace isolation (E2.2)
 
