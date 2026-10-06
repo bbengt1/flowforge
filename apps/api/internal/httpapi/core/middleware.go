@@ -40,9 +40,14 @@ type Security struct {
 	// does not lock, so unit tests and explicit local/dev/test HTTP
 	// can still bootstrap Login.
 	ProductionLocked bool
-	Session          SessionPolicy
-	VaultKeys        vault.Keys
-	JobBindingKey    []byte
+	// MFAEnforcementOff skips TOTP step-up for privileged grants.
+	// config.Load sets it only when MFA_ENFORCEMENT=off and the process
+	// is not production-locked. Combined with ProductionLocked it stays
+	// fail-closed: a locked process never skips step-up.
+	MFAEnforcementOff bool
+	Session           SessionPolicy
+	VaultKeys         vault.Keys
+	JobBindingKey     []byte
 }
 
 // SessionPolicy is idle/absolute lifetime for browser sessions.

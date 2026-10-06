@@ -155,7 +155,7 @@ tickets or alert payloads.
 | `GET /api/v1/metrics` | Prometheus text | HTTP count/duration plus OpenTelemetry business series (queue, lease, execution outcome, vault). `platform.administer` or machine `ops.metrics.read`. SLOs: [slo-alerts.md](slo-alerts.md). |
 | `GET /api/v1/alerts` | API | Kinds `authorization`, `replay`, `policy`, `redaction`. Identifiers only (`correlationId`, `requestId`, `resourceType`, `resourceId`, `code`). Ack: `POST /alerts/{id}/ack` (`alert.ack`). |
 | `GET /api/v1/audit-events` | API | Append-only, redacted. `flowforge_app` cannot UPDATE or DELETE live rows. |
-| Session audit | `GET /api/v1/session/audit-events` | `session.created` / `revoked` / `expired` / `csrf_rejected` / … — no cookie values. |
+| Session audit | `GET /api/v1/session/audit-events` | `session.created` / `refreshed` / `revoked` / `expired` / `csrf_rejected` / `origin_rejected` / `privilege_denied` / `auth_rejected` / `mfa_bypassed`, and `bootstrap.admin_password_set` — no cookie values. |
 
 **Page / escalate when**
 

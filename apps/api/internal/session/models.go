@@ -50,6 +50,13 @@ const (
 	EventOriginRejected  = "session.origin_rejected"
 	EventPrivilegeDenied = "session.privilege_denied"
 	EventAuthRejected    = "session.auth_rejected"
+	// EventMFABypassed is written when MFA_ENFORCEMENT=off skipped
+	// step-up for a privileged grant. Outcome is allowed. The boolean
+	// on the record is derived from this type, not from the reason.
+	EventMFABypassed = "session.mfa_bypassed"
+	// ReasonMFABypassed is the human reason stored with EventMFABypassed.
+	// It must stay within the 1-200 character check.
+	ReasonMFABypassed = "mfa step-up skipped"
 	// EventBootstrapAdminPasswordSet is the first-run setup-token
 	// success. It is not a session cookie event. The reason and this
 	// type never carry the token or the password.
@@ -124,6 +131,18 @@ type AuditEvent struct {
 	Reason    string    `json:"reason"`
 	RequestID string    `json:"request_id,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
+	// MFABypassed is true when this row is EventMFABypassed. There is
+	// no details column. ListAudit sets the field from the event type.
+	MFABypassed bool `json:"mfa_bypassed,omitempty"`
+}
+
+// NoteMFABypass sets MFABypassed from the event type. The reason text
+// is not consulted.
+func (e *AuditEvent) NoteMFABypass() {
+	if e == nil {
+		return
+	}
+	e.MFABypassed = e.EventType == EventMFABypassed
 }
 
 // Issued is the secret material returned once when a session is created

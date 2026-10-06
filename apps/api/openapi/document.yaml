@@ -40,8 +40,11 @@ info:
       the PKCE verifier stay on the server. MFA step-up (`GET`/`POST`
       `/session/mfa`) gates `platform.administer` and `credential.*` on
       local-login and OIDC sessions (`403` `mfa-required`). Trusted-dev,
-      machine, and embed sessions are not that gate. There is no
-      IdP-admin API.
+      machine, and embed sessions are not that gate. `GET /session/mfa`
+      always includes `enforcement` (`on` or `off`). `off` is only when
+      `MFA_ENFORCEMENT=off` and the process is not production-locked;
+      that setting is a boot-fail in a production-locked process. There
+      is no IdP-admin API.
       `POST /tenants` and `POST /workspaces` require
       `platform.administer` (`PLATFORM_ADMINS`) on a non-embed session.
       Embed-origin sessions are `403` and cannot bootstrap tenants or

@@ -344,6 +344,7 @@ func (p *Postgres) ListAudit(ctx context.Context, userID string, limit int) ([]A
 		if err := rows.Scan(&e.ID, &e.UserID, &e.SessionID, &e.EventType, &e.Outcome, &e.Reason, &e.RequestID, &e.CreatedAt); err != nil {
 			return nil, mapDBErr(err)
 		}
+		e.NoteMFABypass()
 		out = append(out, e)
 	}
 	return out, mapDBErr(rows.Err())

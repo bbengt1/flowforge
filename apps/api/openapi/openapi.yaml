@@ -41,8 +41,11 @@ info:
       the PKCE verifier stay on the server. MFA step-up (`GET`/`POST`
       `/session/mfa`) gates `platform.administer` and `credential.*` on
       local-login and OIDC sessions (`403` `mfa-required`). Trusted-dev,
-      machine, and embed sessions are not that gate. There is no
-      IdP-admin API.
+      machine, and embed sessions are not that gate. `GET /session/mfa`
+      always includes `enforcement` (`on` or `off`). `off` is only when
+      `MFA_ENFORCEMENT=off` and the process is not production-locked;
+      that setting is a boot-fail in a production-locked process. There
+      is no IdP-admin API.
       `POST /tenants` and `POST /workspaces` require
       `platform.administer` (`PLATFORM_ADMINS`) on a non-embed session.
       Embed-origin sessions are `403` and cannot bootstrap tenants or
@@ -7096,7 +7099,7 @@ components:
     MFAStatus:
       type: object
       additionalProperties: false
-      required: [method, enrolled, satisfied, applicable, privileged_permissions]
+      required: [method, enrolled, satisfied, applicable, privileged_permissions, enforcement]
       properties:
         method:
           type: string
@@ -7114,6 +7117,14 @@ components:
           items:
             type: string
           description: platform.administer and credential.*
+        enforcement:
+          type: string
+          enum: ["on", "off"]
+          description: |
+            Process step-up mode. `on` is unset or `MFA_ENFORCEMENT=on`.
+            `off` is set only when `MFA_ENFORCEMENT=off` and the process is
+            not production-locked. Other fields stay the enrollment and
+            session state they already were.
         otpauth_uri:
           type: string
           description: Present only on the enroll response, once. Contains the TOTP secret. Do not store.
@@ -7262,6 +7273,8 @@ components:
             - session.origin_rejected
             - session.privilege_denied
             - session.auth_rejected
+            - bootstrap.admin_password_set
+            - session.mfa_bypassed
         outcome:
           type: string
           enum: [allowed, denied]
@@ -7272,6 +7285,14 @@ components:
         created_at:
           type: string
           format: date-time
+        mfa_bypassed:
+          type: boolean
+          description: |
+            True when this row's `event_type` is `session.mfa_bypassed`.
+            Those rows are written when `MFA_ENFORCEMENT=off` skipped
+            step-up for a privileged grant. `outcome` is `allowed`.
+            `reason` is human text such as `mfa step-up skipped`.
+            The flag is set from the event type. Omitted on every other event.
     SessionAuditEventList:
       type: object
       required: [items]

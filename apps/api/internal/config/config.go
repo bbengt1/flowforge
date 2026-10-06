@@ -147,6 +147,11 @@ type Config struct {
 	// MFAKey encrypts TOTP secrets. Empty does not change boot.
 	// Malformed MFA_SECRET_KEY is a boot-fail.
 	MFAKey []byte
+	// MFAEnforcementOff skips privileged TOTP step-up. True only when
+	// MFA_ENFORCEMENT=off and the process is not production-locked.
+	// Unset and on keep enforcement. off in a production-locked process,
+	// and any other value, are boot-fails.
+	MFAEnforcementOff bool
 	// SCIM is opt-in. Partial SCIM_* config is a boot-fail. All empty
 	// leaves /scim/v2 fail-closed when called. The bearer is not logged.
 	SCIM scim.Settings
@@ -254,6 +259,11 @@ func load(skipEmbed bool) (Config, error) {
 		return Config{}, fmt.Errorf("EMBED_AUDIENCE must be %q", embed.DefaultAudience)
 	}
 	appEnv := firstNonEmpty(os.Getenv(authz.EnvAppEnv), os.Getenv(authz.EnvFlowforgeEnv))
+	mfaOff, err := mfa.ResolveEnforcement(os.Getenv(mfa.EnvEnforcement), appEnv, cfg.RequireTLS)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.MFAEnforcementOff = mfaOff
 	trustHeaders, err := authz.ResolveTrustedDevIdentityHeaders(os.Getenv(authz.EnvTrustedDevIdentityHeaders), appEnv, cfg.RequireTLS)
 	if err != nil {
 		return Config{}, err

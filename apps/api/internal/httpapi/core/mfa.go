@@ -19,7 +19,11 @@ type MfaStatus struct {
 	Satisfied             bool     `json:"satisfied"`
 	Applicable            bool     `json:"applicable"`
 	PrivilegedPermissions []string `json:"privileged_permissions"`
-	OTPAuthURI            string   `json:"otpauth_uri,omitempty"`
+	// Enforcement is "off" when MFA_ENFORCEMENT=off skipped step-up for
+	// this process, and "on" otherwise. Additive; the other fields stay
+	// the enrollment and session state they already were.
+	Enforcement string `json:"enforcement"`
+	OTPAuthURI  string `json:"otpauth_uri,omitempty"`
 }
 
 func (s *Server) getSessionMFA(w http.ResponseWriter, r *http.Request) {
@@ -152,6 +156,10 @@ func (s *Server) allowMFAGrant(w http.ResponseWriter, r *http.Request, action st
 	if pc == nil || pc.Session == nil || pc.Session.Binding.Bound() || !session.RequiresMFA(pc.Session.AuthMethod) {
 		return true
 	}
+	if s.mfaStepUpBypassed() {
+		s.auditMFABypassed(r, *pc.Session)
+		return true
+	}
 	if s.MFA == nil {
 		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "MFA is not configured.")
 		return false
@@ -187,6 +195,7 @@ func (s *Server) MfaStatus(r *http.Request, userID, account string, satisfiedOve
 		Method:                "totp",
 		Applicable:            applicable,
 		PrivilegedPermissions: authz.MFAPrivilegedPermissions(),
+		Enforcement:           s.mfaEnforcement(),
 	}
 	if !applicable {
 		status.Satisfied = true
@@ -211,6 +220,19 @@ func (s *Server) MfaStatus(r *http.Request, userID, account string, satisfiedOve
 
 func (s *Server) mfaKeyReady() bool {
 	return len(s.MFAKey) == 32
+}
+
+// mfaStepUpBypassed reports the dev/QA skip. ProductionLocked wins so a
+// locked process cannot honor a leftover flag even if it was wired on.
+func (s *Server) mfaStepUpBypassed() bool {
+	return s.Sec.MFAEnforcementOff && !s.Sec.ProductionLocked
+}
+
+func (s *Server) mfaEnforcement() string {
+	if s.mfaStepUpBypassed() {
+		return mfa.EnforcementOff
+	}
+	return mfa.EnforcementOn
 }
 
 func (s *Server) allowMFAVerify(r *http.Request, userID string) (bool, time.Duration, error) {

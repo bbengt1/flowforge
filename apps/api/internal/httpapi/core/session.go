@@ -609,6 +609,17 @@ func (s *Server) clearSessionCookies(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) AuditSession(r *http.Request, rec session.Record, eventType, outcome, reason string) {
+	s.writeSessionAudit(r, rec, eventType, outcome, reason, false)
+}
+
+// auditMFABypassed records that step-up was skipped for one privileged
+// grant. The event type is session.mfa_bypassed and the outcome is
+// allowed. mfa_bypassed is set from that type on read.
+func (s *Server) auditMFABypassed(r *http.Request, rec session.Record) {
+	s.writeSessionAudit(r, rec, session.EventMFABypassed, session.OutcomeAllowed, session.ReasonMFABypassed, true)
+}
+
+func (s *Server) writeSessionAudit(r *http.Request, rec session.Record, eventType, outcome, reason string, mfaBypassed bool) {
 	if s.Sessions == nil {
 		return
 	}
@@ -622,14 +633,16 @@ func (s *Server) AuditSession(r *http.Request, rec session.Record, eventType, ou
 		}
 	}
 	event := session.AuditEvent{
-		UserID:    userID,
-		SessionID: sessionID,
-		EventType: eventType,
-		Outcome:   outcome,
-		Reason:    reason,
-		RequestID: RequestIDFromContext(r.Context()),
-		CreatedAt: s.ClockNow(),
+		UserID:      userID,
+		SessionID:   sessionID,
+		EventType:   eventType,
+		Outcome:     outcome,
+		Reason:      reason,
+		RequestID:   RequestIDFromContext(r.Context()),
+		CreatedAt:   s.ClockNow(),
+		MFABypassed: mfaBypassed,
 	}
+	event.NoteMFABypass()
 	if err := s.Sessions.Audit(r.Context(), event); err != nil && s.Log != nil {
 		s.Log.Error("session_audit_persist",
 			"request_id", event.RequestID,
@@ -637,14 +650,18 @@ func (s *Server) AuditSession(r *http.Request, rec session.Record, eventType, ou
 		)
 	}
 	if s.Log != nil {
-		s.Log.Info("session_audit",
+		args := []any{
 			"request_id", event.RequestID,
 			"event_type", eventType,
 			"outcome", outcome,
 			"reason", reason,
 			"user_id", userID,
 			"session_id", sessionID,
-		)
+		}
+		if event.MFABypassed {
+			args = append(args, "mfa_bypassed", true)
+		}
+		s.Log.Info("session_audit", args...)
 	}
 }
 

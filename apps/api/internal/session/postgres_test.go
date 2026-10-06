@@ -181,6 +181,99 @@ func TestPostgresRevokeBoundToWorkspaceAndHardDelete(t *testing.T) {
 	}
 }
 
+func TestPostgresMFABypassedAuditRoundTrip(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	pool, err := postgres.Open(ctx, testDatabaseURL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+
+	users := identity.NewPostgres(pool)
+	suffix := newID()[:8]
+	user, err := users.UpsertUser(ctx, "https://idp.example", "mfa-bypass-"+suffix, "MFA Bypass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := NewPostgres(pool)
+	now := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	issued, err := store.Create(ctx, user.ID, now, time.Hour, 12*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(ReasonMFABypassed); n < 1 || n > 200 {
+		t.Fatalf("reason length %d is outside 1-200", n)
+	}
+
+	if err := store.Audit(ctx, AuditEvent{
+		UserID:    user.ID,
+		SessionID: issued.Record.ID,
+		EventType: EventMFABypassed,
+		Outcome:   OutcomeAllowed,
+		Reason:    ReasonMFABypassed,
+		RequestID: "caller-request-16",
+		CreatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Same reason on privilege_denied must not set the flag. The boolean
+	// comes from the event type.
+	if err := store.Audit(ctx, AuditEvent{
+		UserID:      user.ID,
+		SessionID:   issued.Record.ID,
+		EventType:   EventPrivilegeDenied,
+		Outcome:     OutcomeDenied,
+		Reason:      ReasonMFABypassed,
+		RequestID:   "caller-request-16",
+		CreatedAt:   now.Add(time.Second),
+		MFABypassed: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// The old reason token is ordinary text. It does not mark a row.
+	if err := store.Audit(ctx, AuditEvent{
+		UserID:    user.ID,
+		SessionID: issued.Record.ID,
+		EventType: EventPrivilegeDenied,
+		Outcome:   OutcomeDenied,
+		Reason:    "mfa_bypassed:true",
+		RequestID: "caller-request-16",
+		CreatedAt: now.Add(2 * time.Second),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := store.ListAudit(ctx, user.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bypass, sameReason, oldToken *AuditEvent
+	for i := range events {
+		event := &events[i]
+		switch {
+		case event.EventType == EventMFABypassed:
+			bypass = event
+		case event.Reason == ReasonMFABypassed:
+			sameReason = event
+		case event.Reason == "mfa_bypassed:true":
+			oldToken = event
+		}
+	}
+	if bypass == nil || sameReason == nil || oldToken == nil {
+		t.Fatalf("missing rows: %+v", events)
+	}
+	if bypass.Outcome != OutcomeAllowed || bypass.Reason != ReasonMFABypassed || !bypass.MFABypassed {
+		t.Fatalf("bypass row = %+v", *bypass)
+	}
+	if sameReason.EventType != EventPrivilegeDenied || sameReason.MFABypassed {
+		t.Fatalf("reason must not set mfa_bypassed: %+v", *sameReason)
+	}
+	if oldToken.MFABypassed || oldToken.EventType != EventPrivilegeDenied {
+		t.Fatalf("old reason token must not set mfa_bypassed: %+v", *oldToken)
+	}
+}
+
 func testDatabaseURL(t *testing.T) string {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")

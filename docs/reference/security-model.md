@@ -39,8 +39,17 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
  the server. There is no IdP-admin API. TOTP MFA gates
  `platform.administer` and `credential.*` on local-login and OIDC
  sessions (`403` `mfa-required`) until enroll and verify. Machine,
- trusted-dev, and embed sessions are not that gate. SCIM 2.0 is a
- separate door at `/scim/v2`, authenticated only by
+ trusted-dev, and embed sessions are not that gate.
+ `MFA_ENFORCEMENT=off` skips only that step-up, and only when the
+ process is not production-locked. It is dev/QA-only: the same value
+ in a production-locked process (empty, production, or unknown
+ `APP_ENV`, or `REQUIRE_TLS=true`) refuses to boot. Unset and `on`
+ keep enforcement. Any other value is a boot-fail. RBAC, sessions,
+ `must_change_password`, enroll, verify, and embed (ADV-021, ADV-024)
+ stay unchanged. `GET /api/v1/session/mfa` reports `enforcement`
+ `on` or `off`. Skipped privileged grants write `session.mfa_bypassed`
+ (`outcome` `allowed`); `mfa_bypassed: true` is set from that event type.
+ SCIM 2.0 is a separate door at `/scim/v2`, authenticated only by
  `SCIM_BEARER_TOKEN` (constant-time compare). It is not an
  `ff_session`, not `POST /machine/token`, and not
  `POST /embed/exchange`. All `SCIM_*` unset fails those routes

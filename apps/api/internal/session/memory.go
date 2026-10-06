@@ -222,6 +222,7 @@ func (m *Memory) Audit(_ context.Context, event AuditEvent) error {
 	} else {
 		event.CreatedAt = event.CreatedAt.UTC()
 	}
+	event.NoteMFABypass()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.audit = append(m.audit, event)
@@ -242,7 +243,9 @@ func (m *Memory) ListAudit(_ context.Context, userID string, limit int) ([]Audit
 	var out []AuditEvent
 	for i := len(m.audit) - 1; i >= 0 && len(out) < limit; i-- {
 		if m.audit[i].UserID == userID {
-			out = append(out, m.audit[i])
+			event := m.audit[i]
+			event.NoteMFABypass()
+			out = append(out, event)
 		}
 	}
 	if out == nil {
