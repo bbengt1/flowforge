@@ -41,7 +41,7 @@ The Kubernetes files are a foundation only: configure the database egress policy
 
 API image (`` / G.0.9):
 
-- `apps/api/Dockerfile`: `USER 65532:65532`, digest-pinned `golang:1.26-alpine` (build) and `alpine:3.20` (runtime) multi-arch indexes. `HEALTHCHECK` runs `/usr/local/bin/healthcheck`. When pid 1 is the API it calls `GET /api/v1/health` on port 8080. When pid 1 is the runner, local worker, migrate, or kek-rotate, the probe succeeds without that port. Compose `api` still probes `GET /api/v1/health`. Compose `worker` disables the probe. How to refresh pins: [Refreshing Dockerfile base digests](#refreshing-dockerfile-base-digests).
+- `apps/api/Dockerfile`: `USER 65532:65532`, digest-pinned `golang:1.26-alpine` (build) and `alpine:3.20` (runtime) multi-arch indexes. `HEALTHCHECK` runs `/usr/local/bin/healthcheck`. When pid 1 is the API it calls `GET /api/v1/health` on port 8080. When pid 1 is the runner, local worker, migrate, kek-rotate, or slug-backfill, the probe succeeds without that port. Compose `api` still probes `GET /api/v1/health`. Compose `worker` disables the probe. How to refresh pins: [Refreshing Dockerfile base digests](#refreshing-dockerfile-base-digests).
 
 Web image and Next.js headers (``):
 

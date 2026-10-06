@@ -15,6 +15,7 @@ weaken E12.1 / E12.2 harnesses.
 | [SLOs and alerts](slo-alerts.md) | On-call / ops | Control-plane SLOs, business metrics, example Prometheus alert rules |
 | [Retention and backup](retention-backup.md) | Ops / compliance | Encrypted backups, restore cadence, retention purge, legal hold |
 | [KEK rotation](kek-rotation.md) | Ops / security | KMS-wrapped data KEK, online re-encryption, dual-KEK window |
+| [Workflow draft slug backfill](workflow-slug-backfill.md) | Ops | One-time, re-runnable repair of drafts whose `metadata.slug` differs from the stored workflow slug |
 | [E12.3 threat-model review](../reference/e12-threat-model-review.md) | Production-gate reviewers | Trust boundaries, embed, credentials, SSRF, tenancy; sign-off checklist |
 | [Operator / admin UI](../guides/operator-admin.md) | Operators, workspace admins | Product-shell walkthroughs after R2–R7: home/editor, grant-gated membership off product chrome, labeled Example context, vault, approvals, executions, alerts, embed chrome, admin screens |
 | [Accessibility review](../reference/e12-accessibility-review.md) | Production-gate reviewers | Keyboard, contrast, assistive-tech findings and cheap `apps/web` fixes |
