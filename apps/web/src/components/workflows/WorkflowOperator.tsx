@@ -51,8 +51,7 @@ import {
 import {
   WORKFLOW_NAME_NOT_READY,
   WORKFLOW_NAME_YAML_FAILED,
-  draftSaveSlugMessage,
-  draftSaveSlugOnlyErrors,
+  draftSaveSlugImmutableDetail,
   editorWorkflowRenameAllowed,
   workflowNameCommitDecision,
   workflowNameSaveError,
@@ -1406,14 +1405,19 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           return { ok: false, detail: result.problem.detail };
         }
         // A save refused only on the slug path keeps the graph: the YAML
-        // is valid, only metadata.slug changed. Placement is by path.
-        const slugOnly = draftSaveSlugOnlyErrors(result.errors);
-        setErrors(result.errors);
-        if (slugOnly) {
-          const detail = draftSaveSlugMessage(workflow.slug);
-          setProblem({ ...result.problem, detail });
-          return { ok: false, detail };
+        // is valid, only metadata.slug changed. Clear field errors so
+        // ProblemBanner can show the stored-slug message (it hides when
+        // errors.length > 0).
+        const slugDetail = draftSaveSlugImmutableDetail(
+          result.errors,
+          workflow.slug,
+        );
+        if (slugDetail) {
+          setErrors([]);
+          setProblem({ ...result.problem, detail: slugDetail });
+          return { ok: false, detail: slugDetail };
         }
+        setErrors(result.errors);
         setStatus("invalid");
         if (result.errors.length > 0) {
           clearGraph();

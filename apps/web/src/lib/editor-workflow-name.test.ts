@@ -12,6 +12,7 @@ import {
   WORKFLOW_NAME_SAVE_FAILED,
   editorHeadingRenamesInline,
   editorRenameUsesDraftSave,
+  draftSaveSlugImmutableDetail,
   draftSaveSlugMessage,
   draftSaveSlugOnlyErrors,
   editorWorkflowRenameAllowed,
@@ -273,5 +274,32 @@ describe("named create YAML", () => {
     assert.equal(draftSaveSlugOnlyErrors([{ path: "metadata.slug" }]), false);
     assert.match(draftSaveSlugMessage("orders-sync"), /back to orders-sync/);
     assert.match(draftSaveSlugMessage(""), /as it was/);
+  });
+
+  it("returns a banner detail for slug-only save errors and nothing otherwise", () => {
+    const detail = draftSaveSlugImmutableDetail([{ path: "slug" }], "orders-sync");
+    assert.equal(detail, draftSaveSlugMessage("orders-sync"));
+    assert.match(detail ?? "", /back to orders-sync/);
+    assert.equal(draftSaveSlugImmutableDetail([], "orders-sync"), null);
+    assert.equal(
+      draftSaveSlugImmutableDetail(
+        [{ path: "slug" }, { path: "spec.nodes[0]" }],
+        "orders-sync",
+      ),
+      null,
+    );
+  });
+
+  it("clears field errors on slug_immutable so ProblemBanner can render", () => {
+    const operator = source("src/components/workflows/WorkflowOperator.tsx");
+    assert.match(operator, /draftSaveSlugImmutableDetail/);
+    assert.match(
+      operator,
+      /const slugDetail = draftSaveSlugImmutableDetail\([\s\S]*?\);\s*if \(slugDetail\) \{[\s\S]*?setErrors\(\[\]\);/,
+    );
+    assert.match(
+      operator,
+      /bannerProblem = problem && errors\.length === 0 && !conflictDraft/,
+    );
   });
 });
