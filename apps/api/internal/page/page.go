@@ -54,6 +54,7 @@ const (
 	ColAudit           = "audit"
 	ColAlert           = "alert"
 	ColMachine         = "machine"
+	ColGroup           = "wsgroup"
 )
 
 // ErrInvalid is a fail-closed pagination error (bad limit, cursor, or q).

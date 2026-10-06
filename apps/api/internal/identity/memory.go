@@ -28,7 +28,9 @@ type Memory struct {
 	users       map[string]User
 	bindings    map[string][]string // workspaceID + "\x00" + userID -> role keys
 	localLogins map[string]localLogin
-	localByID   map[string]string // normalized identifier -> userID
+	localByID   map[string]string    // normalized identifier -> userID
+	groups      map[string]*memGroup // groupID -> group (carries its workspace)
+	groupAudit  []GroupAuditRecord
 }
 
 // NewMemory returns a store seeded with the in-process permission catalog.
@@ -40,6 +42,7 @@ func NewMemory() *Memory {
 		bindings:    map[string][]string{},
 		localLogins: map[string]localLogin{},
 		localByID:   map[string]string{},
+		groups:      map[string]*memGroup{},
 	}
 }
 
@@ -556,6 +559,7 @@ func (m *Memory) RemoveMember(_ context.Context, workspaceID, userID string) err
 		m.bindings[key] = prev
 		return err
 	}
+	m.dropGroupRowsLocked(workspaceID, userID)
 	return nil
 }
 
