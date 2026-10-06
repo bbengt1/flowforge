@@ -1749,7 +1749,7 @@ function WorkflowHomeSession() {
   ]);
 
   async function createFromTemplate(template: WorkflowTemplate) {
-    await createFromYaml(template.definitionYaml, template.name);
+    await createFromYaml(template.definitionYaml, createName.trim() || template.name);
   }
 
   async function runImport(text: string, fileName: string) {
