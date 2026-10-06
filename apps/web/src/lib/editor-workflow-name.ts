@@ -307,6 +307,21 @@ export function draftSaveSlugMessage(slug: string | null | undefined): string {
   return `A draft save can't change the slug. ${restore} Rename changes the display name only.`;
 }
 
+/**
+ * Detail for a draft save refused only on the slug path, or null.
+ * Callers must clear field errors when this returns a string so
+ * ProblemBanner can render (it hides whenever errors.length > 0).
+ */
+export function draftSaveSlugImmutableDetail(
+  errors: readonly { path?: string }[],
+  storedSlug: string | null | undefined,
+): string | null {
+  if (!draftSaveSlugOnlyErrors(errors)) {
+    return null;
+  }
+  return draftSaveSlugMessage(storedSlug);
+}
+
 export function editorHeadingRenamesInline(source: string): boolean {
   return (
     source.includes('data-editor-workflow-name="rename"') &&
