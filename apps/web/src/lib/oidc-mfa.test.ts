@@ -359,6 +359,8 @@ describe("G.2.1 OIDC + MFA login chrome", () => {
       otpauth_uri: "otpauth://totp/FlowForge:ada?secret=LEAK",
     });
     assert.equal(parsed?.applicable, false);
+    assert.equal(parsed?.satisfied, true);
+    assert.equal(parsed?.enforcement, "on");
     assert.equal(JSON.stringify(parsed).includes("otpauth"), false);
     assert.equal(
       isMfaRequiredProblem({ code: MFA_REQUIRED_CODE, status: 403 }),

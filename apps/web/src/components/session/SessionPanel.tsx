@@ -18,7 +18,10 @@ import {
   loadSessionAudit,
   refreshSession,
 } from "@/lib/session-client";
-import type { SessionAuditEvent } from "@/lib/session-contract";
+import {
+  sessionAuditEventLabel,
+  type SessionAuditEvent,
+} from "@/lib/session-contract";
 import { getSessionSnapshot, subscribeSession } from "@/lib/session-store";
 import {
   LOCAL_SEED_DISPLAY_NAME,
@@ -322,7 +325,7 @@ export function SessionPanel() {
                 {audit.map((item) => (
                   <li key={item.id || `${item.event_type}-${item.created_at}`} className="py-2">
                     <p className="font-medium">
-                      {item.event_type} · {item.outcome}
+                      {sessionAuditEventLabel(item.event_type)} · {item.outcome}
                     </p>
                     <p className={FF_SETTINGS_MUTED_CLASS}>{item.reason}</p>
                     <p className={`font-mono text-xs ${FF_SETTINGS_MUTED_CLASS}`}>

@@ -2,7 +2,6 @@
 
 import { useEmbedMode } from "@/components/embed/EmbedMode";
 import { MfaChrome } from "@/components/session/MfaChrome";
-import { MFA_PRIVILEGED_LOUD } from "@/lib/oidc-mfa";
 import {
   FF_SETTINGS_EYEBROW_CLASS,
   FF_SETTINGS_MUTED_CLASS,
@@ -23,8 +22,8 @@ export function MfaAccountPanel() {
         Multi-factor authentication
       </h2>
       <p className={`mt-1 max-w-2xl text-sm leading-6 ${FF_SETTINGS_MUTED_CLASS}`}>
-        {MFA_PRIVILEGED_LOUD} Local sign-in and single sign-on use this step-up.
-        Machine, embed, and trusted-dev sessions do not.
+        Local sign-in and single sign-on can enroll a time-based code here.
+        Machine, embed, and trusted-dev sessions do not use this step-up.
       </p>
       <div className="mt-4">
         <MfaChrome variant="account" />

@@ -444,9 +444,50 @@ function apiPath(url: string): string {
   return stripped.startsWith("/") ? stripped : `/${stripped}`;
 }
 
+function mfaStatusBody(enforcement: "on" | "off") {
+  return {
+    method: "totp",
+    enrolled: false,
+    satisfied: false,
+    applicable: true,
+    privileged_permissions: [
+      "platform.administer",
+      "credential.view",
+      "credential.use",
+      "credential.manage",
+    ],
+    enforcement,
+  };
+}
+
+function sessionPayload(embed: boolean) {
+  if (!embed) {
+    return session;
+  }
+  return {
+    ...session,
+    session: {
+      ...session.session,
+      embed: {
+        mode: "embed",
+        sdk: "embed.v1",
+        tenantId: TENANT_ID,
+        tenantSlug: "acme",
+        tenantName: "Acme",
+        workbenchKey: "ops",
+        workspaceId: WORKSPACE_ID,
+        workspaceName: "Ops",
+        capabilities: [...PERMISSIONS],
+      },
+    },
+  };
+}
+
 function bodyFor(
   requestUrl: string,
   permissions: readonly string[] = PERMISSIONS,
+  mfaEnforcement: "on" | "off" = "on",
+  embed = false,
 ): {
   status: number;
   contentType: string;
@@ -456,7 +497,10 @@ function bodyFor(
   const granted = [...permissions];
   const folderId = new URL(requestUrl).searchParams.get("folderId")?.trim() ?? "";
   if (path === "/session") {
-    return ok(session);
+    return ok(sessionPayload(embed));
+  }
+  if (path === "/session/mfa") {
+    return ok(mfaStatusBody(mfaEnforcement));
   }
   if (path === "/bootstrap") {
     return ok(bootstrapComplete);
@@ -543,6 +587,8 @@ function bodyFor(
 async function fulfill(
   route: Route,
   permissions: readonly string[],
+  mfaEnforcement: "on" | "off" = "on",
+  embed = false,
 ): Promise<void> {
   const path = apiPath(route.request().url());
   if (route.request().method() === "POST" && path === "/workflows/validate") {
@@ -566,7 +612,12 @@ async function fulfill(
     });
     return;
   }
-  const payload = bodyFor(route.request().url(), permissions);
+  const payload = bodyFor(
+    route.request().url(),
+    permissions,
+    mfaEnforcement,
+    embed,
+  );
   await route.fulfill({
     status: payload.status,
     contentType: payload.contentType,
@@ -577,16 +628,26 @@ async function fulfill(
 /** Signed-in operator. Bootstrap is complete, so the wizard does not mount. */
 export async function installOperatorApi(
   page: Page,
-  options?: { permissions?: readonly string[] },
+  options?: {
+    permissions?: readonly string[];
+    mfaEnforcement?: "on" | "off";
+    embed?: boolean;
+  },
 ): Promise<void> {
   const permissions = options?.permissions ?? PERMISSIONS;
+  const mfaEnforcement = options?.mfaEnforcement ?? "on";
+  const embed = options?.embed === true;
   await page.route(/\/api\/(?:v1|control-plane)\//, (route) =>
-    fulfill(route, permissions),
+    fulfill(route, permissions, mfaEnforcement, embed),
   );
 }
 
 /** No cookie session. Standalone routes fall through to Login. */
-export async function installSignedOutApi(page: Page): Promise<void> {
+export async function installSignedOutApi(
+  page: Page,
+  options?: { mfaEnforcement?: "on" | "off" },
+): Promise<void> {
+  const mfaEnforcement = options?.mfaEnforcement ?? "on";
   await page.route(/\/api\/(?:v1|control-plane)\//, async (route) => {
     const path = apiPath(route.request().url());
     if (route.request().method() !== "GET") {
@@ -595,6 +656,14 @@ export async function installSignedOutApi(page: Page): Promise<void> {
         status: denied.status,
         contentType: denied.contentType,
         body: JSON.stringify(denied.body),
+      });
+      return;
+    }
+    if (path === "/session/mfa") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(mfaStatusBody(mfaEnforcement)),
       });
       return;
     }

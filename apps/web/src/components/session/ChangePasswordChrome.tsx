@@ -204,9 +204,9 @@ export function ChangePasswordChrome({
 
   if (variant === "embedded") {
     return (
-      <div className="mx-auto flex w-full max-w-md flex-col px-6 py-16">
+      <main className="mx-auto flex min-h-full w-full max-w-md flex-col px-6 py-16 outline-none">
         {card}
-      </div>
+      </main>
     );
   }
 

@@ -1,22 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Field } from "@/components/a11y/Field";
 import { useEmbedMode } from "@/components/embed/EmbedMode";
+import { useMfaStatusQuery } from "@/components/session/useMfaStatusQuery";
 import {
   MFA_NOT_APPLICABLE,
   MFA_PRIVILEGED_LOUD,
   MFA_SESSION_ON,
   MFA_SETUP_ONCE,
-  MFA_VERIFIED_RETRY,
   decideMfaChrome,
+  mfaStatusQueryKey,
+  mfaChromeLoudNotice,
   mfaCodeIsSubmittable,
   mfaFailureMessage,
   type MfaRequiredNotice,
   type MfaStatus,
 } from "@/lib/oidc-mfa";
-import { enrollMfa, loadMfaStatus, verifyMfa } from "@/lib/oidc-mfa-client";
+import { enrollMfa, verifyMfa } from "@/lib/oidc-mfa-client";
+import { QueryCacheError } from "@/lib/query-cache";
 import { getSessionSnapshot } from "@/lib/session-store";
+import { FF_LOUD_WARNING_CLASS } from "@/lib/vault-executions-visual";
 
 type MfaChromeProps = {
   variant: "account" | "step-up";
@@ -26,35 +31,21 @@ type MfaChromeProps = {
 
 export function MfaChrome({ variant, notice, onSatisfied }: MfaChromeProps) {
   const embed = useEmbedMode();
-  const [status, setStatus] = useState<MfaStatus | null>(null);
+  const queryClient = useQueryClient();
+  const query = useMfaStatusQuery(!embed);
   const [uri, setUri] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [pending, setPending] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-
-  useEffect(() => {
-    if (embed) {
-      return;
-    }
-    let cancelled = false;
-    void loadMfaStatus().then((result) => {
-      if (cancelled) {
-        return;
-      }
-      setLoaded(true);
-      if (!result.ok) {
-        setError(mfaFailureMessage(result.statusCode, result.problem.detail));
-        return;
-      }
-      setStatus(result.data);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [embed]);
+  const status = query.data ?? null;
+  const loaded = query.isSuccess || query.isError;
+  const loadError =
+    query.error instanceof QueryCacheError
+      ? mfaFailureMessage(query.error.statusCode, query.error.problem.detail)
+      : null;
+  const error = actionError ?? loadError;
 
   if (embed) {
     return null;
@@ -67,19 +58,27 @@ export function MfaChrome({ variant, notice, onSatisfied }: MfaChromeProps) {
     applicable: status?.applicable === true,
   });
 
+  function rememberStatus(next: MfaStatus) {
+    queryClient.setQueryData(
+      mfaStatusQueryKey(getSessionSnapshot().session),
+      next,
+    );
+    setActionError(null);
+  }
+
   async function refreshStatus() {
-    const result = await loadMfaStatus();
-    if (!result.ok) {
-      setError(mfaFailureMessage(result.statusCode, result.problem.detail));
-      return;
+    setActionError(null);
+    const result = await query.refetch();
+    if (result.error instanceof QueryCacheError) {
+      setActionError(
+        mfaFailureMessage(result.error.statusCode, result.error.problem.detail),
+      );
     }
-    setStatus(result.data);
-    setError(null);
   }
 
   async function startEnroll() {
     setPending(true);
-    setError(null);
+    setActionError(null);
     setCopied(false);
     const result = await enrollMfa();
     setPending(false);
@@ -88,10 +87,10 @@ export function MfaChrome({ variant, notice, onSatisfied }: MfaChromeProps) {
         setUri(null);
         await refreshStatus();
       }
-      setError(mfaFailureMessage(result.statusCode, result.problem.detail));
+      setActionError(mfaFailureMessage(result.statusCode, result.problem.detail));
       return;
     }
-    setStatus(result.status);
+    rememberStatus(result.status);
     setUri(result.otpauthUri);
   }
 
@@ -99,15 +98,15 @@ export function MfaChrome({ variant, notice, onSatisfied }: MfaChromeProps) {
     const submitted = code;
     setCode("");
     setPending(true);
-    setError(null);
+    setActionError(null);
     const result = await verifyMfa(submitted);
     setPending(false);
     if (!result.ok) {
-      setError(mfaFailureMessage(result.statusCode, result.problem.detail));
+      setActionError(mfaFailureMessage(result.statusCode, result.problem.detail));
       return;
     }
     setUri(null);
-    setStatus(result.data);
+    rememberStatus(result.data);
     setDone(true);
     onSatisfied?.();
   }
@@ -142,21 +141,35 @@ export function MfaChrome({ variant, notice, onSatisfied }: MfaChromeProps) {
 
   const showEnroll = status?.enrolled !== true && !uri;
   const canVerify = status?.enrolled === true || Boolean(uri);
-  const loud = notice?.message ?? MFA_PRIVILEGED_LOUD;
-  const showLoud = variant === "step-up" || !status?.satisfied || Boolean(uri);
+  const loud = mfaChromeLoudNotice({
+    enforcement: status?.enforcement ?? "on",
+    variant,
+    satisfied: status?.satisfied === true,
+    hasSetupUri: Boolean(uri),
+    done,
+    requiredMessage: notice?.message ?? MFA_PRIVILEGED_LOUD,
+  });
 
   return (
     <div className="grid gap-4">
-      {showLoud ? (
+      {loud ? (
         <p
           role="status"
-          className="rounded-[var(--ff-radius)] px-3 py-2 text-sm font-medium"
-          style={{
-            background: "var(--ff-danger-surface)",
-            color: "var(--ff-danger)",
-          }}
+          className={
+            loud.tone === "warning"
+              ? `${FF_LOUD_WARNING_CLASS} px-3 py-2 text-sm font-medium`
+              : "rounded-[var(--ff-radius)] px-3 py-2 text-sm font-medium"
+          }
+          style={
+            loud.tone === "warning"
+              ? undefined
+              : {
+                  background: "var(--ff-danger-surface)",
+                  color: "var(--ff-danger)",
+                }
+          }
         >
-          {done ? MFA_VERIFIED_RETRY : loud}
+          {loud.message}
         </p>
       ) : null}
       {status && status.satisfied && !uri ? (

@@ -5,7 +5,10 @@ import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react
 import { LoginChrome } from "@/components/session/LoginChrome";
 import { SetPasswordChrome } from "@/components/session/SetPasswordChrome";
 import { useEmbedMode } from "@/components/embed/EmbedMode";
-import { CHANGE_PASSWORD_HREF } from "@/lib/change-password";
+import {
+  CHANGE_PASSWORD_HREF,
+  changePasswordExpiryLoginHref,
+} from "@/lib/change-password";
 import { LOGIN_HREF, LOGIN_SUCCESS_HREF } from "@/lib/local-login";
 import { decideSetPasswordChrome } from "@/lib/set-password";
 import { loadCurrentSession } from "@/lib/session-client";
@@ -35,6 +38,14 @@ export function SignedOutGate({ children }: SignedOutGateProps) {
     sessionActive: snapshot.active,
   });
 
+  const expiryLoginHref = changePasswordExpiryLoginHref({
+    embed,
+    checked,
+    pathname,
+    sessionActive: snapshot.active,
+    signedOutChrome,
+  });
+
   useEffect(() => {
     if (embed) {
       return;
@@ -49,6 +60,13 @@ export function SignedOutGate({ children }: SignedOutGateProps) {
       cancelled = true;
     };
   }, [embed]);
+
+  useEffect(() => {
+    if (!expiryLoginHref) {
+      return;
+    }
+    router.replace(expiryLoginHref);
+  }, [expiryLoginHref, router]);
 
   if (embed) {
     return children;

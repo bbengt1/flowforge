@@ -1,9 +1,11 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Dialog } from "@/components/a11y/Dialog";
 import { useEmbedMode } from "@/components/embed/EmbedMode";
 import { MfaChrome } from "@/components/session/MfaChrome";
+import { invalidateMfaStatusQueries } from "@/lib/mfa-status-cache";
 import {
   MFA_PRIVILEGED_LOUD,
   MFA_VERIFIED_RETRY,
@@ -13,6 +15,7 @@ import {
 
 export function MfaStepUpHost() {
   const embed = useEmbedMode();
+  const queryClient = useQueryClient();
   const [notice, setNotice] = useState<MfaRequiredNotice | null>(null);
   const [verified, setVerified] = useState(false);
 
@@ -23,8 +26,9 @@ export function MfaStepUpHost() {
     return subscribeMfaRequired((next) => {
       setVerified(false);
       setNotice(next);
+      void invalidateMfaStatusQueries(queryClient);
     });
-  }, [embed]);
+  }, [embed, queryClient]);
 
   if (embed) {
     return null;

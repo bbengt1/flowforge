@@ -135,7 +135,39 @@ export type SessionAuditEvent = {
   reason: string;
   request_id?: string;
   created_at: string;
+  /**
+   * True when a dev bypass skipped MFA step-up. Rows that carry this
+   * use event_type session.mfa_bypassed and outcome allowed.
+   */
+  mfa_bypassed?: boolean;
 };
+
+export const SESSION_AUDIT_MFA_BYPASSED = "session.mfa_bypassed";
+export const SESSION_AUDIT_ADMIN_PASSWORD_SET = "bootstrap.admin_password_set";
+
+export const SESSION_AUDIT_MFA_BYPASSED_LABEL = "MFA step-up bypassed (dev)";
+export const SESSION_AUDIT_ADMIN_PASSWORD_SET_LABEL = "Admin password set";
+
+const SESSION_AUDIT_EVENT_LABELS = new Map<string, string>([
+  ["session.created", "Session started"],
+  ["session.refreshed", "Session extended"],
+  ["session.revoked", "Session ended"],
+  ["session.expired", "Session expired"],
+  ["session.csrf_rejected", "CSRF rejected"],
+  ["session.origin_rejected", "Origin rejected"],
+  ["session.privilege_denied", "Privilege denied"],
+  ["session.auth_rejected", "Sign-in rejected"],
+  [SESSION_AUDIT_MFA_BYPASSED, SESSION_AUDIT_MFA_BYPASSED_LABEL],
+  [SESSION_AUDIT_ADMIN_PASSWORD_SET, SESSION_AUDIT_ADMIN_PASSWORD_SET_LABEL],
+]);
+
+/**
+ * Plain label for a session audit row. Unknown types, including
+ * prototype names, stay the raw event type.
+ */
+export function sessionAuditEventLabel(eventType: string): string {
+  return SESSION_AUDIT_EVENT_LABELS.get(eventType) ?? eventType;
+}
 
 export function sessionApiPath(suffix = SESSION_PATH): string {
   return `${SESSION_API_PREFIX}${suffix}`;

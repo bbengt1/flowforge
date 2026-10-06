@@ -22,9 +22,11 @@ export function ChangePasswordLanding() {
 
   if (embed) {
     return (
-      <p role="status" className="px-6 py-16 text-sm" style={{ color: "var(--ff-muted)" }}>
-        {CHANGE_PASSWORD_EMBED_FORBIDDEN}
-      </p>
+      <main className="mx-auto flex min-h-full w-full max-w-md flex-col px-6 py-16 outline-none">
+        <p role="status" className="text-sm" style={{ color: "var(--ff-muted)" }}>
+          {CHANGE_PASSWORD_EMBED_FORBIDDEN}
+        </p>
+      </main>
     );
   }
 
@@ -44,11 +46,7 @@ export function ChangePasswordLanding() {
     : "Change your password to continue.";
 
   return (
-    <main
-      id="main-content"
-      tabIndex={-1}
-      className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center px-6 py-16 outline-none"
-    >
+    <main className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center px-6 py-16 outline-none">
       <p role="status" className="text-sm" style={{ color: "var(--ff-muted)" }}>
         {status}
       </p>

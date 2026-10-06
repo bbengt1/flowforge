@@ -11,7 +11,7 @@
  * local Login door.
  */
 
-import { LOGIN_SUCCESS_HREF } from "./local-login.ts";
+import { LOGIN_HREF, LOGIN_SUCCESS_HREF } from "./local-login.ts";
 import { PASSWORD_CHANGE_WRONG_CURRENT_DETAIL } from "./session.ts";
 import { R7_HARD_LINE } from "./rewrite-embed-mount.ts";
 import { FF_ACCENT, FF_CANVAS } from "./visual-tokens.ts";
@@ -226,6 +226,31 @@ export function afterLocalLoginHref(mustChangePassword: boolean): string {
 export function isChangePasswordPath(pathname: string | null | undefined): boolean {
   const path = (pathname ?? "").split("?")[0];
   return path === CHANGE_PASSWORD_HREF;
+}
+
+/**
+ * A real session expiry on /change-password renders Sign in while the
+ * address bar still says /change-password. Replace with the login route
+ * once the session check has finished. A kept session (wrong current
+ * password) and the set-password door do not move.
+ */
+export function changePasswordExpiryLoginHref(input: {
+  embed: boolean;
+  checked: boolean;
+  pathname: string | null | undefined;
+  sessionActive: boolean;
+  signedOutChrome: "login" | "set-password" | "ignore";
+}): string | null {
+  if (input.embed || !input.checked || input.sessionActive) {
+    return null;
+  }
+  if (input.signedOutChrome !== "login") {
+    return null;
+  }
+  if (!isChangePasswordPath(input.pathname)) {
+    return null;
+  }
+  return LOGIN_HREF;
 }
 
 /**

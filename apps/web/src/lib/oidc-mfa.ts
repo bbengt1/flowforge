@@ -75,13 +75,67 @@ export type OidcStartResponse = {
   expires_at: string;
 };
 
+/** Process step-up mode from GET /session/mfa. Missing or unknown is on. */
+export type MfaEnforcement = "on" | "off";
+
 export type MfaStatus = {
   method: "totp";
   enrolled: boolean;
   satisfied: boolean;
   applicable: boolean;
   privileged_permissions: string[];
+  enforcement: MfaEnforcement;
 };
+
+/**
+ * Shell warning when MFA_ENFORCEMENT=off. The same sentence replaces
+ * the red required state inside MFA chrome so the two do not disagree.
+ */
+export const MFA_ENFORCEMENT_OFF_BANNER =
+  "Multi-factor authentication is turned off on this server (MFA_ENFORCEMENT=off). This is for development only — privileged actions skip the MFA step-up.";
+
+/**
+ * Prefix for every MFA status query. The full key adds issuer, subject,
+ * and session id so one tab does not reuse another principal's status.
+ */
+export const MFA_STATUS_QUERY_ROOT = ["flowforge", "session", "mfa"] as const;
+
+/** Process mode changes only on restart. Do not refetch on a timer. */
+export const MFA_STATUS_STALE_MS = 60_000;
+
+export type MfaStatusIdentity = {
+  issuer: string;
+  subject: string;
+  sessionId: string;
+};
+
+export function mfaStatusIdentity(session: MfaStatusIdentity): MfaStatusIdentity {
+  return {
+    issuer: session.issuer,
+    subject: session.subject,
+    sessionId: session.sessionId,
+  };
+}
+
+export function mfaStatusQueryKey(session: MfaStatusIdentity) {
+  const identity = mfaStatusIdentity(session);
+  return [
+    ...MFA_STATUS_QUERY_ROOT,
+    identity.issuer,
+    identity.subject,
+    identity.sessionId,
+  ] as const;
+}
+
+export function mfaStatusQueryOptions(session: MfaStatusIdentity) {
+  return {
+    queryKey: mfaStatusQueryKey(session),
+    staleTime: MFA_STATUS_STALE_MS,
+    refetchInterval: false as const,
+    refetchOnWindowFocus: false as const,
+    refetchOnReconnect: false as const,
+  };
+}
 
 export type MfaRequiredKind = "enroll" | "verify" | "unknown";
 
@@ -270,7 +324,66 @@ export function parseMfaStatus(value: unknown): MfaStatus | null {
     satisfied: body.satisfied,
     applicable: body.applicable,
     privileged_permissions: permissions,
+    enforcement: parseMfaEnforcement(body.enforcement),
   };
+}
+
+/**
+ * Only the exact string "off" skips step-up. Missing, "OFF", "disabled",
+ * boolean false, and every other value stay "on" so an older API (no
+ * field) and a bad payload both keep enforcement.
+ */
+export function parseMfaEnforcement(value: unknown): MfaEnforcement {
+  return value === "off" ? "off" : "on";
+}
+
+/** Persistent shell banner. Hidden in embed and until a real "off" arrives. */
+export function showMfaEnforcementOffBanner(input: {
+  embed: boolean;
+  sessionActive: boolean;
+  enforcement: MfaEnforcement | null | undefined;
+}): boolean {
+  return (
+    !input.embed && input.sessionActive && input.enforcement === "off"
+  );
+}
+
+export type MfaLoudTone = "danger" | "warning";
+
+export type MfaLoudNotice = {
+  tone: MfaLoudTone;
+  message: string;
+};
+
+/**
+ * Account chrome uses the bypass notice when enforcement is off.
+ * Step-up opens only after the server returns 403 mfa-required, so that
+ * variant stays the red required notice even when a cached status says
+ * off. A just-verified session still shows the verified line.
+ */
+export function mfaChromeLoudNotice(input: {
+  enforcement: MfaEnforcement;
+  variant: "account" | "step-up";
+  satisfied: boolean;
+  hasSetupUri: boolean;
+  done: boolean;
+  requiredMessage: string;
+}): MfaLoudNotice | null {
+  const showSlot =
+    input.variant === "step-up" || !input.satisfied || input.hasSetupUri;
+  if (!showSlot) {
+    return null;
+  }
+  if (input.done) {
+    return { tone: "danger", message: MFA_VERIFIED_RETRY };
+  }
+  if (input.variant === "step-up") {
+    return { tone: "danger", message: input.requiredMessage };
+  }
+  if (input.enforcement === "off") {
+    return { tone: "warning", message: MFA_ENFORCEMENT_OFF_BANNER };
+  }
+  return { tone: "danger", message: input.requiredMessage };
 }
 
 /** Pull a one-time otpauth URI off an enroll payload. Never returns other secrets. */

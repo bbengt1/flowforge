@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   CSRF_COOKIE_NAME,
   CSRF_HEADER,
@@ -8,7 +11,12 @@ import {
   LOGIN_RATE_LIMITED_MESSAGE,
   sameOriginProxyUrl,
   sessionApiPath,
+  sessionAuditEventLabel,
   sessionBrowserPath,
+  SESSION_AUDIT_ADMIN_PASSWORD_SET,
+  SESSION_AUDIT_ADMIN_PASSWORD_SET_LABEL,
+  SESSION_AUDIT_MFA_BYPASSED,
+  SESSION_AUDIT_MFA_BYPASSED_LABEL,
   SESSION_COOKIE_NAME,
   SESSION_COOKIE_PATH,
   SESSION_LOGIN_PATH,
@@ -83,5 +91,43 @@ describe("session-contract", () => {
     assert.equal(sameOriginProxyUrl("https://api.example.test/session"), null);
     assert.equal(sameOriginProxyUrl("//evil.test/session"), null);
     assert.equal(sameOriginProxyUrl(""), null);
+  });
+
+  it("labels session.mfa_bypassed and bootstrap.admin_password_set", () => {
+    assert.equal(
+      sessionAuditEventLabel(SESSION_AUDIT_MFA_BYPASSED),
+      SESSION_AUDIT_MFA_BYPASSED_LABEL,
+    );
+    assert.equal(
+      sessionAuditEventLabel("session.mfa_bypassed"),
+      "MFA step-up bypassed (dev)",
+    );
+    assert.equal(
+      sessionAuditEventLabel(SESSION_AUDIT_ADMIN_PASSWORD_SET),
+      SESSION_AUDIT_ADMIN_PASSWORD_SET_LABEL,
+    );
+    assert.equal(
+      sessionAuditEventLabel("bootstrap.admin_password_set"),
+      "Admin password set",
+    );
+    assert.equal(sessionAuditEventLabel("session.created"), "Session started");
+    assert.equal(sessionAuditEventLabel("session.unknown"), "session.unknown");
+    assert.equal(sessionAuditEventLabel("session.privilege_denied"), "Privilege denied");
+    for (const inherited of ["__proto__", "constructor", "toString"]) {
+      assert.equal(sessionAuditEventLabel(inherited), inherited);
+      assert.equal(typeof sessionAuditEventLabel(inherited), "string");
+    }
+    const panel = readFileSync(
+      join(
+        dirname(fileURLToPath(import.meta.url)),
+        "../components/session/SessionPanel.tsx",
+      ),
+      "utf8",
+    );
+    assert.match(panel, /sessionAuditEventLabel\(item\.event_type\)/);
+    assert.match(
+      panel,
+      /\{sessionAuditEventLabel\(item\.event_type\)\} · \{item\.outcome\}/,
+    );
   });
 });
