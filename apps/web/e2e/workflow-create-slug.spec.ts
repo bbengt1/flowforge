@@ -5,7 +5,9 @@ import { expectNoSecretsInBrowserStorage, installOperatorApi } from "./operator-
 import { expectDocumentRtl, installDocumentRtl } from "./rtl";
 import {
   WORKFLOW_SLUG_CONFLICT_MESSAGE,
+  WORKFLOW_SLUG_INVALID_MESSAGE,
   WORKFLOW_SLUG_RESERVED_SLUG_MESSAGE,
+  workflowSuggestedSlugNote,
 } from "../src/lib/workflow-delete.ts";
 import {
   WORKFLOW_SLUG_PREVIEW_HINT,
@@ -15,18 +17,31 @@ import {
 const SHOTS = "/opt/cursor/artifacts/screenshots";
 const CREATED_ID = "33333333-3333-4333-8333-333333333333";
 
-type CreateMode = "created" | "reserved" | "conflict" | "suffixed";
+type CreateMode =
+  | "created"
+  | "reserved"
+  | "taken"
+  | "legacy-conflict"
+  | "invalid"
+  | "suffixed";
 
-function problem(path: string, code: string, detail: string) {
+function problem(
+  path: string,
+  code: string,
+  detail: string,
+  extra: { status?: number; errorPath?: string | null; suggestedSlug?: string } = {},
+) {
+  const errorPath = extra.errorPath === undefined ? "slug" : extra.errorPath;
   return {
     type: "about:blank",
-    title: "Conflict",
-    status: 409,
+    title: extra.status === 400 ? "Invalid Request" : "Conflict",
+    status: extra.status ?? 409,
     detail,
     instance: path,
     code,
     request_id: "e2e-slug",
-    errors: [{ path: "slug", code, message: detail }],
+    ...(errorPath === null ? {} : { errors: [{ path: errorPath, code, message: detail }] }),
+    ...(extra.suggestedSlug ? { suggestedSlug: extra.suggestedSlug } : {}),
   };
 }
 
@@ -81,12 +96,39 @@ async function installCreateApi(page: Page, mode: CreateMode): Promise<Record<st
       });
       return;
     }
-    if (mode === "conflict") {
+    if (mode === "taken") {
       await route.fulfill({
         status: 409,
         contentType: "application/problem+json",
         body: JSON.stringify(
-          problem(path, "conflict", "A workflow with this slug already exists."),
+          problem(path, "workflow_slug_taken", "server sentence is not shown", {
+            suggestedSlug: "second-name-2",
+          }),
+        ),
+      });
+      return;
+    }
+    if (mode === "legacy-conflict") {
+      // The old generic conflict without a slug path stays in the banner.
+      await route.fulfill({
+        status: 409,
+        contentType: "application/problem+json",
+        body: JSON.stringify(
+          problem(path, "conflict", "A workflow with this slug already exists.", {
+            errorPath: null,
+          }),
+        ),
+      });
+      return;
+    }
+    if (mode === "invalid") {
+      await route.fulfill({
+        status: 400,
+        contentType: "application/problem+json",
+        body: JSON.stringify(
+          problem(path, "invalid-request", "slug must not end with a hyphen", {
+            status: 400,
+          }),
         ),
       });
       return;
@@ -119,6 +161,11 @@ function assertNameOnlyBody(body: Record<string, unknown>, name: string): void {
   expect(body).not.toHaveProperty("slug");
   expect(typeof body.definitionYaml).toBe("string");
   expect(String(body.definitionYaml)).not.toMatch(/^\s*slug\s*:/m);
+  // The entered name is written to metadata.name, not left as the template's.
+  const yaml = String(body.definitionYaml);
+  expect(
+    yaml.includes(`name: ${name}\n`) || yaml.includes(`name: ${JSON.stringify(name)}\n`),
+  ).toBe(true);
 }
 
 async function openCreateForm(page: Page): Promise<void> {
@@ -178,16 +225,44 @@ test.describe("workflow create slug preview", () => {
     expect(reservedBodies).toHaveLength(1);
     assertNameOnlyBody(reservedBodies[0]!, "Redeploy");
 
-    const conflictBodies = await installCreateApi(page, "conflict");
+    const takenBodies = await installCreateApi(page, "taken");
     await page.goto("/workflows");
     await page.locator("#home-create-name").fill("Second Name");
     await page.locator("[data-o1='create']").click();
     await expect(page.locator("#home-create-slug-error")).toHaveText(
-      WORKFLOW_SLUG_CONFLICT_MESSAGE,
+      `${WORKFLOW_SLUG_CONFLICT_MESSAGE} ${workflowSuggestedSlugNote("second-name-2")}`,
+    );
+    await expect(page.locator("#home-create-slug")).toHaveValue("second-name-2");
+    await expect(page.locator("#home-create-slug")).toHaveAttribute(
+      "data-workflow-create-error",
+      "workflow_slug_taken",
     );
     await expect(page.locator("#home-create-name-error")).toHaveCount(0);
-    expect(conflictBodies).toHaveLength(1);
-    assertNameOnlyBody(conflictBodies[0]!, "Second Name");
+    expect(takenBodies).toHaveLength(1);
+    assertNameOnlyBody(takenBodies[0]!, "Second Name");
+    await expectNoBlockingAxeViolations(page);
+  });
+
+  test("a slug 400 lands on the Slug field and a pathless conflict does not", async ({
+    page,
+  }) => {
+    await installCreateApi(page, "invalid");
+    await openCreateForm(page);
+    await page.locator("#home-create-name").fill("Trail");
+    await page.locator("#home-create-slug").fill("qa-trail-");
+    await page.locator("[data-o1='create']").click();
+    await expect(page.locator("#home-create-slug-error")).toHaveText(
+      WORKFLOW_SLUG_INVALID_MESSAGE,
+    );
+    await expect(page.locator("#home-create-slug")).toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByText("slug must not end with a hyphen")).toHaveCount(0);
+
+    await installCreateApi(page, "legacy-conflict");
+    await page.goto("/workflows");
+    await page.locator("#home-create-name").fill("Third Name");
+    await page.locator("[data-o1='create']").click();
+    await expect(page.getByText("A workflow with this slug already exists.")).toBeVisible();
+    await expect(page.locator("#home-create-slug-error")).toHaveCount(0);
     await expectNoBlockingAxeViolations(page);
   });
 

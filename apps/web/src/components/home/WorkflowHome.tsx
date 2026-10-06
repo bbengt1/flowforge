@@ -76,7 +76,10 @@ import {
   workflowDeleteDialogStaysOpen,
   workflowDeleteFailureMessage,
   workflowSlugReservedFromProblem,
+  workflowSuggestedSlugNote,
 } from "@/lib/workflow-delete";
+import { namedCreateYaml } from "@/lib/editor-workflow-name";
+import { readYamlWorkflowMeta } from "@/lib/workflow-yaml-nodes";
 import type { WorkflowDraft, WorkflowRecord } from "@/lib/workflow-types";
 import { subscribeWorkspaceCommands } from "@/lib/workspace-commands";
 import { DeleteWorkflowDialog } from "@/components/workflows/DeleteWorkflowDialog";
@@ -524,6 +527,12 @@ function WorkflowHomeSession() {
     field: "name" | "slug";
     message: string;
     code?: string;
+  } | null>(null);
+  // Last import that hit a slug 409 with a suggestion. "Import again"
+  // resends the same file with whatever the Slug field holds.
+  const [importRetry, setImportRetry] = useState<{
+    text: string;
+    fileName: string;
   } | null>(null);
   const blankTemplateName = workflowTemplateById("blank")?.name ?? "";
   const slugPreview = previewCreateFormSlug(createName, blankTemplateName);
@@ -1502,38 +1511,55 @@ function WorkflowHomeSession() {
   function noteCreateFailure(
     problemDetails: ProblemDetails,
     sent: { slug?: string; name?: string },
-  ) {
+    prefill: boolean,
+  ): boolean {
     const reserved = workflowSlugReservedFromProblem(problemDetails, sent);
     if (reserved) {
-      setCreateFieldError({ ...reserved, code: problemDetails.code });
+      const suggested = prefill ? reserved.suggestedSlug : undefined;
+      if (suggested) {
+        setCreateSlug(suggested);
+        setSlugEdited(true);
+      }
+      setCreateFieldError({
+        field: reserved.field,
+        message: suggested
+          ? `${reserved.message} ${workflowSuggestedSlugNote(suggested)}`
+          : reserved.message,
+        code: problemDetails.code,
+      });
       setProblem(null);
-      return;
+      return Boolean(suggested);
     }
     setCreateFieldError(null);
     setProblem(problemDetails);
+    return false;
   }
 
   const createFromYaml = useCallback(
-    async (yaml: string, name?: string, explicitSlug?: string) => {
+    async (yaml: string, name?: string, slugSource: "form" | "none" = "form") => {
       if (!canCreate) {
         return;
       }
+      // Duplicate sends no slug and drops metadata.slug, so the server
+      // takes the next free number instead of clashing on the original.
+      const fromForm = slugSource === "form";
       const sent = workflowCreateRequestFields({
         name: name ?? createName,
-        slug: explicitSlug ?? createSlug,
-        slugEdited: explicitSlug !== undefined || slugEdited,
+        slug: fromForm ? createSlug : "",
+        slugEdited: fromForm && slugEdited,
       });
       setPending("create");
       setProblem(null);
       setCreateFieldError(null);
+      setImportRetry(null);
       const result = await createWorkflow(identity, {
-        definitionYaml: yaml,
+        definitionYaml: namedCreateYaml(yaml, sent.name, { dropSlug: !fromForm }),
         ...sent,
         ...(selection.kind === "folder" ? { folderId: selection.id } : {}),
       });
       setPending(null);
       if (!result.ok) {
-        noteCreateFailure(result.problem, sent);
+        noteCreateFailure(result.problem, sent, fromForm);
         return;
       }
       const created = result.workflow;
@@ -1726,6 +1752,53 @@ function WorkflowHomeSession() {
     await createFromYaml(template.definitionYaml, template.name);
   }
 
+  async function runImport(text: string, fileName: string) {
+    if (!canCreate) {
+      return;
+    }
+    // A typed name wins and is written to metadata.name. Without one,
+    // the YAML's own metadata.name stands; the file name is only a
+    // fallback when the YAML has no name.
+    const yamlName = readYamlWorkflowMeta(text).name.trim();
+    const sent = workflowCreateRequestFields({
+      name: createName.trim() || (yamlName ? "" : fileName.replace(/\.ya?ml$/i, "")),
+      slug: createSlug,
+      slugEdited,
+    });
+    setPending("import");
+    setProblem(null);
+    setCreateFieldError(null);
+    setImportRetry(null);
+    const result = await importValidatedWorkflow(
+      identity,
+      namedCreateYaml(text, sent.name),
+      {
+        ...sent,
+        ...(selection.kind === "folder" ? { folderId: selection.id } : {}),
+      },
+    );
+    setPending(null);
+    if (!result.ok) {
+      if (noteCreateFailure(result.problem, sent, true)) {
+        setImportRetry({ text, fileName });
+      }
+      return;
+    }
+    const created = result.workflow;
+    if (created && result.draft) {
+      rememberCreatedWorkflow({ workflow: created, draft: result.draft });
+    }
+    pushNotification({
+      kind: "info",
+      title: "Draft imported",
+      detail: createdWorkflowSlugDetail(created),
+      href: templateCreatedEditorHref(created?.id),
+    });
+    if (created) {
+      router.push(templateCreatedEditorHref(created.id));
+    }
+  }
+
   function importFile(file: File) {
     const reader = new FileReader();
     reader.onload = () => {
@@ -1733,41 +1806,7 @@ function WorkflowHomeSession() {
       if (!text.trim()) {
         return;
       }
-      void (async () => {
-        if (!canCreate) {
-          return;
-        }
-        const sent = workflowCreateRequestFields({
-          name: createName || file.name.replace(/\.ya?ml$/i, ""),
-          slug: createSlug,
-          slugEdited,
-        });
-        setPending("import");
-        setProblem(null);
-        setCreateFieldError(null);
-        const result = await importValidatedWorkflow(identity, text, {
-          ...sent,
-          ...(selection.kind === "folder" ? { folderId: selection.id } : {}),
-        });
-        setPending(null);
-        if (!result.ok) {
-          noteCreateFailure(result.problem, sent);
-          return;
-        }
-        const created = result.workflow;
-        if (created && result.draft) {
-          rememberCreatedWorkflow({ workflow: created, draft: result.draft });
-        }
-        pushNotification({
-          kind: "info",
-          title: "Draft imported",
-          detail: createdWorkflowSlugDetail(created),
-          href: templateCreatedEditorHref(created?.id),
-        });
-        if (created) {
-          router.push(templateCreatedEditorHref(created.id));
-        }
-      })();
+      void runImport(text, file.name);
     };
     reader.readAsText(file);
   }
@@ -1789,7 +1828,7 @@ function WorkflowHomeSession() {
     await createFromYaml(
       draft.definitionYaml,
       duplicateWorkflowName(item.name),
-      `${item.slug}-copy`,
+      "none",
     );
   }
 
@@ -2595,6 +2634,19 @@ function WorkflowHomeSession() {
                   }}
                 />
               </Field>
+              {importRetry ? (
+                <button
+                  type="button"
+                  className={`ms-2 ${FF_OVERVIEW_CREATE_CLASS}`}
+                  data-workflow-import-retry=""
+                  disabled={pending !== null}
+                  onClick={() =>
+                    void runImport(importRetry.text, importRetry.fileName)
+                  }
+                >
+                  Import again
+                </button>
+              ) : null}
             </div>
           </div>
         ) : null}

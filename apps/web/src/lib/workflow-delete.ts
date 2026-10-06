@@ -35,6 +35,8 @@ export const WORKFLOW_HAS_ACTIVE_EXECUTIONS_CODE =
 
 export const WORKFLOW_SLUG_RESERVED_CODE = "workflow_slug_reserved" as const;
 
+export const WORKFLOW_SLUG_TAKEN_CODE = "workflow_slug_taken" as const;
+
 export const DELETE_WORKFLOW_LABEL = "Delete workflow";
 
 export const WORKFLOW_DELETE_DESCRIPTION =
@@ -75,8 +77,10 @@ export const WORKFLOW_SLUG_RESERVED_SLUG_MESSAGE =
 export const WORKFLOW_SLUG_CONFLICT_MESSAGE =
   "A workflow with this slug already exists.";
 
-export const WORKFLOW_SLUG_EXHAUSTED_MESSAGE =
-  "A unique slug could not be allocated.";
+export const WORKFLOW_SLUG_INVALID_MESSAGE =
+  "Use up to 63 lowercase letters, digits, and single hyphens, starting with a letter and not ending with a hyphen. catalog, validate, and normalize are reserved.";
+
+export const WORKFLOW_SLUG_OTHER_MESSAGE = "This slug can't be used.";
 
 export const WORKFLOW_DELETED_TOAST_TITLE = "Workflow deleted";
 
@@ -336,12 +340,10 @@ export function workflowDeleteNameMatches(
 }
 
 /**
- * Create-time slug clash. Match the code, not which fields were sent.
- * workflow_slug_reserved, a live slug conflict ("slug already exists"),
- * and an exhausted derived slug ("could not be allocated") land on the
- * slug field. Other 409s — execution_not_retryable,
- * step_attempt_superseded, approval_closed, and a generic unique
- * violation — do not, even when an error path is slug.
+ * Create and import field errors go on the Slug field by
+ * `errors[].path === "slug"` only, for 400s and 409s. The code only
+ * picks the sentence. Message text is never matched, and a slug code
+ * without a slug path stays in the banner.
  */
 export function workflowSlugReservedTarget(input: {
   statusCode: number;
@@ -349,45 +351,19 @@ export function workflowSlugReservedTarget(input: {
   detail?: string;
   errors?: readonly { path?: string; message?: string }[];
 }): WorkflowSlugField | null {
-  if (input.statusCode !== 409) {
+  if (input.statusCode !== 400 && input.statusCode !== 409) {
     return null;
   }
-  if (input.code === WORKFLOW_SLUG_RESERVED_CODE) {
-    return "slug";
-  }
-  if (input.code === "conflict" && slugConflictKind(input) !== null) {
-    return "slug";
-  }
-  return null;
+  return slugPathError(input.errors) ? "slug" : null;
 }
 
-function slugConflictKind(input: {
-  detail?: string;
-  errors?: readonly { path?: string; message?: string }[];
-}): "live" | "exhausted" | null {
-  const fromDetail = slugConflictText(input.detail);
-  if (fromDetail) {
-    return fromDetail;
-  }
-  for (const error of input.errors ?? []) {
-    if (error.path !== "slug") {
-      continue;
+function slugPathError(
+  errors: readonly { path?: string; code?: string; message?: string }[] | undefined,
+): { path?: string; code?: string; message?: string } | null {
+  for (const error of errors ?? []) {
+    if (error.path === "slug") {
+      return error;
     }
-    const fromError = slugConflictText(error.message);
-    if (fromError) {
-      return fromError;
-    }
-  }
-  return null;
-}
-
-function slugConflictText(value: string | undefined): "live" | "exhausted" | null {
-  const text = value ?? "";
-  if (/slug already exists/i.test(text)) {
-    return "live";
-  }
-  if (/could not be allocated/i.test(text)) {
-    return "exhausted";
   }
   return null;
 }
@@ -398,11 +374,16 @@ export function workflowSlugReservedMessage(field: WorkflowSlugField): string {
     : WORKFLOW_SLUG_RESERVED_NAME_MESSAGE;
 }
 
+/**
+ * Field error for a failed create or import. `suggestedSlug` is kept
+ * only on a slug 409 and only when it is a plain slug; it is a hint the
+ * form may pre-fill, never something sent without the operator.
+ */
 export function workflowSlugReservedFromProblem(
   problem: Pick<ProblemDetails, "status" | "code"> &
-    Partial<Pick<ProblemDetails, "detail" | "errors">>,
+    Partial<Pick<ProblemDetails, "detail" | "errors" | "suggestedSlug">>,
   sent: { slug?: string; name?: string },
-): { field: WorkflowSlugField; message: string } | null {
+): { field: WorkflowSlugField; message: string; suggestedSlug?: string } | null {
   const field = workflowSlugReservedTarget({
     statusCode: problem.status,
     code: problem.code,
@@ -415,20 +396,47 @@ export function workflowSlugReservedFromProblem(
   // Callers pass `sent` so tests can show a name-only body and an
   // explicit slug land on the same field.
   void sent;
-  return { field, message: workflowSlugFieldMessage(problem) };
+  const suggestedSlug =
+    problem.status === 409 ? usableSuggestedSlug(problem.suggestedSlug) : null;
+  return {
+    field,
+    message: workflowSlugFieldMessage(problem),
+    ...(suggestedSlug ? { suggestedSlug } : {}),
+  };
+}
+
+const SUGGESTED_SLUG_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+
+function usableSuggestedSlug(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const slug = value.trim();
+  if (slug.length < 1 || slug.length > 63 || !SUGGESTED_SLUG_PATTERN.test(slug)) {
+    return null;
+  }
+  return slug;
 }
 
 function workflowSlugFieldMessage(
-  problem: Pick<ProblemDetails, "code"> &
+  problem: Pick<ProblemDetails, "status" | "code"> &
     Partial<Pick<ProblemDetails, "detail" | "errors">>,
 ): string {
   if (problem.code === WORKFLOW_SLUG_RESERVED_CODE) {
     return WORKFLOW_SLUG_RESERVED_SLUG_MESSAGE;
   }
-  if (slugConflictKind(problem) === "exhausted") {
-    return WORKFLOW_SLUG_EXHAUSTED_MESSAGE;
+  if (problem.code === WORKFLOW_SLUG_TAKEN_CODE) {
+    return WORKFLOW_SLUG_CONFLICT_MESSAGE;
   }
-  return WORKFLOW_SLUG_CONFLICT_MESSAGE;
+  if (problem.status === 400) {
+    return WORKFLOW_SLUG_INVALID_MESSAGE;
+  }
+  return WORKFLOW_SLUG_OTHER_MESSAGE;
+}
+
+/** Sentence after the Slug field error when a suggestion was pre-filled. */
+export function workflowSuggestedSlugNote(slug: string): string {
+  return `Slug is filled in with ${slug}, which was free a moment ago.`;
 }
 
 export function omitDeletedWorkflow<T extends { id: string }>(

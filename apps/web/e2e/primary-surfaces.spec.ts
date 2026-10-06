@@ -106,6 +106,13 @@ test.describe("primary surfaces", () => {
   }) => {
     await installOperatorApi(page, { mfaEnforcement: "off" });
     await page.goto("/workflows");
+    // Settle the list like "workflow home settles before axe", so axe
+    // never measures a control that is still disabled while loading.
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Workflows" }),
+    ).toBeVisible();
+    await expect(page.getByText("before listing workflows.")).toHaveCount(0);
+    await expect(page.getByText("Deploy", { exact: true })).toBeVisible();
     const banner = page.getByRole("status").filter({
       hasText:
         "Multi-factor authentication is turned off on this server (MFA_ENFORCEMENT=off). This is for development only — privileged actions skip the MFA step-up.",
