@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -387,6 +388,136 @@ func TestPostgresGroupAddRejectsNonMembers(t *testing.T) {
 	if err := f.store.AddGroupMember(f.ctx, f.ws.ID, f.actor(), newID(), f.owner.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("add to missing group = %v", err)
 	}
+	// A missing group stays 404 ahead of the member check, even though
+	// the binding read now runs first.
+	if err := f.store.AddGroupMember(f.ctx, f.ws.ID, f.actor(), newID(), unbound.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("add unbound user to missing group = %v", err)
+	}
+}
+
+// A groupId that is not a UUID is not-found on every group store call,
+// like the other resource stores. A userId that is not a UUID on removal
+// is invalid, like RemoveMember.
+func TestPostgresGroupNonUUIDPathIDs(t *testing.T) {
+	f := newGroupFixture(t)
+	g := f.group(t, "Path ids")
+	u := f.member(t, f.ws, "Pathy", authz.RoleApprover)
+	f.add(t, g.ID, u.ID)
+	checks := map[string]error{
+		"get":              func() error { _, err := f.store.GetGroup(f.ctx, f.ws.ID, "not-a-uuid"); return err }(),
+		"rename":           func() error { _, err := f.store.RenameGroup(f.ctx, f.ws.ID, f.actor(), "not-a-uuid", "X"); return err }(),
+		"delete":           f.store.DeleteGroup(f.ctx, f.ws.ID, f.actor(), "not-a-uuid"),
+		"add bad group":    f.store.AddGroupMember(f.ctx, f.ws.ID, f.actor(), "not-a-uuid", u.ID),
+		"remove bad group": f.store.RemoveGroupMember(f.ctx, f.ws.ID, f.actor(), "not-a-uuid", u.ID),
+	}
+	for name, err := range checks {
+		if !errors.Is(err, ErrNotFound) {
+			t.Fatalf("%s = %v, want ErrNotFound", name, err)
+		}
+	}
+	if err := f.store.RemoveGroupMember(f.ctx, f.ws.ID, f.actor(), g.ID, "not-a-uuid"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("remove bad user = %v, want ErrInvalid", err)
+	}
+	// A valid id that is not a member stays an idempotent no-op.
+	if err := f.store.RemoveGroupMember(f.ctx, f.ws.ID, f.actor(), g.ID, newID()); err != nil {
+		t.Fatalf("remove non-member = %v", err)
+	}
+	if n := f.memberRows(t, "group_id = $1", g.ID); n != 1 {
+		t.Fatalf("rows = %d, want 1", n)
+	}
+}
+
+// Lock order: AddGroupMember and RemoveMember both take the binding rows
+// first and group rows second. Here RemoveMember holds the binding
+// delete while it waits on a member-row FOR SHARE held elsewhere; an add
+// to a second group queues on the bindings (not on a group row), and once
+// RemoveMember commits the add is refused. No deadlock, no orphan row.
+func TestAddGroupMemberLosesToRemoveMemberWithoutDeadlock(t *testing.T) {
+	f := newGroupFixture(t)
+	u := f.member(t, f.ws, "Leaver", authz.RoleApprover)
+	g1 := f.group(t, "Held")
+	g2 := f.group(t, "Target")
+	f.add(t, g1.ID, u.ID)
+
+	holder, err := postgres.BeginScoped(f.ctx, f.pool, f.ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Rollback(f.ctx)
+	if in, err := InTargetGroups(f.ctx, holder, f.ws.ID, u.ID, []string{g1.ID}); err != nil || !in {
+		t.Fatalf("holder check = %v %v", in, err)
+	}
+
+	removed := make(chan error, 1)
+	go func() { removed <- f.store.RemoveMember(f.ctx, f.ws.ID, u.ID) }()
+	// Let RemoveMember delete the bindings and block on g1's member row.
+	time.Sleep(300 * time.Millisecond)
+	added := make(chan error, 1)
+	go func() { added <- f.store.AddGroupMember(f.ctx, f.ws.ID, f.actor(), g2.ID, u.ID) }()
+	select {
+	case err := <-removed:
+		t.Fatalf("RemoveMember finished while the member row was held: %v", err)
+	case err := <-added:
+		t.Fatalf("add finished while RemoveMember held the bindings: %v", err)
+	case <-time.After(400 * time.Millisecond):
+	}
+	if err := holder.Commit(f.ctx); err != nil {
+		t.Fatal(err)
+	}
+	for name, ch := range map[string]chan error{"RemoveMember": removed, "AddGroupMember": added} {
+		select {
+		case err := <-ch:
+			if name == "RemoveMember" && err != nil {
+				t.Fatalf("RemoveMember = %v", err)
+			}
+			if name == "AddGroupMember" && !errors.Is(err, ErrGroupMemberNotInWorkspace) {
+				t.Fatalf("add after RemoveMember won = %v, want ErrGroupMemberNotInWorkspace", err)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("%s did not finish (deadlock?)", name)
+		}
+	}
+	if n := f.memberRows(t, "user_id = $1", u.ID); n != 0 {
+		t.Fatalf("removed user still has %d group rows", n)
+	}
+}
+
+// Racing AddGroupMember against RemoveMember many times never deadlocks
+// (no 40P01) and never leaves a group row for a removed user. The add
+// either lands first (and RemoveMember deletes it) or is refused.
+func TestAddGroupMemberVsRemoveMemberNeverDeadlocks(t *testing.T) {
+	f := newGroupFixture(t)
+	g1 := f.group(t, "Race one")
+	g2 := f.group(t, "Race two")
+	for i := range 20 {
+		u := f.member(t, f.ws, fmt.Sprintf("Racer%d", i), authz.RoleApprover)
+		f.add(t, g1.ID, u.ID)
+		var wg sync.WaitGroup
+		var addErr, removeErr error
+		start := make(chan struct{})
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			addErr = f.store.AddGroupMember(f.ctx, f.ws.ID, f.actor(), g2.ID, u.ID)
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			removeErr = f.store.RemoveMember(f.ctx, f.ws.ID, u.ID)
+		}()
+		close(start)
+		wg.Wait()
+		if removeErr != nil {
+			t.Fatalf("iteration %d: RemoveMember = %v", i, removeErr)
+		}
+		if addErr != nil && !errors.Is(addErr, ErrGroupMemberNotInWorkspace) {
+			t.Fatalf("iteration %d: add = %v", i, addErr)
+		}
+		if n := f.memberRows(t, "user_id = $1", u.ID); n != 0 {
+			t.Fatalf("iteration %d: removed user has %d group rows", i, n)
+		}
+	}
 }
 
 // QA (a): a SCIM-disabled user (users.status != 'active') drops out of
@@ -655,5 +786,159 @@ func TestPostgresGroupListPagesBySortedName(t *testing.T) {
 	items, _, err := f.store.ListGroupsPage(f.ctx, f.ws.ID, page.Query{Bound: true, Limit: 50, Q: "AR"})
 	if err != nil || len(items) != 1 || items[0].DisplayName != "charlie" {
 		t.Fatalf("search = %+v %v", items, err)
+	}
+}
+
+// SetMemberRoles replaces roles by deleting and reinserting the binding
+// rows. An add that waits on the deleted rows must not refuse a member
+// who is still bound once that commits: AddGroupMember retries once in
+// a fresh transaction. Here the role change is held open by hand with
+// the same delete-and-reinsert statements.
+func TestAddGroupMemberSurvivesConcurrentSetMemberRoles(t *testing.T) {
+	f := newGroupFixture(t)
+	u := f.member(t, f.ws, "Rerole", authz.RoleViewer)
+	g := f.group(t, "Rerole target")
+
+	tx, err := f.admin.Begin(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(f.ctx)
+	if _, err := tx.Exec(f.ctx, `DELETE FROM workspace_role_bindings WHERE workspace_id = $1::uuid AND user_id = $2::uuid`, f.ws.ID, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(f.ctx, `
+		INSERT INTO workspace_role_bindings (workspace_id, user_id, role_id)
+		SELECT $1::uuid, $2::uuid, r.id FROM roles r WHERE r.key = $3`, f.ws.ID, u.ID, authz.RoleApprover); err != nil {
+		t.Fatal(err)
+	}
+
+	added := make(chan error, 1)
+	go func() { added <- f.store.AddGroupMember(f.ctx, f.ws.ID, f.actor(), g.ID, u.ID) }()
+	select {
+	case err := <-added:
+		t.Fatalf("add finished while the role change held the bindings: %v", err)
+	case <-time.After(400 * time.Millisecond):
+	}
+	if err := tx.Commit(f.ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-added:
+		if err != nil {
+			t.Fatalf("add after a concurrent role change = %v, want nil", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("add did not finish after the role change committed")
+	}
+	if n := f.memberRows(t, "group_id = $1 AND user_id = $2", g.ID, u.ID); n != 1 {
+		t.Fatalf("rows = %d, want 1", n)
+	}
+	// The real store call, racing, never refuses a still-bound member.
+	g2 := f.group(t, "Rerole race")
+	for i := range 10 {
+		roles := []string{authz.RoleApprover}
+		if i%2 == 1 {
+			roles = []string{authz.RoleViewer}
+		}
+		var wg sync.WaitGroup
+		var addErr, setErr error
+		start := make(chan struct{})
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			addErr = f.store.AddGroupMember(f.ctx, f.ws.ID, f.actor(), g2.ID, u.ID)
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			setErr = f.store.SetMemberRoles(f.ctx, f.ws.ID, u.ID, roles)
+		}()
+		close(start)
+		wg.Wait()
+		if addErr != nil || setErr != nil {
+			t.Fatalf("iteration %d: add = %v, set roles = %v", i, addErr, setErr)
+		}
+		if err := f.store.RemoveGroupMember(f.ctx, f.ws.ID, f.actor(), g2.ID, u.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// Renames race on the unique name index the same way creates do: two
+// renames to one name, or a rename against a create, give exactly one
+// winner and one ErrGroupNameTaken (409 group_name_taken), never another
+// error (which the handler would turn into a 500).
+func TestPostgresGroupConcurrentRenameRaceMapsToNameTaken(t *testing.T) {
+	f := newGroupFixture(t)
+	for i := range 10 {
+		a := f.group(t, fmt.Sprintf("Rename A %d", i))
+		b := f.group(t, fmt.Sprintf("Rename B %d", i))
+		target := fmt.Sprintf("Clash %d", i)
+		var wg sync.WaitGroup
+		errs := make([]error, 3)
+		start := make(chan struct{})
+		run := func(slot int, fn func() error) {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				errs[slot] = fn()
+			}()
+		}
+		run(0, func() error { _, err := f.store.RenameGroup(f.ctx, f.ws.ID, f.actor(), a.ID, target); return err })
+		run(1, func() error {
+			_, err := f.store.RenameGroup(f.ctx, f.ws.ID, f.actor(), b.ID, strings.ToUpper(target))
+			return err
+		})
+		run(2, func() error {
+			_, err := f.store.CreateGroup(f.ctx, f.ws.ID, f.actor(), strings.ToLower(target))
+			return err
+		})
+		close(start)
+		wg.Wait()
+		won := 0
+		for slot, err := range errs {
+			switch {
+			case err == nil:
+				won++
+			case errors.Is(err, ErrGroupNameTaken):
+			default:
+				t.Fatalf("iteration %d racer %d: %v", i, slot, err)
+			}
+		}
+		if won != 1 {
+			t.Fatalf("iteration %d: %d racers won, want exactly 1 (%v)", i, won, errs)
+		}
+	}
+}
+
+// A rename to the exact current name (after trimming) changes nothing:
+// no audit row and no updatedAt bump. A case-only change is a rename and
+// is audited.
+func TestPostgresGroupRenameToSameNameWritesNoAudit(t *testing.T) {
+	f := newGroupFixture(t)
+	g := f.group(t, "Steady")
+	renames := func() int {
+		var n int
+		if err := f.admin.QueryRow(f.ctx, `SELECT count(*) FROM audit_events WHERE workspace_id = $1 AND resource_id = $2 AND action = $3`,
+			f.ws.ID, g.ID, AuditGroupRename).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	got, err := f.store.RenameGroup(f.ctx, f.ws.ID, f.actor(), g.ID, "  Steady ")
+	if err != nil || got.DisplayName != "Steady" || !got.UpdatedAt.Equal(g.UpdatedAt) {
+		t.Fatalf("same-name rename = %+v %v (created %+v)", got, err, g)
+	}
+	if n := renames(); n != 0 {
+		t.Fatalf("same-name rename wrote %d audit rows", n)
+	}
+	if got, err := f.store.RenameGroup(f.ctx, f.ws.ID, f.actor(), g.ID, "STEADY"); err != nil || got.DisplayName != "STEADY" {
+		t.Fatalf("case rename = %+v %v", got, err)
+	}
+	if n := renames(); n != 1 {
+		t.Fatalf("case rename wrote %d audit rows, want 1", n)
 	}
 }

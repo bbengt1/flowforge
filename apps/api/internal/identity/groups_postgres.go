@@ -206,7 +206,27 @@ func (p *Postgres) RenameGroup(ctx context.Context, workspaceID string, actor Gr
 	}
 	defer tx.Rollback(ctx)
 
+	// Lock the row and read the current name. A rename to the exact
+	// current name changes nothing, so it writes no update and no audit
+	// row, the same as an add or remove that finds nothing to do.
 	var g Group
+	err = tx.QueryRow(ctx, `
+		SELECT id::text, display_name, created_at, updated_at,
+		       (SELECT count(*) FROM workspace_group_members m
+		         WHERE m.workspace_id = $1::uuid AND m.group_id = $2::uuid)::int
+		  FROM workspace_groups
+		 WHERE workspace_id = $1::uuid AND id = $2::uuid
+		   FOR UPDATE
+	`, workspaceID, groupID).Scan(&g.ID, &g.DisplayName, &g.CreatedAt, &g.UpdatedAt, &g.MemberCount)
+	if err != nil {
+		return Group{}, mapGroupErr(err)
+	}
+	if g.DisplayName == name {
+		if err := tx.Commit(ctx); err != nil {
+			return Group{}, mapGroupErr(err)
+		}
+		return g, nil
+	}
 	err = tx.QueryRow(ctx, `
 		UPDATE workspace_groups
 		   SET display_name = $3, updated_by = NULLIF($4, '')::uuid, updated_at = now()
@@ -257,34 +277,53 @@ func (p *Postgres) AddGroupMember(ctx context.Context, workspaceID string, actor
 	if !authz.ValidUUID(groupID) {
 		return ErrNotFound
 	}
+	err := p.addGroupMemberOnce(ctx, workspaceID, actor, groupID, userID)
+	if errors.Is(err, ErrGroupMemberNotInWorkspace) && authz.ValidUUID(userID) {
+		// Retry once in a fresh transaction. SetMemberRoles replaces a
+		// member's roles by deleting and reinserting their binding rows.
+		// An add that was waiting on the deleted rows skips them once that
+		// commits, and the reinserted rows are newer than its statement
+		// snapshot, so it sees no binding for a valid member. A new
+		// transaction sees the committed bindings. A real removal (or a
+		// user who was never bound) is refused again.
+		err = p.addGroupMemberOnce(ctx, workspaceID, actor, groupID, userID)
+	}
+	return err
+}
+
+func (p *Postgres) addGroupMemberOnce(ctx context.Context, workspaceID string, actor GroupActor, groupID, userID string) error {
 	tx, err := p.beginGroupTx(ctx, workspaceID)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
 
+	// Lock order is bindings first, then group rows, the same order as
+	// RemoveMember (delete bindings, then delete group rows), so the two
+	// cannot deadlock. FOR SHARE on the binding rows makes a concurrent
+	// RemoveMember wait for this add to commit; its later group-row delete
+	// then sees (and removes) the new row. If RemoveMember got there
+	// first, this read waits for it and then finds no binding, so the add
+	// is refused. No orphan row for a removed user can survive.
+	bound := false
+	if authz.ValidUUID(userID) {
+		err = tx.QueryRow(ctx, `
+			SELECT EXISTS (
+			    SELECT 1
+			    FROM workspace_role_bindings b
+			    JOIN users u ON u.id = b.user_id
+			    WHERE b.workspace_id = $1::uuid AND b.user_id = $2::uuid AND u.status = 'active'
+			    FOR SHARE OF b
+			)
+		`, workspaceID, userID).Scan(&bound)
+		if err != nil {
+			return mapDBErr(err)
+		}
+	}
+	// Group rows only after the binding lock. A missing group is still
+	// 404 ahead of the member check.
 	if err := requireGroupTx(ctx, tx, workspaceID, groupID); err != nil {
 		return err
-	}
-	if !authz.ValidUUID(userID) {
-		return ErrGroupMemberNotInWorkspace
-	}
-	// FOR SHARE on the binding rows: a concurrent RemoveMember deletes
-	// bindings first, so it waits for this add to commit and then its
-	// group-row delete sees (and removes) the new row. No orphan row for
-	// a removed user can survive.
-	var bound bool
-	err = tx.QueryRow(ctx, `
-		SELECT EXISTS (
-		    SELECT 1
-		    FROM workspace_role_bindings b
-		    JOIN users u ON u.id = b.user_id
-		    WHERE b.workspace_id = $1::uuid AND b.user_id = $2::uuid AND u.status = 'active'
-		    FOR SHARE OF b
-		)
-	`, workspaceID, userID).Scan(&bound)
-	if err != nil {
-		return mapDBErr(err)
 	}
 	if !bound {
 		return ErrGroupMemberNotInWorkspace
@@ -306,8 +345,13 @@ func (p *Postgres) AddGroupMember(ctx context.Context, workspaceID string, actor
 }
 
 func (p *Postgres) RemoveGroupMember(ctx context.Context, workspaceID string, actor GroupActor, groupID, userID string) error {
+	// A groupId that is not a UUID is not-found, like other resource
+	// ids. A userId that is not a UUID is invalid, like RemoveMember.
 	if !authz.ValidUUID(groupID) {
 		return ErrNotFound
+	}
+	if !authz.ValidUUID(userID) {
+		return ErrInvalid
 	}
 	tx, err := p.beginGroupTx(ctx, workspaceID)
 	if err != nil {
@@ -317,10 +361,6 @@ func (p *Postgres) RemoveGroupMember(ctx context.Context, workspaceID string, ac
 
 	if err := requireGroupTx(ctx, tx, workspaceID, groupID); err != nil {
 		return err
-	}
-	if !authz.ValidUUID(userID) {
-		// Cannot be a member. Idempotent no-op.
-		return mapDBErr(tx.Commit(ctx))
 	}
 	tag, err := tx.Exec(ctx, `
 		DELETE FROM workspace_group_members

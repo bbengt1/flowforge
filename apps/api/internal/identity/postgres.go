@@ -660,8 +660,9 @@ func (p *Postgres) SetMemberRoles(ctx context.Context, workspaceID, userID strin
 // RemoveMember deletes the user's role bindings and their workspace group
 // rows in one transaction scoped to workspaceID, so FORCE RLS on the group
 // tables applies. SCIM deprovision calls this once per workspace and gets
-// the same cleanup. Bindings are deleted first: a concurrent group-member
-// add holds FOR SHARE on those binding rows, so this waits for it and the
+// the same cleanup. Lock order is bindings first, then group rows, the
+// same order as AddGroupMember, so the two cannot deadlock: a concurrent
+// add holds FOR SHARE on the binding rows, this waits for it, and the
 // group-row delete that follows sees the new row. ErrLastAdmin rolls back
 // both deletes.
 func (p *Postgres) RemoveMember(ctx context.Context, workspaceID, userID string) error {

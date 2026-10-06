@@ -162,6 +162,12 @@ func (m *Memory) RenameGroup(_ context.Context, workspaceID string, actor GroupA
 	if err != nil {
 		return Group{}, err
 	}
+	if g.group.DisplayName == name {
+		// Nothing changed: no update and no audit row.
+		out := g.group
+		out.MemberCount = len(g.members)
+		return out, nil
+	}
 	if m.nameTakenLocked(workspaceID, name, g.group.ID) {
 		return Group{}, ErrGroupNameTaken
 	}
@@ -205,13 +211,21 @@ func (m *Memory) AddGroupMember(_ context.Context, workspaceID string, actor Gro
 }
 
 func (m *Memory) RemoveGroupMember(_ context.Context, workspaceID string, actor GroupActor, groupID, userID string) error {
+	// Same order as Postgres: a groupId that is not a UUID is not-found,
+	// then a userId that is not a UUID is invalid.
+	if !authz.ValidUUID(groupID) {
+		return ErrNotFound
+	}
+	userID = strings.ToLower(strings.TrimSpace(userID))
+	if !authz.ValidUUID(userID) {
+		return ErrInvalid
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	g, err := m.groupLocked(workspaceID, groupID)
 	if err != nil {
 		return err
 	}
-	userID = strings.ToLower(strings.TrimSpace(userID))
 	if _, ok := g.members[userID]; !ok {
 		return nil
 	}

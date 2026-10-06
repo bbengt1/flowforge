@@ -24,6 +24,14 @@ type Querier interface {
 // remove or workspace RemoveMember) waits for the caller to commit. The
 // answer is cleanly before or after that removal, never in between.
 //
+// The lock is on the membership row only, never the users row. A users
+// row lock would make SCIM and other user updates wait behind a decide.
+// It is not needed: the request access check already fails a disabled
+// user before this runs; the RemoveMember that SCIM runs after flipping
+// the status waits on this member-row lock; and the users.status =
+// 'active' join still excludes a last admin whose RemoveMember was
+// refused and who kept their bindings.
+//
 // Membership never grants approval.decide. The caller still checks the
 // user's own permission. At the approval decide call site:
 //   - a non-nil error (database, network, timeout) should map to

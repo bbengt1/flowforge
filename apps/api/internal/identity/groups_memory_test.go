@@ -106,6 +106,26 @@ func TestMemoryGroupsMirrorPostgresRules(t *testing.T) {
 		t.Fatalf("RemoveMember left rows: %+v", d.Members)
 	}
 
+	// Same order as Postgres: a non-UUID groupId is not-found, a non-UUID
+	// userId is invalid, and a valid non-member id is a no-op.
+	if err := m.RemoveGroupMember(ctx, ws.ID, actor, g.ID, "not-a-uuid"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("remove non-UUID user = %v", err)
+	}
+	if err := m.RemoveGroupMember(ctx, ws.ID, actor, "not-a-uuid", approver.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("remove from non-UUID group = %v", err)
+	}
+	if _, err := m.GetGroup(ctx, ws.ID, "not-a-uuid"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("get non-UUID group = %v", err)
+	}
+	if err := m.RemoveGroupMember(ctx, ws.ID, actor, g.ID, unbound.ID); err != nil {
+		t.Fatalf("remove non-member = %v", err)
+	}
+	// A rename to the exact current name (after trimming) writes no
+	// audit row; the want list below has no rename.
+	if got, err := m.RenameGroup(ctx, ws.ID, actor, g.ID, "  Board "); err != nil || got.DisplayName != "Board" {
+		t.Fatalf("same-name rename = %+v %v", got, err)
+	}
+
 	if err := m.DeleteGroup(ctx, ws.ID, actor, g.ID); err != nil {
 		t.Fatal(err)
 	}
