@@ -3001,8 +3001,9 @@ components:
           type: string
           description: >
             metadata.slug cannot change through a draft save. When it matches
-            metadata.slug in the stored draft, or is missing, the stored workflow
-            slug is written back into metadata.slug. When this save changes it,
+            metadata.slug in the stored draft, equals the stored workflow slug,
+            or is missing, the stored workflow slug is written back into
+            metadata.slug. When this save changes it to anything else,
             the response is 400 slug_immutable with errors[].path slug. The
             stored slug is never re-validated on save, so a legacy slug keeps
             saving.
@@ -3084,6 +3085,12 @@ components:
             $ref: "#/components/schemas/CompareChange"
     RestoreDraftRequest:
       type: object
+      description: >
+        Restore is a draft write. It copies the version YAML into the draft
+        and writes the stored workflow slug into metadata.slug, so a version
+        published with a stale slug comes back with the stored one. Restore
+        never returns slug_immutable. The published version row is not
+        changed.
       properties:
         expectedRevision:
           type: integer

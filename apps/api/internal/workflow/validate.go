@@ -79,6 +79,32 @@ func ValidWorkflowSlug(s string) bool {
 	return authz.ValidTenantSlug(s) && !ReservedWorkflowSlug(s)
 }
 
+// ValidNewWorkflowSlug is the one check for a slug a create or import is
+// about to store, explicit or derived. It is ValidWorkflowSlug plus no
+// trailing hyphen and no two hyphens in a row (a leading hyphen already
+// fails the first-letter rule). It runs only on new slugs. YAML
+// validation, draft save, export, and rename keep ValidWorkflowSlug, so a
+// stored legacy slug such as qa-546-trail- keeps working.
+func ValidNewWorkflowSlug(s string) bool {
+	return ValidWorkflowSlug(s) && NewWorkflowSlugShape(s)
+}
+
+// NewWorkflowSlugShape is the hyphen part of ValidNewWorkflowSlug without
+// the reserved-word check. Create uses it on a derived base, which may be
+// a reserved word that is then suffixed.
+func NewWorkflowSlugShape(s string) bool {
+	return authz.ValidTenantSlug(s) && !strings.HasPrefix(s, "-") && !strings.HasSuffix(s, "-") && !strings.Contains(s, "--")
+}
+
+// NewWorkflowSlugInvalidMessage is the invalid-request text for a new slug
+// that fails ValidNewWorkflowSlug. field is the name the client sent.
+func NewWorkflowSlugInvalidMessage(field string) string {
+	if strings.TrimSpace(field) == "" {
+		field = "slug"
+	}
+	return field + " must be 1-63 characters, start with a lowercase letter, contain only lowercase letters, digits, or single hyphens, not end with a hyphen, and must not be reserved."
+}
+
 // WorkflowSlugInvalidMessage is the invalid-name text for a workflow slug.
 // field is the name the client sent ("slug" or "metadata.slug").
 func WorkflowSlugInvalidMessage(field string) string {

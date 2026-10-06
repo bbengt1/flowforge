@@ -202,7 +202,7 @@ func TestPostgresSoftDeleteSlugAndActiveExecution(t *testing.T) {
 		Digest:         normalized.Digest,
 		Summary:        normalized.Summary,
 	})
-	if !errors.Is(err, ErrConflict) {
+	if !errors.Is(err, ErrSlugTaken) || errors.Is(err, ErrConflict) {
 		t.Fatalf("live slug = %v", err)
 	}
 }

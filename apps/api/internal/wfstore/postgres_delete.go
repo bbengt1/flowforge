@@ -387,21 +387,20 @@ func lockLiveWorkflow(ctx context.Context, tx pgx.Tx, workflowID string) error {
 
 // classifySlugViolation explains a workflows_slug_unique failure. It runs
 // only after the insert was rejected, so create does not check then insert.
-func classifySlugViolation(ctx context.Context, tx pgx.Tx, slug string) error {
+// A deleted holder is Reserved. A live holder, or a holder this
+// transaction cannot see, is a live clash.
+func classifySlugViolation(ctx context.Context, tx pgx.Tx, slug string) (SlugConflict, error) {
 	var deleted bool
 	err := tx.QueryRow(ctx, `
 		SELECT deleted_at IS NOT NULL FROM workflows WHERE slug = $1
 	`, slug).Scan(&deleted)
 	if err != nil {
 		if errors.Is(mapDBErr(err), ErrNotFound) {
-			return SlugConflict{}
+			return SlugConflict{}, nil
 		}
-		return mapDBErr(err)
+		return SlugConflict{}, mapDBErr(err)
 	}
-	if deleted {
-		return SlugConflict{Reserved: true}
-	}
-	return SlugConflict{}
+	return SlugConflict{Reserved: deleted}, nil
 }
 
 func workflowSlugUnique(err error) bool {

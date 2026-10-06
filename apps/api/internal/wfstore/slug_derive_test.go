@@ -77,8 +77,11 @@ func assertDerivedSlugBehavior(t *testing.T, ctx context.Context, store Store, s
 		live := createNamed(t, ctx, store, scope, "Taken", "taken-live")
 		_, _, err := store.Create(ctx, scope, slugCreateInput(t, "Other", "taken-live"))
 		var conflict SlugConflict
-		if !errors.As(err, &conflict) || conflict.Reserved || conflict.Exhausted || !errors.Is(err, ErrConflict) {
+		if !errors.As(err, &conflict) || conflict.Reserved || !errors.Is(err, ErrSlugTaken) || errors.Is(err, ErrConflict) {
 			t.Fatalf("live clash = %v", err)
+		}
+		if conflict.Suggested != "taken-live-2" {
+			t.Fatalf("suggested = %q", conflict.Suggested)
 		}
 		got, getErr := store.Get(ctx, scope, live.ID)
 		if getErr != nil || got.Slug != "taken-live" {
@@ -93,8 +96,11 @@ func assertDerivedSlugBehavior(t *testing.T, ctx context.Context, store Store, s
 		}
 		_, _, err := store.Create(ctx, scope, slugCreateInput(t, "Again", "taken-gone"))
 		var conflict SlugConflict
-		if !errors.As(err, &conflict) || !conflict.Reserved || !errors.Is(err, ErrSlugReserved) {
+		if !errors.As(err, &conflict) || !conflict.Reserved || !errors.Is(err, ErrSlugReserved) || errors.Is(err, ErrConflict) {
 			t.Fatalf("deleted clash = %v", err)
+		}
+		if conflict.Suggested != "taken-gone-2" {
+			t.Fatalf("suggested = %q", conflict.Suggested)
 		}
 	})
 
@@ -170,17 +176,61 @@ func assertDerivedSlugBehavior(t *testing.T, ctx context.Context, store Store, s
 		assertStoredSlug(t, ctx, store, scope, second.ID, second.Slug)
 	})
 
-	t.Run("derived suffixes stop after the attempt cap", func(t *testing.T) {
-		for i := 0; i < maxDerivedSlugAttempts; i++ {
+	t.Run("25 name-only creates with deletes mixed all succeed", func(t *testing.T) {
+		seen := map[string]bool{}
+		for i := 1; i <= 25; i++ {
 			row := createNamed(t, ctx, store, scope, "Quota", "")
-			if row.Slug == "" {
-				t.Fatal("empty slug")
+			want := "quota"
+			if i > 1 {
+				want = "quota-" + strconv.Itoa(i)
+			}
+			if row.Slug != want || seen[row.Slug] {
+				t.Fatalf("create %d slug = %q, want %q", i, row.Slug, want)
+			}
+			seen[row.Slug] = true
+			if i%3 == 0 {
+				if _, err := store.Delete(ctx, scope, row.ID); err != nil {
+					t.Fatal(err)
+				}
 			}
 		}
-		_, _, err := store.Create(ctx, scope, slugCreateInput(t, "Quota", ""))
-		var conflict SlugConflict
-		if !errors.As(err, &conflict) || !conflict.Exhausted || !errors.Is(err, ErrConflict) {
-			t.Fatalf("exhausted = %v", err)
+	})
+
+	t.Run("x-2-3 does not move the suffix for x", func(t *testing.T) {
+		createNamed(t, ctx, store, scope, "Other", "mix-2-3")
+		first := createNamed(t, ctx, store, scope, "Mix", "")
+		second := createNamed(t, ctx, store, scope, "Mix", "")
+		if first.Slug != "mix" || second.Slug != "mix-2" {
+			t.Fatalf("slugs = %q %q", first.Slug, second.Slug)
+		}
+		// Base mix-2 owns mix-2-3, so the next one is mix-2-4.
+		third := createNamed(t, ctx, store, scope, "Mix 2", "")
+		if third.Slug != "mix-2-4" {
+			t.Fatalf("mix-2 family slug = %q", third.Slug)
+		}
+		// Underscores become hyphens and do not join the mix family.
+		under := createNamed(t, ctx, store, scope, "mix_9", "")
+		if under.Slug != "mix-9" {
+			t.Fatalf("underscore slug = %q", under.Slug)
+		}
+		fourth := createNamed(t, ctx, store, scope, "Mix", "")
+		if fourth.Slug != "mix-10" {
+			t.Fatalf("after mix-9 slug = %q", fourth.Slug)
+		}
+	})
+
+	t.Run("explicit slug with bad hyphens is invalid", func(t *testing.T) {
+		for _, slug := range []string{"qa-546-trail-", "double--hyphen"} {
+			_, _, err := store.Create(ctx, scope, slugCreateInput(t, "Bad", slug))
+			if !errors.Is(err, ErrInvalid) {
+				t.Fatalf("explicit %q = %v", slug, err)
+			}
+			in := slugCreateInput(t, "Bad", "")
+			normalized := mustNormalize(t, slugYAML("Bad", slug))
+			in.NormalizedYAML, in.Digest, in.Summary = normalized.NormalizedYAML, normalized.Digest, normalized.Summary
+			if _, _, err := store.Create(ctx, scope, in); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("yaml %q = %v", slug, err)
+			}
 		}
 	})
 }

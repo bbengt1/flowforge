@@ -260,6 +260,7 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 		CodeArtifactMutable: true, CodeArtifactUnscanned: true,
 		CodeArtifactUnsigned: true, CodeArtifactScanFailed: true,
 		CodeWorkflowHasActiveExecutions: true, CodeWorkflowSlugReserved: true,
+		CodeWorkflowSlugTaken: true, CodeSlugImmutable: true,
 		CodeWorkflowDeleted:       true,
 		CodeExecutionNotRetryable: true, CodeStepAttemptSuperseded: true,
 		CodeApprovalClosed: true, CodeApprovalRequirementUnavailable: true,

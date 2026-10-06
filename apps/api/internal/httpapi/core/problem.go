@@ -49,6 +49,12 @@ const (
 	// Soft-delete conflicts. Underscores match the workflow contract.
 	CodeWorkflowHasActiveExecutions = "workflow_has_active_executions"
 	CodeWorkflowSlugReserved        = "workflow_slug_reserved"
+	// CodeWorkflowSlugTaken is a create or import slug held by a live
+	// workflow, including a derived slug that kept losing the insert race.
+	// conflict is never used for a slug clash.
+	CodeWorkflowSlugTaken = "workflow_slug_taken"
+	// CodeSlugImmutable refuses a draft save that changes metadata.slug.
+	CodeSlugImmutable = "slug_immutable"
 	// CodeWorkflowDeleted is the approval-decide and retry refusal when
 	// the workflow tombstone is set. The run is failed, not continued.
 	CodeWorkflowDeleted = "workflow_deleted"
@@ -84,6 +90,8 @@ type Problem struct {
 	RequestID string       `json:"request_id"`
 	Reason    string       `json:"reason,omitempty"`
 	Errors    []FieldError `json:"errors,omitempty"`
+	// SuggestedSlug is set only on create and import slug 409s.
+	SuggestedSlug string `json:"suggestedSlug,omitempty"`
 }
 
 // WriteProblem writes an application/problem+json response. Detail must not
@@ -102,7 +110,17 @@ func WriteProblemErrors(w http.ResponseWriter, r *http.Request, status int, code
 	writeProblem(w, r, status, code, title, detail, "", errors)
 }
 
+// WriteSlugConflict writes a create or import slug 409 with field errors
+// and an optional suggestedSlug.
+func WriteSlugConflict(w http.ResponseWriter, r *http.Request, code, detail, suggested string, errors []FieldError) {
+	writeProblemDoc(w, r, http.StatusConflict, code, "Conflict", detail, "", errors, suggested)
+}
+
 func writeProblem(w http.ResponseWriter, r *http.Request, status int, code, title, detail, reason string, errors []FieldError) {
+	writeProblemDoc(w, r, status, code, title, detail, reason, errors, "")
+}
+
+func writeProblemDoc(w http.ResponseWriter, r *http.Request, status int, code, title, detail, reason string, errors []FieldError, suggested string) {
 	p := Problem{
 		Type:      ProblemTypePrefix + code,
 		Title:     title,
@@ -113,6 +131,8 @@ func writeProblem(w http.ResponseWriter, r *http.Request, status int, code, titl
 		RequestID: RequestIDFromContext(r.Context()),
 		Reason:    reason,
 		Errors:    errors,
+
+		SuggestedSlug: suggested,
 	}
 	body, err := json.Marshal(p)
 	if err != nil {
