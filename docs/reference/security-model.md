@@ -47,7 +47,8 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
  keep enforcement. Any other value is a boot-fail. RBAC, sessions,
  `must_change_password`, enroll, verify, and embed (ADV-021, ADV-024)
  stay unchanged. `GET /api/v1/session/mfa` reports `enforcement`
- `on` or `off`. Skipped privileged grants audit `mfa_bypassed: true`.
+ `on` or `off`. Skipped privileged grants write `session.mfa_bypassed`
+ (`outcome` `allowed`); `mfa_bypassed: true` is set from that event type.
  SCIM 2.0 is a separate door at `/scim/v2`, authenticated only by
  `SCIM_BEARER_TOKEN` (constant-time compare). It is not an
  `ff_session`, not `POST /machine/token`, and not

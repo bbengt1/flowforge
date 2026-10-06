@@ -96,27 +96,55 @@ func TestWarnBypass(t *testing.T) {
 	}
 }
 
-func TestDeployK8sDoesNotMentionMFAEnforcement(t *testing.T) {
+func TestDeployAndComposeDoNotMentionMFAEnforcement(t *testing.T) {
 	t.Parallel()
-	root := filepath.Join("..", "..", "..", "..", "deploy", "k8s")
-	info, err := os.Stat(root)
+	repo := filepath.Join("..", "..", "..", "..")
+	deploy := filepath.Join(repo, "deploy")
+	info, err := os.Stat(deploy)
 	if err != nil || !info.IsDir() {
-		t.Fatalf("deploy/k8s missing: %v", err)
+		t.Fatalf("deploy missing: %v", err)
 	}
-	var hits []string
-	err = filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
+	hits := map[string]struct{}{}
+	err = filepath.WalkDir(deploy, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 		if d.IsDir() {
 			return nil
 		}
-		body, err := os.ReadFile(path)
+		mentioned, err := fileMentionsMFAEnforcement(path, d.Name())
 		if err != nil {
 			return err
 		}
-		if strings.Contains(string(body), EnvEnforcement) || strings.Contains(d.Name(), EnvEnforcement) {
-			hits = append(hits, path)
+		if mentioned {
+			hits[path] = struct{}{}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = filepath.WalkDir(repo, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "node_modules", "vendor":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		name := d.Name()
+		if !strings.HasPrefix(name, "docker-compose") || !strings.HasSuffix(name, ".yml") {
+			return nil
+		}
+		mentioned, err := fileMentionsMFAEnforcement(path, name)
+		if err != nil {
+			return err
+		}
+		if mentioned {
+			hits[path] = struct{}{}
 		}
 		return nil
 	})
@@ -124,6 +152,21 @@ func TestDeployK8sDoesNotMentionMFAEnforcement(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(hits) > 0 {
-		t.Fatalf("deploy/k8s must not mention %s: %s", EnvEnforcement, strings.Join(hits, ", "))
+		paths := make([]string, 0, len(hits))
+		for path := range hits {
+			paths = append(paths, path)
+		}
+		t.Fatalf("deploy/** and docker-compose*.yml must not mention %s: %s", EnvEnforcement, strings.Join(paths, ", "))
 	}
+}
+
+func fileMentionsMFAEnforcement(path, name string) (bool, error) {
+	if strings.Contains(name, EnvEnforcement) {
+		return true, nil
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	return strings.Contains(string(body), EnvEnforcement), nil
 }

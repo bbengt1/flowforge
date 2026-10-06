@@ -43,7 +43,7 @@ func TestMFAEnforcementDefaultStaysOn(t *testing.T) {
 	}
 	events := listUserAudit(t, sessions, user.ID)
 	for _, event := range events {
-		if event.MFABypassed || event.Reason == session.ReasonMFABypassed {
+		if event.MFABypassed || event.EventType == session.EventMFABypassed || event.Reason == session.ReasonMFABypassed {
 			t.Fatalf("default enforcement audited a bypass: %+v", event)
 		}
 	}
@@ -111,8 +111,11 @@ func TestMFAEnforcementOffSkipsStepUp(t *testing.T) {
 		if !event.MFABypassed {
 			continue
 		}
-		if event.Reason != session.ReasonMFABypassed || event.Outcome != session.OutcomeAllowed || !event.MFABypassed {
+		if event.EventType != session.EventMFABypassed || event.Reason != session.ReasonMFABypassed || event.Outcome != session.OutcomeAllowed || !event.MFABypassed {
 			t.Fatalf("bypass audit = %+v", event)
+		}
+		if n := len(event.Reason); n < 1 || n > 200 {
+			t.Fatalf("reason length %d is outside 1-200", n)
 		}
 		raw, err := json.Marshal(event)
 		if err != nil {

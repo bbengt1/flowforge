@@ -7119,7 +7119,7 @@ components:
           description: platform.administer and credential.*
         enforcement:
           type: string
-          enum: [on, off]
+          enum: ["on", "off"]
           description: |
             Process step-up mode. `on` is unset or `MFA_ENFORCEMENT=on`.
             `off` is set only when `MFA_ENFORCEMENT=off` and the process is
@@ -7273,6 +7273,8 @@ components:
             - session.origin_rejected
             - session.privilege_denied
             - session.auth_rejected
+            - bootstrap.admin_password_set
+            - session.mfa_bypassed
         outcome:
           type: string
           enum: [allowed, denied]
@@ -7286,10 +7288,11 @@ components:
         mfa_bypassed:
           type: boolean
           description: |
-            True when `MFA_ENFORCEMENT=off` skipped step-up for this
-            privileged grant. Those rows use `event_type`
-            `session.privilege_denied`, `outcome` `allowed`, and `reason`
-            `mfa_bypassed:true`. Omitted on every other event.
+            True when this row's `event_type` is `session.mfa_bypassed`.
+            Those rows are written when `MFA_ENFORCEMENT=off` skipped
+            step-up for a privileged grant. `outcome` is `allowed`.
+            `reason` is human text such as `mfa step-up skipped`.
+            The flag is set from the event type. Omitted on every other event.
     SessionAuditEventList:
       type: object
       required: [items]

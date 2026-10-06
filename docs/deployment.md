@@ -120,7 +120,7 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `QUOTA_EXECUTE_CONCURRENCY` | `20` | Open (non-terminal) executions per workspace. Manual start, webhook ingress, and schedule dispatch share this cap. `0` or invalid uses 20. Negative disables the cap. `GET /api/v1/health` and `GET /api/v1/readiness` are not counted, so a full bucket or a down rate store cannot 429 those probes. |
 | `LOCKOUT_MAX_FAILURES` | `5` | Durable failed-password threshold in `auth_lockouts` (survives restart). Integer 1–50. Unset uses 5. `0`, negative, and non-integers are a boot-fail — lockout cannot be disabled with a bad value. Applies to `POST /login` and OIDC callback. `LOGIN_RATE_LIMIT_*` stays a separate budget from lockout and from `QUOTA_*`. With PostgreSQL that window is shared across API replicas and survives restart. One process without PostgreSQL keeps an in-memory window. `FLOWFORGE_REPLICAS` above 1 refuses that in-memory window. |
 | `MFA_SECRET_KEY` | empty | Encrypts stored TOTP secrets. 32 bytes as base64 (std or URL, padded or raw) or 64 hex; see `apps/api/internal/mfa/config.go`. Empty still boots and MFA enroll returns `503`. Malformed is a boot-fail and the error never prints the key. Generate with `openssl rand -base64 32`. Keep it stable: changing or losing it makes already-enrolled factors undecryptable. Under compose, set it in `.env` and apply with `docker compose up -d --force-recreate api`. Production sets it in the k8s Secret (`deploy/k8s/api-secret.example.yaml` has the commented placeholder). |
-| `MFA_ENFORCEMENT` | unset (enforced) | **Dev/QA only.** Unset or `on` keeps TOTP step-up for `platform.administer` and `credential.*`. `off` skips only that step-up when the process is not production-locked (`APP_ENV` is `development`, `dev`, `local`, or `test`, and `REQUIRE_TLS` is false). RBAC, sessions, `must_change_password`, enroll, and verify stay in place. `GET /api/v1/session/mfa` reports `enforcement` `on` or `off`. Each skipped privileged grant is audited with `mfa_bypassed: true`. Any other value is a boot-fail and the error does not echo the value. `off` in a production-locked process (empty, `production`, or unknown `APP_ENV`, or `REQUIRE_TLS=true`) is a **boot-fail**, not a warning. The API logs a warning on every boot while the bypass is active. Do not set this in `docker-compose.yml` or `deploy/k8s`. |
+| `MFA_ENFORCEMENT` | unset (enforced) | **Dev/QA only.** Unset or `on` keeps TOTP step-up for `platform.administer` and `credential.*`. `off` skips only that step-up when the process is not production-locked (`APP_ENV` is `development`, `dev`, `local`, or `test`, and `REQUIRE_TLS` is false). RBAC, sessions, `must_change_password`, enroll, and verify stay in place. `GET /api/v1/session/mfa` reports `enforcement` `on` or `off`. Each skipped privileged grant writes `session.mfa_bypassed` (`outcome` `allowed`, `mfa_bypassed: true` from that event type). While `off`, every privileged call writes one of those rows, and `GET /api/v1/session/audit-events` returns only the newest 100, so they can push older events out of the SessionPanel. Any other value is a boot-fail and the error does not echo the value. `off` in a production-locked process (empty, `production`, or unknown `APP_ENV`, or `REQUIRE_TLS=true`) is a **boot-fail**, not a warning. The API logs a warning on every boot while the bypass is active. Do not set this under `deploy/` or in any `docker-compose*.yml`. |
 | `SCIM_BEARER_TOKEN` | empty | Dedicated bearer for `/scim/v2`. 32–256 characters, no spaces or control characters. Never logged, stored, or returned. Empty together with the other `SCIM_*` leaves SCIM fail-closed (`503`). A token without an issuer (and without `OIDC_ISSUER`) is a boot-fail. Not an `ff_session`; it does not authorize Login, machine token, or embed exchange. |
 | `SCIM_ISSUER` | `OIDC_ISSUER` when the bearer is set and this is omitted | Issuer stored on provisioned users. Must match `OIDC_ISSUER` when both are set, so SCIM and OIDC are the same principal. Production requires `https`. |
 | `SCIM_DEFAULT_ROLE` | `viewer` | Workspace role granted when a SCIM Group member is added. Does not remove roles the user already has. `platform-admin` and any non-workspace role are a boot-fail. |
@@ -383,10 +383,15 @@ before enrolling TOTP. It does not change RBAC, sessions,
 `must_change_password`, enroll, verify, or embed (ADV-021, ADV-024).
 A production-locked process refuses to boot if the value is `off`:
 empty, `production`, or unknown `APP_ENV`, and `REQUIRE_TLS=true`, all
-count as production-locked. Compose does not set it. `deploy/k8s` must
-not set it. While it is active the API logs a warning at every boot,
-`GET /api/v1/session/mfa` returns `"enforcement":"off"`, and each
-skipped privileged grant is audited with `mfa_bypassed: true`.
+count as production-locked. Compose does not set it. Nothing under
+`deploy/` and no `docker-compose*.yml` may set it. While it is active
+the API logs a warning at every boot, `GET /api/v1/session/mfa` returns
+`"enforcement":"off"`, and each skipped privileged grant writes
+`session.mfa_bypassed` with outcome `allowed` and `mfa_bypassed: true`
+(the flag comes from the event type). While the setting is off, every
+privileged call writes one of those rows. `GET /api/v1/session/audit-events`
+returns only the newest 100, so those rows can push older real events
+out of the SessionPanel.
 
 ## Path-2 first-run wizard
 

@@ -613,11 +613,10 @@ func (s *Server) AuditSession(r *http.Request, rec session.Record, eventType, ou
 }
 
 // auditMFABypassed records that step-up was skipped for one privileged
-// grant. The event type stays privilege_denied so the existing
-// session_audit_events check accepts the row. Outcome is allowed and
-// mfa_bypassed is true.
+// grant. The event type is session.mfa_bypassed and the outcome is
+// allowed. mfa_bypassed is set from that type on read.
 func (s *Server) auditMFABypassed(r *http.Request, rec session.Record) {
-	s.writeSessionAudit(r, rec, session.EventPrivilegeDenied, session.OutcomeAllowed, session.ReasonMFABypassed, true)
+	s.writeSessionAudit(r, rec, session.EventMFABypassed, session.OutcomeAllowed, session.ReasonMFABypassed, true)
 }
 
 func (s *Server) writeSessionAudit(r *http.Request, rec session.Record, eventType, outcome, reason string, mfaBypassed bool) {
