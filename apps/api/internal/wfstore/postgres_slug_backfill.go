@@ -28,6 +28,18 @@ type DraftSlugBackfill struct {
 	// Skipped is the number of drafts whose YAML could not be parsed or
 	// normalized. They are left as they are.
 	Skipped int
+	// Changes lists each rewritten draft, in the order written. Unchanged
+	// drafts are not listed.
+	Changes []DraftSlugChange
+}
+
+// DraftSlugChange is one draft rewritten by BackfillDraftSlugs. OldSlug
+// is metadata.slug read from the locked draft YAML, empty when it was
+// missing. It comes from user YAML: escape it before writing it to a log.
+type DraftSlugChange struct {
+	WorkflowID string
+	OldSlug    string
+	NewSlug    string
 }
 
 type backfillCandidate struct {
@@ -69,11 +81,12 @@ func (p *Postgres) BackfillDraftSlugs(ctx context.Context, scope isolation.Scope
 		if strings.TrimSpace(slug) == c.storedSlug {
 			continue
 		}
-		changed, err := p.backfillDraftSlug(ctx, scope, c.workflowID)
+		change, changed, err := p.backfillDraftSlug(ctx, scope, c.workflowID)
 		switch {
 		case err == nil:
 			if changed {
 				res.Changed++
+				res.Changes = append(res.Changes, change)
 			}
 		case errors.Is(err, ErrInvalid):
 			res.Skipped++
@@ -127,11 +140,13 @@ func (p *Postgres) draftSlugCandidates(ctx context.Context, scope isolation.Scop
 }
 
 // backfillDraftSlug rewrites one draft through saveDraftTx. It reports
-// false when the locked row already carries the stored slug.
-func (p *Postgres) backfillDraftSlug(ctx context.Context, scope isolation.Scope, workflowID string) (bool, error) {
+// false when the locked row already carries the stored slug. The change
+// holds the slugs read from the locked row.
+func (p *Postgres) backfillDraftSlug(ctx context.Context, scope isolation.Scope, workflowID string) (DraftSlugChange, bool, error) {
+	change := DraftSlugChange{WorkflowID: workflowID}
 	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
 	if err != nil {
-		return false, mapDBErr(err)
+		return change, false, mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
 	_, _, err = saveDraftTx(ctx, tx, scope, workflowID, scope.ActorID() == "", func(locked lockedDraft) (SaveInput, error) {
@@ -142,6 +157,8 @@ func (p *Postgres) backfillDraftSlug(ctx context.Context, scope isolation.Scope,
 		if strings.TrimSpace(doc.Metadata.Slug) == locked.storedSlug {
 			return SaveInput{}, errDraftSlugCurrent
 		}
+		change.OldSlug = strings.TrimSpace(doc.Metadata.Slug)
+		change.NewSlug = locked.storedSlug
 		return SaveInput{
 			NormalizedYAML:   locked.yaml,
 			Digest:           workflow.Digest(locked.yaml),
@@ -150,10 +167,10 @@ func (p *Postgres) backfillDraftSlug(ctx context.Context, scope isolation.Scope,
 		}, nil
 	})
 	if errors.Is(err, errDraftSlugCurrent) {
-		return false, nil
+		return change, false, nil
 	}
 	if err != nil {
-		return false, err
+		return change, false, err
 	}
-	return true, nil
+	return change, true, nil
 }

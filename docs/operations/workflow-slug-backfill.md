@@ -21,6 +21,11 @@ drafts written after the upgrade.
   counted as skipped and left as it is.
 - A second run changes 0 drafts.
 
+Run it when nobody is editing workflows in that workspace. It bumps the
+draft revision of every draft it rewrites, so an editor that is open on
+one of those drafts gets a revision `409` on its next save and has to
+reload.
+
 ## Scope and role
 
 The command takes no flags. It runs for one workspace per call, named by
@@ -33,7 +38,7 @@ could bypass row-level security. Like `migrate`, it connects with
 `DATABASE_URL` (or the `POSTGRES_*` parts) and applies pending migrations
 first. It needs no other API secret.
 
-Output is counts only, never YAML:
+Standard output is the summary:
 
 ```text
 workspace=<uuid>
@@ -41,6 +46,19 @@ scanned=<drafts of live workflows in the workspace>
 changed=<drafts rewritten>
 skipped=<drafts left alone because the YAML does not parse>
 ```
+
+Standard error gets one structured JSON log line per rewritten draft,
+and nothing for drafts that were already correct:
+
+```json
+{"time":"...","level":"INFO","msg":"slug-backfill draft changed","workspace_id":"<uuid>","workflow_id":"<uuid>","old_slug":"deploy-old","old_slug_missing":false,"new_slug":"deploy"}
+```
+
+`old_slug` is empty and `old_slug_missing` is `true` when the draft had
+no `metadata.slug`. The old slug comes from draft YAML, so control
+characters and non-ASCII are written as escapes (`\n`, `\u2028`) and
+long values are cut; a value cannot start a new log line. No YAML body
+or connection string is logged.
 
 Exit status is 0 on success, 1 on an error, and 2 when arguments are
 passed.
@@ -59,7 +77,10 @@ docker compose exec -e FLOWFORGE_WORKSPACE_ID=<workspace uuid> api /usr/local/bi
 docker compose exec -e FLOWFORGE_WORKSPACE_ID=<workspace uuid> api /usr/local/bin/slug-backfill
 ```
 
-The second run prints `changed=0`.
+Run it when nobody is editing workflows: an open editor on a rewritten
+draft gets a revision `409` and reloads. The first run logs one
+`slug-backfill draft changed` line per rewritten draft. The second run
+prints `changed=0` and logs no draft lines.
 
 ## Kubernetes
 

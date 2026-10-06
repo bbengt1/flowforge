@@ -169,7 +169,7 @@ func TestPostgresDraftSlugBackfill(t *testing.T) {
 			t.Fatalf("workspace A session updated %d drafts in B", tag.RowsAffected())
 		}
 		// Even B's workflow id gets nowhere from A's session.
-		if _, err := store.backfillDraftSlug(ctx, runA, other.ID); !errors.Is(err, ErrNotFound) {
+		if _, _, err := store.backfillDraftSlug(ctx, runA, other.ID); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("cross-workspace backfill = %v", err)
 		}
 		if readDraftRow(t, ctx, admin, other.ID) != beforeOther {
@@ -182,8 +182,18 @@ func TestPostgresDraftSlugBackfill(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res.Scanned != 4 || res.Changed != 3 || res.Skipped != 0 {
+		if res.Scanned != 4 || res.Changed != 3 || res.Skipped != 0 || len(res.Changes) != 3 {
 			t.Fatalf("result = %+v", res)
+		}
+		wantChanges := map[string]DraftSlugChange{
+			drifted.ID:   {WorkflowID: drifted.ID, OldSlug: "bf-old", NewSlug: drifted.Slug},
+			missing.ID:   {WorkflowID: missing.ID, OldSlug: "", NewSlug: missing.Slug},
+			published.ID: {WorkflowID: published.ID, OldSlug: "bf-published-old", NewSlug: published.Slug},
+		}
+		for _, c := range res.Changes {
+			if wantChanges[c.WorkflowID] != c {
+				t.Fatalf("change = %+v, want %+v", c, wantChanges[c.WorkflowID])
+			}
 		}
 		for _, wf := range []Workflow{drifted, missing, published} {
 			got := readDraftRow(t, ctx, admin, wf.ID)
@@ -238,7 +248,7 @@ func TestPostgresDraftSlugBackfill(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res.Changed != 0 || res.Scanned != 4 {
+		if res.Changed != 0 || res.Scanned != 4 || len(res.Changes) != 0 {
 			t.Fatalf("second run = %+v", res)
 		}
 		for id, want := range snapshot {
