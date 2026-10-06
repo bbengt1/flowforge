@@ -404,7 +404,7 @@ func workflowDraftSaveOperation(rt Route) (*yaml.Node, error) {
 	b.WriteString("  Replaces the draft YAML at the expected revision. Requires workflow.edit. Drafts are not runnable.\n")
 	b.WriteString("  The editor rename writes metadata.name through this save. The display name follows metadata.name. The slug does not change.\n")
 	b.WriteString("  The slug cannot change through a draft save. When metadata.slug matches metadata.slug in the stored draft, equals the stored workflow slug, or is missing, the stored workflow slug is written back into metadata.slug.\n")
-	b.WriteString("  When this save changes metadata.slug to anything else, the response is 400 slug_immutable with errors[].path slug. The problem detail points the user to Rename.\n")
+	b.WriteString("  When this save changes metadata.slug to anything else, the response is 400 slug_immutable with errors[].path slug. The problem detail asks the user to put metadata.slug back or remove it, and notes that Rename changes only the display name.\n")
 	b.WriteString("  The stored slug is compared, not re-validated, so a legacy slug keeps saving.\n")
 	fmt.Fprintf(&b, "  Auth class: %s. Identity proxy: %s.\n", rt.Auth, rt.Proxy)
 	b.WriteString("  Responses never include secrets, credentials, tokens, private keys, or vault material.\n")

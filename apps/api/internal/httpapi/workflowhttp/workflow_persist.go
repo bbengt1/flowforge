@@ -956,7 +956,7 @@ func writeSlugConflict(w http.ResponseWriter, r *http.Request, conflict wfstore.
 
 // writeSlugImmutable refuses a draft save that changes metadata.slug.
 func writeSlugImmutable(w http.ResponseWriter, r *http.Request) {
-	detail := "metadata.slug cannot be changed by saving the draft. Use Rename instead."
+	detail := "A draft save can't change the slug. Put metadata.slug back as it was, or remove it, and save again. Rename changes the display name only."
 	core.WriteProblemErrors(w, r, http.StatusBadRequest, core.CodeSlugImmutable, "Invalid Request", detail, []core.FieldError{{
 		Path:    "slug",
 		Code:    core.CodeSlugImmutable,
