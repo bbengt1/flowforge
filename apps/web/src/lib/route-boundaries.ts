@@ -113,6 +113,7 @@ export const PRIMARY_APP_SEGMENTS = [
   "audit",
   "membership",
   "isolation",
+  "groups",
 ] as const;
 
 export type PrimaryAppSegment = (typeof PRIMARY_APP_SEGMENTS)[number];

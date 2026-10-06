@@ -38,8 +38,8 @@ export function CommandPalette() {
   const workflowId = editorWorkflowIdFromPath(pathname);
   const executionId = executionIdFromPath(pathname);
   const commands = useMemo(
-    () => paletteCommands(permissions, { workflowId, executionId }),
-    [permissions, workflowId, executionId],
+    () => paletteCommands(permissions, { workflowId, executionId, embed }),
+    [permissions, workflowId, executionId, embed],
   );
   const visible = filterPaletteCommands(commands, query);
   const highlighted = visible[highlight] ?? visible[0];

@@ -8,6 +8,10 @@ import { canSeeApprovalsNav } from "./approval.ts";
 import { canSeeExecutionsNav } from "./execution.ts";
 import { canSeeOpsConfigNav } from "./ops-config.ts";
 import { webhookTriggersHref } from "./webhook-trigger-contract.ts";
+import {
+  WORKSPACE_GROUPS_HREF,
+  canManageWorkspaceGroups,
+} from "./workspace-groups.ts";
 import { scheduleTriggersHref } from "./schedule-trigger-contract.ts";
 import {
   canCreateWorkflows,
@@ -47,7 +51,12 @@ function allowed(
 
 export function paletteCommands(
   permissions: readonly string[] | null | undefined,
-  context: { workflowId?: string | null; executionId?: string | null } = {},
+  context: {
+    workflowId?: string | null;
+    executionId?: string | null;
+    /** Embed hides admin-only surfaces the API refuses there. */
+    embed?: boolean;
+  } = {},
 ): PaletteCommand[] {
   const commands: PaletteCommand[] = [];
   if (allowed(permissions, canCreateWorkflows)) {
@@ -260,6 +269,15 @@ export function paletteCommands(
       hint: "Success is a denial",
       keywords: ["isolation", "tenancy", "deny"],
       action: { type: "navigate", href: "/isolation" },
+    });
+  }
+  if (canManageWorkspaceGroups(permissions, { embed: context.embed === true })) {
+    commands.push({
+      id: "nav-groups",
+      label: "Workspace groups",
+      hint: "Who approvals can be sent to",
+      keywords: ["groups", "approvers", "members", "admin"],
+      action: { type: "navigate", href: WORKSPACE_GROUPS_HREF },
     });
   }
   commands.push({

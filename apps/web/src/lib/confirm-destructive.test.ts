@@ -37,6 +37,7 @@ const UNDOABLE_SURFACES = [
   "src/components/workflows/ScheduleTriggerPanel.tsx",
   "src/components/workflows/WebhookTriggerPanel.tsx",
   "src/components/membership/MembersPanel.tsx",
+  "src/components/groups/WorkspaceGroupDetail.tsx",
 ] as const;
 
 const IRREVERSIBLE_SURFACES = [

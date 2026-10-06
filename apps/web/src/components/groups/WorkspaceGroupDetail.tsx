@@ -1,0 +1,401 @@
+"use client";
+
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
+import { notFound, useRouter } from "next/navigation";
+import { useMemo, useState, type ReactNode } from "react";
+import {
+  ConfirmDestructive,
+  DestructiveUndoBar,
+  useDestructiveUndo,
+} from "@/components/a11y/ConfirmDestructive";
+import { ProblemBanner } from "@/components/ProblemBanner";
+import { AddGroupMemberDialog } from "@/components/groups/AddGroupMemberDialog";
+import { GroupNameDialog } from "@/components/groups/GroupNameDialog";
+import {
+  afterWorkspaceGroupDeleted,
+  invalidateWorkspaceGroups,
+  useWorkspaceGroupDetail,
+} from "@/components/groups/useWorkspaceGroups";
+import {
+  WorkspaceGroupsAccess,
+  WorkspaceGroupsForbidden,
+} from "@/components/groups/WorkspaceGroupsAccess";
+import type { DevIdentity } from "@/lib/identity-headers";
+import type { ProblemDetails } from "@/lib/problem";
+import { QueryCacheError } from "@/lib/query-cache";
+import {
+  FF_SETTINGS_EYEBROW_CLASS,
+  FF_SETTINGS_GHOST_CLASS,
+  FF_SETTINGS_HELP_CLASS,
+  FF_SETTINGS_LINK_CLASS,
+  FF_SETTINGS_MUTED_CLASS,
+  FF_SETTINGS_PANEL_CLASS,
+  FF_SETTINGS_PRIMARY_CLASS,
+  FF_SETTINGS_ROOT_CLASS,
+  FF_SETTINGS_TITLE_CLASS,
+  FF_SETTINGS_VALUE,
+} from "@/lib/settings-wizard-visual";
+import { FF_LOUD_DANGER_CLASS } from "@/lib/vault-executions-visual";
+import {
+  GROUP_DELETE_DESCRIPTION,
+  GROUP_MEMBER_REMOVE_DESCRIPTION,
+  WORKSPACE_GROUP_MEMBERS_EMPTY,
+  WORKSPACE_GROUPS_HREF,
+  WORKSPACE_GROUPS_TITLE,
+  isWorkspaceGroupId,
+  workspaceGroupApprovalNote,
+  workspaceGroupDeleteImpact,
+  workspaceGroupMemberCountLabel,
+  workspaceGroupMemberLabel,
+  workspaceGroupMemberRemoveImpact,
+  workspaceGroupProblemTreatment,
+  type WorkspaceGroupMember,
+} from "@/lib/workspace-groups";
+import {
+  addWorkspaceGroupMember,
+  deleteWorkspaceGroup,
+  removeWorkspaceGroupMember,
+  renameWorkspaceGroup,
+} from "@/lib/workspace-groups-client";
+
+export function WorkspaceGroupDetail({ groupId }: { groupId: string }) {
+  if (!isWorkspaceGroupId(groupId)) {
+    notFound();
+  }
+  return (
+    <div
+      data-ff-settings={FF_SETTINGS_VALUE}
+      data-groups-page="detail"
+      className={`${FF_SETTINGS_ROOT_CLASS} space-y-6`}
+    >
+      <WorkspaceGroupsAccess>
+        {({ identity }) => <GroupDetailBody identity={identity} groupId={groupId} />}
+      </WorkspaceGroupsAccess>
+    </div>
+  );
+}
+
+function problemOf(error: unknown): ProblemDetails | null {
+  return error instanceof QueryCacheError ? error.problem : null;
+}
+
+function GroupHeader({ title, children }: { title: string; children?: ReactNode }) {
+  return (
+    <header className="space-y-3">
+      <p className={FF_SETTINGS_EYEBROW_CLASS}>
+        <Link href={WORKSPACE_GROUPS_HREF} className={FF_SETTINGS_LINK_CLASS}>
+          {WORKSPACE_GROUPS_TITLE}
+        </Link>
+      </p>
+      <h1 className={`text-3xl tracking-tight ${FF_SETTINGS_TITLE_CLASS}`}>{title}</h1>
+      {children}
+    </header>
+  );
+}
+
+function GroupDetailBody({
+  identity,
+  groupId,
+}: {
+  identity: DevIdentity;
+  groupId: string;
+}) {
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const detail = useWorkspaceGroupDetail(identity, groupId, true);
+  const group = detail.group;
+  const [dialog, setDialog] = useState<"rename" | "delete" | "add" | null>(null);
+  const [removeId, setRemoveId] = useState<string | null>(null);
+  const [actionProblem, setActionProblem] = useState<ProblemDetails | null>(null);
+
+  async function refreshAll() {
+    await invalidateWorkspaceGroups(queryClient, identity);
+  }
+
+  const rename = useMutation({
+    mutationFn: async (displayName: string) => {
+      const result = await renameWorkspaceGroup(identity, groupId, displayName);
+      if (!result.ok) {
+        throw new QueryCacheError(result.problem);
+      }
+    },
+    onSuccess: async () => {
+      setDialog(null);
+      await refreshAll();
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: async () => {
+      const result = await deleteWorkspaceGroup(identity, groupId);
+      if (!result.ok) {
+        throw new QueryCacheError(result.problem);
+      }
+    },
+    onSuccess: async () => {
+      setDialog(null);
+      router.push(WORKSPACE_GROUPS_HREF);
+      await afterWorkspaceGroupDeleted(queryClient, identity, groupId);
+    },
+    onError: (error) => {
+      setDialog(null);
+      setActionProblem(problemOf(error));
+    },
+  });
+
+  const addMember = useMutation({
+    mutationFn: async (userId: string) => {
+      const result = await addWorkspaceGroupMember(identity, groupId, userId);
+      if (!result.ok) {
+        throw new QueryCacheError(result.problem);
+      }
+    },
+    onSuccess: async () => {
+      setDialog(null);
+      await refreshAll();
+    },
+  });
+
+  const removeMember = useMutation({
+    mutationFn: async (userId: string) => {
+      const result = await removeWorkspaceGroupMember(identity, groupId, userId);
+      if (!result.ok) {
+        throw new QueryCacheError(result.problem);
+      }
+    },
+    onSuccess: async () => {
+      await refreshAll();
+    },
+    onError: (error) => {
+      setActionProblem(problemOf(error));
+    },
+  });
+
+  const memberUndo = useDestructiveUndo((userId) => {
+    setActionProblem(null);
+    removeMember.mutate(userId);
+  });
+
+  const members = useMemo(() => group?.members ?? [], [group]);
+  const existingUserIds = useMemo(() => members.map((item) => item.userId), [members]);
+  const removing = members.find((item) => item.userId === removeId) ?? null;
+  const pendingRemovalId = memberUndo.ticket?.id ?? null;
+
+  const treatment = workspaceGroupProblemTreatment(detail.problem);
+  if (treatment === "not-found") {
+    notFound();
+  }
+  if (treatment === "forbidden") {
+    return (
+      <>
+        <GroupHeader title={WORKSPACE_GROUPS_TITLE} />
+        <WorkspaceGroupsForbidden />
+        {detail.problem ? <ProblemBanner problem={detail.problem} /> : null}
+      </>
+    );
+  }
+
+  if (!group) {
+    return (
+      <>
+        <GroupHeader title="Group" />
+        {detail.problem ? (
+          <ProblemBanner problem={detail.problem} />
+        ) : (
+          <p className={`text-sm ${FF_SETTINGS_MUTED_CLASS}`} aria-live="polite">
+            Loading group…
+          </p>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <GroupHeader title={group.displayName}>
+        <p className={FF_SETTINGS_HELP_CLASS}>
+          {workspaceGroupMemberCountLabel(group.memberCount)}. Approvals sent
+          to this group reach the members below who are allowed to decide
+          them. Being in this group doesn&apos;t grant any permission.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            data-group-rename=""
+            onClick={() => {
+              rename.reset();
+              setDialog("rename");
+            }}
+            className={FF_SETTINGS_GHOST_CLASS}
+          >
+            Rename
+          </button>
+          <button
+            type="button"
+            data-group-delete=""
+            onClick={() => {
+              setActionProblem(null);
+              setDialog("delete");
+            }}
+            className={`${FF_LOUD_DANGER_CLASS} rounded-lg px-3 py-1.5 text-sm`}
+          >
+            Delete group
+          </button>
+        </div>
+      </GroupHeader>
+
+      {actionProblem ? <ProblemBanner problem={actionProblem} /> : null}
+      {detail.problem ? <ProblemBanner problem={detail.problem} /> : null}
+
+      <section aria-labelledby="group-members-heading" className={FF_SETTINGS_PANEL_CLASS}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h2 id="group-members-heading" className={`text-lg ${FF_SETTINGS_TITLE_CLASS}`}>
+            Members
+          </h2>
+          <button
+            type="button"
+            data-group-add-member=""
+            onClick={() => {
+              addMember.reset();
+              setDialog("add");
+            }}
+            className={FF_SETTINGS_PRIMARY_CLASS}
+          >
+            Add member
+          </button>
+        </div>
+        {members.length === 0 ? (
+          <p data-group-members-empty="" className={`mt-4 text-sm ${FF_SETTINGS_MUTED_CLASS}`}>
+            {WORKSPACE_GROUP_MEMBERS_EMPTY}
+          </p>
+        ) : (
+          <ul aria-label={`Members of ${group.displayName}`} className="mt-4 divide-y divide-border">
+            {members.map((member) => (
+              <GroupMemberRow
+                key={member.userId}
+                member={member}
+                removalPending={pendingRemovalId === member.userId}
+                onRemove={() => {
+                  setActionProblem(null);
+                  setRemoveId(member.userId);
+                }}
+              />
+            ))}
+          </ul>
+        )}
+        <DestructiveUndoBar
+          ticket={memberUndo.ticket}
+          title="Member will be removed from this group"
+          detail={
+            members.find((item) => item.userId === memberUndo.ticket?.id)?.displayName
+          }
+          onUndo={memberUndo.undo}
+          onCommit={memberUndo.commit}
+        />
+      </section>
+
+      {dialog === "rename" ? (
+        <GroupNameDialog
+          mode="rename"
+          initialName={group.displayName}
+          pending={rename.isPending}
+          problem={problemOf(rename.error)}
+          onSubmit={(name) => rename.mutate(name)}
+          onClose={() => setDialog(null)}
+        />
+      ) : null}
+
+      {dialog === "add" ? (
+        <AddGroupMemberDialog
+          identity={identity}
+          groupName={group.displayName}
+          existingUserIds={existingUserIds}
+          pending={addMember.isPending}
+          problem={problemOf(addMember.error)}
+          onSubmit={(userId) => addMember.mutate(userId)}
+          onClose={() => setDialog(null)}
+        />
+      ) : null}
+
+      <ConfirmDestructive
+        open={dialog === "delete"}
+        title="Delete this group?"
+        description={GROUP_DELETE_DESCRIPTION}
+        reversibility="irreversible"
+        confirmLabel="Delete group"
+        pending={remove.isPending}
+        pendingLabel="Deleting…"
+        impact={workspaceGroupDeleteImpact(group)}
+        onClose={() => setDialog(null)}
+        onConfirm={() => remove.mutate()}
+      />
+
+      {removing ? (
+        <ConfirmDestructive
+          open
+          title="Remove from this group?"
+          description={GROUP_MEMBER_REMOVE_DESCRIPTION}
+          reversibility="undoable"
+          confirmLabel="Remove member"
+          impact={workspaceGroupMemberRemoveImpact({
+            groupName: group.displayName,
+            member: removing,
+          })}
+          onClose={() => setRemoveId(null)}
+          onConfirm={() => {
+            const userId = removing.userId;
+            setRemoveId(null);
+            memberUndo.arm(userId);
+          }}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function GroupMemberRow({
+  member,
+  removalPending,
+  onRemove,
+}: {
+  member: WorkspaceGroupMember;
+  removalPending: boolean;
+  onRemove: () => void;
+}) {
+  const note = workspaceGroupApprovalNote(member);
+  const noteId = `group-member-note-${member.userId}`;
+  const label = workspaceGroupMemberLabel(member);
+  return (
+    <li
+      data-group-member={member.userId}
+      className="flex flex-wrap items-start justify-between gap-3 py-3"
+    >
+      <div className="min-w-0">
+        <p className={`font-medium ${FF_SETTINGS_TITLE_CLASS}`}>{label}</p>
+        <p className={`font-mono text-xs ${FF_SETTINGS_MUTED_CLASS}`}>{member.userId}</p>
+        {note ? (
+          <p
+            data-group-member-cannot-approve=""
+            className={`mt-1 text-sm ${FF_SETTINGS_MUTED_CLASS}`}
+          >
+            <span className="font-medium">{note.label}</span>
+            <span id={noteId} className="block">
+              {note.description}
+            </span>
+          </p>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        onClick={onRemove}
+        disabled={removalPending}
+        aria-label={`Remove ${label} from this group`}
+        aria-describedby={note ? noteId : undefined}
+        className={FF_SETTINGS_GHOST_CLASS}
+      >
+        Remove
+      </button>
+    </li>
+  );
+}

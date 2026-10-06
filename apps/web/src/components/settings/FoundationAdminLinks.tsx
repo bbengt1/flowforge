@@ -14,6 +14,12 @@ import {
   settingsMayLinkMembershipIsolation,
 } from "@/lib/membership-isolation-chrome";
 import {
+  WORKSPACE_GROUPS_HREF,
+  WORKSPACE_GROUPS_LINK_HELP,
+  WORKSPACE_GROUPS_TITLE,
+  canManageWorkspaceGroups,
+} from "@/lib/workspace-groups";
+import {
   FF_SETTINGS_LINK_CLASS,
   FF_SETTINGS_MUTED_CLASS,
   FF_SETTINGS_PANEL_CLASS,
@@ -25,7 +31,9 @@ export function FoundationAdminLinks() {
   const { permissions } = useWorkspace();
   const showAdmin = settingsMayLinkMembershipIsolation(permissions);
   const showAudit = canSeeAuditNav(permissions);
-  if (!showAdmin && !showAudit) {
+  // The groups API refuses embed sessions, so embed never links to it.
+  const showGroups = canManageWorkspaceGroups(permissions, { embed });
+  if (!showAdmin && !showAudit && !showGroups) {
     return null;
   }
 
@@ -57,6 +65,14 @@ export function FoundationAdminLinks() {
               <span className={FF_SETTINGS_MUTED_CLASS}> — {ISOLATION_CHECK_HELP}</span>
             </li>
           </>
+        ) : null}
+        {showGroups ? (
+          <li>
+            <Link href={WORKSPACE_GROUPS_HREF} className={FF_SETTINGS_LINK_CLASS}>
+              {WORKSPACE_GROUPS_TITLE}
+            </Link>
+            <span className={FF_SETTINGS_MUTED_CLASS}> — {WORKSPACE_GROUPS_LINK_HELP}</span>
+          </li>
         ) : null}
         {showAudit ? (
           <li>
