@@ -25,6 +25,7 @@ const (
 	groupNameTakenDetail   = "A group with this name already exists in the workspace."
 	groupNameInvalidDetail = "displayName must be 1-128 characters after trimming and must not contain control characters."
 	groupMemberDetail      = "The user is not an active member of this workspace."
+	groupUserIDDetail      = "userId must be a UUID."
 )
 
 // requireGroupAdmin is the shared door for workspace group admin routes.
@@ -50,6 +51,31 @@ func (s *Server) requireGroupAdmin(w http.ResponseWriter, r *http.Request) (iden
 		return nil, identity.User{}, identity.Workspace{}, false
 	}
 	return groups, user, ws, true
+}
+
+// groupPathIDs reads path ids after the admin door. A {groupId} that is
+// not a UUID is 404 not-found, the same as folders, workflows,
+// credentials, approvals, and the identity proxy's uuid param match. A
+// {userId} that is not a UUID is 400 invalid-request, the same as
+// DELETE /workspace/members/{userID}. The stores repeat both checks so
+// every backend answers the same.
+func groupPathIDs(w http.ResponseWriter, r *http.Request, names ...string) ([]string, bool) {
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		v := strings.TrimSpace(r.PathValue(name))
+		if !authz.ValidUUID(v) {
+			if name == "userId" {
+				WriteProblemErrors(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", groupUserIDDetail, []FieldError{{
+					Path: "userId", Code: CodeInvalidRequest, Message: groupUserIDDetail,
+				}})
+				return nil, false
+			}
+			WriteProblem(w, r, http.StatusNotFound, CodeNotFound, "Not Found", "The requested resource was not found.")
+			return nil, false
+		}
+		out = append(out, v)
+	}
+	return out, true
 }
 
 func groupActor(r *http.Request, user identity.User) identity.GroupActor {
@@ -98,7 +124,11 @@ func (s *Server) getWorkspaceGroup(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	d, err := groups.GetGroup(r.Context(), ws.ID, strings.TrimSpace(r.PathValue("groupId")))
+	ids, ok := groupPathIDs(w, r, "groupId")
+	if !ok {
+		return
+	}
+	d, err := groups.GetGroup(r.Context(), ws.ID, ids[0])
 	if err != nil {
 		writeGroupError(w, r, err)
 		return
@@ -111,11 +141,15 @@ func (s *Server) renameWorkspaceGroup(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	ids, ok := groupPathIDs(w, r, "groupId")
+	if !ok {
+		return
+	}
 	var req groupNameRequest
 	if !DecodeJSON(w, r, &req) {
 		return
 	}
-	g, err := groups.RenameGroup(r.Context(), ws.ID, groupActor(r, user), strings.TrimSpace(r.PathValue("groupId")), req.DisplayName)
+	g, err := groups.RenameGroup(r.Context(), ws.ID, groupActor(r, user), ids[0], req.DisplayName)
 	if err != nil {
 		writeGroupError(w, r, err)
 		return
@@ -128,7 +162,11 @@ func (s *Server) deleteWorkspaceGroup(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := groups.DeleteGroup(r.Context(), ws.ID, groupActor(r, user), strings.TrimSpace(r.PathValue("groupId"))); err != nil {
+	ids, ok := groupPathIDs(w, r, "groupId")
+	if !ok {
+		return
+	}
+	if err := groups.DeleteGroup(r.Context(), ws.ID, groupActor(r, user), ids[0]); err != nil {
 		writeGroupError(w, r, err)
 		return
 	}
@@ -140,18 +178,22 @@ func (s *Server) addWorkspaceGroupMember(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+	ids, ok := groupPathIDs(w, r, "groupId")
+	if !ok {
+		return
+	}
 	var req groupMemberRequest
 	if !DecodeJSON(w, r, &req) {
 		return
 	}
 	userID := strings.TrimSpace(req.UserID)
 	if !authz.ValidUUID(userID) {
-		WriteProblemErrors(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "userId must be a UUID.", []FieldError{{
-			Path: "userId", Code: CodeInvalidRequest, Message: "userId must be a UUID.",
+		WriteProblemErrors(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", groupUserIDDetail, []FieldError{{
+			Path: "userId", Code: CodeInvalidRequest, Message: groupUserIDDetail,
 		}})
 		return
 	}
-	if err := groups.AddGroupMember(r.Context(), ws.ID, groupActor(r, user), strings.TrimSpace(r.PathValue("groupId")), userID); err != nil {
+	if err := groups.AddGroupMember(r.Context(), ws.ID, groupActor(r, user), ids[0], userID); err != nil {
 		writeGroupError(w, r, err)
 		return
 	}
@@ -163,9 +205,11 @@ func (s *Server) removeWorkspaceGroupMember(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	groupID := strings.TrimSpace(r.PathValue("groupId"))
-	userID := strings.TrimSpace(r.PathValue("userId"))
-	if err := groups.RemoveGroupMember(r.Context(), ws.ID, groupActor(r, user), groupID, userID); err != nil {
+	ids, ok := groupPathIDs(w, r, "groupId", "userId")
+	if !ok {
+		return
+	}
+	if err := groups.RemoveGroupMember(r.Context(), ws.ID, groupActor(r, user), ids[0], ids[1]); err != nil {
 		writeGroupError(w, r, err)
 		return
 	}

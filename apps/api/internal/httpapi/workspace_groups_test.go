@@ -291,3 +291,60 @@ func TestWorkspaceGroupsRefuseEmbedSessions(t *testing.T) {
 		assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
 	}
 }
+
+// A path {groupId} that is not a UUID is 404 not-found, matching folders,
+// workflows, credentials, approvals, and the identity proxy. A path
+// {userId} on member removal that is not a UUID is 400 invalid-request,
+// matching DELETE /workspace/members/{userID}. The admin check still runs
+// first, so a non-admin gets 403 either way. A body userId that is not a
+// UUID stays 400 invalid-request.
+func TestWorkspaceGroupNonUUIDPathIDs(t *testing.T) {
+	e := newGroupEnv(t)
+	g := e.create(t, "Paths")
+	u := e.member(t, "grp-paths", "Paths", authz.RoleApprover)
+	rec := e.do(t, e.admin, http.MethodPost, "/api/v1/workspace/groups/"+g.ID+"/members", `{"userId":"`+u.ID+`"}`)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("add: %d %s", rec.Code, rec.Body.String())
+	}
+	calls := []struct{ method, path, body string }{
+		{http.MethodGet, "/api/v1/workspace/groups/not-a-uuid", ""},
+		{http.MethodPatch, "/api/v1/workspace/groups/not-a-uuid", `{"displayName":"X"}`},
+		{http.MethodDelete, "/api/v1/workspace/groups/not-a-uuid", ""},
+		{http.MethodPost, "/api/v1/workspace/groups/not-a-uuid/members", `{"userId":"` + u.ID + `"}`},
+		{http.MethodPost, "/api/v1/workspace/groups/not-a-uuid/members", `{"userId":"nope"}`},
+		{http.MethodDelete, "/api/v1/workspace/groups/not-a-uuid/members/" + u.ID, ""},
+		{http.MethodDelete, "/api/v1/workspace/groups/not-a-uuid/members/not-a-uuid", ""},
+	}
+	viewer := e.member(t, "grp-paths-viewer", "Viewer", authz.RoleViewer)
+	for _, c := range calls {
+		rec := e.do(t, e.admin, c.method, c.path, c.body)
+		assertProblem(t, rec, http.StatusNotFound, CodeNotFound, "")
+		if rec := e.do(t, viewer, c.method, c.path, c.body); rec.Code != http.StatusForbidden {
+			t.Fatalf("viewer %s %s = %d %s", c.method, c.path, rec.Code, rec.Body.String())
+		}
+	}
+	// A non-UUID path userId is 400 invalid-request with errors[].path
+	// userId, not a silent 204; a non-admin still gets 403 first.
+	badUser := "/api/v1/workspace/groups/" + g.ID + "/members/not-a-uuid"
+	rec = e.do(t, e.admin, http.MethodDelete, badUser, "")
+	assertFieldPath(t, assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, ""), "userId", CodeInvalidRequest)
+	if rec := e.do(t, viewer, http.MethodDelete, badUser, ""); rec.Code != http.StatusForbidden {
+		t.Fatalf("viewer bad user = %d %s", rec.Code, rec.Body.String())
+	}
+	// Body userId is still validated as a field.
+	rec = e.do(t, e.admin, http.MethodPost, "/api/v1/workspace/groups/"+g.ID+"/members", `{"userId":"nope"}`)
+	assertFieldPath(t, assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, ""), "userId", CodeInvalidRequest)
+	// Nothing changed, and a valid non-member id is still a 204 no-op.
+	rec = e.do(t, e.admin, http.MethodDelete, "/api/v1/workspace/groups/"+g.ID+"/members/11111111-1111-4111-8111-111111111111", "")
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("remove non-member: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = e.do(t, e.admin, http.MethodGet, "/api/v1/workspace/groups/"+g.ID, "")
+	var d identity.GroupDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &d); err != nil {
+		t.Fatal(err)
+	}
+	if d.DisplayName != "Paths" || d.MemberCount != 1 {
+		t.Fatalf("group changed: %+v", d)
+	}
+}

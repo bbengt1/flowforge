@@ -21,7 +21,7 @@ type groupOp struct {
 
 const groupCommon = "Requires workspace.administer. An embed session is refused with 403 forbidden before permissions are read. " +
 	"Groups only target approvals. They never grant a permission, and membership never grants approval.decide. " +
-	"Another workspace's group is 404, the same as a missing group. No response includes an email address."
+	"Another workspace's group is 404, the same as a missing group. A {groupId} path segment that is not a UUID is also 404, after the permission check. No response includes an email address."
 
 var workspaceGroupOps = map[string]groupOp{
 	"GET /api/v1/workspace/groups": {
@@ -65,8 +65,8 @@ var workspaceGroupOps = map[string]groupOp{
 	"PATCH /api/v1/workspace/groups/{groupId}": {
 		summary: "Rename a workspace group",
 		description: []string{
-			"Sets displayName. Same validation and 409 group_name_taken rules as create. Renaming a group to its own name in another case is allowed.",
-			"Writes audit action workspace_group.rename in the same transaction.",
+			"Sets displayName. Same validation and 409 group_name_taken rules as create, including a rename that loses a race on the unique index. Renaming a group to its own name in another case is allowed.",
+			"Writes audit action workspace_group.rename in the same transaction when the name changes. A rename to the exact current name (after trimming) changes nothing and writes no audit row.",
 		},
 		params:      []string{"WorkspaceGroupID"},
 		requestBody: "UpdateWorkspaceGroupRequest",
@@ -98,18 +98,18 @@ var workspaceGroupOps = map[string]groupOp{
 		requestBody: "AddWorkspaceGroupMemberRequest",
 		success:     "204",
 		successDesc: "Member present. No body.",
-		extra:       []string{"400:GroupMemberNotInWorkspace", "404:NotFound"},
+		extra:       []string{"400:AddGroupMemberInvalid", "404:NotFound"},
 	},
 	"DELETE /api/v1/workspace/groups/{groupId}/members/{userId}": {
 		summary: "Remove a workspace group member",
 		description: []string{
-			"Removes userId from the group. Idempotent: removing a user who is not a member is 204.",
+			"Removes userId from the group. Idempotent: removing a user who is not a member is 204. A userId path segment that is not a UUID is 400 invalid-request with errors[].path userId, the same status and code as DELETE /api/v1/workspace/members/{userID}.",
 			"Writes audit action workspace_group.member_remove when a row is removed.",
 		},
 		params:      []string{"WorkspaceGroupID", "WorkspaceGroupUserID"},
 		success:     "204",
 		successDesc: "Member absent. No body.",
-		extra:       []string{"404:NotFound"},
+		extra:       []string{"400:InvalidRequest", "404:NotFound"},
 	},
 }
 

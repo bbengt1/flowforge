@@ -499,7 +499,7 @@ components:
       name: groupId
       in: path
       required: true
-      description: Workspace group id. Unknown ids and ids from another workspace are 404.
+      description: Workspace group id. Unknown ids, ids from another workspace, and values that are not a UUID are 404.
       schema:
         type: string
         format: uuid
@@ -507,6 +507,7 @@ components:
       name: userId
       in: path
       required: true
+      description: User id. A value that is not a UUID is 400 invalid-request with errors[].path userId. A valid id that is not a member is a 204 no-op.
       schema:
         type: string
         format: uuid
@@ -4421,11 +4422,13 @@ components:
               - path: displayName
                 code: group_name_taken
                 message: A group with this name already exists in the workspace.
-    GroupMemberNotInWorkspace:
+    AddGroupMemberInvalid:
       description: >
-        The user is not an active member of this workspace: no role binding
-        here, a disabled account, or an unknown user id. errors[].path is
-        userId.
+        group_member_not_in_workspace: the user is not an active member of
+        this workspace (no role binding here, a disabled account, or an
+        unknown user id). invalid-request: malformed JSON, a missing body,
+        or a userId that is not a UUID. Both set errors[].path to userId,
+        except a malformed or missing body, which has no errors[].
       headers:
         X-Request-ID:
           $ref: "#/components/headers/XRequestID"
@@ -4433,18 +4436,35 @@ components:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
-          example:
-            type: urn:flowforge:problem:group_member_not_in_workspace
-            title: Invalid Request
-            status: 400
-            detail: The user is not an active member of this workspace.
-            instance: /api/v1/workspace/groups/3f1c2a4e-9d7b-4c1a-8e2f-0a1b2c3d4e5f/members
-            code: group_member_not_in_workspace
-            request_id: 0123456789abcdef0123456789abcdef
-            errors:
-              - path: userId
+          examples:
+            notInWorkspace:
+              summary: The user is not an active member of this workspace
+              value:
+                type: urn:flowforge:problem:group_member_not_in_workspace
+                title: Invalid Request
+                status: 400
+                detail: The user is not an active member of this workspace.
+                instance: /api/v1/workspace/groups/3f1c2a4e-9d7b-4c1a-8e2f-0a1b2c3d4e5f/members
                 code: group_member_not_in_workspace
-                message: The user is not an active member of this workspace.
+                request_id: 0123456789abcdef0123456789abcdef
+                errors:
+                  - path: userId
+                    code: group_member_not_in_workspace
+                    message: The user is not an active member of this workspace.
+            invalidUserId:
+              summary: userId is not a UUID
+              value:
+                type: urn:flowforge:problem:invalid-request
+                title: Invalid Request
+                status: 400
+                detail: userId must be a UUID.
+                instance: /api/v1/workspace/groups/3f1c2a4e-9d7b-4c1a-8e2f-0a1b2c3d4e5f/members
+                code: invalid-request
+                request_id: 0123456789abcdef0123456789abcdef
+                errors:
+                  - path: userId
+                    code: invalid-request
+                    message: userId must be a UUID.
     Conflict:
       description: Unique identity collision or last-admin protection
       headers:
