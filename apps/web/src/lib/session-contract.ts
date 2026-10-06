@@ -148,22 +148,25 @@ export const SESSION_AUDIT_ADMIN_PASSWORD_SET = "bootstrap.admin_password_set";
 export const SESSION_AUDIT_MFA_BYPASSED_LABEL = "MFA step-up bypassed (dev)";
 export const SESSION_AUDIT_ADMIN_PASSWORD_SET_LABEL = "Admin password set";
 
-const SESSION_AUDIT_EVENT_LABELS: Readonly<Record<string, string>> = {
-  "session.created": "Session started",
-  "session.refreshed": "Session extended",
-  "session.revoked": "Session ended",
-  "session.expired": "Session expired",
-  "session.csrf_rejected": "CSRF rejected",
-  "session.origin_rejected": "Origin rejected",
-  "session.privilege_denied": "Privilege denied",
-  "session.auth_rejected": "Sign-in rejected",
-  [SESSION_AUDIT_MFA_BYPASSED]: SESSION_AUDIT_MFA_BYPASSED_LABEL,
-  [SESSION_AUDIT_ADMIN_PASSWORD_SET]: SESSION_AUDIT_ADMIN_PASSWORD_SET_LABEL,
-};
+const SESSION_AUDIT_EVENT_LABELS = new Map<string, string>([
+  ["session.created", "Session started"],
+  ["session.refreshed", "Session extended"],
+  ["session.revoked", "Session ended"],
+  ["session.expired", "Session expired"],
+  ["session.csrf_rejected", "CSRF rejected"],
+  ["session.origin_rejected", "Origin rejected"],
+  ["session.privilege_denied", "Privilege denied"],
+  ["session.auth_rejected", "Sign-in rejected"],
+  [SESSION_AUDIT_MFA_BYPASSED, SESSION_AUDIT_MFA_BYPASSED_LABEL],
+  [SESSION_AUDIT_ADMIN_PASSWORD_SET, SESSION_AUDIT_ADMIN_PASSWORD_SET_LABEL],
+]);
 
-/** Plain label for a session audit row. Unknown types stay the raw event type. */
+/**
+ * Plain label for a session audit row. Unknown types, including
+ * prototype names, stay the raw event type.
+ */
 export function sessionAuditEventLabel(eventType: string): string {
-  return SESSION_AUDIT_EVENT_LABELS[eventType] ?? eventType;
+  return SESSION_AUDIT_EVENT_LABELS.get(eventType) ?? eventType;
 }
 
 export function sessionApiPath(suffix = SESSION_PATH): string {

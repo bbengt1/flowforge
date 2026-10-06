@@ -3,18 +3,28 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { bindMfaStatusCache, invalidateMfaStatusQueries } from "./mfa-status-cache.ts";
 import {
   MFA_ENFORCEMENT_OFF_BANNER,
   MFA_PRIVILEGED_LOUD,
+  MFA_STATUS_QUERY_ROOT,
   MFA_STATUS_STALE_MS,
   MFA_VERIFIED_RETRY,
   mfaChromeLoudNotice,
+  mfaStatusQueryKey,
   mfaStatusQueryOptions,
   parseMfaEnforcement,
   parseMfaStatus,
   showMfaEnforcementOffBanner,
+  type MfaStatus,
 } from "./oidc-mfa.ts";
-import { queryKeyHasSecret } from "./query-cache.ts";
+import { createFlowforgeQueryClient, queryKeyHasSecret } from "./query-cache.ts";
+import {
+  clearSession,
+  getSessionSnapshot,
+  markSessionStale,
+  setActiveSession,
+} from "./session-store.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -118,8 +128,11 @@ describe("MFA enforcement banner", () => {
       }),
       false,
     );
-    assert.match(MFA_ENFORCEMENT_OFF_BANNER, /MFA_ENFORCEMENT=off/);
-    assert.match(MFA_ENFORCEMENT_OFF_BANNER, /development only/);
+    assert.equal(
+      MFA_ENFORCEMENT_OFF_BANNER,
+      "Multi-factor authentication is turned off on this server (MFA_ENFORCEMENT=off). This is for development only — privileged actions skip the MFA step-up.",
+    );
+    assert.equal(MFA_ENFORCEMENT_OFF_BANNER.includes("sign-ins skip"), false);
     assert.equal(MFA_ENFORCEMENT_OFF_BANNER.includes(MFA_PRIVILEGED_LOUD), false);
   });
 
@@ -136,7 +149,19 @@ describe("MFA enforcement banner", () => {
     assert.match(banner, /showMfaEnforcementOffBanner/);
     assert.doesNotMatch(banner, /setInterval/);
 
-    const options = mfaStatusQueryOptions();
+    const options = mfaStatusQueryOptions({
+      issuer: "https://flowforge.local",
+      subject: "ada",
+      sessionId: "sess-ada",
+    });
+    assert.deepEqual(options.queryKey, [
+      "flowforge",
+      "session",
+      "mfa",
+      "https://flowforge.local",
+      "ada",
+      "sess-ada",
+    ]);
     assert.equal(options.staleTime, MFA_STATUS_STALE_MS);
     assert.equal(options.staleTime, 60_000);
     assert.equal(options.refetchInterval, false);
@@ -194,10 +219,11 @@ describe("MFA chrome bypass notice", () => {
       satisfied: true,
       hasSetupUri: false,
       done: false,
-      requiredMessage: MFA_PRIVILEGED_LOUD,
+      requiredMessage: "Server demands MFA.",
     });
-    assert.equal(stepUp?.tone, "warning");
-    assert.equal(stepUp?.message, MFA_ENFORCEMENT_OFF_BANNER);
+    assert.equal(stepUp?.tone, "danger");
+    assert.equal(stepUp?.message, "Server demands MFA.");
+    assert.notEqual(stepUp?.message, MFA_ENFORCEMENT_OFF_BANNER);
 
     const verified = mfaChromeLoudNotice({
       enforcement: "off",
@@ -247,5 +273,93 @@ describe("MFA chrome bypass notice", () => {
     assert.equal(warningBranch.includes("--ff-danger"), false);
     const panel = source("src/components/session/MfaAccountPanel.tsx");
     assert.equal(panel.includes("MFA_PRIVILEGED_LOUD"), false);
+
+    const host = source("src/components/session/MfaStepUpHost.tsx");
+    const opened = host.slice(
+      host.indexOf("subscribeMfaRequired"),
+      host.indexOf("}, [embed, queryClient]"),
+    );
+    assert.match(opened, /invalidateMfaStatusQueries\(queryClient\)/);
+    assert.match(source("src/components/query/QueryProvider.tsx"), /bindMfaStatusCache/);
+  });
+});
+
+function browserSession(subject: string, sessionId: string) {
+  return {
+    issuer: "https://flowforge.local",
+    subject,
+    displayName: subject,
+    sessionId,
+    idleExpiresAt: null,
+    absoluteExpiresAt: null,
+    csrfToken: "",
+    mustChangePassword: false,
+  };
+}
+
+function cachedStatus(enforcement: "on" | "off"): MfaStatus {
+  return {
+    method: "totp",
+    enrolled: false,
+    satisfied: false,
+    applicable: true,
+    privileged_permissions: ["platform.administer"],
+    enforcement,
+  };
+}
+
+describe("MFA status cache identity", () => {
+  it("fetches fresh status for a new identity and clears it on sign-out", () => {
+    const client = createFlowforgeQueryClient({
+      defaultOptions: { queries: { gcTime: 0 } },
+    });
+    clearSession();
+    const stop = bindMfaStatusCache(client);
+    try {
+      const ada = browserSession("ada", "sess-ada");
+      const bea = browserSession("bea", "sess-bea");
+      const keyAda = mfaStatusQueryKey(ada);
+      const keyBea = mfaStatusQueryKey(bea);
+      assert.notDeepEqual(keyAda, keyBea);
+      assert.deepEqual(keyAda.slice(0, MFA_STATUS_QUERY_ROOT.length), [
+        ...MFA_STATUS_QUERY_ROOT,
+      ]);
+
+      setActiveSession(ada);
+      client.setQueryData(keyAda, cachedStatus("off"));
+      setActiveSession({ ...ada, displayName: "Ada Operator" });
+      assert.equal(client.getQueryData<MfaStatus>(keyAda)?.enforcement, "off");
+
+      setActiveSession(bea);
+      assert.equal(client.getQueryData(keyAda), undefined);
+      assert.equal(client.getQueryData(keyBea), undefined);
+
+      client.setQueryData(keyBea, cachedStatus("on"));
+      clearSession();
+      assert.equal(client.getQueryData(keyBea), undefined);
+      assert.equal(getSessionSnapshot().active, false);
+
+      setActiveSession(ada);
+      client.setQueryData(keyAda, cachedStatus("off"));
+      markSessionStale();
+      assert.equal(client.getQueryData(keyAda), undefined);
+      assert.equal(getSessionSnapshot().session.subject, "ada");
+      assert.equal(getSessionSnapshot().active, false);
+    } finally {
+      stop();
+      client.clear();
+      clearSession();
+    }
+  });
+
+  it("invalidates a cached off status when step-up opens", async () => {
+    const client = createFlowforgeQueryClient({
+      defaultOptions: { queries: { gcTime: 0 } },
+    });
+    const key = mfaStatusQueryKey(browserSession("ada", "sess-ada"));
+    client.setQueryData(key, cachedStatus("off"));
+    await invalidateMfaStatusQueries(client);
+    assert.equal(client.getQueryState(key)?.isInvalidated, true);
+    client.clear();
   });
 });

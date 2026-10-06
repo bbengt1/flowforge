@@ -107,7 +107,8 @@ test.describe("primary surfaces", () => {
     await installOperatorApi(page, { mfaEnforcement: "off" });
     await page.goto("/workflows");
     const banner = page.getByRole("status").filter({
-      hasText: "MFA_ENFORCEMENT=off",
+      hasText:
+        "Multi-factor authentication is turned off on this server (MFA_ENFORCEMENT=off). This is for development only — privileged actions skip the MFA step-up.",
     });
     await expect(banner).toBeVisible();
     await expect(banner.getByRole("button")).toHaveCount(0);
@@ -331,7 +332,7 @@ test.describe("embed cold path", () => {
   test("ADV-021 only: no wizard, Login, or Change-password", async ({
     page,
   }) => {
-    await installSignedOutApi(page);
+    await installSignedOutApi(page, { mfaEnforcement: "off" });
     await page.goto("/embed/v1");
     const adv021 = page.getByRole("alert").filter({ hasText: "session.embed" });
     await expect(adv021).toHaveCount(2);
@@ -344,6 +345,9 @@ test.describe("embed cold path", () => {
     ).toHaveCount(0);
     await expect(page.getByText("MFA_ENFORCEMENT=off")).toHaveCount(0);
     await expect(
+      page.getByText("privileged actions skip the MFA step-up"),
+    ).toHaveCount(0);
+    await expect(
       page.getByRole("heading", { name: "Change password" }),
     ).toHaveCount(0);
     await expect(
@@ -353,6 +357,17 @@ test.describe("embed cold path", () => {
     await expect(page.getByText("Checking first-run setup…")).toHaveCount(0);
     await expectOneMain(page);
     await expectNoBlockingAxeViolations(page);
+    await expectNoSecretsInBrowserStorage(page);
+  });
+
+  test("signed-in embed hides the MFA-off banner", async ({ page }) => {
+    await installOperatorApi(page, { mfaEnforcement: "off", embed: true });
+    await page.goto("/embed/v1/workflows");
+    await expect(page.getByText("MFA_ENFORCEMENT=off")).toHaveCount(0);
+    await expect(
+      page.getByText("privileged actions skip the MFA step-up"),
+    ).toHaveCount(0);
+    await expectOneMain(page);
     await expectNoSecretsInBrowserStorage(page);
   });
 });

@@ -722,6 +722,13 @@ describe("#376 Change-password chrome", () => {
     assert.equal(mainCount(landing.slice(embedAt, activeAt)), 1);
     assert.match(landing.slice(activeAt, statusAt), /variant="embedded"/);
     assert.equal(mainCount(landing.slice(activeAt, statusAt)), 0);
-    assert.equal(mainCount(landing.slice(statusAt)), 1);
+    const status = landing.slice(statusAt);
+    assert.equal(mainCount(status), 1);
+    assert.equal(status.includes('id="main-content"'), false);
+    assert.equal(landing.includes('id="main-content"'), false);
+    const shell = source("src/components/shell/WorkspaceShell.tsx");
+    assert.match(shell, /href="#main-content"/);
+    const productShell = shell.slice(shell.indexOf("<MustChangePasswordGate>"));
+    assert.equal(productShell.match(/id="main-content"/g)?.length, 1);
   });
 });

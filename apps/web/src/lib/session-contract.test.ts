@@ -113,6 +113,10 @@ describe("session-contract", () => {
     assert.equal(sessionAuditEventLabel("session.created"), "Session started");
     assert.equal(sessionAuditEventLabel("session.unknown"), "session.unknown");
     assert.equal(sessionAuditEventLabel("session.privilege_denied"), "Privilege denied");
+    for (const inherited of ["__proto__", "constructor", "toString"]) {
+      assert.equal(sessionAuditEventLabel(inherited), inherited);
+      assert.equal(typeof sessionAuditEventLabel(inherited), "string");
+    }
     const panel = readFileSync(
       join(
         dirname(fileURLToPath(import.meta.url)),

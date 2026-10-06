@@ -10,8 +10,8 @@ import {
   MFA_PRIVILEGED_LOUD,
   MFA_SESSION_ON,
   MFA_SETUP_ONCE,
-  MFA_STATUS_QUERY_KEY,
   decideMfaChrome,
+  mfaStatusQueryKey,
   mfaChromeLoudNotice,
   mfaCodeIsSubmittable,
   mfaFailureMessage,
@@ -59,7 +59,10 @@ export function MfaChrome({ variant, notice, onSatisfied }: MfaChromeProps) {
   });
 
   function rememberStatus(next: MfaStatus) {
-    queryClient.setQueryData(MFA_STATUS_QUERY_KEY, next);
+    queryClient.setQueryData(
+      mfaStatusQueryKey(getSessionSnapshot().session),
+      next,
+    );
     setActionError(null);
   }
 

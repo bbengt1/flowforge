@@ -92,17 +92,44 @@ export type MfaStatus = {
  * the red required state inside MFA chrome so the two do not disagree.
  */
 export const MFA_ENFORCEMENT_OFF_BANNER =
-  "Multi-factor authentication is turned off on this server (MFA_ENFORCEMENT=off). This is for development only — sign-ins skip the MFA step-up.";
+  "Multi-factor authentication is turned off on this server (MFA_ENFORCEMENT=off). This is for development only — privileged actions skip the MFA step-up.";
 
-/** One GET /session/mfa for the shell banner and MFA chrome. No polling. */
-export const MFA_STATUS_QUERY_KEY = ["flowforge", "session", "mfa"] as const;
+/**
+ * Prefix for every MFA status query. The full key adds issuer, subject,
+ * and session id so one tab does not reuse another principal's status.
+ */
+export const MFA_STATUS_QUERY_ROOT = ["flowforge", "session", "mfa"] as const;
 
 /** Process mode changes only on restart. Do not refetch on a timer. */
 export const MFA_STATUS_STALE_MS = 60_000;
 
-export function mfaStatusQueryOptions() {
+export type MfaStatusIdentity = {
+  issuer: string;
+  subject: string;
+  sessionId: string;
+};
+
+export function mfaStatusIdentity(session: MfaStatusIdentity): MfaStatusIdentity {
   return {
-    queryKey: MFA_STATUS_QUERY_KEY,
+    issuer: session.issuer,
+    subject: session.subject,
+    sessionId: session.sessionId,
+  };
+}
+
+export function mfaStatusQueryKey(session: MfaStatusIdentity) {
+  const identity = mfaStatusIdentity(session);
+  return [
+    ...MFA_STATUS_QUERY_ROOT,
+    identity.issuer,
+    identity.subject,
+    identity.sessionId,
+  ] as const;
+}
+
+export function mfaStatusQueryOptions(session: MfaStatusIdentity) {
+  return {
+    queryKey: mfaStatusQueryKey(session),
     staleTime: MFA_STATUS_STALE_MS,
     refetchInterval: false as const,
     refetchOnWindowFocus: false as const,
@@ -329,9 +356,10 @@ export type MfaLoudNotice = {
 };
 
 /**
- * The red required slot. When enforcement is off, that slot becomes the
- * bypass notice instead of the danger copy. A just-verified session
- * still shows the verified line.
+ * Account chrome uses the bypass notice when enforcement is off.
+ * Step-up opens only after the server returns 403 mfa-required, so that
+ * variant stays the red required notice even when a cached status says
+ * off. A just-verified session still shows the verified line.
  */
 export function mfaChromeLoudNotice(input: {
   enforcement: MfaEnforcement;
@@ -348,6 +376,9 @@ export function mfaChromeLoudNotice(input: {
   }
   if (input.done) {
     return { tone: "danger", message: MFA_VERIFIED_RETRY };
+  }
+  if (input.variant === "step-up") {
+    return { tone: "danger", message: input.requiredMessage };
   }
   if (input.enforcement === "off") {
     return { tone: "warning", message: MFA_ENFORCEMENT_OFF_BANNER };
