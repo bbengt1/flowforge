@@ -2116,7 +2116,7 @@ paths:
       summary: Add a workspace group member
       description: |
         Adds userId to the group. Idempotent: adding an existing member is 204 and writes no second row.
-        The user must be active and hold a role binding in this workspace; otherwise 400 group_member_not_in_workspace with errors[].path userId.
+        The user must be active and hold a role binding in this workspace; otherwise 400 group_member_not_in_workspace with errors[].path userId. A userId that is not a UUID is 400 invalid-request with errors[].path userId.
         Writes audit action workspace_group.member_add when a row is added.
         Requires workspace.administer. An embed session is refused with 403 forbidden before permissions are read. Groups only target approvals. They never grant a permission, and membership never grants approval.decide. Another workspace's group is 404, the same as a missing group. No response includes an email address.
         Auth class: authenticated. Identity proxy: browser.

@@ -91,7 +91,7 @@ var workspaceGroupOps = map[string]groupOp{
 		summary: "Add a workspace group member",
 		description: []string{
 			"Adds userId to the group. Idempotent: adding an existing member is 204 and writes no second row.",
-			"The user must be active and hold a role binding in this workspace; otherwise 400 group_member_not_in_workspace with errors[].path userId.",
+			"The user must be active and hold a role binding in this workspace; otherwise 400 group_member_not_in_workspace with errors[].path userId. A userId that is not a UUID is 400 invalid-request with errors[].path userId.",
 			"Writes audit action workspace_group.member_add when a row is added.",
 		},
 		params:      []string{"WorkspaceGroupID"},
