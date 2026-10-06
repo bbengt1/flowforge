@@ -44,6 +44,7 @@ func TestPostgresDerivedSlugFromName(t *testing.T) {
 	}
 	assertDerivedSlugBehavior(t, ctx, store, scope)
 	assertDerivedSlugUniqueRetry(t, ctx, store, scope)
+	assertDerivedSlugLockSerializes(t, ctx, store, scope)
 }
 
 func assertDerivedSlugBehavior(t *testing.T, ctx context.Context, store Store, scope isolation.Scope) {
@@ -235,6 +236,9 @@ func assertDerivedSlugBehavior(t *testing.T, ctx context.Context, store Store, s
 	})
 }
 
+// assertDerivedSlugUniqueRetry covers the bounded-retry fallback: an
+// explicit create, which takes no advisory lock, commits the base slug
+// while a derived create is between computing it and inserting it.
 func assertDerivedSlugUniqueRetry(t *testing.T, ctx context.Context, store Store, scope isolation.Scope) {
 	t.Helper()
 	started := make(chan struct{})
@@ -266,7 +270,7 @@ func assertDerivedSlugUniqueRetry(t *testing.T, ctx context.Context, store Store
 	case <-ctx.Done():
 		t.Fatal("slug insert hook did not run")
 	}
-	winner, _, err := store.Create(ctx, scope, slugCreateInput(t, "Race", ""))
+	winner, _, err := store.Create(ctx, scope, slugCreateInput(t, "Race", "race"))
 	letGo()
 	if err != nil {
 		t.Fatal(err)
@@ -279,6 +283,74 @@ func assertDerivedSlugUniqueRetry(t *testing.T, ctx context.Context, store Store
 	}
 	assertStoredSlug(t, ctx, store, scope, winner.ID, "race")
 	assertStoredSlug(t, ctx, store, scope, retried.ID, "race-2")
+}
+
+// assertDerivedSlugLockSerializes checks that a same-base derived create
+// waits for the advisory lock held by another one, then takes the next
+// suffix on its first insert, with no unique-index retry.
+func assertDerivedSlugLockSerializes(t *testing.T, ctx context.Context, store Store, scope isolation.Scope) {
+	t.Helper()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once, releaseOnce sync.Once
+	var mu sync.Mutex
+	var retries []string
+	letGo := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(letGo)
+	hook := func(attempt int, slug string) {
+		if attempt > 1 {
+			mu.Lock()
+			retries = append(retries, slug)
+			mu.Unlock()
+		}
+		if attempt == 1 && slug == "serial" {
+			once.Do(func() {
+				close(started)
+				select {
+				case <-release:
+				case <-ctx.Done():
+				}
+			})
+		}
+	}
+	firstCtx := withSlugInsertHook(ctx, hook)
+	firstErr := make(chan error, 1)
+	var first Workflow
+	go func() {
+		var err error
+		first, _, err = store.Create(firstCtx, scope, slugCreateInput(t, "Serial", ""))
+		firstErr <- err
+	}()
+	select {
+	case <-started:
+	case <-ctx.Done():
+		t.Fatal("slug insert hook did not run")
+	}
+	secondErr := make(chan error, 1)
+	var second Workflow
+	go func() {
+		var err error
+		second, _, err = store.Create(withSlugInsertHook(ctx, hook), scope, slugCreateInput(t, "Serial", ""))
+		secondErr <- err
+	}()
+	select {
+	case err := <-secondErr:
+		t.Fatalf("same-base create did not wait for the lock: %v %+v", err, second)
+	case <-time.After(300 * time.Millisecond):
+	}
+	letGo()
+	if err := <-firstErr; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-secondErr; err != nil {
+		t.Fatal(err)
+	}
+	if first.Slug != "serial" || second.Slug != "serial-2" {
+		t.Fatalf("serialized slugs first=%q second=%q", first.Slug, second.Slug)
+	}
+	if len(retries) != 0 {
+		t.Fatalf("serialized creates retried: %v", retries)
+	}
 }
 
 func assertCappedSuffix(t *testing.T, first, second, wantSecond string) {

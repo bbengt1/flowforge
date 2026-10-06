@@ -32,8 +32,9 @@ type slugRaceOutcome struct {
 // creates of one name and one explicit slug against PostgreSQL. Every
 // result is a success or a slug 409 on path slug (workflow_slug_taken, or
 // workflow_slug_reserved for a deleted holder). Never 500, never conflict.
-// Name-only creates that lose every bounded retry succeed on a client
-// retry, and all name-only slugs are distinct.
+// Same-base name-only creates serialize on the advisory lock, so all of
+// them return 201 with distinct slugs and no client retry. Explicit
+// creates of one slug have exactly one winner.
 func TestPostgresConcurrentSlugCreatesNeverConflictOr500(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
@@ -173,15 +174,9 @@ spec:
 	wg.Wait()
 
 	seen := map[string]bool{}
-	retried := 0
 	for i, o := range derived {
-		for attempt := 0; o.status != http.StatusCreated; attempt++ {
-			assertSlug409(t, o, core.CodeWorkflowSlugTaken)
-			if attempt > 5 {
-				t.Fatalf("name-only create %d never succeeded", i)
-			}
-			retried++
-			o = create(input("burst", true))
+		if o.status != http.StatusCreated {
+			t.Fatalf("name-only create %d = %d %+v, want 201 with no client retry", i, o.status, o.problem)
 		}
 		if seen[o.slug] {
 			t.Fatalf("duplicate derived slug %q", o.slug)
@@ -190,6 +185,12 @@ spec:
 	}
 	if len(seen) != workers {
 		t.Fatalf("distinct derived slugs = %d", len(seen))
+	}
+	// The seed used burst..burst-3; the burst takes exactly burst-4..burst-27.
+	for n := 4; n < workers+4; n++ {
+		if !seen[fmt.Sprintf("burst-%d", n)] {
+			t.Fatalf("derived slugs skipped burst-%d: %v", n, seen)
+		}
 	}
 
 	wins := 0
@@ -216,5 +217,5 @@ spec:
 	if o.problem.SuggestedSlug != fmt.Sprintf("burst-%d", workers+4) {
 		t.Fatalf("reserved suggestedSlug = %q", o.problem.SuggestedSlug)
 	}
-	t.Logf("derived creates: %d, client retries after a slug 409: %d", workers, retried)
+	t.Logf("derived creates: %d, all 201 with no client retry", workers)
 }

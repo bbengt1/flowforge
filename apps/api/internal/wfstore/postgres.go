@@ -73,10 +73,16 @@ func (p *Postgres) Create(ctx context.Context, scope isolation.Scope, in CreateI
 	// Uniqueness comes from workflows_slug_unique. An explicit slug is
 	// inserted as is and classified only after that index rejects it. A
 	// derived slug takes the next suffix after the highest one used for
-	// its base, live or deleted, and recomputes after each lost race.
+	// its base, live or deleted. Same-base derived creates in a workspace
+	// serialize on a transaction advisory lock, so each sees the slug the
+	// previous one committed. The bounded retry stays as a fallback for a
+	// race the lock does not cover, such as an explicit create of base-N.
 	attempts := 1
 	if choice.Derived {
 		attempts = maxDerivedSlugRetries
+		if err := lockDerivedSlugBase(ctx, tx, scope.WorkspaceID(), choice.Slug); err != nil {
+			return Workflow{}, Draft{}, err
+		}
 	}
 	slug := choice.Slug
 	for attempt := 1; attempt <= attempts; attempt++ {
@@ -162,6 +168,17 @@ func (p *Postgres) insertWorkflowSlug(ctx context.Context, tx pgx.Tx, scope isol
 	return wf, draft, true, nil
 }
 
+// lockDerivedSlugBase takes a transaction-scoped advisory lock on
+// (workspace, base). It is released at commit or rollback. The key is
+// hashtext of the parameterized text; a hash collision only serializes
+// unrelated creates.
+func lockDerivedSlugBase(ctx context.Context, tx pgx.Tx, workspaceID, base string) error {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1::text || ':' || $2::text))`, workspaceID, base); err != nil {
+		return mapDBErr(err)
+	}
+	return nil
+}
+
 // usedFamilySlugs lists slugs in the workspace, live or deleted, that may
 // belong to base's family (base or base-N). The SQL only narrows by an
 // exact prefix and a trailing -digits; slugSuffixFor does the exact match.
@@ -194,7 +211,7 @@ func usedFamilySlugs(ctx context.Context, tx pgx.Tx, workspaceID, base string) (
 // SlugConflict with a suggestion. A lookup failure fails closed to a live
 // clash without a suggestion, never to ErrConflict or a 500.
 func slugViolation(ctx context.Context, tx pgx.Tx, workspaceID, slug string) error {
-	conflict, err := classifySlugViolation(ctx, tx, slug)
+	conflict, err := classifySlugViolation(ctx, tx, workspaceID, slug)
 	if err != nil {
 		return SlugConflict{}
 	}

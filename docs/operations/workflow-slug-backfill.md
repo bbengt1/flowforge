@@ -34,9 +34,13 @@ The command takes no flags. It runs for one workspace per call, named by
 `flowforge_app` (no `SUPERUSER`, no `BYPASSRLS`), so FORCE row-level
 security limits every read and write to that workspace. No query takes a
 workspace argument. The command refuses to run when the session role
-could bypass row-level security. Like `migrate`, it connects with
-`DATABASE_URL` (or the `POSTGRES_*` parts) and applies pending migrations
-first. It needs no other API secret.
+could bypass row-level security. It connects with `DATABASE_URL` (or
+the `POSTGRES_*` parts) and needs no other API secret.
+
+The command opens the database the same way `migrate` does, so it
+applies any pending migrations before it starts. Run the binary from the
+API image that matches the deployed API version, never a newer one, or it
+can migrate the schema ahead of the running API.
 
 Standard output is the summary:
 
