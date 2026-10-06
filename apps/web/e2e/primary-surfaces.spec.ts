@@ -94,7 +94,23 @@ test.describe("primary surfaces", () => {
     ).toBeVisible();
     await expect(page.getByText("before listing workflows.")).toHaveCount(0);
     await expect(page.getByText("Deploy", { exact: true })).toBeVisible();
+    await expect(page.getByText("MFA_ENFORCEMENT=off")).toHaveCount(0);
     await expectSkipLink(page);
+    await expectOneMain(page);
+    await expectNoBlockingAxeViolations(page);
+    await expectNoSecretsInBrowserStorage(page);
+  });
+
+  test("mfa enforcement off keeps a persistent status banner", async ({
+    page,
+  }) => {
+    await installOperatorApi(page, { mfaEnforcement: "off" });
+    await page.goto("/workflows");
+    const banner = page.getByRole("status").filter({
+      hasText: "MFA_ENFORCEMENT=off",
+    });
+    await expect(banner).toBeVisible();
+    await expect(banner.getByRole("button")).toHaveCount(0);
     await expectOneMain(page);
     await expectNoBlockingAxeViolations(page);
     await expectNoSecretsInBrowserStorage(page);
@@ -326,6 +342,7 @@ test.describe("embed cold path", () => {
     await expect(
       page.getByRole("heading", { name: "Sign in" }),
     ).toHaveCount(0);
+    await expect(page.getByText("MFA_ENFORCEMENT=off")).toHaveCount(0);
     await expect(
       page.getByRole("heading", { name: "Change password" }),
     ).toHaveCount(0);

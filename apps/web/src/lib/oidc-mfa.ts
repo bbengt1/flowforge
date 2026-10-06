@@ -75,13 +75,40 @@ export type OidcStartResponse = {
   expires_at: string;
 };
 
+/** Process step-up mode from GET /session/mfa. Missing or unknown is on. */
+export type MfaEnforcement = "on" | "off";
+
 export type MfaStatus = {
   method: "totp";
   enrolled: boolean;
   satisfied: boolean;
   applicable: boolean;
   privileged_permissions: string[];
+  enforcement: MfaEnforcement;
 };
+
+/**
+ * Shell warning when MFA_ENFORCEMENT=off. The same sentence replaces
+ * the red required state inside MFA chrome so the two do not disagree.
+ */
+export const MFA_ENFORCEMENT_OFF_BANNER =
+  "Multi-factor authentication is turned off on this server (MFA_ENFORCEMENT=off). This is for development only — sign-ins skip the MFA step-up.";
+
+/** One GET /session/mfa for the shell banner and MFA chrome. No polling. */
+export const MFA_STATUS_QUERY_KEY = ["flowforge", "session", "mfa"] as const;
+
+/** Process mode changes only on restart. Do not refetch on a timer. */
+export const MFA_STATUS_STALE_MS = 60_000;
+
+export function mfaStatusQueryOptions() {
+  return {
+    queryKey: MFA_STATUS_QUERY_KEY,
+    staleTime: MFA_STATUS_STALE_MS,
+    refetchInterval: false as const,
+    refetchOnWindowFocus: false as const,
+    refetchOnReconnect: false as const,
+  };
+}
 
 export type MfaRequiredKind = "enroll" | "verify" | "unknown";
 
@@ -270,7 +297,62 @@ export function parseMfaStatus(value: unknown): MfaStatus | null {
     satisfied: body.satisfied,
     applicable: body.applicable,
     privileged_permissions: permissions,
+    enforcement: parseMfaEnforcement(body.enforcement),
   };
+}
+
+/**
+ * Only the exact string "off" skips step-up. Missing, "OFF", "disabled",
+ * boolean false, and every other value stay "on" so an older API (no
+ * field) and a bad payload both keep enforcement.
+ */
+export function parseMfaEnforcement(value: unknown): MfaEnforcement {
+  return value === "off" ? "off" : "on";
+}
+
+/** Persistent shell banner. Hidden in embed and until a real "off" arrives. */
+export function showMfaEnforcementOffBanner(input: {
+  embed: boolean;
+  sessionActive: boolean;
+  enforcement: MfaEnforcement | null | undefined;
+}): boolean {
+  return (
+    !input.embed && input.sessionActive && input.enforcement === "off"
+  );
+}
+
+export type MfaLoudTone = "danger" | "warning";
+
+export type MfaLoudNotice = {
+  tone: MfaLoudTone;
+  message: string;
+};
+
+/**
+ * The red required slot. When enforcement is off, that slot becomes the
+ * bypass notice instead of the danger copy. A just-verified session
+ * still shows the verified line.
+ */
+export function mfaChromeLoudNotice(input: {
+  enforcement: MfaEnforcement;
+  variant: "account" | "step-up";
+  satisfied: boolean;
+  hasSetupUri: boolean;
+  done: boolean;
+  requiredMessage: string;
+}): MfaLoudNotice | null {
+  const showSlot =
+    input.variant === "step-up" || !input.satisfied || input.hasSetupUri;
+  if (!showSlot) {
+    return null;
+  }
+  if (input.done) {
+    return { tone: "danger", message: MFA_VERIFIED_RETRY };
+  }
+  if (input.enforcement === "off") {
+    return { tone: "warning", message: MFA_ENFORCEMENT_OFF_BANNER };
+  }
+  return { tone: "danger", message: input.requiredMessage };
 }
 
 /** Pull a one-time otpauth URI off an enroll payload. Never returns other secrets. */

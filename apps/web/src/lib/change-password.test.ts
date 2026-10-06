@@ -29,6 +29,7 @@ import {
   ONE_TIME_BOOTSTRAP_PASSWORD,
   afterLocalLoginHref,
   changePasswordClientError,
+  changePasswordExpiryLoginHref,
   changePasswordFailureMessage,
   changePasswordFormIsSubmittable,
   changePasswordRequestBody,
@@ -44,7 +45,7 @@ import {
   isChangePasswordPath,
   mustChangePasswordBlocksProduct,
 } from "./change-password.ts";
-import { LOGIN_SUCCESS_HREF } from "./local-login.ts";
+import { LOGIN_HREF, LOGIN_SUCCESS_HREF } from "./local-login.ts";
 import { fetchSameOriginProxy } from "./identity-client.ts";
 import { changeLocalPassword } from "./session-client.ts";
 import { clearSession, getSessionSnapshot, setActiveSession } from "./session-store.ts";
@@ -568,6 +569,16 @@ describe("#376 Change-password chrome", () => {
     assert.equal(getSessionSnapshot().active, true);
     assert.equal(getSessionSnapshot().stale, false);
     assert.equal(getSessionSnapshot().session.sessionId, "sess-1");
+    assert.equal(
+      changePasswordExpiryLoginHref({
+        embed: false,
+        checked: true,
+        pathname: "/change-password",
+        sessionActive: getSessionSnapshot().active,
+        signedOutChrome: "ignore",
+      }),
+      null,
+    );
 
     const other = await fetchSameOriginProxy({
       instance: "/api/v1/workspaces",
@@ -612,5 +623,105 @@ describe("#376 Change-password chrome", () => {
     assert.equal(snapshot.active, false);
     assert.equal(snapshot.stale, true);
     assert.equal(snapshot.session.sessionId, "");
+    assert.equal(
+      changePasswordExpiryLoginHref({
+        embed: false,
+        checked: true,
+        pathname: CHANGE_PASSWORD_HREF,
+        sessionActive: snapshot.active,
+        signedOutChrome: "login",
+      }),
+      LOGIN_HREF,
+    );
+  });
+
+  it("replaces /change-password with /login only after a finished signed-out check", () => {
+    assert.equal(LOGIN_HREF, "/login");
+    assert.equal(
+      changePasswordExpiryLoginHref({
+        embed: false,
+        checked: true,
+        pathname: "/change-password",
+        sessionActive: false,
+        signedOutChrome: "login",
+      }),
+      "/login",
+    );
+    assert.equal(
+      changePasswordExpiryLoginHref({
+        embed: false,
+        checked: false,
+        pathname: "/change-password",
+        sessionActive: false,
+        signedOutChrome: "login",
+      }),
+      null,
+    );
+    assert.equal(
+      changePasswordExpiryLoginHref({
+        embed: true,
+        checked: true,
+        pathname: "/change-password",
+        sessionActive: false,
+        signedOutChrome: "login",
+      }),
+      null,
+    );
+    assert.equal(
+      changePasswordExpiryLoginHref({
+        embed: false,
+        checked: true,
+        pathname: "/set-password",
+        sessionActive: false,
+        signedOutChrome: "set-password",
+      }),
+      null,
+    );
+    assert.equal(
+      changePasswordExpiryLoginHref({
+        embed: false,
+        checked: true,
+        pathname: "/workflows",
+        sessionActive: false,
+        signedOutChrome: "login",
+      }),
+      null,
+    );
+    const gate = source("src/components/session/SignedOutGate.tsx");
+    assert.match(gate, /changePasswordExpiryLoginHref/);
+    assert.match(gate, /router\.replace\(expiryLoginHref\)/);
+    assert.doesNotMatch(gate, /router\.push\(/);
+  });
+
+  it("keeps exactly one main landmark on every change-password state", () => {
+    function mainCount(fragment: string): number {
+      return fragment.match(/<main[\s>]/g)?.length ?? 0;
+    }
+
+    const chrome = source(CHANGE_PASSWORD_CHROME_SOURCE);
+    const embeddedAt = chrome.indexOf('if (variant === "embedded")');
+    const doorAt = chrome.lastIndexOf("return (");
+    assert.ok(embeddedAt > 0 && doorAt > embeddedAt);
+    const card = chrome.slice(0, embeddedAt);
+    const embedded = chrome.slice(embeddedAt, doorAt);
+    const door = chrome.slice(doorAt);
+    assert.match(card, /change-password-error/);
+    assert.equal(mainCount(card), 0);
+    assert.match(embedded, /\{card\}/);
+    assert.equal(mainCount(embedded), 1);
+    assert.match(door, /\{card\}/);
+    assert.equal(mainCount(door), 1);
+    assert.equal(door.includes('id="main-content"'), true);
+    assert.equal(embedded.includes('id="main-content"'), false);
+
+    const landing = source("src/components/session/ChangePasswordLanding.tsx");
+    const embedAt = landing.indexOf("if (embed)");
+    const activeAt = landing.indexOf("if (snapshot.active");
+    const statusAt = landing.lastIndexOf("return (");
+    assert.ok(embedAt >= 0 && activeAt > embedAt && statusAt > activeAt);
+    assert.equal(mainCount(landing.slice(embedAt, activeAt)), 1);
+    assert.match(landing.slice(activeAt, statusAt), /variant="embedded"/);
+    assert.equal(mainCount(landing.slice(activeAt, statusAt)), 0);
+    assert.equal(mainCount(landing.slice(statusAt)), 1);
   });
 });

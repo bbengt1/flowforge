@@ -444,9 +444,26 @@ function apiPath(url: string): string {
   return stripped.startsWith("/") ? stripped : `/${stripped}`;
 }
 
+function mfaStatusBody(enforcement: "on" | "off") {
+  return {
+    method: "totp",
+    enrolled: false,
+    satisfied: false,
+    applicable: true,
+    privileged_permissions: [
+      "platform.administer",
+      "credential.view",
+      "credential.use",
+      "credential.manage",
+    ],
+    enforcement,
+  };
+}
+
 function bodyFor(
   requestUrl: string,
   permissions: readonly string[] = PERMISSIONS,
+  mfaEnforcement: "on" | "off" = "on",
 ): {
   status: number;
   contentType: string;
@@ -457,6 +474,9 @@ function bodyFor(
   const folderId = new URL(requestUrl).searchParams.get("folderId")?.trim() ?? "";
   if (path === "/session") {
     return ok(session);
+  }
+  if (path === "/session/mfa") {
+    return ok(mfaStatusBody(mfaEnforcement));
   }
   if (path === "/bootstrap") {
     return ok(bootstrapComplete);
@@ -543,6 +563,7 @@ function bodyFor(
 async function fulfill(
   route: Route,
   permissions: readonly string[],
+  mfaEnforcement: "on" | "off" = "on",
 ): Promise<void> {
   const path = apiPath(route.request().url());
   if (route.request().method() === "POST" && path === "/workflows/validate") {
@@ -566,7 +587,7 @@ async function fulfill(
     });
     return;
   }
-  const payload = bodyFor(route.request().url(), permissions);
+  const payload = bodyFor(route.request().url(), permissions, mfaEnforcement);
   await route.fulfill({
     status: payload.status,
     contentType: payload.contentType,
@@ -577,11 +598,15 @@ async function fulfill(
 /** Signed-in operator. Bootstrap is complete, so the wizard does not mount. */
 export async function installOperatorApi(
   page: Page,
-  options?: { permissions?: readonly string[] },
+  options?: {
+    permissions?: readonly string[];
+    mfaEnforcement?: "on" | "off";
+  },
 ): Promise<void> {
   const permissions = options?.permissions ?? PERMISSIONS;
+  const mfaEnforcement = options?.mfaEnforcement ?? "on";
   await page.route(/\/api\/(?:v1|control-plane)\//, (route) =>
-    fulfill(route, permissions),
+    fulfill(route, permissions, mfaEnforcement),
   );
 }
 

@@ -13,6 +13,7 @@ function subscribeBrowserLocation(onChange: () => void) {
   };
 }
 import { BootstrapGate } from "@/components/bootstrap/BootstrapGate";
+import { MfaEnforcementBanner } from "@/components/session/MfaEnforcementBanner";
 import { MfaStepUpHost } from "@/components/session/MfaStepUpHost";
 import { MustChangePasswordGate } from "@/components/session/MustChangePasswordGate";
 import { SignedOutGate } from "@/components/session/SignedOutGate";
@@ -280,6 +281,7 @@ export function WorkspaceShell({
               <SessionStatusChip />
             </div>
             <div className="px-4 pb-2">
+              <MfaEnforcementBanner />
               <SessionExpiryBanner />
             </div>
           </header>
