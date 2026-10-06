@@ -107,7 +107,7 @@ export function GroupNameDialog({
               type="text"
               value={name}
               autoComplete="off"
-              maxLength={GROUP_NAME_MAX_CHARS * 2}
+              maxLength={GROUP_NAME_MAX_CHARS}
               onChange={(event) => {
                 setName(event.target.value);
                 setClientError(null);

@@ -288,7 +288,14 @@ function GroupDetailBody({
           ticket={memberUndo.ticket}
           title="Member will be removed from this group"
           detail={
-            members.find((item) => item.userId === memberUndo.ticket?.id)?.displayName
+            memberUndo.ticket
+              ? workspaceGroupMemberLabel({
+                  displayName: members.find(
+                    (item) => item.userId === memberUndo.ticket?.id,
+                  )?.displayName,
+                  userId: memberUndo.ticket.id,
+                })
+              : undefined
           }
           onUndo={memberUndo.undo}
           onCommit={memberUndo.commit}

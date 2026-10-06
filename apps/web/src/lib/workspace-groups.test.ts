@@ -11,6 +11,7 @@ import {
   GROUP_MEMBER_INVALID_MESSAGE,
   GROUP_MEMBER_NOT_IN_WORKSPACE_MESSAGE,
   GROUP_NAME_INVALID_MESSAGE,
+  GROUP_NAME_MAX_CHARS,
   GROUP_NAME_REQUIRED_MESSAGE,
   GROUP_NAME_TAKEN_MESSAGE,
   GROUP_NAME_TOO_LONG_MESSAGE,
@@ -164,6 +165,13 @@ describe("workspace group rename comparison", () => {
     const dialog = source("src/components/groups/GroupNameDialog.tsx");
     assert.match(dialog, /groupRenameIsNoOp\(initialName, name\)/);
     assert.doesNotMatch(dialog, /toLowerCase|toUpperCase|localeCompare/);
+  });
+
+  it("caps the name input at the server displayName limit", () => {
+    const dialog = source("src/components/groups/GroupNameDialog.tsx");
+    assert.match(dialog, /maxLength=\{GROUP_NAME_MAX_CHARS\}/);
+    assert.doesNotMatch(dialog, /GROUP_NAME_MAX_CHARS \* 2/);
+    assert.equal(GROUP_NAME_MAX_CHARS, 128);
   });
 });
 
@@ -342,6 +350,18 @@ describe("workspace group member picker", () => {
   it("labels by display name, then user id, never email", () => {
     assert.equal(workspaceGroupMemberLabel({ displayName: " Ada ", userId: ADA }), "Ada");
     assert.equal(workspaceGroupMemberLabel({ displayName: "", userId: ADA }), ADA);
+    assert.equal(workspaceGroupMemberLabel({ displayName: "   ", userId: ADA }), ADA);
+    assert.equal(workspaceGroupMemberLabel({ userId: ADA }), ADA);
+  });
+
+  it("wires the remove-member undo bar through the label helper", () => {
+    const detail = source("src/components/groups/WorkspaceGroupDetail.tsx");
+    assert.match(detail, /DestructiveUndoBar/);
+    assert.match(detail, /workspaceGroupMemberLabel\(/);
+    assert.doesNotMatch(
+      detail,
+      /detail=\{\s*members\.find\([^}]*\)\?\.displayName\s*\}/,
+    );
   });
 });
 
