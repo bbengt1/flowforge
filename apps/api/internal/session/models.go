@@ -50,6 +50,12 @@ const (
 	EventOriginRejected  = "session.origin_rejected"
 	EventPrivilegeDenied = "session.privilege_denied"
 	EventAuthRejected    = "session.auth_rejected"
+	// ReasonMFABypassed is the session-audit reason when MFA_ENFORCEMENT=off
+	// skipped step-up for a privileged grant. The row reuses
+	// EventPrivilegeDenied so the existing check constraint accepts it
+	// (no migration; 000042 is reserved). Outcome is allowed.
+	// MFABypassed is the boolean on the record.
+	ReasonMFABypassed = "mfa_bypassed:true"
 	// EventBootstrapAdminPasswordSet is the first-run setup-token
 	// success. It is not a session cookie event. The reason and this
 	// type never carry the token or the password.
@@ -124,6 +130,17 @@ type AuditEvent struct {
 	Reason    string    `json:"reason"`
 	RequestID string    `json:"request_id,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
+	// MFABypassed is true when MFA_ENFORCEMENT=off skipped step-up for
+	// this privileged grant. Postgres stores that as ReasonMFABypassed
+	// (no details column). ListAudit sets the field from that reason.
+	MFABypassed bool `json:"mfa_bypassed,omitempty"`
+}
+
+// NoteMFABypass sets MFABypassed when the persisted reason is the bypass token.
+func (e *AuditEvent) NoteMFABypass() {
+	if e != nil && e.Reason == ReasonMFABypassed {
+		e.MFABypassed = true
+	}
 }
 
 // Issued is the secret material returned once when a session is created

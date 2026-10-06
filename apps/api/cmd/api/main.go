@@ -23,6 +23,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 	"github.com/bbengt1/flowforge/apps/api/internal/machine"
+	"github.com/bbengt1/flowforge/apps/api/internal/mfa"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
@@ -147,6 +148,7 @@ func main() {
 			AllowedOrigins:       cfg.CORSAllowedOrigins,
 			TrustIdentityHeaders: cfg.TrustIdentityHeaders,
 			ProductionLocked:     authz.ProductionLocked(cfg.AppEnv, cfg.RequireTLS),
+			MFAEnforcementOff:    cfg.MFAEnforcementOff,
 			Session: httpapi.SessionPolicy{
 				IdleTimeout:     cfg.SessionIdleTimeout,
 				AbsoluteTimeout: cfg.SessionAbsoluteTimeout,
@@ -217,6 +219,9 @@ func main() {
 
 	if cfg.TrustIdentityHeaders {
 		log.Warn("trusted_dev_identity_headers enabled; self-asserted X-FlowForge-Issuer/Subject are accepted")
+	}
+	if cfg.MFAEnforcementOff {
+		mfa.WarnBypass(log)
 	}
 	if cfg.SeedLocalDefaults {
 		log.Info("local defaults seed enabled; tenant/workbench and demo credentials will be written after migrate")

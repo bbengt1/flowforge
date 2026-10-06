@@ -222,6 +222,7 @@ func (m *Memory) Audit(_ context.Context, event AuditEvent) error {
 	} else {
 		event.CreatedAt = event.CreatedAt.UTC()
 	}
+	event.NoteMFABypass()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.audit = append(m.audit, event)

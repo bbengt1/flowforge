@@ -13,6 +13,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 	"github.com/bbengt1/flowforge/apps/api/internal/machine"
+	"github.com/bbengt1/flowforge/apps/api/internal/mfa"
 	"github.com/bbengt1/flowforge/apps/api/internal/scheduler"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
@@ -871,5 +872,77 @@ func TestLoadDotEnvDoesNotOverrideEnv(t *testing.T) {
 	applyDotEnvFile(path)
 	if got := os.Getenv("HTTP_ADDR"); got != ":8080" {
 		t.Fatalf("HTTP_ADDR = %q, existing env should win", got)
+	}
+}
+
+func TestLoadMFAEnforcementGate(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	t.Setenv("EMBED_AUDIENCE", "")
+	t.Setenv("REQUIRE_TLS", "")
+	t.Setenv("TRUSTED_DEV_IDENTITY_HEADERS", "")
+	t.Setenv("FLOWFORGE_ENV", "")
+	t.Setenv(mfa.EnvEnforcement, "")
+	t.Setenv("APP_ENV", "development")
+
+	cfg, err := loadTestConfig(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MFAEnforcementOff {
+		t.Fatal("unset MFA_ENFORCEMENT must keep step-up")
+	}
+
+	t.Setenv(mfa.EnvEnforcement, "on")
+	cfg, err = loadTestConfig(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MFAEnforcementOff {
+		t.Fatal("MFA_ENFORCEMENT=on must keep step-up")
+	}
+
+	t.Setenv(mfa.EnvEnforcement, "off")
+	cfg, err = loadTestConfig(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.MFAEnforcementOff {
+		t.Fatal("MFA_ENFORCEMENT=off in development must skip step-up")
+	}
+
+	canary := "not-a-mode-SECRET"
+	t.Setenv(mfa.EnvEnforcement, canary)
+	_, err = loadTestConfig(t)
+	if err == nil {
+		t.Fatal("invalid MFA_ENFORCEMENT must fail closed")
+	}
+	if strings.Contains(err.Error(), canary) {
+		t.Fatalf("boot error echoed the value: %v", err)
+	}
+	if !strings.Contains(err.Error(), mfa.EnvEnforcement) {
+		t.Fatalf("error = %v", err)
+	}
+
+	locked := []struct {
+		appEnv string
+		tls    string
+	}{
+		{appEnv: "", tls: ""},
+		{appEnv: "production", tls: ""},
+		{appEnv: "staging", tls: ""},
+		{appEnv: "development", tls: "true"},
+	}
+	for _, tc := range locked {
+		t.Setenv("APP_ENV", tc.appEnv)
+		t.Setenv("REQUIRE_TLS", tc.tls)
+		t.Setenv(mfa.EnvEnforcement, "off")
+		_, err = loadTestConfig(t)
+		if err == nil {
+			t.Fatalf("APP_ENV=%q REQUIRE_TLS=%q must refuse MFA_ENFORCEMENT=off", tc.appEnv, tc.tls)
+		}
+		if strings.Contains(err.Error(), canary) || !strings.Contains(err.Error(), mfa.EnvEnforcement) {
+			t.Fatalf("APP_ENV=%q error = %v", tc.appEnv, err)
+		}
 	}
 }
