@@ -7,14 +7,15 @@ import (
 
 // NeedsHTTPProbe reports whether pid 1 is the API and the image health
 // check must call GET /api/v1/health. The runner, local worker, migrate,
-// and kek-rotate commands do not listen, so a live pid 1 is enough.
+// kek-rotate, and slug-backfill commands do not listen, so a live pid 1 is
+// enough.
 func NeedsHTTPProbe(cmdline string) bool {
 	fields := strings.Fields(strings.ReplaceAll(cmdline, "\x00", " "))
 	if len(fields) == 0 {
 		return true
 	}
 	switch filepath.Base(fields[0]) {
-	case "runner", "worker", "migrate", "kek-rotate":
+	case "runner", "worker", "migrate", "kek-rotate", "slug-backfill":
 		return false
 	default:
 		return true
