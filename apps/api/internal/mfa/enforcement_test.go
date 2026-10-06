@@ -136,7 +136,7 @@ func TestDeployAndComposeDoNotMentionMFAEnforcement(t *testing.T) {
 			return nil
 		}
 		name := d.Name()
-		if !strings.HasPrefix(name, "docker-compose") || !strings.HasSuffix(name, ".yml") {
+		if !isComposeManifest(name) {
 			return nil
 		}
 		mentioned, err := fileMentionsMFAEnforcement(path, name)
@@ -156,8 +156,26 @@ func TestDeployAndComposeDoNotMentionMFAEnforcement(t *testing.T) {
 		for path := range hits {
 			paths = append(paths, path)
 		}
-		t.Fatalf("deploy/** and docker-compose*.yml must not mention %s: %s", EnvEnforcement, strings.Join(paths, ", "))
+		t.Fatalf("deploy/ and compose manifests must not mention %s: %s", EnvEnforcement, strings.Join(paths, ", "))
 	}
+}
+
+// isComposeManifest reports docker-compose*.y*ml and compose*.y*ml names
+// anywhere in the tree (compose.yml, compose.yaml, and the same stems
+// with a suffix before the extension).
+func isComposeManifest(name string) bool {
+	for _, pattern := range []string{
+		"docker-compose*.yml",
+		"docker-compose*.yaml",
+		"compose*.yml",
+		"compose*.yaml",
+	} {
+		ok, err := filepath.Match(pattern, name)
+		if err == nil && ok {
+			return true
+		}
+	}
+	return false
 }
 
 func fileMentionsMFAEnforcement(path, name string) (bool, error) {
