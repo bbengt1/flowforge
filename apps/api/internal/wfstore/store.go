@@ -14,7 +14,9 @@ import (
 
 // Persistence errors.
 var (
-	ErrNotFound              = errors.New("not found")
+	ErrNotFound = errors.New("not found")
+	// ErrConflict is an execution idempotency key or folder sibling name
+	// clash. A workflow slug clash is SlugConflict, never ErrConflict.
 	ErrConflict              = errors.New("conflict")
 	ErrRevisionConflict      = errors.New("draft revision conflict")
 	ErrInvalid               = errors.New("invalid")
@@ -62,8 +64,14 @@ var (
 	// of the workflow has a job in queued, claimed, or running. Waiting,
 	// pending, and blocked work does not block. Pinned rows do not block.
 	ErrActiveExecutions = errors.New("workflow has active executions")
-	// ErrSlugReserved is a tombstone holding the slug. A live slug is ErrConflict.
+	// ErrSlugReserved is a tombstone holding the slug. A live slug is ErrSlugTaken.
 	ErrSlugReserved = errors.New("workflow slug is reserved")
+	// ErrSlugTaken is a live workflow holding the slug, including a derived
+	// create that kept losing the unique-index race. It is never ErrConflict.
+	ErrSlugTaken = errors.New("workflow slug is taken")
+	// ErrSlugImmutable refuses a draft save that changes metadata.slug.
+	// The slug is fixed at create.
+	ErrSlugImmutable = errors.New("workflow slug cannot change in a draft save")
 	// ErrWorkflowDeleted means a resume, requeue, or claim found deleted_at
 	// set. The run is failed with ReasonWorkflowDeleted and must not
 	// continue. Step retry reports that tombstone as
@@ -500,30 +508,28 @@ func (e FolderNotEmptyError) Error() string { return ErrFolderNotEmpty.Error() }
 func (e FolderNotEmptyError) Unwrap() error { return ErrFolderNotEmpty }
 
 // SlugConflict is a create-time slug clash. Reserved means a soft-deleted
-// workflow still holds the slug. Exhausted means every derived suffix was
-// rejected. A live clash leaves both flags false. Unwrap reports
-// ErrSlugReserved or ErrConflict.
+// workflow still holds the slug. Otherwise a live workflow holds it, or a
+// derived create kept losing the unique-index race. Suggested is the next
+// free slug built by the derived-slug rules from the clashing slug, or
+// empty when none could be built. Unwrap reports ErrSlugReserved or
+// ErrSlugTaken.
 type SlugConflict struct {
 	Reserved  bool
-	Exhausted bool
+	Suggested string
 }
 
 func (e SlugConflict) Error() string {
-	switch {
-	case e.Reserved:
+	if e.Reserved {
 		return ErrSlugReserved.Error()
-	case e.Exhausted:
-		return "unique workflow slug could not be allocated"
-	default:
-		return "workflow slug already exists"
 	}
+	return ErrSlugTaken.Error()
 }
 
 func (e SlugConflict) Unwrap() error {
 	if e.Reserved {
 		return ErrSlugReserved
 	}
-	return ErrConflict
+	return ErrSlugTaken
 }
 
 // CreateInput creates a workflow and its first draft from normalized YAML.

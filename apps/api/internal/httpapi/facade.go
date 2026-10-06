@@ -43,6 +43,8 @@ const (
 	CodeUnauthenticated                = core.CodeUnauthenticated
 	CodeWorkflowHasActiveExecutions    = core.CodeWorkflowHasActiveExecutions
 	CodeWorkflowSlugReserved           = core.CodeWorkflowSlugReserved
+	CodeWorkflowSlugTaken              = core.CodeWorkflowSlugTaken
+	CodeSlugImmutable                  = core.CodeSlugImmutable
 	CodeWorkflowDeleted                = core.CodeWorkflowDeleted
 	CodeExecutionNotRetryable          = core.CodeExecutionNotRetryable
 	CodeStepAttemptSuperseded          = core.CodeStepAttemptSuperseded

@@ -929,7 +929,7 @@ func resourceTypeForStart(executionID string) string {
 }
 
 func writeSlugInvalid(w http.ResponseWriter, r *http.Request) {
-	detail := workflow.WorkflowSlugInvalidMessage("slug")
+	detail := workflow.NewWorkflowSlugInvalidMessage("slug")
 	core.WriteProblemErrors(w, r, http.StatusBadRequest, core.CodeInvalidRequest, "Invalid Request", detail, []core.FieldError{{
 		Path:    "slug",
 		Code:    core.CodeInvalidRequest,
@@ -937,19 +937,29 @@ func writeSlugInvalid(w http.ResponseWriter, r *http.Request) {
 	}})
 }
 
+// writeSlugConflict is the only 409 for a workflow slug clash:
+// workflow_slug_taken (live) or workflow_slug_reserved (deleted), both on
+// path slug, with suggestedSlug when one could be built.
 func writeSlugConflict(w http.ResponseWriter, r *http.Request, conflict wfstore.SlugConflict) {
-	code := core.CodeConflict
+	code := core.CodeWorkflowSlugTaken
 	detail := "A workflow with this slug already exists."
-	switch {
-	case conflict.Reserved:
+	if conflict.Reserved {
 		code = core.CodeWorkflowSlugReserved
 		detail = "This slug is reserved by a deleted workflow."
-	case conflict.Exhausted:
-		detail = "A unique slug could not be allocated."
 	}
-	core.WriteProblemErrors(w, r, http.StatusConflict, code, "Conflict", detail, []core.FieldError{{
+	core.WriteSlugConflict(w, r, code, detail, conflict.Suggested, []core.FieldError{{
 		Path:    "slug",
 		Code:    code,
+		Message: detail,
+	}})
+}
+
+// writeSlugImmutable refuses a draft save that changes metadata.slug.
+func writeSlugImmutable(w http.ResponseWriter, r *http.Request) {
+	detail := "A draft save can't change the slug. Put metadata.slug back as it was, or remove it, and save again. Rename changes the display name only."
+	core.WriteProblemErrors(w, r, http.StatusBadRequest, core.CodeSlugImmutable, "Invalid Request", detail, []core.FieldError{{
+		Path:    "slug",
+		Code:    core.CodeSlugImmutable,
 		Message: detail,
 	}})
 }
@@ -975,7 +985,11 @@ func WriteWorkflowStoreError(w http.ResponseWriter, r *http.Request, err error) 
 	case errors.Is(err, wfstore.ErrActiveExecutions):
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeWorkflowHasActiveExecutions, "Conflict", "This workflow has a job that is queued, claimed, or running.")
 	case errors.Is(err, wfstore.ErrSlugReserved):
-		core.WriteProblem(w, r, http.StatusConflict, core.CodeWorkflowSlugReserved, "Conflict", "This slug is reserved by a deleted workflow.")
+		writeSlugConflict(w, r, wfstore.SlugConflict{Reserved: true})
+	case errors.Is(err, wfstore.ErrSlugTaken):
+		writeSlugConflict(w, r, wfstore.SlugConflict{})
+	case errors.Is(err, wfstore.ErrSlugImmutable):
+		writeSlugImmutable(w, r)
 	case errors.Is(err, wfstore.ErrWorkflowDeleted):
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeWorkflowDeleted, "Conflict", "This workflow was deleted. The run will not continue.")
 	case errors.Is(err, wfstore.ErrStepAttemptSuperseded):
@@ -985,7 +999,7 @@ func WriteWorkflowStoreError(w http.ResponseWriter, r *http.Request, err error) 
 	case errors.Is(err, wfstore.ErrConstraint):
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeConflict, "Conflict", "The request conflicts with an existing record.")
 	case errors.Is(err, wfstore.ErrConflict):
-		core.WriteProblem(w, r, http.StatusConflict, core.CodeConflict, "Conflict", "A workflow with this slug already exists.")
+		core.WriteProblem(w, r, http.StatusConflict, core.CodeConflict, "Conflict", "The request conflicts with an existing record.")
 	case errors.Is(err, wfstore.ErrImmutable):
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeConflict, "Conflict", "Published versions are immutable.")
 	case errors.Is(err, wfstore.ErrDraftNotRunnable):

@@ -108,10 +108,6 @@ func (m *Memory) Create(_ context.Context, scope isolation.Scope, in CreateInput
 	if err != nil {
 		return Workflow{}, Draft{}, err
 	}
-	candidates, err := slugCandidates(choice)
-	if err != nil {
-		return Workflow{}, Draft{}, err
-	}
 	now := time.Now().UTC()
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
@@ -130,54 +126,62 @@ func (m *Memory) Create(_ context.Context, scope isolation.Scope, in CreateInput
 		}
 		folder = optionalID(folderID)
 	}
-	// The map stands in for workflows_slug_unique. Postgres inserts first
-	// and retries a derived slug only after that unique index rejects it.
-	var last error
-	sawConflict := false
-	for _, slug := range candidates {
-		yamlDoc, digest, summary, stampErr := stampWorkflowSlug(in.NormalizedYAML, slug)
-		if stampErr != nil {
-			return Workflow{}, Draft{}, stampErr
+	// The map stands in for workflows_slug_unique. A derived slug takes
+	// the next suffix after the highest one used for its base, live or
+	// deleted. An explicit slug is never rewritten.
+	slug := choice.Slug
+	if choice.Derived {
+		next, ok := nextDerivedSlug(choice.Slug, m.workspaceSlugsLocked(scope))
+		if !ok {
+			return Workflow{}, Draft{}, SlugConflict{}
 		}
-		if conflict, taken := m.slugTakenLocked(scope, slug); taken {
-			last = conflict
-			sawConflict = true
-			if !choice.Derived {
-				return Workflow{}, Draft{}, conflict
-			}
-			continue
-		}
-		wf := Workflow{
-			ID:            newID(),
-			Slug:          slug,
-			Name:          name,
-			Status:        StatusDraft,
-			DraftRevision: 1,
-			DraftDigest:   digest,
-			CreatedBy:     scope.ActorID(),
-			UpdatedBy:     scope.ActorID(),
-			CreatedAt:     now,
-			UpdatedAt:     now,
-			FolderID:      folder,
-		}
-		draft := Draft{
-			WorkflowID:      wf.ID,
-			Revision:        1,
-			DefinitionYAML:  yamlDoc,
-			Digest:          digest,
-			Summary:         summary,
-			Warnings:        []workflow.FieldError{},
-			ValidationState: ValidationValid,
-			UpdatedBy:       scope.ActorID(),
-			UpdatedAt:       now,
-		}
-		m.workflows[wf.ID] = memWorkflow{workspaceID: scope.WorkspaceID(), record: wf, draft: draft}
-		return wf, draft, nil
+		slug = next
 	}
-	if sawConflict && !choice.Derived {
-		return Workflow{}, Draft{}, last
+	if conflict, taken := m.slugTakenLocked(scope, slug); taken {
+		conflict.Suggested = suggestSlug(slug, m.workspaceSlugsLocked(scope))
+		return Workflow{}, Draft{}, conflict
 	}
-	return Workflow{}, Draft{}, SlugConflict{Exhausted: true}
+	yamlDoc, digest, summary, stampErr := stampWorkflowSlug(in.NormalizedYAML, slug)
+	if stampErr != nil {
+		return Workflow{}, Draft{}, stampErr
+	}
+	wf := Workflow{
+		ID:            newID(),
+		Slug:          slug,
+		Name:          name,
+		Status:        StatusDraft,
+		DraftRevision: 1,
+		DraftDigest:   digest,
+		CreatedBy:     scope.ActorID(),
+		UpdatedBy:     scope.ActorID(),
+		CreatedAt:     now,
+		UpdatedAt:     now,
+		FolderID:      folder,
+	}
+	draft := Draft{
+		WorkflowID:      wf.ID,
+		Revision:        1,
+		DefinitionYAML:  yamlDoc,
+		Digest:          digest,
+		Summary:         summary,
+		Warnings:        []workflow.FieldError{},
+		ValidationState: ValidationValid,
+		UpdatedBy:       scope.ActorID(),
+		UpdatedAt:       now,
+	}
+	m.workflows[wf.ID] = memWorkflow{workspaceID: scope.WorkspaceID(), record: wf, draft: draft}
+	return wf, draft, nil
+}
+
+// workspaceSlugsLocked lists every slug in the workspace, live or deleted.
+func (m *Memory) workspaceSlugsLocked(scope isolation.Scope) []string {
+	var out []string
+	for _, existing := range m.workflows {
+		if existing.workspaceID == scope.WorkspaceID() {
+			out = append(out, existing.record.Slug)
+		}
+	}
+	return out
 }
 
 func (m *Memory) slugTakenLocked(scope isolation.Scope, slug string) (SlugConflict, bool) {
@@ -269,18 +273,22 @@ func (m *Memory) SaveDraft(_ context.Context, scope isolation.Scope, workflowID 
 	if row.draft.Revision != in.ExpectedRevision {
 		return Workflow{}, Draft{}, ErrRevisionConflict
 	}
+	yamlDoc, digest, summary, err := stampSavedDraft(in, row.record.Slug, row.draft.DefinitionYAML)
+	if err != nil {
+		return Workflow{}, Draft{}, err
+	}
 	now := time.Now().UTC()
 	row.draft.Revision++
-	row.draft.DefinitionYAML = in.NormalizedYAML
-	row.draft.Digest = in.Digest
-	row.draft.Summary = in.Summary
+	row.draft.DefinitionYAML = yamlDoc
+	row.draft.Digest = digest
+	row.draft.Summary = summary
 	row.draft.Warnings = []workflow.FieldError{}
 	row.draft.ValidationState = ValidationValid
 	row.draft.UpdatedBy = scope.ActorID()
 	row.draft.UpdatedAt = now
-	row.record.Name = firstNonEmpty(in.Summary.Name, row.record.Name)
+	row.record.Name = firstNonEmpty(summary.Name, row.record.Name)
 	row.record.DraftRevision = row.draft.Revision
-	row.record.DraftDigest = in.Digest
+	row.record.DraftDigest = digest
 	row.record.UpdatedBy = scope.ActorID()
 	row.record.UpdatedAt = now
 	m.workflows[workflowID] = row
@@ -418,18 +426,23 @@ func (m *Memory) Restore(_ context.Context, scope isolation.Scope, workflowID st
 	if !found {
 		return Workflow{}, Draft{}, ErrNotFound
 	}
+	// The restored draft carries the stored slug, whatever the version had.
+	yamlDoc, digest, summary, err := stampWorkflowSlug(src.DefinitionYAML, row.record.Slug)
+	if err != nil {
+		return Workflow{}, Draft{}, err
+	}
 	now := time.Now().UTC()
 	row.draft.Revision++
-	row.draft.DefinitionYAML = src.DefinitionYAML
-	row.draft.Digest = src.Digest
-	row.draft.Summary = src.Summary
+	row.draft.DefinitionYAML = yamlDoc
+	row.draft.Digest = digest
+	row.draft.Summary = summary
 	row.draft.Warnings = []workflow.FieldError{}
 	row.draft.ValidationState = ValidationValid
 	row.draft.UpdatedBy = scope.ActorID()
 	row.draft.UpdatedAt = now
-	row.record.Name = firstNonEmpty(src.Summary.Name, row.record.Name)
+	row.record.Name = firstNonEmpty(summary.Name, row.record.Name)
 	row.record.DraftRevision = row.draft.Revision
-	row.record.DraftDigest = src.Digest
+	row.record.DraftDigest = digest
 	row.record.UpdatedBy = scope.ActorID()
 	row.record.UpdatedAt = now
 	m.workflows[workflowID] = row

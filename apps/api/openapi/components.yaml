@@ -1603,6 +1603,8 @@ components:
             - password_change_required
             - workflow_has_active_executions
             - workflow_slug_reserved
+            - workflow_slug_taken
+            - slug_immutable
             - workflow_deleted
             - execution_not_retryable
             - step_attempt_superseded
@@ -1615,9 +1617,25 @@ components:
           description: Machine-readable cause. Set on execution_not_retryable (run_canceled, run_not_failed, step_not_started, step_not_failed, incoming_unresolved, retry_not_allowed, workflow_deleted).
         errors:
           type: array
-          description: Field-level errors. invalid-workflow lists YAML paths. Create slug conflicts and an invalid explicit slug use path slug.
+          description: >
+            Field-level errors. invalid-workflow lists YAML paths. Create and
+            import slug conflicts (workflow_slug_taken, workflow_slug_reserved),
+            an invalid new slug (invalid-request), and a draft save that changes
+            metadata.slug (slug_immutable) use path slug. Clients place field
+            errors by path, never by message text.
           items:
             $ref: "#/components/schemas/WorkflowFieldError"
+        suggestedSlug:
+          type: string
+          description: >
+            Optional. Set on a 409 workflow_slug_taken or workflow_slug_reserved
+            from POST /workflows (create and YAML import). A free slug built by
+            the derived-slug rules from the slug that clashed: the next numeric
+            suffix after the highest one already used for that base, live or
+            deleted. It is a hint, not a hold. Retrying with it explicitly can
+            still return 409, and that 409 carries a fresh suggestion. Absent
+            when no suggestion could be built.
+          example: orders-sync-3
     Tenant:
       type: object
       required: [id, slug, name, status]
@@ -2877,13 +2895,17 @@ components:
             with w-, and caps the length at 63, dropping a trailing hyphen
             after the cap. An empty result becomes workflow. A derived slug
             that is reserved (catalog, validate, normalize) or already taken,
-            including by a soft-deleted workflow, gains a numeric suffix
-            (-2, -3, and so on, at most 20 attempts) chosen by retrying the
-            unique index. An explicit slug is never rewritten. A live clash
-            is 409 conflict and a tombstone clash is 409
-            workflow_slug_reserved. Both set errors[].path to slug. The
-            chosen slug is written back to metadata.slug in the stored YAML
-            and stays stable on later renames.
+            including by a soft-deleted workflow, takes the next numeric
+            suffix after the highest one already used for that base (base or
+            base-N, live or deleted). The length cap trims the base before the
+            suffix. A new slug, explicit or derived, must not start or end
+            with a hyphen or contain two hyphens in a row; otherwise the
+            response is 400 invalid-request with errors[].path slug. An
+            explicit slug is never rewritten. A live clash is 409
+            workflow_slug_taken and a tombstone clash is 409
+            workflow_slug_reserved. Both set errors[].path to slug and carry
+            suggestedSlug when one can be built. The chosen slug is written back to metadata.slug in
+            the stored YAML and stays stable on later renames.
         name:
           type: string
           description: >
@@ -2977,6 +2999,14 @@ components:
           format: int64
         definitionYaml:
           type: string
+          description: >
+            metadata.slug cannot change through a draft save. When it matches
+            metadata.slug in the stored draft, equals the stored workflow slug,
+            or is missing, the stored workflow slug is written back into
+            metadata.slug. When this save changes it to anything else,
+            the response is 400 slug_immutable with errors[].path slug. The
+            stored slug is never re-validated on save, so a legacy slug keeps
+            saving.
     PublishWorkflowRequest:
       type: object
       properties:
@@ -3055,6 +3085,12 @@ components:
             $ref: "#/components/schemas/CompareChange"
     RestoreDraftRequest:
       type: object
+      description: >
+        Restore is a draft write. It copies the version YAML into the draft
+        and writes the stored workflow slug into metadata.slug, so a version
+        published with a stale slug comes back with the stored one. Restore
+        never returns slug_immutable. The published version row is not
+        changed.
       properties:
         expectedRevision:
           type: integer
@@ -4247,6 +4283,50 @@ components:
             instance: /api/v1/workspaces
             code: conflict
             request_id: 0123456789abcdef0123456789abcdef
+    WorkflowSlugConflict:
+      description: >
+        Create or YAML import asked for a slug another workflow already holds.
+        workflow_slug_taken is a live workflow. workflow_slug_reserved is a
+        soft-deleted workflow. Both set errors[].path to slug and may carry
+        suggestedSlug. conflict is not used for slug clashes.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            taken:
+              summary: A live workflow holds the slug
+              value:
+                type: urn:flowforge:problem:workflow_slug_taken
+                title: Conflict
+                status: 409
+                detail: A workflow with this slug already exists.
+                instance: /api/v1/workflows
+                code: workflow_slug_taken
+                request_id: 0123456789abcdef0123456789abcdef
+                suggestedSlug: orders-sync-3
+                errors:
+                  - path: slug
+                    code: workflow_slug_taken
+                    message: A workflow with this slug already exists.
+            reserved:
+              summary: A soft-deleted workflow holds the slug
+              value:
+                type: urn:flowforge:problem:workflow_slug_reserved
+                title: Conflict
+                status: 409
+                detail: This slug is reserved by a deleted workflow.
+                instance: /api/v1/workflows
+                code: workflow_slug_reserved
+                request_id: 0123456789abcdef0123456789abcdef
+                suggestedSlug: orders-sync-3
+                errors:
+                  - path: slug
+                    code: workflow_slug_reserved
+                    message: This slug is reserved by a deleted workflow.
     FolderNotEmpty:
       description: Folder still has child folders or workflows. Never cascade-deletes workflows.
       headers:

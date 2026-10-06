@@ -9,6 +9,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
+	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -62,9 +63,8 @@ func TestSlugifyWorkflowName(t *testing.T) {
 	if _, err := ChooseCreateSlug("catalog", "", "Deploy API"); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("explicit reserved = %v", err)
 	}
-	cands, err := slugCandidates(SlugChoice{Slug: "catalog", Derived: true})
-	if err != nil || len(cands) == 0 || cands[0] != "catalog-2" {
-		t.Fatalf("reserved candidates = %v %v", cands, err)
+	if next, ok := nextDerivedSlug("catalog", nil); !ok || next != "catalog-2" {
+		t.Fatalf("reserved base next = %q %v", next, ok)
 	}
 	long, ok := workflowSlugCandidate(strings.Repeat("a", 63), 2)
 	if !ok || long != strings.Repeat("a", 61)+"-2" || len(long) > 63 || !validDerivedWorkflowSlug(long) {
@@ -74,6 +74,134 @@ func TestSlugifyWorkflowName(t *testing.T) {
 	got, ok = workflowSlugCandidate(cut, 2)
 	if !ok || got != strings.Repeat("b", 60)+"-2" || strings.Contains(got, "--") || !validDerivedWorkflowSlug(got) {
 		t.Fatalf("hyphen cut suffix = %q", got)
+	}
+}
+
+func TestNewWorkflowSlugValidator(t *testing.T) {
+	for _, slug := range []string{"qa-546-trail-", "double--hyphen", "-lead", "catalog", "Upper", ""} {
+		if workflow.ValidNewWorkflowSlug(slug) {
+			t.Fatalf("new slug %q accepted", slug)
+		}
+		if _, err := ChooseCreateSlug(slug, "", "Name"); slug != "" && !errors.Is(err, ErrInvalid) {
+			t.Fatalf("explicit %q = %v", slug, err)
+		}
+	}
+	for _, slug := range []string{"a", "deploy-api", "w-9-lives", "x-2-3"} {
+		if !workflow.ValidNewWorkflowSlug(slug) {
+			t.Fatalf("new slug %q rejected", slug)
+		}
+	}
+	// Legacy stored slugs stay valid for YAML validation, save, and export.
+	for _, slug := range []string{"qa-546-trail-", "double--hyphen"} {
+		if !workflow.ValidWorkflowSlug(slug) {
+			t.Fatalf("legacy slug %q no longer valid for YAML", slug)
+		}
+	}
+}
+
+func TestSlugSuffixMatchIsExact(t *testing.T) {
+	cases := []struct {
+		base, slug string
+		n          int
+		ok         bool
+	}{
+		{"x", "x", 1, true},
+		{"x", "x-2", 2, true},
+		{"x", "x-10", 10, true},
+		{"x", "x-2-3", 0, false},
+		{"x-2", "x-2-3", 3, true},
+		{"x-2", "x-2", 1, true},
+		{"x", "x-02", 0, false},
+		{"x", "x-1", 0, false},
+		{"x", "x-", 0, false},
+		{"x", "xy-2", 0, false},
+		{"x", "x_2", 0, false},
+		{"x", "x-ray-2", 0, false},
+		{"x", "x-1234567890", 0, false},
+		{strings.Repeat("a", 63), strings.Repeat("a", 61) + "-2", 2, true},
+		{strings.Repeat("a", 63), strings.Repeat("a", 60) + "-10", 10, true},
+		{strings.Repeat("a", 63), strings.Repeat("a", 61) + "-10", 0, false},
+	}
+	for _, tc := range cases {
+		n, ok := slugSuffixFor(tc.base, tc.slug)
+		if n != tc.n || ok != tc.ok {
+			t.Fatalf("slugSuffixFor(%q, %q) = %d %v, want %d %v", tc.base, tc.slug, n, ok, tc.n, tc.ok)
+		}
+		if tc.ok && !strings.HasPrefix(tc.slug, slugMatchPrefix(tc.base)) {
+			t.Fatalf("prefix %q does not cover %q", slugMatchPrefix(tc.base), tc.slug)
+		}
+	}
+}
+
+func TestNextDerivedSlugTakesHighestPlusOne(t *testing.T) {
+	cases := []struct {
+		base string
+		used []string
+		want string
+	}{
+		{"x", nil, "x"},
+		{"x", []string{"x"}, "x-2"},
+		{"x", []string{"x", "x-2", "x-7"}, "x-8"},
+		{"x", []string{"x-2"}, "x-3"},
+		{"x", []string{"x", "x-2-3", "x_9", "xx-40"}, "x-2"},
+		{"x-2", []string{"x", "x-2", "x-2-3"}, "x-2-4"},
+		{"catalog", nil, "catalog-2"},
+		{"catalog", []string{"catalog-2"}, "catalog-3"},
+		{strings.Repeat("a", 63), []string{strings.Repeat("a", 63), strings.Repeat("a", 61) + "-9"}, strings.Repeat("a", 60) + "-10"},
+	}
+	for _, tc := range cases {
+		got, ok := nextDerivedSlug(tc.base, tc.used)
+		if !ok || got != tc.want {
+			t.Fatalf("nextDerivedSlug(%q, %v) = %q %v, want %q", tc.base, tc.used, got, ok, tc.want)
+		}
+		if !workflow.ValidNewWorkflowSlug(got) || len(got) > maxWorkflowSlugLen {
+			t.Fatalf("next slug %q is not a valid new slug", got)
+		}
+	}
+	if _, ok := nextDerivedSlug("bad-", nil); ok {
+		t.Fatal("trailing-hyphen base produced a slug")
+	}
+}
+
+func TestSuggestSlugFromClashingSlug(t *testing.T) {
+	cases := []struct {
+		slug string
+		used []string
+		want string
+	}{
+		{"orders", []string{"orders"}, "orders-2"},
+		{"orders", []string{"orders", "orders-2", "orders-5"}, "orders-6"},
+		{"orders-2", []string{"orders", "orders-2"}, "orders-3"},
+		{"x-2-3", []string{"x-2-3"}, "x-2-4"},
+		{"release-2026", []string{"release-2026"}, "release-2027"},
+	}
+	for _, tc := range cases {
+		if got := suggestSlug(tc.slug, tc.used); got != tc.want {
+			t.Fatalf("suggestSlug(%q, %v) = %q, want %q", tc.slug, tc.used, got, tc.want)
+		}
+	}
+}
+
+func TestDraftSlugForSave(t *testing.T) {
+	cases := []struct {
+		stored, previous, incoming string
+		ok                         bool
+	}{
+		{"orders", "orders", "orders", true},
+		{"orders", "orders", "", true},
+		{"orders", "drifted", "drifted", true},
+		{"orders", "drifted", "orders", true},
+		{"orders", "", "", true},
+		{"orders", "orders", "other", false},
+		{"orders", "drifted", "other", false},
+		{"orders", "", "other", false},
+		{"qa-546-trail-", "qa-546-trail-", "qa-546-trail-", true},
+	}
+	for _, tc := range cases {
+		err := draftSlugForSave(tc.stored, tc.previous, tc.incoming)
+		if (err == nil) != tc.ok || (err != nil && !errors.Is(err, ErrSlugImmutable)) {
+			t.Fatalf("draftSlugForSave(%q, %q, %q) = %v", tc.stored, tc.previous, tc.incoming, err)
+		}
 	}
 }
 

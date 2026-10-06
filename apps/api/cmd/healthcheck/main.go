@@ -1,6 +1,7 @@
 // Image HEALTHCHECK. The API process is healthy when GET /api/v1/health
-// on port 8080 returns 200. The runner, local worker, migrate, and
-// kek-rotate commands do not listen; a live pid 1 is enough for those.
+// on port 8080 returns 200. The runner, local worker, migrate, kek-rotate,
+// and slug-backfill commands do not listen; a live pid 1 is enough for
+// those.
 package main
 
 import (

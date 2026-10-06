@@ -10,9 +10,18 @@ import (
 )
 
 const (
-	workflowSlugFallback   = "workflow"
-	maxWorkflowSlugLen     = 63
-	maxDerivedSlugAttempts = 20
+	workflowSlugFallback = "workflow"
+	maxWorkflowSlugLen   = 63
+	// maxDerivedSlugRetries bounds how often a derived create recomputes
+	// the next suffix after losing a unique-index race. Losing every time
+	// returns a live SlugConflict (409 workflow_slug_taken).
+	maxDerivedSlugRetries = 8
+	// maxSlugSuffix caps the numeric suffix a slug match will parse. A
+	// longer run of digits is not treated as a suffix.
+	maxSlugSuffix = 999999999
+	// minSuffixHead is the shortest head a capped base keeps in front of
+	// a suffix up to maxSlugSuffix: 63 - len("-999999999").
+	minSuffixHead = maxWorkflowSlugLen - 10
 )
 
 // SlugChoice is the slug a create will try first. Derived is true when the
@@ -25,16 +34,17 @@ type SlugChoice struct {
 
 // ChooseCreateSlug applies create precedence: body slug, then a slug written
 // in the YAML, then a slug derived from the display name. An explicit slug
-// that fails workflow slug validation, including a reserved word, is rejected.
+// that fails the new-slug check, including a reserved word, a trailing
+// hyphen, or a double hyphen, is rejected. Create and import share this.
 func ChooseCreateSlug(bodySlug, yamlSlug, name string) (SlugChoice, error) {
 	if slug := strings.TrimSpace(bodySlug); slug != "" {
-		if !workflow.ValidWorkflowSlug(slug) {
+		if !workflow.ValidNewWorkflowSlug(slug) {
 			return SlugChoice{}, ErrInvalid
 		}
 		return SlugChoice{Slug: slug, Derived: false}, nil
 	}
 	if slug := strings.TrimSpace(yamlSlug); slug != "" {
-		if !workflow.ValidWorkflowSlug(slug) {
+		if !workflow.ValidNewWorkflowSlug(slug) {
 			return SlugChoice{}, ErrInvalid
 		}
 		return SlugChoice{Slug: slug, Derived: false}, nil
@@ -48,7 +58,7 @@ func resolveCreateSlug(in CreateInput) (SlugChoice, error) {
 		if slug == "" {
 			slug = slugifyWorkflowName(createDisplayName(in))
 		}
-		if !authz.ValidTenantSlug(slug) {
+		if !workflow.NewWorkflowSlugShape(slug) {
 			return SlugChoice{}, ErrInvalid
 		}
 		return SlugChoice{Slug: slug, Derived: true}, nil
@@ -80,6 +90,7 @@ func metadataSlug(yamlDoc string) (string, error) {
 
 // stampWorkflowSlug writes slug into metadata.slug and re-normalizes so the
 // stored YAML stays the source of truth for the slug that was inserted.
+// The digest and summary come from that same normalization.
 func stampWorkflowSlug(yamlDoc, slug string) (string, string, workflow.Summary, error) {
 	doc, errs := workflow.Parse([]byte(yamlDoc))
 	if len(errs) > 0 || doc == nil {
@@ -93,38 +104,136 @@ func stampWorkflowSlug(yamlDoc, slug string) (string, string, workflow.Summary, 
 	return normalized, digest, doc.Summary(), nil
 }
 
-// slugCandidates is the insert sequence. A derived slug retries with -2, -3,
-// and so on. A reserved derived base is treated as already taken. An explicit
-// slug is a single candidate.
-func slugCandidates(choice SlugChoice) ([]string, error) {
-	if !choice.Derived {
-		if !workflow.ValidWorkflowSlug(choice.Slug) {
-			return nil, ErrInvalid
+// draftSlugForSave decides metadata.slug for a draft save. stored is the
+// workflow row slug, which never changes after create. previous is
+// metadata.slug in the draft being replaced. incoming is metadata.slug in
+// the submitted YAML. A missing or unchanged incoming slug is replaced
+// with stored. An incoming slug equal to stored is accepted, because the
+// result is the same. Any other change is ErrSlugImmutable. The stored
+// slug is compared, never re-validated.
+func draftSlugForSave(stored, previous, incoming string) error {
+	incoming = strings.TrimSpace(incoming)
+	if incoming == "" || incoming == stored || incoming == strings.TrimSpace(previous) {
+		return nil
+	}
+	return ErrSlugImmutable
+}
+
+// stampSavedDraft applies draftSlugForSave and returns the YAML, digest,
+// and summary to persist, all from one normalization.
+func stampSavedDraft(in SaveInput, stored, previousYAML string) (string, string, workflow.Summary, error) {
+	incoming, err := metadataSlug(in.NormalizedYAML)
+	if err != nil {
+		return "", "", workflow.Summary{}, err
+	}
+	previous, perr := metadataSlug(previousYAML)
+	if perr != nil {
+		previous = ""
+	}
+	if err := draftSlugForSave(stored, previous, incoming); err != nil {
+		return "", "", workflow.Summary{}, err
+	}
+	if incoming == stored {
+		return in.NormalizedYAML, in.Digest, in.Summary, nil
+	}
+	return stampWorkflowSlug(in.NormalizedYAML, stored)
+}
+
+// slugMatchPrefix is a prefix every slug in the base family starts with:
+// base itself and each base-N built by workflowSlugCandidate for N up to
+// maxSlugSuffix. It only narrows the query. slugSuffixFor decides.
+func slugMatchPrefix(base string) string {
+	if len(base) <= minSuffixHead {
+		return base
+	}
+	return strings.TrimRight(base[:minSuffixHead], "-")
+}
+
+// slugSuffixFor reports n when slug is exactly workflowSlugCandidate(base, n).
+// base itself is n = 1. A slug that only shares a prefix, such as x-2-3
+// for base x, does not match. This is an exact parse, not a pattern match.
+func slugSuffixFor(base, slug string) (int, bool) {
+	if slug == base {
+		return 1, true
+	}
+	i := strings.LastIndexByte(slug, '-')
+	if i < 1 || i == len(slug)-1 {
+		return 0, false
+	}
+	digits := slug[i+1:]
+	if len(digits) > 9 || digits[0] == '0' {
+		return 0, false
+	}
+	n := 0
+	for _, c := range digits {
+		if c < '0' || c > '9' {
+			return 0, false
 		}
-		return []string{choice.Slug}, nil
+		n = n*10 + int(c-'0')
 	}
-	if !authz.ValidTenantSlug(choice.Slug) {
-		return nil, ErrInvalid
+	if n < 2 || n > maxSlugSuffix {
+		return 0, false
 	}
-	start := 1
-	if workflow.ReservedWorkflowSlug(choice.Slug) {
-		start = 2
+	want, ok := workflowSlugCandidate(base, n)
+	if !ok || want != slug {
+		return 0, false
 	}
-	out := make([]string, 0, maxDerivedSlugAttempts)
-	for n := start; len(out) < maxDerivedSlugAttempts; n++ {
-		candidate, ok := workflowSlugCandidate(choice.Slug, n)
+	return n, true
+}
+
+// nextDerivedSlug returns the slug after the highest suffix already used
+// for base, live or deleted. used may hold unrelated slugs; only exact
+// family members count. A reserved or invalid candidate is skipped.
+func nextDerivedSlug(base string, used []string) (string, bool) {
+	if !workflow.NewWorkflowSlugShape(base) {
+		return "", false
+	}
+	highest := 0
+	for _, slug := range used {
+		if n, ok := slugSuffixFor(base, slug); ok && n > highest {
+			highest = n
+		}
+	}
+	taken := make(map[string]bool, len(used))
+	for _, slug := range used {
+		taken[slug] = true
+	}
+	for n := highest + 1; n <= maxSlugSuffix && n <= highest+100; n++ {
+		candidate, ok := workflowSlugCandidate(base, n)
 		if !ok {
-			break
+			return "", false
 		}
-		if workflow.ReservedWorkflowSlug(candidate) || !workflow.ValidWorkflowSlug(candidate) {
+		if taken[candidate] || !workflow.ValidNewWorkflowSlug(candidate) {
 			continue
 		}
-		out = append(out, candidate)
+		return candidate, true
 	}
-	if len(out) == 0 {
-		return nil, ErrInvalid
+	return "", false
+}
+
+// suggestionBase is the base a slug 409 builds suggestedSlug from. One
+// trailing -N (N >= 2) is dropped when what is left is still a valid new
+// slug shape, so orders-2 suggests from orders. Otherwise the slug itself.
+func suggestionBase(slug string) string {
+	i := strings.LastIndexByte(slug, '-')
+	if i < 1 {
+		return slug
 	}
-	return out, nil
+	head := slug[:i]
+	if _, ok := slugSuffixFor(head, slug); ok && workflow.NewWorkflowSlugShape(head) {
+		return head
+	}
+	return slug
+}
+
+// suggestSlug builds suggestedSlug for a clash on slug from the slugs
+// already used in the workspace. Empty means none could be built.
+func suggestSlug(slug string, used []string) string {
+	next, ok := nextDerivedSlug(suggestionBase(slug), used)
+	if !ok {
+		return ""
+	}
+	return next
 }
 
 func workflowSlugCandidate(base string, n int) (string, bool) {

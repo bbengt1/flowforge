@@ -44,6 +44,7 @@ func TestPostgresDerivedSlugFromName(t *testing.T) {
 	}
 	assertDerivedSlugBehavior(t, ctx, store, scope)
 	assertDerivedSlugUniqueRetry(t, ctx, store, scope)
+	assertDerivedSlugLockSerializes(t, ctx, store, scope)
 }
 
 func assertDerivedSlugBehavior(t *testing.T, ctx context.Context, store Store, scope isolation.Scope) {
@@ -77,8 +78,11 @@ func assertDerivedSlugBehavior(t *testing.T, ctx context.Context, store Store, s
 		live := createNamed(t, ctx, store, scope, "Taken", "taken-live")
 		_, _, err := store.Create(ctx, scope, slugCreateInput(t, "Other", "taken-live"))
 		var conflict SlugConflict
-		if !errors.As(err, &conflict) || conflict.Reserved || conflict.Exhausted || !errors.Is(err, ErrConflict) {
+		if !errors.As(err, &conflict) || conflict.Reserved || !errors.Is(err, ErrSlugTaken) || errors.Is(err, ErrConflict) {
 			t.Fatalf("live clash = %v", err)
+		}
+		if conflict.Suggested != "taken-live-2" {
+			t.Fatalf("suggested = %q", conflict.Suggested)
 		}
 		got, getErr := store.Get(ctx, scope, live.ID)
 		if getErr != nil || got.Slug != "taken-live" {
@@ -93,8 +97,11 @@ func assertDerivedSlugBehavior(t *testing.T, ctx context.Context, store Store, s
 		}
 		_, _, err := store.Create(ctx, scope, slugCreateInput(t, "Again", "taken-gone"))
 		var conflict SlugConflict
-		if !errors.As(err, &conflict) || !conflict.Reserved || !errors.Is(err, ErrSlugReserved) {
+		if !errors.As(err, &conflict) || !conflict.Reserved || !errors.Is(err, ErrSlugReserved) || errors.Is(err, ErrConflict) {
 			t.Fatalf("deleted clash = %v", err)
+		}
+		if conflict.Suggested != "taken-gone-2" {
+			t.Fatalf("suggested = %q", conflict.Suggested)
 		}
 	})
 
@@ -170,21 +177,68 @@ func assertDerivedSlugBehavior(t *testing.T, ctx context.Context, store Store, s
 		assertStoredSlug(t, ctx, store, scope, second.ID, second.Slug)
 	})
 
-	t.Run("derived suffixes stop after the attempt cap", func(t *testing.T) {
-		for i := 0; i < maxDerivedSlugAttempts; i++ {
+	t.Run("25 name-only creates with deletes mixed all succeed", func(t *testing.T) {
+		seen := map[string]bool{}
+		for i := 1; i <= 25; i++ {
 			row := createNamed(t, ctx, store, scope, "Quota", "")
-			if row.Slug == "" {
-				t.Fatal("empty slug")
+			want := "quota"
+			if i > 1 {
+				want = "quota-" + strconv.Itoa(i)
+			}
+			if row.Slug != want || seen[row.Slug] {
+				t.Fatalf("create %d slug = %q, want %q", i, row.Slug, want)
+			}
+			seen[row.Slug] = true
+			if i%3 == 0 {
+				if _, err := store.Delete(ctx, scope, row.ID); err != nil {
+					t.Fatal(err)
+				}
 			}
 		}
-		_, _, err := store.Create(ctx, scope, slugCreateInput(t, "Quota", ""))
-		var conflict SlugConflict
-		if !errors.As(err, &conflict) || !conflict.Exhausted || !errors.Is(err, ErrConflict) {
-			t.Fatalf("exhausted = %v", err)
+	})
+
+	t.Run("x-2-3 does not move the suffix for x", func(t *testing.T) {
+		createNamed(t, ctx, store, scope, "Other", "mix-2-3")
+		first := createNamed(t, ctx, store, scope, "Mix", "")
+		second := createNamed(t, ctx, store, scope, "Mix", "")
+		if first.Slug != "mix" || second.Slug != "mix-2" {
+			t.Fatalf("slugs = %q %q", first.Slug, second.Slug)
+		}
+		// Base mix-2 owns mix-2-3, so the next one is mix-2-4.
+		third := createNamed(t, ctx, store, scope, "Mix 2", "")
+		if third.Slug != "mix-2-4" {
+			t.Fatalf("mix-2 family slug = %q", third.Slug)
+		}
+		// Underscores become hyphens and do not join the mix family.
+		under := createNamed(t, ctx, store, scope, "mix_9", "")
+		if under.Slug != "mix-9" {
+			t.Fatalf("underscore slug = %q", under.Slug)
+		}
+		fourth := createNamed(t, ctx, store, scope, "Mix", "")
+		if fourth.Slug != "mix-10" {
+			t.Fatalf("after mix-9 slug = %q", fourth.Slug)
+		}
+	})
+
+	t.Run("explicit slug with bad hyphens is invalid", func(t *testing.T) {
+		for _, slug := range []string{"qa-546-trail-", "double--hyphen"} {
+			_, _, err := store.Create(ctx, scope, slugCreateInput(t, "Bad", slug))
+			if !errors.Is(err, ErrInvalid) {
+				t.Fatalf("explicit %q = %v", slug, err)
+			}
+			in := slugCreateInput(t, "Bad", "")
+			normalized := mustNormalize(t, slugYAML("Bad", slug))
+			in.NormalizedYAML, in.Digest, in.Summary = normalized.NormalizedYAML, normalized.Digest, normalized.Summary
+			if _, _, err := store.Create(ctx, scope, in); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("yaml %q = %v", slug, err)
+			}
 		}
 	})
 }
 
+// assertDerivedSlugUniqueRetry covers the bounded-retry fallback: an
+// explicit create, which takes no advisory lock, commits the base slug
+// while a derived create is between computing it and inserting it.
 func assertDerivedSlugUniqueRetry(t *testing.T, ctx context.Context, store Store, scope isolation.Scope) {
 	t.Helper()
 	started := make(chan struct{})
@@ -216,7 +270,7 @@ func assertDerivedSlugUniqueRetry(t *testing.T, ctx context.Context, store Store
 	case <-ctx.Done():
 		t.Fatal("slug insert hook did not run")
 	}
-	winner, _, err := store.Create(ctx, scope, slugCreateInput(t, "Race", ""))
+	winner, _, err := store.Create(ctx, scope, slugCreateInput(t, "Race", "race"))
 	letGo()
 	if err != nil {
 		t.Fatal(err)
@@ -229,6 +283,74 @@ func assertDerivedSlugUniqueRetry(t *testing.T, ctx context.Context, store Store
 	}
 	assertStoredSlug(t, ctx, store, scope, winner.ID, "race")
 	assertStoredSlug(t, ctx, store, scope, retried.ID, "race-2")
+}
+
+// assertDerivedSlugLockSerializes checks that a same-base derived create
+// waits for the advisory lock held by another one, then takes the next
+// suffix on its first insert, with no unique-index retry.
+func assertDerivedSlugLockSerializes(t *testing.T, ctx context.Context, store Store, scope isolation.Scope) {
+	t.Helper()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once, releaseOnce sync.Once
+	var mu sync.Mutex
+	var retries []string
+	letGo := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(letGo)
+	hook := func(attempt int, slug string) {
+		if attempt > 1 {
+			mu.Lock()
+			retries = append(retries, slug)
+			mu.Unlock()
+		}
+		if attempt == 1 && slug == "serial" {
+			once.Do(func() {
+				close(started)
+				select {
+				case <-release:
+				case <-ctx.Done():
+				}
+			})
+		}
+	}
+	firstCtx := withSlugInsertHook(ctx, hook)
+	firstErr := make(chan error, 1)
+	var first Workflow
+	go func() {
+		var err error
+		first, _, err = store.Create(firstCtx, scope, slugCreateInput(t, "Serial", ""))
+		firstErr <- err
+	}()
+	select {
+	case <-started:
+	case <-ctx.Done():
+		t.Fatal("slug insert hook did not run")
+	}
+	secondErr := make(chan error, 1)
+	var second Workflow
+	go func() {
+		var err error
+		second, _, err = store.Create(withSlugInsertHook(ctx, hook), scope, slugCreateInput(t, "Serial", ""))
+		secondErr <- err
+	}()
+	select {
+	case err := <-secondErr:
+		t.Fatalf("same-base create did not wait for the lock: %v %+v", err, second)
+	case <-time.After(300 * time.Millisecond):
+	}
+	letGo()
+	if err := <-firstErr; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-secondErr; err != nil {
+		t.Fatal(err)
+	}
+	if first.Slug != "serial" || second.Slug != "serial-2" {
+		t.Fatalf("serialized slugs first=%q second=%q", first.Slug, second.Slug)
+	}
+	if len(retries) != 0 {
+		t.Fatalf("serialized creates retried: %v", retries)
+	}
 }
 
 func assertCappedSuffix(t *testing.T, first, second, wantSecond string) {

@@ -37,6 +37,9 @@ RUN go build -trimpath \
  && go build -trimpath \
     -ldflags="-s -w -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.Version=${BUILD_VERSION} -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.SHA=${BUILD_SHA}" \
     -o /out/kek-rotate ./cmd/kek-rotate \
+ && go build -trimpath \
+    -ldflags="-s -w -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.Version=${BUILD_VERSION} -X github.com/bbengt1/flowforge/apps/api/internal/buildinfo.SHA=${BUILD_SHA}" \
+    -o /out/slug-backfill ./cmd/slug-backfill \
  && go build -trimpath -o /out/healthcheck ./cmd/healthcheck
 
 FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
@@ -49,6 +52,7 @@ COPY --from=build --chown=65532:65532 /out/migrate /usr/local/bin/migrate
 COPY --from=build --chown=65532:65532 /out/worker /usr/local/bin/worker
 COPY --from=build --chown=65532:65532 /out/runner /usr/local/bin/runner
 COPY --from=build --chown=65532:65532 /out/kek-rotate /usr/local/bin/kek-rotate
+COPY --from=build --chown=65532:65532 /out/slug-backfill /usr/local/bin/slug-backfill
 COPY --from=build --chown=65532:65532 /out/healthcheck /usr/local/bin/healthcheck
 
 USER 65532:65532

@@ -435,6 +435,11 @@ func listenAddr() string {
 	return defaultHTTPAddr
 }
 
+// DatabaseURL is the connection string Load would use: DATABASE_URL, or
+// one built from POSTGRES_* / PG* parts. It is for operator commands that
+// need only the database and none of the API secrets.
+func DatabaseURL() string { return databaseURL() }
+
 func databaseURL() string {
 	if raw := strings.TrimSpace(os.Getenv("DATABASE_URL")); raw != "" {
 		return raw

@@ -18,6 +18,7 @@ func TestRunnerDoesNotProbeHTTP(t *testing.T) {
 		"/usr/local/bin/worker",
 		"/usr/local/bin/migrate",
 		"/usr/local/bin/kek-rotate",
+		"/usr/local/bin/slug-backfill",
 	} {
 		if NeedsHTTPProbe(cmd) {
 			t.Fatalf("%s should not use port 8080", cmd)
