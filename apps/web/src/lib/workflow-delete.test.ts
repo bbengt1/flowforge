@@ -15,7 +15,9 @@ import {
   WORKFLOW_DELETE_PUBLISHED_NOTE,
   WORKFLOW_HAS_ACTIVE_EXECUTIONS_CODE,
   WORKFLOW_SLUG_CONFLICT_MESSAGE,
-  WORKFLOW_SLUG_EXHAUSTED_MESSAGE,
+  WORKFLOW_SLUG_INVALID_MESSAGE,
+  WORKFLOW_SLUG_OTHER_MESSAGE,
+  WORKFLOW_SLUG_TAKEN_CODE,
   WORKFLOW_SLUG_RESERVED_CODE,
   WORKFLOW_SLUG_RESERVED_NAME_MESSAGE,
   WORKFLOW_SLUG_RESERVED_SLUG_MESSAGE,
@@ -37,6 +39,7 @@ import {
   workflowRecordWithCapabilities,
   workflowSlugReservedFromProblem,
   workflowSlugReservedMessage,
+  workflowSuggestedSlugNote,
 } from "./workflow-delete.ts";
 
 const SCOPE = "acme\nops\nhttps://flowforge.local\noperator-ada";
@@ -349,148 +352,143 @@ describe("workflow delete error codes", () => {
     );
   });
 
-  it("puts reserved and slug-conflict errors on the slug field even when no slug was sent", () => {
-    const reservedSent = workflowSlugReservedFromProblem(
-      { status: 409, code: WORKFLOW_SLUG_RESERVED_CODE, detail: "ignored" },
-      { slug: "deploy", name: "Deploy" },
-    );
-    assert.deepEqual(reservedSent, {
-      field: "slug",
-      message: WORKFLOW_SLUG_RESERVED_SLUG_MESSAGE,
-    });
-    const reservedNameOnly = workflowSlugReservedFromProblem(
+  it("places create and import errors on the Slug field by errors[].path only", () => {
+    const slugPath = (code: string, message = "ignored text") => [
+      { path: "slug", code, message },
+    ];
+    const reserved = workflowSlugReservedFromProblem(
       {
         status: 409,
         code: WORKFLOW_SLUG_RESERVED_CODE,
         detail: "please parse this sentence instead of the code",
+        errors: slugPath(WORKFLOW_SLUG_RESERVED_CODE),
       },
       { name: "Deploy" },
     );
-    assert.deepEqual(reservedNameOnly, {
+    assert.deepEqual(reserved, {
       field: "slug",
       message: WORKFLOW_SLUG_RESERVED_SLUG_MESSAGE,
     });
-    assert.notEqual(reservedNameOnly?.message, WORKFLOW_SLUG_RESERVED_NAME_MESSAGE);
+    assert.notEqual(reserved?.message, WORKFLOW_SLUG_RESERVED_NAME_MESSAGE);
 
-    const conflict = workflowSlugReservedFromProblem(
+    const taken = workflowSlugReservedFromProblem(
+      {
+        status: 409,
+        code: WORKFLOW_SLUG_TAKEN_CODE,
+        detail: "x",
+        errors: slugPath(WORKFLOW_SLUG_TAKEN_CODE),
+        suggestedSlug: "deploy-3",
+      },
+      { slug: "deploy" },
+    );
+    assert.deepEqual(taken, {
+      field: "slug",
+      message: WORKFLOW_SLUG_CONFLICT_MESSAGE,
+      suggestedSlug: "deploy-3",
+    });
+
+    const invalid = workflowSlugReservedFromProblem(
+      {
+        status: 400,
+        code: "invalid-request",
+        detail: "slug must be 1-63 characters",
+        errors: slugPath("invalid-request"),
+      },
+      { slug: "qa-trail-" },
+    );
+    assert.deepEqual(invalid, {
+      field: "slug",
+      message: WORKFLOW_SLUG_INVALID_MESSAGE,
+    });
+
+    // A slug code without a slug path stays in the banner, and message
+    // text such as "slug already exists" is never matched.
+    for (const problem of [
+      { status: 409, code: WORKFLOW_SLUG_RESERVED_CODE, detail: "x" },
+      { status: 409, code: WORKFLOW_SLUG_TAKEN_CODE, detail: "x" },
       {
         status: 409,
         code: "conflict",
         detail: "A workflow with this slug already exists.",
       },
-      { name: "Deploy" },
-    );
-    assert.deepEqual(conflict, {
-      field: "slug",
-      message: WORKFLOW_SLUG_CONFLICT_MESSAGE,
-    });
-    const conflictOnPath = workflowSlugReservedFromProblem(
       {
         status: 409,
         code: "conflict",
-        detail: "please parse this sentence instead of the code",
+        detail: "A workflow with this slug already exists.",
         errors: [
           {
-            path: "slug",
+            path: "metadata.name",
             code: "conflict",
             message: "A workflow with this slug already exists.",
           },
         ],
       },
-      {},
-    );
-    assert.deepEqual(conflictOnPath, {
-      field: "slug",
-      message: WORKFLOW_SLUG_CONFLICT_MESSAGE,
-    });
-    const exhausted = workflowSlugReservedFromProblem(
-      {
-        status: 409,
-        code: "conflict",
-        detail: "A unique slug could not be allocated.",
-        errors: [
-          {
-            path: "slug",
-            code: "conflict",
-            message: "A unique slug could not be allocated.",
-          },
-        ],
-      },
-      { name: "Quota" },
-    );
-    assert.deepEqual(exhausted, {
-      field: "slug",
-      message: WORKFLOW_SLUG_EXHAUSTED_MESSAGE,
-    });
-    assert.equal(
-      workflowSlugReservedFromProblem(
-        { status: 409, code: "conflict", detail: "Draft revision mismatch." },
-        { name: "Deploy" },
-      ),
-      null,
-    );
-    assert.equal(
-      workflowSlugReservedFromProblem(
-        { status: 400, code: WORKFLOW_SLUG_RESERVED_CODE },
-        { slug: "deploy" },
-      ),
-      null,
-    );
+      { status: 400, code: "invalid-request", detail: "slug is bad" },
+    ]) {
+      assert.equal(workflowSlugReservedFromProblem(problem, { name: "Deploy" }), null);
+    }
+
+    // Statuses other than 400 and 409 never land on a field.
     assert.equal(
       workflowSlugReservedFromProblem(
         {
-          status: 409,
-          code: "conflict",
-          detail: "The request conflicts with an existing record.",
-          errors: [
-            {
-              path: "slug",
-              code: "conflict",
-              message: "The request conflicts with an existing record.",
-            },
-          ],
-        },
-        { name: "Deploy" },
-      ),
-      null,
-    );
-    assert.equal(
-      workflowSlugReservedFromProblem(
-        {
-          status: 409,
-          code: "conflict",
-          detail: "A unique identity already exists.",
+          status: 500,
+          code: WORKFLOW_SLUG_TAKEN_CODE,
+          detail: "x",
+          errors: slugPath(WORKFLOW_SLUG_TAKEN_CODE),
         },
         {},
       ),
       null,
     );
-    for (const code of [
-      "execution_not_retryable",
-      "step_attempt_superseded",
-      "approval_closed",
-    ]) {
-      assert.equal(
-        workflowSlugReservedFromProblem(
-          {
-            status: 409,
-            code,
-            detail: "A workflow with this slug already exists.",
-            errors: [
-              {
-                path: "slug",
-                code,
-                message: "A workflow with this slug already exists.",
-              },
-            ],
-          },
-          { name: "Deploy" },
-        ),
-        null,
-      );
-    }
+
+    // A slug path with an unknown code still goes on the field, with
+    // neutral copy instead of the server sentence.
+    assert.deepEqual(
+      workflowSlugReservedFromProblem(
+        { status: 409, code: "conflict", detail: "x", errors: slugPath("conflict") },
+        {},
+      ),
+      { field: "slug", message: WORKFLOW_SLUG_OTHER_MESSAGE },
+    );
+
     assert.equal(workflowSlugReservedMessage("slug"), WORKFLOW_SLUG_RESERVED_SLUG_MESSAGE);
     assert.equal(workflowSlugReservedMessage("name"), WORKFLOW_SLUG_RESERVED_NAME_MESSAGE);
+  });
+
+  it("keeps suggestedSlug only on a slug 409 and only when it is a plain slug", () => {
+    const base = {
+      status: 409,
+      code: WORKFLOW_SLUG_RESERVED_CODE,
+      detail: "x",
+      errors: [{ path: "slug", code: WORKFLOW_SLUG_RESERVED_CODE, message: "x" }],
+    };
+    assert.equal(
+      workflowSlugReservedFromProblem({ ...base, suggestedSlug: "orders-sync-3" }, {})
+        ?.suggestedSlug,
+      "orders-sync-3",
+    );
+    for (const bad of ["", "Orders", "-x", "x-", "a--b", "x y", "<b>x</b>", "a".repeat(64)]) {
+      assert.equal(
+        workflowSlugReservedFromProblem({ ...base, suggestedSlug: bad }, {})?.suggestedSlug,
+        undefined,
+        bad,
+      );
+    }
+    assert.equal(
+      workflowSlugReservedFromProblem(
+        {
+          status: 400,
+          code: "invalid-request",
+          detail: "x",
+          errors: [{ path: "slug", code: "invalid-request", message: "x" }],
+          suggestedSlug: "deploy-2",
+        },
+        {},
+      )?.suggestedSlug,
+      undefined,
+    );
+    assert.match(workflowSuggestedSlugNote("deploy-2"), /deploy-2/);
   });
 
   it("warns that delete unpublishes and turns triggers off", () => {

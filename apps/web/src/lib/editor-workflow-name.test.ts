@@ -12,7 +12,11 @@ import {
   WORKFLOW_NAME_SAVE_FAILED,
   editorHeadingRenamesInline,
   editorRenameUsesDraftSave,
+  draftSaveSlugMessage,
+  draftSaveSlugOnlyErrors,
   editorWorkflowRenameAllowed,
+  namedCreateYaml,
+  removeYamlWorkflowSlug,
   workflowNameCommitDecision,
   workflowNameSaveError,
   writeYamlWorkflowName,
@@ -223,5 +227,51 @@ spec:
     assert.match(viewer, /\{heading\}/);
     assert.doesNotMatch(viewer, /<button/);
     assert.doesNotMatch(viewer, /data-editor-workflow-name="heading"/);
+  });
+});
+
+describe("named create YAML", () => {
+  const yaml = [
+    "apiVersion: flowforge/v1",
+    "kind: Workflow",
+    "metadata:",
+    "  name: Blank draft",
+    "  slug: orders-sync # stored",
+    "  labels:",
+    "    slug: keep-me",
+    "spec:",
+    "  nodes: []",
+    "",
+  ].join("\n");
+
+  it("drops only the top-level metadata.slug line", () => {
+    const out = removeYamlWorkflowSlug(yaml);
+    assert.ok(out);
+    assert.doesNotMatch(out, /^ {2}slug:/m);
+    assert.match(out, /^ {4}slug: keep-me$/m);
+    assert.match(out, /^ {2}name: Blank draft$/m);
+    assert.equal(removeYamlWorkflowSlug("kind: Workflow\nspec: {}\n"), "kind: Workflow\nspec: {}\n");
+    assert.equal(removeYamlWorkflowSlug("metadata:\n  slug: |\n    x\n"), null);
+    assert.equal(removeYamlWorkflowSlug("metadata: {slug: x}\n"), null);
+  });
+
+  it("writes the entered name and drops the slug only for duplicate", () => {
+    const named = namedCreateYaml(yaml, "Orders Sync");
+    assert.equal(readYamlWorkflowMeta(named).name, "Orders Sync");
+    assert.match(named, /^ {2}slug: orders-sync/m);
+    const duplicate = namedCreateYaml(yaml, "Orders Sync copy", { dropSlug: true });
+    assert.equal(readYamlWorkflowMeta(duplicate).name, "Orders Sync copy");
+    assert.doesNotMatch(duplicate, /^ {2}slug:/m);
+    assert.equal(namedCreateYaml(yaml, "  "), yaml);
+    assert.equal(namedCreateYaml(yaml, undefined), yaml);
+  });
+
+  it("keeps the graph only when every save error is on the slug path", () => {
+    assert.equal(draftSaveSlugOnlyErrors([{ path: "slug" }]), true);
+    assert.equal(draftSaveSlugOnlyErrors([]), false);
+    assert.equal(draftSaveSlugOnlyErrors([{ path: "slug" }, { path: "spec.nodes[0]" }]), false);
+    assert.equal(draftSaveSlugOnlyErrors([{ path: "metadata.slug" }]), false);
+    assert.match(draftSaveSlugMessage("orders-sync"), /back to orders-sync/);
+    assert.match(draftSaveSlugMessage(""), /as it was/);
   });
 });

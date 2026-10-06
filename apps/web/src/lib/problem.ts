@@ -18,6 +18,8 @@ export type ProblemDetails = {
   request_id: string;
   /** Machine-readable cause on retry 409s. Never shown raw in the UI. */
   reason?: string;
+  /** Free slug hint on a create or import slug 409. Never sent unasked. */
+  suggestedSlug?: string;
   errors?: ProblemFieldError[];
 };
 

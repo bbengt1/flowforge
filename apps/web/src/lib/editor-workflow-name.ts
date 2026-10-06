@@ -205,6 +205,108 @@ export function writeYamlWorkflowName(
   return lines.join("\n");
 }
 
+/**
+ * Drop the top-level `metadata.slug` line so create derives a slug from
+ * the name. Returns the YAML unchanged when there is no slug line, and
+ * null when the slug is not a single-line scalar or metadata is not a
+ * plain block, so callers never guess at an edit.
+ */
+export function removeYamlWorkflowSlug(yaml: string): string | null {
+  const lines = yaml.split("\n");
+  let metadataAt = -1;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || leadingSpaces(line) !== 0) {
+      continue;
+    }
+    if (trimmed.startsWith("metadata:")) {
+      if (!/^metadata:\s*(#.*)?$/.test(trimmed)) {
+        return null;
+      }
+      metadataAt = index;
+      break;
+    }
+  }
+  if (metadataAt < 0) {
+    return yaml;
+  }
+  let childIndent = -1;
+  for (let index = metadataAt + 1; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+    const indent = leadingSpaces(line);
+    if (indent === 0) {
+      break;
+    }
+    if (childIndent < 0) {
+      childIndent = indent;
+    }
+    if (indent < childIndent) {
+      break;
+    }
+    if (indent !== childIndent || !/^slug\s*:/.test(trimmed)) {
+      continue;
+    }
+    const value = trimmed.replace(/^slug\s*:\s*/, "").replace(/\s+#.*$/, "");
+    if (!value || /^[|>&*!]/.test(value)) {
+      return null;
+    }
+    const next = lines[index + 1] ?? "";
+    if (next.trim() && leadingSpaces(next) > indent) {
+      return null;
+    }
+    lines.splice(index, 1);
+    return lines.join("\n");
+  }
+  return yaml;
+}
+
+/**
+ * YAML for a named create, import, or duplicate. The name the operator
+ * gave is written to `metadata.name`; a name the YAML cannot hold safely
+ * leaves the YAML as it was. Duplicate also drops `metadata.slug` so
+ * the server picks the next free slug instead of the original one.
+ */
+export function namedCreateYaml(
+  yaml: string,
+  name: string | undefined,
+  options: { dropSlug?: boolean } = {},
+): string {
+  let out = yaml;
+  if (options.dropSlug) {
+    out = removeYamlWorkflowSlug(out) ?? out;
+  }
+  const trimmed = name?.trim() ?? "";
+  if (trimmed) {
+    out = writeYamlWorkflowName(out, trimmed) ?? out;
+  }
+  return out;
+}
+
+/**
+ * True when a refused draft save has field errors and every one is on
+ * the `slug` path. The YAML itself is fine, so the editor keeps the
+ * graph. Decided by path only, never by code or message text.
+ */
+export function draftSaveSlugOnlyErrors(
+  errors: readonly { path?: string }[],
+): boolean {
+  return errors.length > 0 && errors.every((error) => error.path === "slug");
+}
+
+/** Banner text for a draft save that changed metadata.slug. */
+export function draftSaveSlugMessage(slug: string | null | undefined): string {
+  const stored = slug?.trim() ?? "";
+  const restore = stored
+    ? `Set metadata.slug back to ${stored}, or remove it, and save again.`
+    : "Put metadata.slug back as it was, or remove it, and save again.";
+  return `A draft save can't change the slug. ${restore} Rename changes the display name only.`;
+}
+
 export function editorHeadingRenamesInline(source: string): boolean {
   return (
     source.includes('data-editor-workflow-name="rename"') &&

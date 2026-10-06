@@ -51,6 +51,8 @@ import {
 import {
   WORKFLOW_NAME_NOT_READY,
   WORKFLOW_NAME_YAML_FAILED,
+  draftSaveSlugMessage,
+  draftSaveSlugOnlyErrors,
   editorWorkflowRenameAllowed,
   workflowNameCommitDecision,
   workflowNameSaveError,
@@ -1403,8 +1405,16 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           await handleConflict(workflow.id, result.problem);
           return { ok: false, detail: result.problem.detail };
         }
-        setStatus("invalid");
+        // A save refused only on the slug path keeps the graph: the YAML
+        // is valid, only metadata.slug changed. Placement is by path.
+        const slugOnly = draftSaveSlugOnlyErrors(result.errors);
         setErrors(result.errors);
+        if (slugOnly) {
+          const detail = draftSaveSlugMessage(workflow.slug);
+          setProblem({ ...result.problem, detail });
+          return { ok: false, detail };
+        }
+        setStatus("invalid");
         if (result.errors.length > 0) {
           clearGraph();
         }
