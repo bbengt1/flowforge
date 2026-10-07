@@ -203,6 +203,7 @@ export function ExecutionDetail({
     ? executionFailureReasonText({
         status: detail?.status,
         statusReason: detail?.statusReason,
+        statusReasonCause: detail?.statusReasonCause,
         steps: view.steps,
       })
     : null;

@@ -8,6 +8,7 @@ import { PreRunPolicyReview } from "@/components/approvals/PreRunPolicyReview";
 import { listCredentials } from "@/lib/credential-client";
 import type { CredentialRecord } from "@/lib/credential-types";
 import type { DevIdentity } from "@/lib/identity-headers";
+import { ApproverPicker } from "@/components/workflows/ApproverPicker";
 import { KubernetesLeastPrivilegeNotes } from "@/components/config/KubernetesLeastPrivilegeNotes";
 import { ScriptIsolationNotes } from "@/components/config/ScriptIsolationNotes";
 import { ScriptIoFields } from "@/components/workflows/ScriptIoFields";
@@ -616,6 +617,7 @@ export function ActionWizard({
               parameterConstraints={parameterConstraints}
               profileRetrySafe={profileRetrySafe}
               verificationDeclared={verificationDeclared}
+              identity={identity}
               onChange={setDraft}
             />
           ) : null}
@@ -1078,6 +1080,7 @@ function ConfigureStep({
   parameterConstraints,
   profileRetrySafe,
   verificationDeclared,
+  identity,
   onChange,
 }: {
   draft: ActionWizardDraft;
@@ -1094,9 +1097,11 @@ function ConfigureStep({
   parameterConstraints: readonly SshParameterConstraint[];
   profileRetrySafe: boolean;
   verificationDeclared: boolean;
+  identity: DevIdentity;
   onChange: (draft: ActionWizardDraft) => void;
 }) {
   const inferred = fields.some((field) => field.inferred);
+  const approval = draft.type === "flow.approval";
   const kubernetes = isKubernetesConfigurableType(draft.type);
   const ssh = isSshConfigurableType(draft.type);
   const script = isScriptConfigurableType(draft.type);
@@ -1107,7 +1112,8 @@ function ConfigureStep({
       !field.selectorKind &&
       !(ssh && field.name === "parameters") &&
       !(ssh && field.name === "retryPolicy") &&
-      !(script && isDedicatedScriptIoWithField(field.name)),
+      !(script && isDedicatedScriptIoWithField(field.name)) &&
+      !(approval && field.name === "approvers"),
   );
   const primary = visible.filter((field) => !field.advanced);
   const advanced = visible.filter((field) => field.advanced);
@@ -1289,6 +1295,14 @@ function ConfigureStep({
           onChange={(value) => patchWith(field.name, value)}
         />
       ))}
+      {approval ? (
+        <ApproverPicker
+          identity={identity}
+          role={typeof draft.with.approverRole === "string" ? draft.with.approverRole : ""}
+          value={draft.with.approvers}
+          onChange={(approvers) => patchWith("approvers", approvers)}
+        />
+      ) : null}
       {ssh ? (
         <SshParameterFields
           constraints={parameterConstraints}

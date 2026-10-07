@@ -8,6 +8,10 @@
  */
 
 import { isExecutionAwaitingApproval } from "./approval.ts";
+import {
+  noEligibleDeciderSentence,
+  readRequirementUnresolvableCause,
+} from "./approval-approvers.ts";
 import { FLOW_APPROVAL_NODE_TYPE } from "./approval-contract.ts";
 import type { ApprovalRequest, PolicyEvaluation } from "./approval-types.ts";
 import {
@@ -530,8 +534,27 @@ export function gateStepFailureCopy(step: {
   if (normalizeExecutionStatus(step.status) !== "failed") {
     return null;
   }
-  void readStepErrorCode(step.error);
+  const specific = noEligibleDeciderSentence({
+    reason: readStepErrorCode(step.error),
+    cause: readStepErrorDetailsCause(step.error),
+  });
+  if (specific) {
+    return specific;
+  }
   return executionStatusPresentation("failed").description;
+}
+
+function readStepErrorDetailsCause(error: unknown): string {
+  try {
+    if (!error || typeof error !== "object") {
+      return "";
+    }
+    return readRequirementUnresolvableCause(
+      (error as { details?: unknown }).details,
+    );
+  } catch {
+    return "";
+  }
 }
 
 function readStepErrorCode(error: unknown): string {

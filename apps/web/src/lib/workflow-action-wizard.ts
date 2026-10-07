@@ -24,6 +24,7 @@ import {
   type KubernetesNodeWithField,
 } from "./kubernetes-node-contract.ts";
 import { isKubernetesRolloutType, rolloutKindsFromCatalog } from "./kubernetes-rollout-contract.ts";
+import { approversWithErrors } from "./approval-approvers.ts";
 import type { KubernetesEngineCatalog } from "./kubernetes-types.ts";
 import {
   defaultSshWith,
@@ -655,6 +656,9 @@ export function validateWizardDraft(
     ) {
       errors.push(`${field.name} looks like secret material and cannot be stored in YAML.`);
     }
+  }
+  if (draft.type === "flow.approval") {
+    errors.push(...approversWithErrors(draft.with.approvers));
   }
   if (isKubernetesConfigurableType(draft.type)) {
     errors.push(

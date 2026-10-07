@@ -12,6 +12,10 @@
  * or bucket credentials. Download grants are used once and discarded.
  */
 
+import {
+  noEligibleDeciderSentence,
+  readRequirementUnresolvableCause,
+} from "./approval-approvers.ts";
 import { EXECUTION_WAITING_STATUSES } from "./approval-types.ts";
 import { readRecordCapabilities } from "./execution-retry.ts";
 import {
@@ -439,6 +443,17 @@ export function executionStatusReasonSentence(reason: unknown): string | null {
   return EXECUTION_STATUS_REASON_SENTENCES[known];
 }
 
+/** error.details.cause on a failed step, or empty when unknown. */
+function readStepErrorCause(error: unknown): "no_eligible_decider" | "" {
+  let cleaned: unknown;
+  try {
+    cleaned = stripSecretFields(error, []);
+  } catch {
+    return "";
+  }
+  return readRequirementUnresolvableCause(asRecord(cleaned)?.details);
+}
+
 function readPlainErrorParts(error: unknown): { code: string; message: string } {
   let cleaned: unknown;
   try {
@@ -500,6 +515,13 @@ export function stepFailureErrorText(step: {
     return null;
   }
   const { code, message } = readPlainErrorParts(step.error);
+  const cause = noEligibleDeciderSentence({
+    reason: code,
+    cause: readStepErrorCause(step.error),
+  });
+  if (cause) {
+    return cause;
+  }
   const known = knownStatusReasonErrorText(code, message);
   if (known) {
     return known;
@@ -524,8 +546,25 @@ export function stepFailureErrorText(step: {
 export function executionFailureReasonText(input: {
   status?: string;
   statusReason?: unknown;
+  /** statusReasonDetails.cause from the run, when the API sent one. */
+  statusReasonCause?: unknown;
   steps?: readonly { status?: string; error?: unknown }[];
 }): string | null {
+  const cause =
+    input.statusReasonCause ??
+    (input.statusReason === "requirement_unresolvable"
+      ? (input.steps ?? [])
+          .filter((step) => normalizeExecutionStatus(step.status) === "failed")
+          .map((step) => readStepErrorCause(step.error))
+          .find(Boolean)
+      : undefined);
+  const specific = noEligibleDeciderSentence({
+    reason: input.statusReason,
+    cause,
+  });
+  if (specific) {
+    return specific;
+  }
   const sentence = executionStatusReasonSentence(input.statusReason);
   if (sentence) {
     return sentence;
@@ -1010,6 +1049,13 @@ function readParsedStatusReason(
   return statusReason ? { statusReason } : {};
 }
 
+function readParsedStatusReasonCause(
+  details: unknown,
+): { statusReasonCause: "no_eligible_decider" } | Record<string, never> {
+  const cause = readRequirementUnresolvableCause(details);
+  return cause ? { statusReasonCause: cause } : {};
+}
+
 export function parseExecutionRecord(raw: unknown): ExecutionRecord | null {
   const stripped: string[] = [];
   const cleaned = stripSecretFields(raw, stripped);
@@ -1040,6 +1086,9 @@ export function parseExecutionRecord(raw: unknown): ExecutionRecord | null {
     workflowDigest: readString(nested.workflowDigest, nested.workflow_digest),
     status: readString(nested.status) || "queued",
     ...readParsedStatusReason(nested.statusReason, nested.status_reason),
+    ...readParsedStatusReasonCause(
+      nested.statusReasonDetails ?? nested.status_reason_details,
+    ),
     startedAt: readString(nested.startedAt, nested.started_at),
     finishedAt: readString(nested.finishedAt, nested.finished_at),
     createdAt: readString(nested.createdAt, nested.created_at),

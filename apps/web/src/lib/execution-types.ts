@@ -232,6 +232,8 @@ export type ExecutionRecord = {
   status: ExecutionStatus;
   /** Set only when the API sent a known statusReason. */
   statusReason?: ExecutionStatusReason;
+  /** statusReasonDetails.cause when known (no_eligible_decider). */
+  statusReasonCause?: "no_eligible_decider";
   startedAt: string;
   finishedAt: string;
   createdAt: string;

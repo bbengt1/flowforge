@@ -1,3 +1,9 @@
+import type {
+  ApprovalApprovers,
+  ApprovalCapabilities,
+  RequirementUnresolvableCause,
+} from "./approval-approvers.ts";
+
 /**
  * E4.3 policy-eval / approvals shapes aligned to #44 on `main`.
  *
@@ -134,6 +140,12 @@ export type ApprovalRequest = {
   permittedActions: ApprovalAction[];
   /** Set when `status` is `canceled`. Unknown values are dropped. */
   closeReason?: ApprovalCloseReason | "";
+  /** closeReasonDetails.cause when known (no_eligible_decider). */
+  closeReasonCause?: RequirementUnresolvableCause;
+  /** Targeted gates only. Display name and UUID; never member lists. */
+  approvers?: ApprovalApprovers;
+  /** Server decide eligibility for the caller. Decide stays authoritative. */
+  capabilities?: ApprovalCapabilities;
 };
 
 /** Evaluate `requirements[]` — not yet a stored approval row. */

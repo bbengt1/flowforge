@@ -34,6 +34,8 @@ export const POLICY_EVALUATE_SEGMENTS = ["policy", "evaluate"] as const;
 export const DECIDE_ACTION = "decide";
 export const CATALOG_ACTION = "catalog";
 export const EVENTS_ACTION = "events";
+/** Builder picker source. Requires workflow.edit; refused on embed. */
+export const APPROVER_CANDIDATES_ACTION = "approver-candidates";
 
 export const APPROVAL_STATUS_QUERY = "status";
 export const APPROVAL_WORKFLOW_QUERY = "workflowId";
@@ -112,6 +114,12 @@ export function approvalsPath(): string {
 
 export function approvalsCatalogPath(): string {
   return `${approvalsPath()}/${CATALOG_ACTION}`;
+}
+
+/** GET /approvals/approver-candidates?role=<approverRole>. */
+export function approverCandidatesPath(role: string): string {
+  const params = new URLSearchParams({ role: role.trim() });
+  return `${approvalsPath()}/${APPROVER_CANDIDATES_ACTION}?${params.toString()}`;
 }
 
 export function approvalPath(approvalId: string): string {

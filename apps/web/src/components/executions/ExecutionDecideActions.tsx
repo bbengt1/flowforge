@@ -2,6 +2,11 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { AdminOverrideConfirm } from "@/components/approvals/AdminOverrideConfirm";
+import {
+  APPROVAL_ADMIN_OVERRIDE_TAG,
+  approvalIsAdminOverride,
+} from "@/lib/approval-approvers";
 import {
   approvalDecideOutcome,
   failClosedProblemTitle,
@@ -61,6 +66,10 @@ export function ExecutionDecideActions({
   const [revokedIds, setRevokedIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  const [confirming, setConfirming] = useState<{
+    approval: ApprovalRequest;
+    action: "approve" | "reject";
+  } | null>(null);
   const affordances = executionDecideAffordances({
     status,
     approvals,
@@ -74,7 +83,19 @@ export function ExecutionDecideActions({
     return null;
   }
 
+  function requestDecide(approval: ApprovalRequest, action: "approve" | "reject") {
+    if (busy) {
+      return;
+    }
+    if (approvalIsAdminOverride(approval)) {
+      setConfirming({ approval, action });
+      return;
+    }
+    void decide(approval, action);
+  }
+
   async function decide(approval: ApprovalRequest, action: "approve" | "reject") {
+    setConfirming(null);
     if (busy) {
       return;
     }
@@ -156,7 +177,7 @@ export function ExecutionDecideActions({
                   type="button"
                   data-execution-decide-action="approve"
                   disabled={busy}
-                  onClick={() => void decide(approval, "approve")}
+                  onClick={() => requestDecide(approval, "approve")}
                   className={`${FF_INBOX_PRIMARY_CLASS} ${pad}`}
                 >
                   {pendingAction === `approve:${approval.id}`
@@ -167,7 +188,7 @@ export function ExecutionDecideActions({
                   type="button"
                   data-execution-decide-action="reject"
                   disabled={busy}
-                  onClick={() => void decide(approval, "reject")}
+                  onClick={() => requestDecide(approval, "reject")}
                   className={`${FF_INBOX_GHOST_CLASS} ${pad}`}
                 >
                   {pendingAction === `reject:${approval.id}`
@@ -175,6 +196,14 @@ export function ExecutionDecideActions({
                     : EXECUTION_DECIDE_REJECT_LABEL}
                 </button>
               </>
+            ) : null}
+            {canDecide && approvalIsAdminOverride(approval) ? (
+              <span
+                data-execution-decide-override=""
+                className={`rounded-full border px-1.5 py-0.5 text-[11px] font-medium ${FF_LOUD_WARNING_CLASS}`}
+              >
+                {APPROVAL_ADMIN_OVERRIDE_TAG}
+              </span>
             ) : null}
             <Link
               href={`/approvals/${approval.id}`}
@@ -208,6 +237,13 @@ export function ExecutionDecideActions({
       ) : compact ? null : (
         <p className="sr-only">{EXECUTION_DECIDE_HELP}</p>
       )}
+      {confirming ? (
+        <AdminOverrideConfirm
+          action={confirming.action}
+          onConfirm={() => void decide(confirming.approval, confirming.action)}
+          onCancel={() => setConfirming(null)}
+        />
+      ) : null}
     </div>
   );
 }
