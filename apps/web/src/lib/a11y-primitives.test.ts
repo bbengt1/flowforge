@@ -36,6 +36,7 @@ const DIALOG_SURFACES = [
   "src/components/session/MfaStepUpHost.tsx",
   "src/components/groups/GroupNameDialog.tsx",
   "src/components/groups/AddGroupMemberDialog.tsx",
+  "src/components/approvals/AdminOverrideConfirm.tsx",
 ] as const;
 
 const FIELD_SURFACES = [
@@ -58,6 +59,7 @@ const FIELD_SURFACES = [
   "src/components/home/WorkflowHome.tsx",
   "src/components/groups/GroupNameDialog.tsx",
   "src/components/groups/AddGroupMemberDialog.tsx",
+  "src/components/workflows/ApproverPicker.tsx",
 ] as const;
 
 describe("G.3.1 Field primitive", () => {

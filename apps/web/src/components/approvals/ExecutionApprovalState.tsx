@@ -72,6 +72,7 @@ export function ExecutionApprovalState({
               <ApprovalCloseReason
                 status={item.status}
                 closeReason={item.closeReason}
+                closeReasonCause={item.closeReasonCause}
                 runStatus={executionStatus}
               />
             </div>

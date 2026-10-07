@@ -19,6 +19,10 @@ import {
   isRequesterActor,
   pendingApprovals,
 } from "@/lib/approval";
+import {
+  APPROVAL_ADMIN_OVERRIDE_TAG,
+  approvalIsAdminOverride,
+} from "@/lib/approval-approvers";
 import { isTerminalRunStatus } from "@/lib/execution";
 import {
   COLLECTION_PAGE_DEFAULT_LIMIT,
@@ -239,9 +243,18 @@ export function ApprovalList() {
                       ? " · you requested"
                       : ""}
                   </p>
+                  {approvalIsAdminOverride(item) ? (
+                    <p
+                      data-approval-override-tag=""
+                      className="mt-1 inline-block rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-950"
+                    >
+                      {APPROVAL_ADMIN_OVERRIDE_TAG}
+                    </p>
+                  ) : null}
                   <ApprovalCloseReason
                     status={item.status}
                     closeReason={item.closeReason}
+                    closeReasonCause={item.closeReasonCause}
                     runStatus={item.executionStatus}
                   />
                 </div>

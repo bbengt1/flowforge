@@ -16,6 +16,19 @@ import {
   problemDetailMatches,
 } from "./approval-contract.ts";
 import {
+  APPROVAL_NOT_TARGETED_MESSAGE,
+  NO_ELIGIBLE_DECIDER_CAUSE,
+  NO_ELIGIBLE_DECIDER_CLOSE_SENTENCE,
+  approvalCapabilityDenies,
+  approvalCapabilityNotTargeted,
+  approvalCapabilitySelfApproval,
+  approvalIsAdminOverride,
+  isApproverNotTargetedProblem,
+  parseApprovalApprovers,
+  parseApprovalCapabilities,
+  readRequirementUnresolvableCause,
+} from "./approval-approvers.ts";
+import {
   APPROVAL_ACTIONS,
   APPROVAL_CLOSE_REASONS,
   APPROVAL_INVALIDATING_KINDS,
@@ -383,7 +396,30 @@ export function parseApprovalRequest(raw: unknown): ApprovalRequest | null {
       row.permittedActions ?? row.permitted_actions,
     ),
     closeReason: readCloseReason(row.closeReason, row.close_reason),
+    ...readApprovalTargeting(row),
   };
+}
+
+function readApprovalTargeting(row: Record<string, unknown>): Pick<
+  ApprovalRequest,
+  "closeReasonCause" | "approvers" | "capabilities"
+> {
+  const out: Pick<ApprovalRequest, "closeReasonCause" | "approvers" | "capabilities"> = {};
+  const cause = readRequirementUnresolvableCause(
+    row.closeReasonDetails ?? row.close_reason_details,
+  );
+  if (cause) {
+    out.closeReasonCause = cause;
+  }
+  const approvers = parseApprovalApprovers(row.approvers);
+  if (approvers) {
+    out.approvers = approvers;
+  }
+  const capabilities = parseApprovalCapabilities(row.capabilities);
+  if (capabilities) {
+    out.capabilities = capabilities;
+  }
+  return out;
 }
 
 export function parseApprovalList(raw: unknown): ApprovalRequest[] {
@@ -820,26 +856,40 @@ export type ApprovalDecideControlsState = {
   approveDisabled: boolean;
   rejectDisabled: boolean;
   selfRequested: boolean;
+  /** Server says the caller may decide only as a workspace admin override. */
+  adminOverride: boolean;
+  /** Server says the caller is not a named approver (and not an admin). */
+  notTargeted: boolean;
 };
 
-/** Existing ApprovalDecideControls disablement. No new chrome. */
+/**
+ * Existing ApprovalDecideControls disablement. A server
+ * `capabilities.decide.allowed: false` also disables decide; a missing
+ * capability keeps the older client checks. Decide stays authoritative.
+ */
 export function approvalDecideControlsState(
   approval: ApprovalRequest,
   actorUserId: string,
   permissions?: string[] | null,
   now?: number,
 ): ApprovalDecideControlsState {
-  const selfRequested = isRequesterActor(approval.requestedBy, actorUserId);
+  const selfRequested =
+    isRequesterActor(approval.requestedBy, actorUserId) ||
+    approvalCapabilitySelfApproval(approval);
   const roleCanDecide = canDecideFromPermissions(
     permissions ?? ["approval.decide"],
   );
   const canDecide =
-    canDecideApproval(approval, now, actorUserId) && roleCanDecide;
+    canDecideApproval(approval, now, actorUserId) &&
+    roleCanDecide &&
+    !approvalCapabilityDenies(approval);
   return {
     canDecide,
     approveDisabled: !canDecide,
     rejectDisabled: !canDecide,
     selfRequested,
+    adminOverride: canDecide && approvalIsAdminOverride(approval),
+    notTargeted: !selfRequested && approvalCapabilityNotTargeted(approval),
   };
 }
 
@@ -986,6 +1036,7 @@ export function approvalCloseReasonSentence(reason: unknown): string | null {
 export function approvalClosedExplanation(input: {
   status: string;
   closeReason?: unknown;
+  closeReasonCause?: unknown;
   runStatus?: string;
 }): string | null {
   const readsClosed =
@@ -993,6 +1044,12 @@ export function approvalClosedExplanation(input: {
     (isTerminalRunStatus(input.runStatus) &&
       (input.status === "pending" || input.status === "canceled"));
   if (readsClosed) {
+    if (
+      input.closeReason === "requirement_unresolvable" &&
+      input.closeReasonCause === NO_ELIGIBLE_DECIDER_CAUSE
+    ) {
+      return NO_ELIGIBLE_DECIDER_CLOSE_SENTENCE;
+    }
     return approvalCloseReasonSentence(input.closeReason);
   }
   if (input.status === "expired") {
@@ -1155,7 +1212,9 @@ export function approvalDecideOutcome(
   if (isWrongApproverProblem(problem)) {
     return {
       kind: "wrong-approver",
-      message: APPROVAL_WRONG_APPROVER_MESSAGE,
+      message: isApproverNotTargetedProblem(problem)
+        ? APPROVAL_NOT_TARGETED_MESSAGE
+        : APPROVAL_WRONG_APPROVER_MESSAGE,
       hideControls: true,
       refetch: true,
     };
@@ -1182,6 +1241,9 @@ export function failClosedProblemTitle(problem: ProblemDetails): string {
   }
   if (problem.code === "approval_closed") {
     return "Approval already closed";
+  }
+  if (isApproverNotTargetedProblem(problem)) {
+    return "Not a named approver";
   }
   return problem.title;
 }

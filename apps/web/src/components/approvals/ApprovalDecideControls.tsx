@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ProblemBanner } from "@/components/ProblemBanner";
+import { AdminOverrideConfirm } from "@/components/approvals/AdminOverrideConfirm";
 import {
   approvalDecideControlsState,
   approvalDecideOutcome,
@@ -14,6 +15,11 @@ import {
   APPROVAL_DECIDE_HELP,
   APPROVAL_SOD_HELP,
 } from "@/lib/approval-contract";
+import {
+  APPROVAL_ADMIN_OVERRIDE_NOTE,
+  APPROVAL_ADMIN_OVERRIDE_TAG,
+  APPROVAL_NOT_TARGETED_MESSAGE,
+} from "@/lib/approval-approvers";
 import type { ApprovalRequest } from "@/lib/approval-types";
 import type { DevIdentity } from "@/lib/identity-headers";
 import type { ProblemDetails } from "@/lib/problem";
@@ -39,11 +45,9 @@ export function ApprovalDecideControls({
   const [pending, setPending] = useState<string | null>(null);
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
   const [controlsRevoked, setControlsRevoked] = useState(false);
-  const { canDecide, selfRequested } = approvalDecideControlsState(
-    approval,
-    actorUserId,
-    permissions,
-  );
+  const [confirming, setConfirming] = useState<"approve" | "reject" | null>(null);
+  const { canDecide, selfRequested, adminOverride, notTargeted } =
+    approvalDecideControlsState(approval, actorUserId, permissions);
   const outcome = problem ? approvalDecideOutcome(problem) : null;
   const offerDecision =
     approval.status === "pending" &&
@@ -51,7 +55,16 @@ export function ApprovalDecideControls({
     !controlsRevoked &&
     outcome?.hideControls !== true;
 
+  function requestDecide(action: "approve" | "reject") {
+    if (adminOverride) {
+      setConfirming(action);
+      return;
+    }
+    void decide(action);
+  }
+
   async function decide(action: "approve" | "reject") {
+    setConfirming(null);
     setPending(action);
     setProblem(null);
     const result =
@@ -107,6 +120,24 @@ export function ApprovalDecideControls({
           approve or reject it. Self-approval is forbidden.
         </p>
       ) : null}
+      {offerDecision && !selfRequested && notTargeted && !problem ? (
+        <p
+          role="status"
+          data-approval-not-targeted=""
+          className="text-sm text-[var(--ff-text)]"
+        >
+          {APPROVAL_NOT_TARGETED_MESSAGE}
+        </p>
+      ) : null}
+      {offerDecision && !selfRequested && adminOverride ? (
+        <div
+          data-approval-override=""
+          className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+        >
+          <p className="font-medium">{APPROVAL_ADMIN_OVERRIDE_TAG}</p>
+          <p className="mt-1">{APPROVAL_ADMIN_OVERRIDE_NOTE}</p>
+        </div>
+      ) : null}
       {offerDecision && !selfRequested ? (
         <label className="block text-sm">
           <span className="text-[var(--ff-muted)]">Decision note</span>
@@ -122,7 +153,7 @@ export function ApprovalDecideControls({
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => void decide("approve")}
+            onClick={() => requestDecide("approve")}
             disabled={!canDecide || pending !== null}
             className="rounded-lg border border-teal-800 bg-teal-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-900 disabled:opacity-60"
           >
@@ -130,7 +161,7 @@ export function ApprovalDecideControls({
           </button>
           <button
             type="button"
-            onClick={() => void decide("reject")}
+            onClick={() => requestDecide("reject")}
             disabled={!canDecide || pending !== null}
             className="rounded-lg border border-[var(--ff-border)] bg-[var(--ff-surface)] px-3 py-1.5 text-sm text-[var(--ff-text)] hover:bg-[var(--ff-canvas)] disabled:opacity-60"
           >
@@ -142,6 +173,13 @@ export function ApprovalDecideControls({
         <p className="text-xs text-[var(--ff-muted)]">
           {APPROVAL_SOD_HELP} {APPROVAL_DECIDE_HELP}
         </p>
+      ) : null}
+      {confirming ? (
+        <AdminOverrideConfirm
+          action={confirming}
+          onConfirm={() => void decide(confirming)}
+          onCancel={() => setConfirming(null)}
+        />
       ) : null}
     </div>
   );

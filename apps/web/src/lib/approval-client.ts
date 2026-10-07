@@ -22,6 +22,7 @@ import {
   approvalEventsPath,
   approvalPath,
   approvalsCatalogPath,
+  approverCandidatesPath,
   buildCreateApprovalsBody,
   buildDecideApprovalBody,
   buildEvaluatePolicyBody,
@@ -39,6 +40,10 @@ import {
   parsePolicyEvaluation,
   stripSecretKeys,
 } from "./approval.ts";
+import {
+  parseApproverCandidates,
+  type ApproverCandidates,
+} from "./approval-approvers.ts";
 import type {
   ApprovalCatalog,
   ApprovalEvent,
@@ -168,6 +173,43 @@ export async function getApprovalCatalog(
     requestId: result.requestId,
     catalog,
     strippedKeys,
+  };
+}
+
+export type ApproverCandidatesSuccess = {
+  ok: true;
+  statusCode: number;
+  requestId: string;
+  candidates: ApproverCandidates;
+};
+
+/**
+ * Users and groups a gate may name for `role`. Display name and UUID
+ * only. A 400 with path `role` means the role is not a workspace role.
+ */
+export async function listApproverCandidates(
+  identity: DevIdentity,
+  role: string,
+): Promise<ApproverCandidatesSuccess | ApprovalClientFailure> {
+  const path = approverCandidatesPath(role);
+  const result = await callIdentityProxy<unknown>(path, identity);
+  if (!result.ok) {
+    return failure(result);
+  }
+  const candidates = parseApproverCandidates(stripSecretKeys(result.data, []));
+  if (!candidates) {
+    return malformed(
+      result.requestId,
+      result.statusCode,
+      path.split("?")[0] ?? path,
+      "Approver candidates were missing users and groups.",
+    );
+  }
+  return {
+    ok: true,
+    statusCode: result.statusCode,
+    requestId: result.requestId,
+    candidates,
   };
 }
 

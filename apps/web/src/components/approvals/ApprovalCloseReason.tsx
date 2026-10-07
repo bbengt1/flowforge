@@ -3,6 +3,7 @@ import { approvalClosedExplanation } from "@/lib/approval";
 type ApprovalCloseReasonProps = {
   status: string;
   closeReason?: string;
+  closeReasonCause?: string;
   runStatus?: string;
 };
 
@@ -10,9 +11,15 @@ type ApprovalCloseReasonProps = {
 export function ApprovalCloseReason({
   status,
   closeReason,
+  closeReasonCause,
   runStatus,
 }: ApprovalCloseReasonProps) {
-  const sentence = approvalClosedExplanation({ status, closeReason, runStatus });
+  const sentence = approvalClosedExplanation({
+    status,
+    closeReason,
+    closeReasonCause,
+    runStatus,
+  });
   if (!sentence) {
     return null;
   }

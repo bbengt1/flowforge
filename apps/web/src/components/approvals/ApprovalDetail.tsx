@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { ApprovalApproversList } from "@/components/approvals/ApprovalApproversList";
 import { ApprovalBindingSnapshot } from "@/components/approvals/ApprovalBindingSnapshot";
 import { ApprovalCloseReason } from "@/components/approvals/ApprovalCloseReason";
 import { ApprovalValidityBanner } from "@/components/approvals/ApprovalValidityBanner";
@@ -137,6 +138,7 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
             <ApprovalCloseReason
               status={approval.status}
               closeReason={approval.closeReason}
+              closeReasonCause={approval.closeReasonCause}
             />
             <h2 className="text-xl font-semibold">
               {approval.workflowName || approval.binding.operation}
@@ -149,6 +151,7 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
 
           <ApprovalValidityBanner approval={approval} />
           <ApprovalBindingSnapshot binding={approval.binding} />
+          <ApprovalApproversList approvers={approval.approvers} />
 
           {approval.validity.currentBinding ? (
             <ApprovalBindingSnapshot

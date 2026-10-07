@@ -14,6 +14,7 @@ import {
 import { evaluatePolicyForRun, listExecutionApprovals } from "@/lib/approval-client";
 import type { ApprovalRequest, PolicyEvaluation } from "@/lib/approval-types";
 import { shouldBlockRun } from "@/lib/approval";
+import { ApproverPublishErrors } from "@/components/workflows/ApproverPublishErrors";
 import { ActionLibrary } from "@/components/workflows/ActionLibrary";
 import { ActionWizard } from "@/components/workflows/ActionWizard";
 import { DraftConflictBanner } from "@/components/workflows/DraftConflictBanner";
@@ -2319,6 +2320,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
               />
             ) : null}
             {bannerProblem ? <ProblemBanner problem={problem} /> : null}
+            {bannerProblem ? <ApproverPublishErrors problem={problem} /> : null}
             {dirty && workflow ? (
               <p className="text-xs text-fg">
                 Publish uses the last saved draft. Save before publishing.
