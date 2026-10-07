@@ -398,6 +398,21 @@ x-flowforge-routes:
     auth: authenticated
     proxy: none
     pattern: /scim/v2/Groups/{id}
+  - method: GET
+    path: /workspace/scim-tokens
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/scim-tokens
+  - method: POST
+    path: /workspace/scim-tokens
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/scim-tokens
+  - method: DELETE
+    path: /workspace/scim-tokens/{tokenId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/scim-tokens/{tokenId}
   - method: POST
     path: /machine/token
     auth: public
@@ -2512,313 +2527,458 @@ paths:
         description: "Mounted at the origin root, outside the /api/v1 prefix."
     get:
       operationId: getScimV2ServiceProviderConfig
-      summary: GET /scim/v2/ServiceProviderConfig
+      summary: SCIM GET /ServiceProviderConfig
       description: |
-        Generated from the route table (GET /scim/v2/ServiceProviderConfig).
+        SCIM 2.0 bearer door (RFC 7644). Errors are application/scim+json SCIM Error documents, not problem+json. The bearer is never logged, audited, or echoed.
+        Two bearers are accepted. The instance token (SCIM_BEARER_TOKEN) is instance-wide and behaves as before. A workspace token (ffscim_ prefix, created under /api/v1/workspace/scim-tokens) resolves to its one workspace, and every read and write for it runs in that workspace's scoped transaction (FORCE RLS).
+        A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when the instance has no SCIM issuer.
+        Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token.
+        Same document for both token kinds.
         Auth class: authenticated. Identity proxy: none.
-        Responses never include secrets, credentials, tokens, private keys, or vault material.
-        Vault references are display name and UUID only.
       responses:
         "200":
-          description: Success
+          description: Success.
+        "400":
+          description: SCIM error (invalid request, invalidValue, or unsupported filter).
         "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "405":
-          $ref: "#/components/responses/MethodNotAllowed"
-        "500":
-          $ref: "#/components/responses/InternalError"
+          description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.
+        "503":
+          description: SCIM error. SCIM is not configured or the directory is unavailable.
   /scim/v2/Schemas:
     servers:
       - url: "/"
         description: "Mounted at the origin root, outside the /api/v1 prefix."
     get:
       operationId: getScimV2Schemas
-      summary: GET /scim/v2/Schemas
+      summary: SCIM GET /Schemas
       description: |
-        Generated from the route table (GET /scim/v2/Schemas).
+        SCIM 2.0 bearer door (RFC 7644). Errors are application/scim+json SCIM Error documents, not problem+json. The bearer is never logged, audited, or echoed.
+        Two bearers are accepted. The instance token (SCIM_BEARER_TOKEN) is instance-wide and behaves as before. A workspace token (ffscim_ prefix, created under /api/v1/workspace/scim-tokens) resolves to its one workspace, and every read and write for it runs in that workspace's scoped transaction (FORCE RLS).
+        A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when the instance has no SCIM issuer.
+        Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token.
+        Same document for both token kinds.
         Auth class: authenticated. Identity proxy: none.
-        Responses never include secrets, credentials, tokens, private keys, or vault material.
-        Vault references are display name and UUID only.
       responses:
         "200":
-          description: Success
+          description: Success.
+        "400":
+          description: SCIM error (invalid request, invalidValue, or unsupported filter).
         "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "405":
-          $ref: "#/components/responses/MethodNotAllowed"
-        "500":
-          $ref: "#/components/responses/InternalError"
+          description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.
+        "503":
+          description: SCIM error. SCIM is not configured or the directory is unavailable.
   /scim/v2/ResourceTypes:
     servers:
       - url: "/"
         description: "Mounted at the origin root, outside the /api/v1 prefix."
     get:
       operationId: getScimV2ResourceTypes
-      summary: GET /scim/v2/ResourceTypes
+      summary: SCIM GET /ResourceTypes
       description: |
-        Generated from the route table (GET /scim/v2/ResourceTypes).
+        SCIM 2.0 bearer door (RFC 7644). Errors are application/scim+json SCIM Error documents, not problem+json. The bearer is never logged, audited, or echoed.
+        Two bearers are accepted. The instance token (SCIM_BEARER_TOKEN) is instance-wide and behaves as before. A workspace token (ffscim_ prefix, created under /api/v1/workspace/scim-tokens) resolves to its one workspace, and every read and write for it runs in that workspace's scoped transaction (FORCE RLS).
+        A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when the instance has no SCIM issuer.
+        Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token.
+        Same document for both token kinds.
         Auth class: authenticated. Identity proxy: none.
-        Responses never include secrets, credentials, tokens, private keys, or vault material.
-        Vault references are display name and UUID only.
       responses:
         "200":
-          description: Success
+          description: Success.
+        "400":
+          description: SCIM error (invalid request, invalidValue, or unsupported filter).
         "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "405":
-          $ref: "#/components/responses/MethodNotAllowed"
-        "500":
-          $ref: "#/components/responses/InternalError"
+          description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.
+        "503":
+          description: SCIM error. SCIM is not configured or the directory is unavailable.
   /scim/v2/Users:
     servers:
       - url: "/"
         description: "Mounted at the origin root, outside the /api/v1 prefix."
     get:
       operationId: getScimV2Users
-      summary: GET /scim/v2/Users
+      summary: SCIM GET /Users
       description: |
-        Generated from the route table (GET /scim/v2/Users).
+        SCIM 2.0 bearer door (RFC 7644). Errors are application/scim+json SCIM Error documents, not problem+json. The bearer is never logged, audited, or echoed.
+        Two bearers are accepted. The instance token (SCIM_BEARER_TOKEN) is instance-wide and behaves as before. A workspace token (ffscim_ prefix, created under /api/v1/workspace/scim-tokens) resolves to its one workspace, and every read and write for it runs in that workspace's scoped transaction (FORCE RLS).
+        A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when the instance has no SCIM issuer.
+        Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token.
+        Instance token: every active directory user, as before.
+        Workspace token: only users linked to this workspace (scim_workspace_users), with this workspace's userName and externalId. filter supports userName, externalId, and id, all against this workspace's links.
+        active is true only when the account is active and the user holds a role binding in this workspace.
         Auth class: authenticated. Identity proxy: none.
-        Responses never include secrets, credentials, tokens, private keys, or vault material.
-        Vault references are display name and UUID only.
       responses:
         "200":
-          description: Success
+          description: Success.
+        "400":
+          description: SCIM error (invalid request, invalidValue, or unsupported filter).
         "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "405":
-          $ref: "#/components/responses/MethodNotAllowed"
-        "500":
-          $ref: "#/components/responses/InternalError"
+          description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.
+        "503":
+          description: SCIM error. SCIM is not configured or the directory is unavailable.
     post:
       operationId: postScimV2Users
-      summary: POST /scim/v2/Users
+      summary: SCIM POST /Users
       description: |
-        Generated from the route table (POST /scim/v2/Users).
+        SCIM 2.0 bearer door (RFC 7644). Errors are application/scim+json SCIM Error documents, not problem+json. The bearer is never logged, audited, or echoed.
+        Two bearers are accepted. The instance token (SCIM_BEARER_TOKEN) is instance-wide and behaves as before. A workspace token (ffscim_ prefix, created under /api/v1/workspace/scim-tokens) resolves to its one workspace, and every read and write for it runs in that workspace's scoped transaction (FORCE RLS).
+        A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when the instance has no SCIM issuer.
+        Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token.
+        Instance token: unchanged.
+        Workspace token: find or create the user by SCIM issuer plus subject (externalId, else userName), link it to this workspace with the posted userName and externalId, and add SCIM_DEFAULT_ROLE here (existing roles here are kept). 201 with the resource.
+        A user who already exists and is globally disabled is linked and added but stays disabled: 201 with active false. active false in the body adds nothing beyond the link. The account is never enabled by a workspace token.
+        409 uniqueness when this user is already linked here, or when the userName or externalId is already linked here to a different user. Uniqueness is per workspace.
+        Writes audit action scim_user.workspace_add in this workspace.
         Auth class: authenticated. Identity proxy: none.
-        Responses never include secrets, credentials, tokens, private keys, or vault material.
-        Vault references are display name and UUID only.
       responses:
-        "200":
-          description: Success
+        "201":
+          description: Created or linked.
+        "400":
+          description: SCIM error (invalid request, invalidValue, or unsupported filter).
         "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "405":
-          $ref: "#/components/responses/MethodNotAllowed"
-        "500":
-          $ref: "#/components/responses/InternalError"
+          description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.
+        "409":
+          description: SCIM error. Uniqueness conflict, or the change would remove the last workspace admin.
+        "503":
+          description: SCIM error. SCIM is not configured or the directory is unavailable.
   /scim/v2/Users/{id}:
     servers:
       - url: "/"
         description: "Mounted at the origin root, outside the /api/v1 prefix."
     get:
       operationId: getScimV2UsersId
-      summary: GET /scim/v2/Users/{id}
+      summary: SCIM GET /Users/{id}
       description: |
-        Generated from the route table (GET /scim/v2/Users/{id}).
+        SCIM 2.0 bearer door (RFC 7644). Errors are application/scim+json SCIM Error documents, not problem+json. The bearer is never logged, audited, or echoed.
+        Two bearers are accepted. The instance token (SCIM_BEARER_TOKEN) is instance-wide and behaves as before. A workspace token (ffscim_ prefix, created under /api/v1/workspace/scim-tokens) resolves to its one workspace, and every read and write for it runs in that workspace's scoped transaction (FORCE RLS).
+        A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when the instance has no SCIM issuer.
+        Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token.
+        Workspace token: 404 unless the user is linked to this workspace, including any user in another workspace.
         Auth class: authenticated. Identity proxy: none.
-        Responses never include secrets, credentials, tokens, private keys, or vault material.
-        Vault references are display name and UUID only.
       responses:
         "200":
-          description: Success
+          description: Success.
+        "400":
+          description: SCIM error (invalid request, invalidValue, or unsupported filter).
         "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "405":
-          $ref: "#/components/responses/MethodNotAllowed"
-        "500":
-          $ref: "#/components/responses/InternalError"
+          description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.
+        "404":
+          description: SCIM error. Not found, or not visible to this workspace token.
+        "503":
+          description: SCIM error. SCIM is not configured or the directory is unavailable.
     put:
       operationId: putScimV2UsersId
-      summary: PUT /scim/v2/Users/{id}
+      summary: SCIM PUT /Users/{id}
       description: |
-        Generated from the route table (PUT /scim/v2/Users/{id}).
+        SCIM 2.0 bearer door (RFC 7644). Errors are application/scim+json SCIM Error documents, not problem+json. The bearer is never logged, audited, or echoed.
+        Two bearers are accepted. The instance token (SCIM_BEARER_TOKEN) is instance-wide and behaves as before. A workspace token (ffscim_ prefix, created under /api/v1/workspace/scim-tokens) resolves to its one workspace, and every read and write for it runs in that workspace's scoped transaction (FORCE RLS).
+        A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when the instance has no SCIM issuer.
+        Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token.
+        Instance token: unchanged, including global disable and session revoke on active false.
+        Workspace token: 404 unless linked here. active false removes the user from this workspace only (see DELETE) but keeps the link, so the resource stays visible with active false. active true is ignored: it never enables the account and never restores the membership.
+        userName, externalId, displayName, and name changes are ignored. The response shows the current values, and the ignored change writes audit action scim_user.change_ignored with the attribute names only.
         Auth class: authenticated. Identity proxy: none.
-        Responses never include secrets, credentials, tokens, private keys, or vault material.
-        Vault references are display name and UUID only.
       responses:
         "200":
-          description: Success
+          description: Success.
+        "400":
+          description: SCIM error (invalid request, invalidValue, or unsupported filter).
         "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "405":
-          $ref: "#/components/responses/MethodNotAllowed"
-        "500":
-          $ref: "#/components/responses/InternalError"
+          description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.
+        "404":
+          description: SCIM error. Not found, or not visible to this workspace token.
+        "409":
+          description: SCIM error. Uniqueness conflict, or the change would remove the last workspace admin.
+        "503":
+          description: SCIM error. SCIM is not configured or the directory is unavailable.
     patch:
       operationId: patchScimV2UsersId
-      summary: PATCH /scim/v2/Users/{id}
+      summary: SCIM PATCH /Users/{id}
       description: |
-        Generated from the route table (PATCH /scim/v2/Users/{id}).
+        SCIM 2.0 bearer door (RFC 7644). Errors are application/scim+json SCIM Error documents, not problem+json. The bearer is never logged, audited, or echoed.
+        Two bearers are accepted. The instance token (SCIM_BEARER_TOKEN) is instance-wide and behaves as before. A workspace token (ffscim_ prefix, created under /api/v1/workspace/scim-tokens) resolves to its one workspace, and every read and write for it runs in that workspace's scoped transaction (FORCE RLS).
+        A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when the instance has no SCIM issuer.
+        Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token.
+        Same rules as PUT for each token kind.
         Auth class: authenticated. Identity proxy: none.
-        Responses never include secrets, credentials, tokens, private keys, or vault material.
-        Vault references are display name and UUID only.
       responses:
         "200":
-          description: Success
+          description: Success.
+        "400":
+          description: SCIM error (invalid request, invalidValue, or unsupported filter).
         "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "405":
-          $ref: "#/components/responses/MethodNotAllowed"
-        "500":
-          $ref: "#/components/responses/InternalError"
+          description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.
+        "404":
+          description: SCIM error. Not found, or not visible to this workspace token.
+        "409":
+          description: SCIM error. Uniqueness conflict, or the change would remove the last workspace admin.
+        "503":
+          description: SCIM error. SCIM is not configured or the directory is unavailable.
     delete:
       operationId: deleteScimV2UsersId
-      summary: DELETE /scim/v2/Users/{id}
+      summary: SCIM DELETE /Users/{id}
       description: |
-        Generated from the route table (DELETE /scim/v2/Users/{id}).
+        SCIM 2.0 bearer door (RFC 7644). Errors are application/scim+json SCIM Error documents, not problem+json. The bearer is never logged, audited, or echoed.
+        Two bearers are accepted. The instance token (SCIM_BEARER_TOKEN) is instance-wide and behaves as before. A workspace token (ffscim_ prefix, created under /api/v1/workspace/scim-tokens) resolves to its one workspace, and every read and write for it runs in that workspace's scoped transaction (FORCE RLS).
+        A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when the instance has no SCIM issuer.
+        Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token.
+        Instance token: unchanged (global disable, session revoke, removal from every workspace).
+        Workspace token: 404 unless linked here. In one transaction, deletes the user's role bindings and group rows in this workspace and the link. Never disables the account, revokes sessions, or touches another workspace.
+        Removing the last workspace admin is 409 and changes nothing.
+        Writes audit action scim_user.workspace_remove in this workspace.
         Auth class: authenticated. Identity proxy: none.
-        Responses never include secrets, credentials, tokens, private keys, or vault material.
-        Vault references are display name and UUID only.
       responses:
-        "200":
-          description: Success
+        "204":
+          description: Removed. No body.
+        "400":
+          description: SCIM error (invalid request, invalidValue, or unsupported filter).
         "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "405":
-          $ref: "#/components/responses/MethodNotAllowed"
-        "500":
-          $ref: "#/components/responses/InternalError"
+          description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.
+        "404":
+          description: SCIM error. Not found, or not visible to this workspace token.
+        "409":
+          description: SCIM error. Uniqueness conflict, or the change would remove the last workspace admin.
+        "503":
+          description: SCIM error. SCIM is not configured or the directory is unavailable.
   /scim/v2/Groups:
     servers:
       - url: "/"
         description: "Mounted at the origin root, outside the /api/v1 prefix."
     get:
       operationId: getScimV2Groups
-      summary: GET /scim/v2/Groups
+      summary: SCIM GET /Groups
       description: |
-        Generated from the route table (GET /scim/v2/Groups).
+        SCIM 2.0 bearer door (RFC 7644). Errors are application/scim+json SCIM Error documents, not problem+json. The bearer is never logged, audited, or echoed.
+        Two bearers are accepted. The instance token (SCIM_BEARER_TOKEN) is instance-wide and behaves as before. A workspace token (ffscim_ prefix, created under /api/v1/workspace/scim-tokens) resolves to its one workspace, and every read and write for it runs in that workspace's scoped transaction (FORCE RLS).
+        A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when the instance has no SCIM issuer.
+        Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token.
+        Instance token: every active workspace is a Group, as before. filter supports displayName, externalId (the workbench key), and id.
+        Workspace token: exactly one Group, this workspace. Its members are the users linked here who hold a role binding here. Filters apply to that one Group.
         Auth class: authenticated. Identity proxy: none.
-        Responses never include secrets, credentials, tokens, private keys, or vault material.
-        Vault references are display name and UUID only.
       responses:
         "200":
-          description: Success
+          description: Success.
+        "400":
+          description: SCIM error (invalid request, invalidValue, or unsupported filter).
         "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "405":
-          $ref: "#/components/responses/MethodNotAllowed"
-        "500":
-          $ref: "#/components/responses/InternalError"
+          description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.
+        "503":
+          description: SCIM error. SCIM is not configured or the directory is unavailable.
     post:
       operationId: postScimV2Groups
-      summary: POST /scim/v2/Groups
+      summary: SCIM POST /Groups
       description: |
-        Generated from the route table (POST /scim/v2/Groups).
+        SCIM 2.0 bearer door (RFC 7644). Errors are application/scim+json SCIM Error documents, not problem+json. The bearer is never logged, audited, or echoed.
+        Two bearers are accepted. The instance token (SCIM_BEARER_TOKEN) is instance-wide and behaves as before. A workspace token (ffscim_ prefix, created under /api/v1/workspace/scim-tokens) resolves to its one workspace, and every read and write for it runs in that workspace's scoped transaction (FORCE RLS).
+        A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when the instance has no SCIM issuer.
+        Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token.
+        400 for both token kinds: Groups are existing workspaces.
         Auth class: authenticated. Identity proxy: none.
-        Responses never include secrets, credentials, tokens, private keys, or vault material.
-        Vault references are display name and UUID only.
       responses:
         "200":
-          description: Success
+          description: Success.
+        "400":
+          description: SCIM error (invalid request, invalidValue, or unsupported filter).
         "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "405":
-          $ref: "#/components/responses/MethodNotAllowed"
-        "500":
-          $ref: "#/components/responses/InternalError"
+          description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.
+        "409":
+          description: SCIM error. Uniqueness conflict, or the change would remove the last workspace admin.
+        "503":
+          description: SCIM error. SCIM is not configured or the directory is unavailable.
   /scim/v2/Groups/{id}:
     servers:
       - url: "/"
         description: "Mounted at the origin root, outside the /api/v1 prefix."
     get:
       operationId: getScimV2GroupsId
-      summary: GET /scim/v2/Groups/{id}
+      summary: SCIM GET /Groups/{id}
       description: |
-        Generated from the route table (GET /scim/v2/Groups/{id}).
+        SCIM 2.0 bearer door (RFC 7644). Errors are application/scim+json SCIM Error documents, not problem+json. The bearer is never logged, audited, or echoed.
+        Two bearers are accepted. The instance token (SCIM_BEARER_TOKEN) is instance-wide and behaves as before. A workspace token (ffscim_ prefix, created under /api/v1/workspace/scim-tokens) resolves to its one workspace, and every read and write for it runs in that workspace's scoped transaction (FORCE RLS).
+        A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when the instance has no SCIM issuer.
+        Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token.
+        Workspace token: 404 for any id other than this workspace.
         Auth class: authenticated. Identity proxy: none.
-        Responses never include secrets, credentials, tokens, private keys, or vault material.
-        Vault references are display name and UUID only.
       responses:
         "200":
-          description: Success
+          description: Success.
+        "400":
+          description: SCIM error (invalid request, invalidValue, or unsupported filter).
         "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "405":
-          $ref: "#/components/responses/MethodNotAllowed"
-        "500":
-          $ref: "#/components/responses/InternalError"
+          description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.
+        "404":
+          description: SCIM error. Not found, or not visible to this workspace token.
+        "503":
+          description: SCIM error. SCIM is not configured or the directory is unavailable.
     put:
       operationId: putScimV2GroupsId
-      summary: PUT /scim/v2/Groups/{id}
+      summary: SCIM PUT /Groups/{id}
       description: |
-        Generated from the route table (PUT /scim/v2/Groups/{id}).
+        SCIM 2.0 bearer door (RFC 7644). Errors are application/scim+json SCIM Error documents, not problem+json. The bearer is never logged, audited, or echoed.
+        Two bearers are accepted. The instance token (SCIM_BEARER_TOKEN) is instance-wide and behaves as before. A workspace token (ffscim_ prefix, created under /api/v1/workspace/scim-tokens) resolves to its one workspace, and every read and write for it runs in that workspace's scoped transaction (FORCE RLS).
+        A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when the instance has no SCIM issuer.
+        Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token.
+        400 for both token kinds. Patch members to change membership.
         Auth class: authenticated. Identity proxy: none.
-        Responses never include secrets, credentials, tokens, private keys, or vault material.
-        Vault references are display name and UUID only.
       responses:
         "200":
-          description: Success
+          description: Success.
+        "400":
+          description: SCIM error (invalid request, invalidValue, or unsupported filter).
         "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "405":
-          $ref: "#/components/responses/MethodNotAllowed"
-        "500":
-          $ref: "#/components/responses/InternalError"
+          description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.
+        "404":
+          description: SCIM error. Not found, or not visible to this workspace token.
+        "409":
+          description: SCIM error. Uniqueness conflict, or the change would remove the last workspace admin.
+        "503":
+          description: SCIM error. SCIM is not configured or the directory is unavailable.
     patch:
       operationId: patchScimV2GroupsId
-      summary: PATCH /scim/v2/Groups/{id}
+      summary: SCIM PATCH /Groups/{id}
       description: |
-        Generated from the route table (PATCH /scim/v2/Groups/{id}).
+        SCIM 2.0 bearer door (RFC 7644). Errors are application/scim+json SCIM Error documents, not problem+json. The bearer is never logged, audited, or echoed.
+        Two bearers are accepted. The instance token (SCIM_BEARER_TOKEN) is instance-wide and behaves as before. A workspace token (ffscim_ prefix, created under /api/v1/workspace/scim-tokens) resolves to its one workspace, and every read and write for it runs in that workspace's scoped transaction (FORCE RLS).
+        A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when the instance has no SCIM issuer.
+        Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token.
+        Instance token: unchanged.
+        Workspace token: 404 for any id other than this workspace. add takes users linked to this workspace only; any other id is 400 invalidValue and the whole patch changes nothing. add grants SCIM_DEFAULT_ROLE here. remove is the same as the workspace-token user DELETE without deleting the link, including the last-admin 409.
         Auth class: authenticated. Identity proxy: none.
-        Responses never include secrets, credentials, tokens, private keys, or vault material.
-        Vault references are display name and UUID only.
       responses:
         "200":
-          description: Success
+          description: Success.
+        "400":
+          description: SCIM error (invalid request, invalidValue, or unsupported filter).
         "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "405":
-          $ref: "#/components/responses/MethodNotAllowed"
-        "500":
-          $ref: "#/components/responses/InternalError"
+          description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.
+        "404":
+          description: SCIM error. Not found, or not visible to this workspace token.
+        "409":
+          description: SCIM error. Uniqueness conflict, or the change would remove the last workspace admin.
+        "503":
+          description: SCIM error. SCIM is not configured or the directory is unavailable.
     delete:
       operationId: deleteScimV2GroupsId
-      summary: DELETE /scim/v2/Groups/{id}
+      summary: SCIM DELETE /Groups/{id}
       description: |
-        Generated from the route table (DELETE /scim/v2/Groups/{id}).
+        SCIM 2.0 bearer door (RFC 7644). Errors are application/scim+json SCIM Error documents, not problem+json. The bearer is never logged, audited, or echoed.
+        Two bearers are accepted. The instance token (SCIM_BEARER_TOKEN) is instance-wide and behaves as before. A workspace token (ffscim_ prefix, created under /api/v1/workspace/scim-tokens) resolves to its one workspace, and every read and write for it runs in that workspace's scoped transaction (FORCE RLS).
+        A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when the instance has no SCIM issuer.
+        Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token.
+        400 for both token kinds: workspaces cannot be deleted here.
         Auth class: authenticated. Identity proxy: none.
-        Responses never include secrets, credentials, tokens, private keys, or vault material.
-        Vault references are display name and UUID only.
       responses:
         "200":
-          description: Success
+          description: Success.
+        "400":
+          description: SCIM error (invalid request, invalidValue, or unsupported filter).
+        "401":
+          description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.
+        "404":
+          description: SCIM error. Not found, or not visible to this workspace token.
+        "409":
+          description: SCIM error. Uniqueness conflict, or the change would remove the last workspace admin.
+        "503":
+          description: SCIM error. SCIM is not configured or the directory is unavailable.
+  /workspace/scim-tokens:
+    get:
+      operationId: getWorkspaceScimTokens
+      summary: List SCIM workspace tokens
+      description: |
+        Lists the workspace's active (not revoked) SCIM tokens, newest first. Not paged: a workspace has at most maxActive (2) active tokens. Revoked tokens are never listed.
+        Each item is display name, UUID, prefix, createdBy (display name and UUID; null when the creator no longer exists), createdAt, and lastUsedAt. The token itself and its hash are never returned after creation.
+        configured is false when the instance has no SCIM issuer (SCIM_ISSUER, else OIDC_ISSUER); creating a token is then 503 scim_not_configured.
+        Requires workspace.administer and MFA step-up on a local-login or OIDC session (403 mfa-required until TOTP is verified in this session). An embed session is refused with 403 forbidden before permissions are read. There is no /embed/v1 surface for SCIM tokens. The workspace is the server-derived workspace for the request, never a body field.
+        Auth class: authenticated. Identity proxy: browser.
+        Only the create response includes a token, once. No other response includes secrets, credentials, tokens, private keys, or vault material.
+      responses:
+        "200":
+          description: Active tokens.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScimTokenList"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          $ref: "#/components/responses/ScimTokenAdminForbidden"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "500":
           $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+    post:
+      operationId: postWorkspaceScimTokens
+      summary: Create a SCIM workspace token
+      description: |
+        Mints a bearer for this workspace's IdP. The response is the only place the plaintext token appears: token is ffscim_ followed by 43 base64url characters (32 random bytes). The server stores only the SHA-256 of the whole token and sets Cache-Control no-store. The token is never logged or audited.
+        displayName is trimmed and must be 1-128 characters; otherwise 400 invalid-request with errors[].path displayName. Names need not be unique.
+        At most two tokens per workspace are active so an IdP can rotate: create the second, switch the IdP, revoke the first. A third create is 409 scim_token_limit, including a create that loses a race for the last slot.
+        503 scim_not_configured when the instance has no SCIM issuer. Nothing is stored.
+        Writes audit action scim_token.create (resource scim_token, details displayName) in the same transaction.
+        Requires workspace.administer and MFA step-up on a local-login or OIDC session (403 mfa-required until TOTP is verified in this session). An embed session is refused with 403 forbidden before permissions are read. There is no /embed/v1 surface for SCIM tokens. The workspace is the server-derived workspace for the request, never a body field.
+        Auth class: authenticated. Identity proxy: browser.
+        Only the create response includes a token, once. No other response includes secrets, credentials, tokens, private keys, or vault material.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateScimTokenRequest"
+      responses:
+        "201":
+          description: Created. The body carries the plaintext token once.
+          headers:
+            Cache-Control:
+              description: Always no-store.
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScimTokenCreated"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ScimTokenAdminForbidden"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "409":
+          $ref: "#/components/responses/ScimTokenLimit"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ScimTokenCreateUnavailable"
+  /workspace/scim-tokens/{tokenId}:
+    delete:
+      operationId: deleteWorkspaceScimTokensTokenId
+      summary: Revoke a SCIM workspace token
+      description: |
+        Sets revoked_at. The row is kept for audit and never listed again. From the next request on, the token is 401 at /scim/v2. Requests already past authentication finish. Users and memberships it provisioned are unchanged.
+        Idempotent: revoking a token that is already revoked is 204 and writes no second audit row. An unknown id, another workspace's token, or a value that is not a UUID is 404, after the permission and step-up checks.
+        Revoking one of two active tokens leaves the other working.
+        Writes audit action scim_token.revoke (resource scim_token, details displayName) in the same transaction.
+        Requires workspace.administer and MFA step-up on a local-login or OIDC session (403 mfa-required until TOTP is verified in this session). An embed session is refused with 403 forbidden before permissions are read. There is no /embed/v1 surface for SCIM tokens. The workspace is the server-derived workspace for the request, never a body field.
+        Auth class: authenticated. Identity proxy: browser.
+        Only the create response includes a token, once. No other response includes secrets, credentials, tokens, private keys, or vault material.
+      parameters:
+        - $ref: "#/components/parameters/ScimTokenID"
+      responses:
+        "204":
+          description: Revoked. No body.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ScimTokenAdminForbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
   /machine/token:
     post:
       operationId: postMachineToken
@@ -6091,6 +6251,14 @@ components:
       schema:
         type: string
         format: uuid
+    ScimTokenID:
+      name: tokenId
+      in: path
+      required: true
+      description: SCIM workspace token id. Unknown ids, ids from another workspace, and values that are not a UUID are 404.
+      schema:
+        type: string
+        format: uuid
     WorkspaceGroupUserID:
       name: userId
       in: path
@@ -7309,6 +7477,8 @@ components:
             - group_name_taken
             - group_member_not_in_workspace
             - approver_not_targeted
+            - scim_token_limit
+            - scim_not_configured
         request_id:
           type: string
         reason:
@@ -9575,6 +9745,91 @@ components:
           type: string
           format: uuid
           description: Must be an active user with a role binding in this workspace.
+    ScimTokenCreator:
+      type: object
+      required: [id, displayName]
+      description: Display name and UUID only. No email.
+      properties:
+        id: {type: string, format: uuid}
+        displayName: {type: string}
+    ScimToken:
+      type: object
+      description: >
+        One active SCIM workspace token. Never includes the token or its
+        hash. Revoked tokens are not returned.
+      required: [id, displayName, prefix, createdBy, createdAt, lastUsedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 128
+        prefix:
+          type: string
+          enum: [ffscim_]
+          description: >
+            The fixed, non-secret token prefix. Every workspace token starts
+            with it. Tell tokens apart by displayName and createdAt.
+        createdBy:
+          description: The administrator who created the token. null when that user no longer exists.
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ScimTokenCreator"
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            Last successful SCIM request with this token. null until first
+            use. Updated at most once a minute per token, so it can lag by
+            up to 60 seconds.
+    ScimTokenList:
+      type: object
+      required: [items, maxActive, configured]
+      properties:
+        items:
+          type: array
+          description: Active tokens, newest first. At most maxActive items.
+          maxItems: 2
+          items:
+            $ref: "#/components/schemas/ScimToken"
+        maxActive:
+          type: integer
+          enum: [2]
+          description: Active tokens a workspace may hold. Create is 409 scim_token_limit at this count.
+        configured:
+          type: boolean
+          description: >
+            false when the instance has no SCIM issuer (SCIM_ISSUER, else
+            OIDC_ISSUER). Create is then 503 scim_not_configured. Existing
+            tokens still list.
+    ScimTokenCreated:
+      allOf:
+        - $ref: "#/components/schemas/ScimToken"
+        - type: object
+          required: [token]
+          properties:
+            token:
+              type: string
+              pattern: "^ffscim_[A-Za-z0-9_-]{43}$"
+              description: >
+                The plaintext bearer. Returned only here, once. The server
+                keeps only its SHA-256 and cannot show it again; a lost
+                token is revoked and replaced. Use it as
+                Authorization: Bearer for /scim/v2.
+    CreateScimTokenRequest:
+      type: object
+      required: [displayName]
+      additionalProperties: false
+      properties:
+        displayName:
+          type: string
+          description: Trimmed before validation. Empty or longer than 128 characters is 400 invalid-request with errors[].path displayName.
     MembershipList:
       type: object
       required: [items]
@@ -10132,6 +10387,59 @@ components:
                 instance: /api/v1/approvals/00000000-0000-4000-8000-000000000001/decide
                 code: approver_not_targeted
                 request_id: 0123456789abcdef0123456789abcdef
+    ScimTokenAdminForbidden:
+      description: >
+        forbidden: the caller lacks workspace.administer in this workspace,
+        or is an embed session. mfa-required: a local-login or OIDC session
+        has not enrolled or not verified TOTP in this session.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            forbidden:
+              summary: Not a workspace administrator, or an embed session
+              value:
+                type: urn:flowforge:problem:forbidden
+                title: Forbidden
+                status: 403
+                detail: You are not authorized to perform this action.
+                instance: /api/v1/workspace/scim-tokens
+                code: forbidden
+                request_id: 0123456789abcdef0123456789abcdef
+            mfaRequired:
+              summary: TOTP step-up required
+              value:
+                type: urn:flowforge:problem:mfa-required
+                title: MFA Required
+                status: 403
+                detail: Verify MFA before using this permission.
+                instance: /api/v1/workspace/scim-tokens
+                code: mfa-required
+                request_id: 0123456789abcdef0123456789abcdef
+    ScimTokenLimit:
+      description: >
+        The workspace already has two active SCIM tokens. Revoke one first.
+        A create that loses a race for the last slot gets the same answer.
+        Nothing is stored.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:scim_token_limit
+            title: Conflict
+            status: 409
+            detail: This workspace already has 2 active SCIM tokens. Revoke one before creating another.
+            instance: /api/v1/workspace/scim-tokens
+            code: scim_token_limit
+            request_id: 0123456789abcdef0123456789abcdef
     GroupNameTaken:
       description: >
         Another group in this workspace already has this display name,
@@ -10421,3 +10729,37 @@ components:
             instance: /api/v1/credentials
             code: dependency-unavailable
             request_id: 0123456789abcdef0123456789abcdef
+    ScimTokenCreateUnavailable:
+      description: >
+        scim_not_configured: the instance has no SCIM issuer (SCIM_ISSUER,
+        else OIDC_ISSUER), so a token could not provision anyone. A platform
+        operator must configure it. dependency-unavailable: the store is not
+        reachable. Nothing is stored in either case.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            notConfigured:
+              summary: No SCIM issuer on this instance
+              value:
+                type: urn:flowforge:problem:scim_not_configured
+                title: Service Unavailable
+                status: 503
+                detail: SCIM is not configured on this instance.
+                instance: /api/v1/workspace/scim-tokens
+                code: scim_not_configured
+                request_id: 0123456789abcdef0123456789abcdef
+            unavailable:
+              summary: Store not reachable
+              value:
+                type: urn:flowforge:problem:dependency-unavailable
+                title: Dependency Unavailable
+                status: 503
+                detail: SCIM token store is not available.
+                instance: /api/v1/workspace/scim-tokens
+                code: dependency-unavailable
+                request_id: 0123456789abcdef0123456789abcdef

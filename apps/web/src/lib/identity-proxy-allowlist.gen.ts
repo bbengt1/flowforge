@@ -193,6 +193,18 @@ export const GENERATED_PROXY_ROUTES: readonly GeneratedProxyRoute[] = [
     params: {},
   },
   {
+    methods: ["GET", "POST"],
+    pattern: ["workspace", "scim-tokens"],
+    auth: "authenticated",
+    params: {},
+  },
+  {
+    methods: ["DELETE"],
+    pattern: ["workspace", "scim-tokens", "{tokenId}"],
+    auth: "authenticated",
+    params: {tokenId: "uuid"},
+  },
+  {
     methods: ["POST", "GET"],
     pattern: ["session"],
     auth: "authenticated",

@@ -27,5 +27,8 @@ func Routes(s *core.Server) []rt.Route {
 		rt.R(http.MethodPut, "/scim/v2/Groups/{id}", rt.AuthAuthenticated, rt.ProxyNone, core.Bind(s, putSCIMGroup)),
 		rt.R(http.MethodPatch, "/scim/v2/Groups/{id}", rt.AuthAuthenticated, rt.ProxyNone, core.Bind(s, patchSCIMGroup)),
 		rt.R(http.MethodDelete, "/scim/v2/Groups/{id}", rt.AuthAuthenticated, rt.ProxyNone, core.Bind(s, deleteSCIMGroup)),
+		rt.R(http.MethodGet, "/api/v1/workspace/scim-tokens", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, listScimTokens)),
+		rt.R(http.MethodPost, "/api/v1/workspace/scim-tokens", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, createScimToken)),
+		rt.R(http.MethodDelete, "/api/v1/workspace/scim-tokens/{tokenId}", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, revokeScimToken)),
 	}
 }

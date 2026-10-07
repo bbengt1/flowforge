@@ -267,6 +267,7 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 		CodePasswordChangeRequired: true,
 		CodeGroupNameTaken:         true, CodeGroupMemberNotInWorkspace: true,
 		CodeApproverNotTargeted: true,
+		CodeScimTokenLimit:      true, CodeScimNotConfigured: true,
 	}
 	for _, v := range enums {
 		s, _ := v.(string)
