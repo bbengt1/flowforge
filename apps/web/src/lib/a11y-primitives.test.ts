@@ -34,6 +34,8 @@ const DIALOG_SURFACES = [
   "src/components/a11y/ConfirmDestructive.tsx",
   "src/components/shell/CommandPalette.tsx",
   "src/components/session/MfaStepUpHost.tsx",
+  "src/components/groups/GroupNameDialog.tsx",
+  "src/components/groups/AddGroupMemberDialog.tsx",
 ] as const;
 
 const FIELD_SURFACES = [
@@ -54,6 +56,8 @@ const FIELD_SURFACES = [
   "src/components/workflows/NdvParameterEditors.tsx",
   "src/components/workflows/ActionWizard.tsx",
   "src/components/home/WorkflowHome.tsx",
+  "src/components/groups/GroupNameDialog.tsx",
+  "src/components/groups/AddGroupMemberDialog.tsx",
 ] as const;
 
 describe("G.3.1 Field primitive", () => {

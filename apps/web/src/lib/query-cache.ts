@@ -345,6 +345,49 @@ export function workflowRecordQueryKey(
   return key;
 }
 
+/** Root for every workspace-groups admin query in one scope. */
+export function workspaceGroupsRootQueryKey(
+  scope: string,
+): readonly ["flowforge", string, "workspace-groups"] | null {
+  const key = ["flowforge", scope, "workspace-groups"] as const;
+  if (queryKeyHasSecret(key)) {
+    return null;
+  }
+  return key;
+}
+
+export function workspaceGroupsListQueryKey(
+  scope: string,
+): readonly ["flowforge", string, "workspace-groups", "list"] | null {
+  const key = ["flowforge", scope, "workspace-groups", "list"] as const;
+  if (queryKeyHasSecret(key)) {
+    return null;
+  }
+  return key;
+}
+
+export function workspaceGroupDetailQueryKey(
+  scope: string,
+  groupId: string,
+): readonly ["flowforge", string, "workspace-groups", "detail", string] | null {
+  const key = ["flowforge", scope, "workspace-groups", "detail", groupId] as const;
+  if (queryKeyHasSecret(key)) {
+    return null;
+  }
+  return key;
+}
+
+/** Add-member picker pages from GET /workspace/members. */
+export function workspaceGroupPickerQueryKey(
+  scope: string,
+): readonly ["flowforge", string, "workspace-groups", "picker"] | null {
+  const key = ["flowforge", scope, "workspace-groups", "picker"] as const;
+  if (queryKeyHasSecret(key)) {
+    return null;
+  }
+  return key;
+}
+
 /** Roots reserved for the remaining god-component splits. */
 export const REMAINING_GOD_COMPONENT_QUERY_ROOTS = {
   workflowHome: ["flowforge", "workflow-home"] as const,

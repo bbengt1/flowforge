@@ -37,6 +37,7 @@ const UNDOABLE_SURFACES = [
   "src/components/workflows/ScheduleTriggerPanel.tsx",
   "src/components/workflows/WebhookTriggerPanel.tsx",
   "src/components/membership/MembersPanel.tsx",
+  "src/components/groups/WorkspaceGroupDetail.tsx",
 ] as const;
 
 const IRREVERSIBLE_SURFACES = [
@@ -44,6 +45,7 @@ const IRREVERSIBLE_SURFACES = [
   "src/components/workflows/ScriptPublishStatus.tsx",
   "src/components/executions/ExecutionDetail.tsx",
   "src/components/executions/ExecutionOperateActions.tsx",
+  "src/components/groups/WorkspaceGroupDetail.tsx",
 ] as const;
 
 describe("G.3.2 destructive impact", () => {
@@ -232,6 +234,11 @@ describe("G.3.2 shared confirm on primary surfaces", () => {
       const text = source(relative);
       assert.match(text, /ConfirmDestructive/, relative);
       assert.match(text, /reversibility="irreversible"/, relative);
+      // A surface may also host an undoable ConfirmDestructive (e.g. groups
+      // remove-member). Only pure irreversible files must omit undo wiring.
+      if ((UNDOABLE_SURFACES as readonly string[]).includes(relative)) {
+        continue;
+      }
       assert.equal(text.includes("useDestructiveUndo"), false, relative);
       assert.equal(text.includes("DestructiveUndoBar"), false, relative);
     }
