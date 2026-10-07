@@ -26,6 +26,17 @@ import (
 // run. A gate that is not waiting is left alone. This does not rewrite
 // the approval row the caller already canceled.
 func SettleUnresolvableGate(ctx context.Context, tx pgx.Tx, scope isolation.Scope, workflowID, executionID, nodeID string, now time.Time) error {
+	return settleUnresolvableGate(ctx, tx, scope, workflowID, executionID, nodeID, now, requirementUnresolvableStepError())
+}
+
+// SettleNoEligibleDeciderGate is SettleUnresolvableGate with the step
+// error details.cause no_eligible_decider (boot resync found that nobody
+// but the requester could decide a targeted gate).
+func SettleNoEligibleDeciderGate(ctx context.Context, tx pgx.Tx, scope isolation.Scope, workflowID, executionID, nodeID string, now time.Time) error {
+	return settleUnresolvableGate(ctx, tx, scope, workflowID, executionID, nodeID, now, NoEligibleDeciderError())
+}
+
+func settleUnresolvableGate(ctx context.Context, tx pgx.Tx, scope isolation.Scope, workflowID, executionID, nodeID string, now time.Time, stepErr map[string]any) error {
 	executionID = strings.TrimSpace(executionID)
 	nodeID = strings.TrimSpace(nodeID)
 	if !authz.ValidUUID(executionID) || nodeID == "" {
@@ -71,7 +82,7 @@ func SettleUnresolvableGate(ctx context.Context, tx pgx.Tx, scope isolation.Scop
 		}
 		return mapDBErr(err)
 	}
-	errRaw, err := marshalObject(requirementUnresolvableStepError())
+	errRaw, err := marshalObject(stepErr)
 	if err != nil {
 		return ErrInvalid
 	}
@@ -112,10 +123,6 @@ func SettleUnresolvableGate(ctx context.Context, tx pgx.Tx, scope isolation.Scop
 	return err
 }
 
-// RequirementUnresolvableError is the job and step failure compose writes
-// when a pinned approval requirement cannot be rebuilt. FailJob stores
-// this code, cancels a pending approval for that execution and node, and
-// rolls the run up so statusReason is requirement_unresolvable.
 // ErrNoEligibleDecider is returned by WaitJob when a targeted gate has
 // no possible decider besides the requester. Nothing is written; the
 // caller fails the job with NoEligibleDeciderError.
@@ -130,6 +137,10 @@ func NoEligibleDeciderError() map[string]any {
 	return out
 }
 
+// RequirementUnresolvableError is the job and step failure compose writes
+// when a pinned approval requirement cannot be rebuilt. FailJob stores
+// this code, cancels a pending approval for that execution and node, and
+// rolls the run up so statusReason is requirement_unresolvable.
 func RequirementUnresolvableError() map[string]any {
 	return requirementUnresolvableStepError()
 }

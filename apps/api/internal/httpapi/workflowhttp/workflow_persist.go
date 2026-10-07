@@ -349,6 +349,13 @@ func PublishWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
+	if errs, err := validatePublishApprovers(r.Context(), s, scope, draft.DefinitionYAML); err != nil {
+		core.WriteProblem(w, r, http.StatusServiceUnavailable, core.CodeDependencyUnavailable, "Dependency Unavailable", "Approvers could not be checked. Retry.")
+		return
+	} else if len(errs) > 0 {
+		writeWorkflowErrors(w, r, errs)
+		return
+	}
 	if refs := opsconfig.ExtractRefs(draft.DefinitionYAML); len(refs) > 0 && s.Ops != nil {
 		if _, err := s.Ops.Resolve(r.Context(), scope, refs); err != nil {
 			WriteOpsError(w, r, err)

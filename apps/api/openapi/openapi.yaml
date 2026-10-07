@@ -7328,7 +7328,11 @@ components:
             a group that is not in this workspace (invalid-workflow, error code
             approver-group-not-found) uses the YAML path, for example
             nodes[2].with.approvers.groups[0]. A random UUID and another
-            tenant's group id get the same error. Clients place field errors
+            tenant's group id get the same error. A named user at
+            with.approvers.users[i] that is not a workspace member
+            (approver-not-member), is disabled (approver-disabled), has no
+            approval.decide (approver-cannot-decide), or lacks the gate's
+            approverRole (approver-role-mismatch) is rejected the same way. Clients place field errors
             by path, never by message text.
           items:
             $ref: "#/components/schemas/WorkflowFieldError"

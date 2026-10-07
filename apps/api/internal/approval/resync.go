@@ -10,6 +10,8 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/parkedapproval"
+	"github.com/bbengt1/flowforge/apps/api/internal/policy"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/jackc/pgx/v5"
@@ -270,6 +272,29 @@ func resyncOne(ctx context.Context, tx pgx.Tx, scope isolation.Scope, versions V
 		req = overlayRunPolicy(req, pin)
 	}
 	next, changed := ProjectRequirement(rec, scope.WorkspaceID(), req)
+	var approversFrom, approversTo string
+	if rec.Targeted() || req.ApproversDigest != "" {
+		outcome, err := resyncTargets(ctx, tx, scope.WorkspaceID(), rec, &next, req)
+		if err != nil {
+			slog.Warn("approval resync skipped", "approval", id, "reason", "transient")
+			return 0, 0, 0
+		}
+		switch outcome {
+		case targetsNoDecider:
+			if err := cancelUnresolvableCause(ctx, tx, scope, rec, now, CauseNoEligibleDecider); err != nil {
+				return 0, 0, 1
+			}
+			if err := wfstore.SettleNoEligibleDeciderGate(ctx, tx, scope, rec.WorkflowID, rec.ExecutionID, rec.NodeID, now); err != nil {
+				return 0, 0, 1
+			}
+			rollback = false
+			_, _ = tx.Exec(ctx, `RELEASE SAVEPOINT approval_resync`)
+			return 0, 1, 0
+		case targetsRewritten:
+			changed = true
+			approversFrom, approversTo = rec.ApproversDigest, next.ApproversDigest
+		}
+	}
 	if !changed {
 		rollback = false
 		_, _ = tx.Exec(ctx, `RELEASE SAVEPOINT approval_resync`)
@@ -279,7 +304,11 @@ func resyncOne(ctx context.Context, tx pgx.Tx, scope isolation.Scope, versions V
 	if err != nil {
 		return 0, 0, 1
 	}
-	if err := insertEvent(ctx, tx, scope, updated.ID, EventCorrected, "", correctionDetails(rec, updated)); err != nil {
+	details := correctionDetails(rec, updated)
+	if approversFrom != approversTo {
+		details["approvers"] = map[string]any{"from": approversFrom, "to": approversTo}
+	}
+	if err := insertEvent(ctx, tx, scope, updated.ID, EventCorrected, "", details); err != nil {
 		return 0, 0, 1
 	}
 	rollback = false
@@ -359,6 +388,60 @@ func loadRunPin(ctx context.Context, tx pgx.Tx, executionID, policyResourceID st
 	pin.PolicyDigest = digest
 	pin.PolicyRevision = revision
 	return pin, nil
+}
+
+type targetsOutcome int
+
+const (
+	targetsUnchanged targetsOutcome = iota
+	targetsRewritten
+	targetsNoDecider
+)
+
+// resyncTargets applies the park rule to a pending targeted row. When no
+// one but the requester could decide it, the row is closed. When the
+// rebuilt approver set differs from the stored digest, the snapshot is
+// rewritten as the YAML set that is eligible now, and next carries the
+// new digest and fingerprint. Plain reads; the caller holds the row lock.
+func resyncTargets(ctx context.Context, tx pgx.Tx, workspaceID string, rec Record, next *Record, req policy.Requirement) (targetsOutcome, error) {
+	snap, err := parkedapproval.ResolveSnapshot(ctx, tx, workspaceID, rec.RequestedBy, next.ApproverRole, req.ApproverUsers, req.ApproverGroups)
+	if err != nil {
+		return targetsUnchanged, err
+	}
+	if req.ApproversDigest != "" && !snap.HasDecider {
+		return targetsNoDecider, nil
+	}
+	if req.ApproversDigest == rec.ApproversDigest {
+		return targetsUnchanged, nil
+	}
+	next.ApproversDigest = req.ApproversDigest
+	next.BindingFingerprint = BindingFingerprint(workspaceID, rec.WorkflowVersionID, rec.WorkflowDigest, rec.TargetVersionID, next.PolicyVersionID, next.PolicyDigest, rec.Operation, rec.NodeID, next.ApproverRole, rec.ExecutionID, next.ApproversDigest)
+	if req.ApproversDigest == "" {
+		snap = parkedapproval.Snapshot{}
+	}
+	if err := parkedapproval.WriteSnapshot(ctx, tx, workspaceID, rec.ID, snap); err != nil {
+		return targetsUnchanged, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE approvals SET approvers_digest = $2 WHERE id = $1::uuid`, rec.ID, next.ApproversDigest); err != nil {
+		return targetsUnchanged, err
+	}
+	return targetsRewritten, nil
+}
+
+func cancelUnresolvableCause(ctx context.Context, tx pgx.Tx, scope isolation.Scope, rec Record, now time.Time, cause string) error {
+	var out Record
+	if err := scanRecord(tx.QueryRow(ctx, `
+		UPDATE approvals
+		   SET status = 'canceled',
+		       close_reason = $2,
+		       decided_by = NULL,
+		       decided_at = NULL,
+		       updated_at = $3
+		 WHERE id = $1::uuid AND status = 'pending'
+		RETURNING `+recordColumns, rec.ID, ReasonRequirementUnresolvable, now), &out); err != nil {
+		return err
+	}
+	return insertEvent(ctx, tx, scope, out.ID, EventCanceled, "", map[string]any{"reason": ReasonRequirementUnresolvable, "cause": cause})
 }
 
 func cancelUnresolvable(ctx context.Context, tx pgx.Tx, scope isolation.Scope, rec Record, now time.Time) error {

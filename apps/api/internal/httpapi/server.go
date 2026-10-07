@@ -320,6 +320,11 @@ func newServer(d Deps) *API {
 			wfMem.SetApprovalUnresolvable(apMem.CancelUnresolvableGate)
 		}
 	}
+	if apMem, ok := approvalStore.(*approval.Memory); ok {
+		if idMem, ok := d.Store.(*identity.Memory); ok {
+			apMem.SetGroupMembership(idMem.InTargetGroups)
+		}
+	}
 	alertStore := d.Alerts
 	if alertStore == nil {
 		alertStore = inferAlerts(d.DB)

@@ -125,7 +125,7 @@ spec:
 		t.Fatalf("cross-workspace list = %+v %v", items, err)
 	}
 
-	for _, table := range []string{"approvals", "approval_events"} {
+	for _, table := range []string{"approvals", "approval_events", "approval_approver_users", "approval_approver_groups"} {
 		var forced bool
 		if err := admin.QueryRow(ctx, `
 			SELECT c.relforcerowsecurity

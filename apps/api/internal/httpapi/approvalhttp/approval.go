@@ -120,6 +120,16 @@ func listApprovals(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	pageQuery.Next = &next
 	q := r.URL.Query()
 	status := strings.TrimSpace(q.Get("status"))
+	awaitingMe := false
+	if q.Has("awaiting") {
+		if strings.TrimSpace(q.Get("awaiting")) != "me" {
+			core.WriteProblemErrors(w, r, http.StatusBadRequest, core.CodeInvalidRequest, "Invalid Request", "awaiting accepts only me.",
+				[]core.FieldError{{Path: "awaiting", Code: "invalid-value", Message: "awaiting accepts only me."}})
+			return
+		}
+		awaitingMe = true
+		status = approval.StatusPending
+	}
 	// Pending is the actionable inbox. The stored role and target are
 	// enough after boot resync; this read does not re-evaluate policy.
 	items, err := s.Approvals.List(r.Context(), scope, approval.Filter{
@@ -131,6 +141,7 @@ func listApprovals(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		Actionable:        status == approval.StatusPending,
 		ActorID:           user.ID,
 		ActorRoles:        roles,
+		AwaitingMe:        awaitingMe,
 	})
 	if core.RejectPageErr(w, r, err) {
 		return
@@ -145,6 +156,7 @@ func listApprovals(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		rec = refreshRecord(s, r.Context(), scope, rec, now)
 		out = append(out, rec)
 	}
+	out = presentApprovals(s, r.Context(), scope, user.ID, roles, out)
 	core.WritePage(w, out, pageQuery, next)
 }
 
@@ -197,8 +209,20 @@ func getApproval(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		core.WriteProblem(w, r, http.StatusMethodNotAllowed, core.CodeMethodNotAllowed, "Method Not Allowed", "The "+r.Method+" method is not allowed for this path.")
 		return
 	}
-	scope, ok := approvalScope(s, w, r, authz.PermApprovalView)
+	user, ok := s.RequirePrincipal(w, r)
 	if !ok {
+		return
+	}
+	if !requireApprovals(s, w, r) {
+		return
+	}
+	ws, tenant, roles, _, ok := s.RequireAccess(w, r, user, authz.PermApprovalView)
+	if !ok {
+		return
+	}
+	scope, err := isolation.AuthorizeTenancy(ws.ID, user.ID, tenant.ID, ws.WorkbenchKey)
+	if err != nil {
+		core.WriteIdentityError(w, r, err)
 		return
 	}
 	rec, err := s.Approvals.Get(r.Context(), scope, strings.TrimSpace(r.PathValue("approvalId")))
@@ -206,7 +230,8 @@ func getApproval(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		WriteApprovalError(w, r, err)
 		return
 	}
-	core.WriteJSON(w, http.StatusOK, refreshRecord(s, r.Context(), scope, rec, s.Clock().UTC()))
+	rec = refreshRecord(s, r.Context(), scope, rec, s.Clock().UTC())
+	core.WriteJSON(w, http.StatusOK, presentApproval(s, r.Context(), scope, user.ID, roles, rec))
 }
 
 func decideApproval(s *core.Server, w http.ResponseWriter, r *http.Request) {
@@ -288,7 +313,10 @@ func decideApproval(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeWorkflowDeleted, "Conflict", "This workflow was deleted. The run will not continue.")
 		return
 	}
-	core.WriteJSON(w, http.StatusOK, out)
+	if len(out.ApproverUserIDs) == 0 && len(out.ApproverGroupIDs) == 0 && out.ApproversDigest == rec.ApproversDigest {
+		out.ApproverUserIDs, out.ApproverGroupIDs = rec.ApproverUserIDs, rec.ApproverGroupIDs
+	}
+	core.WriteJSON(w, http.StatusOK, presentApproval(s, r.Context(), scope, user.ID, roles, out))
 }
 
 func listApprovalEvents(s *core.Server, w http.ResponseWriter, r *http.Request) {
@@ -383,6 +411,12 @@ func refreshRecord(s *core.Server, ctx context.Context, scope isolation.Scope, r
 	out, err := s.Approvals.Refresh(ctx, scope, rec.ID, heads, now)
 	if err != nil {
 		return rec
+	}
+	if len(out.ApproverUserIDs) == 0 && len(out.ApproverGroupIDs) == 0 && out.ApproversDigest == rec.ApproversDigest {
+		out.ApproverUserIDs, out.ApproverGroupIDs = rec.ApproverUserIDs, rec.ApproverGroupIDs
+	}
+	if out.CloseReasonDetails == nil && out.Status == rec.Status && out.CloseReason == rec.CloseReason {
+		out.CloseReasonDetails = rec.CloseReasonDetails
 	}
 	if rec.ExecutionID != "" && rec.Status == approval.StatusPending &&
 		(out.Status == approval.StatusExpired || out.Status == approval.StatusInvalidated) {
@@ -729,6 +763,8 @@ func WriteApprovalError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, approval.ErrBindingTransient):
 		w.Header().Set("Retry-After", "5")
 		core.WriteProblem(w, r, http.StatusServiceUnavailable, core.CodeApprovalRequirementUnavailable, "Service Unavailable", "The approval requirement could not be rebuilt. Retry.")
+	case errors.Is(err, approval.ErrApproverNotTargeted):
+		core.WriteProblem(w, r, http.StatusForbidden, core.CodeApproverNotTargeted, "Forbidden", "This gate names other approvers, and you are not one of them.")
 	case errors.Is(err, approval.ErrForbidden), errors.Is(err, approval.ErrBindingUnresolved):
 		core.WriteForbidden(w, r)
 	case errors.Is(err, approval.ErrExpired):
