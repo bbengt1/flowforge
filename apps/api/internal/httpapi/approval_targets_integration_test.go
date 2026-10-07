@@ -323,6 +323,17 @@ func TestApprovalTargetsAgainstPostgres(t *testing.T) {
 		}
 		assertProblem(t, th.decide(row.ID, bob), http.StatusForbidden, CodeApproverNotTargeted, "")
 		assertProblem(t, th.decide(row.ID, th.owner), http.StatusForbidden, CodeForbidden, "")
+		// A refusal records nothing and the run keeps waiting.
+		if got := th.get(row.ID, admin2); got.Status != approval.StatusPending || got.DecidedBy != "" {
+			t.Fatalf("after refusals = %s decided=%q", got.Status, got.DecidedBy)
+		}
+		var events int
+		if err := th.admin.QueryRow(th.ctx, `SELECT count(*) FROM approval_events WHERE approval_id = $1::uuid AND event_type IN ('approved','rejected','corrected')`, row.ID).Scan(&events); err != nil || events != 0 {
+			t.Fatalf("events after refusals = %d %v", events, err)
+		}
+		if rec := th.do(th.owner, http.MethodGet, "/api/v1/executions/"+execID, ""); !strings.Contains(rec.Body.String(), `"status":"waiting"`) {
+			t.Fatalf("run after refusals = %s", rec.Body.String())
+		}
 		if rec := th.decide(row.ID, admin2); rec.Code != http.StatusOK {
 			t.Fatalf("override decide: %d %s", rec.Code, rec.Body.String())
 		}
