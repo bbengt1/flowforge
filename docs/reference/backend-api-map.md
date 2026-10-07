@@ -177,7 +177,23 @@ Workspace identity is resolved only from `X-FlowForge-Tenant-ID` or `X-FlowForge
 | `DELETE /api/v1/workspace` | Soft-delete (`status=disabled`) the server-derived workspace. Requires `workspace.administer`. Revokes embed-bound sessions (workspace_id or tenancy pair) first; fail closed if revoke cannot complete. | `204` | `400` `401` `403` `404` `503` |
 | `GET /api/v1/workspace/members` | List members. Requires `workspace.administer`. | `200` `{items}` | `401` `403` |
 | `PUT /api/v1/workspace/members` | Replace a member's roles (`user_id` or issuer+subject). Requires `workspace.administer`. | `200` member | `400` `401` `403` `404` `409` |
-| `DELETE /api/v1/workspace/members/{userID}` | Remove a member. Cannot remove the last administrator. | `204` | `401` `403` `404` `409` |
+| `DELETE /api/v1/workspace/members/{userID}` | Remove a member. Cannot remove the last administrator. The same transaction deletes the member's workspace group rows. | `204` | `401` `403` `404` `409` |
+
+### Workspace groups
+
+Groups are named sets of workspace members used only to target approvals. A group never grants a permission, and membership never grants `approval.decide`. Every route requires `workspace.administer`, goes through the browser identity proxy, and refuses an embed session with `403` before any permission is read. There is no `/embed/v1` group surface. Responses never include an email address. Another workspace's group is `404`. A path `{groupId}` that is not a UUID is also `404`, after the permission check, matching the other resource routes and the identity proxy. A path `{userId}` on member removal that is not a UUID is `400` `invalid-request`, matching workspace member removal.
+
+| Route | Purpose | Success | Failure |
+| --- | --- | --- | --- |
+| `GET /api/v1/workspace/groups` | List groups by display name (case-insensitive), then id. Paged (`limit`, `cursor`, `q` over `displayName`). `memberCount` counts every member row. | `200` `{items,limit,cursor,next}` | `400` `401` `403` |
+| `POST /api/v1/workspace/groups` | Create a group. Body `{displayName}`: trimmed, 1-128 characters, unique in the workspace without regard to case. | `201` group | `400` `401` `403` `409` |
+| `GET /api/v1/workspace/groups/{groupId}` | Group plus `members[]` of `{userId, displayName, canApprove}`. `canApprove` is true only when the user is active, has a live role binding here, and those roles grant `approval.decide`. A disabled user who still has rows stays listed with `canApprove` false. | `200` | `401` `403` `404` |
+| `PATCH /api/v1/workspace/groups/{groupId}` | Rename. Same rules as create. | `200` group | `400` `401` `403` `404` `409` |
+| `DELETE /api/v1/workspace/groups/{groupId}` | Hard delete; member rows go with it. A workflow that still names the deleted id targets nobody. | `204` | `401` `403` `404` |
+| `POST /api/v1/workspace/groups/{groupId}/members` | Add `{userId}`. Idempotent. The user must be active and bound in this workspace. | `204` | `400` `401` `403` `404` |
+| `DELETE /api/v1/workspace/groups/{groupId}/members/{userId}` | Remove a member. Idempotent. | `204` | `400` `401` `403` `404` |
+
+Problem codes: `409 group_name_taken` (`errors[].path` `displayName`, including a lost race on the unique index); `400 group_member_not_in_workspace` (`errors[].path` `userId`) for an unknown, disabled, or unbound user; `400 invalid-request` with `errors[].path` `displayName` for an empty or too-long name, or `userId` (in the add body or the removal path) when it is not a UUID. Each change writes one `audit_events` row in the same transaction (`resource_type` `workspace_group`; actions `workspace_group.create`, `.rename`, `.delete`, `.member_add`, `.member_remove`; details are ids only). An idempotent add or remove, or a rename to the exact current name, changes nothing and writes no row.
 
 ## Workspace isolation (E2.2)
 

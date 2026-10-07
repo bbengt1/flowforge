@@ -204,6 +204,41 @@ x-flowforge-routes:
     proxy: browser
     pattern: /api/v1/workspace/members/{userID}
   - method: GET
+    path: /workspace/groups
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/groups
+  - method: POST
+    path: /workspace/groups
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/groups
+  - method: GET
+    path: /workspace/groups/{groupId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/groups/{groupId}
+  - method: PATCH
+    path: /workspace/groups/{groupId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/groups/{groupId}
+  - method: DELETE
+    path: /workspace/groups/{groupId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/groups/{groupId}
+  - method: POST
+    path: /workspace/groups/{groupId}/members
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/groups/{groupId}/members
+  - method: DELETE
+    path: /workspace/groups/{groupId}/members/{userId}
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workspace/groups/{groupId}/members/{userId}
+  - method: GET
     path: /workspace/records
     auth: authenticated
     proxy: browser
@@ -1906,6 +1941,241 @@ paths:
           $ref: "#/components/responses/MethodNotAllowed"
         "500":
           $ref: "#/components/responses/InternalError"
+  /workspace/groups:
+    get:
+      operationId: getWorkspaceGroups
+      summary: List workspace groups
+      description: |
+        Lists the workspace's groups ordered by display name without regard to case, then id. Paged like other collections (limit, cursor, q over displayName).
+        memberCount counts every membership row, including a disabled user who still has rows.
+        Requires workspace.administer. An embed session is refused with 403 forbidden before permissions are read. Groups only target approvals. They never grant a permission, and membership never grants approval.decide. Another workspace's group is 404, the same as a missing group. A {groupId} path segment that is not a UUID is also 404, after the permission check. No response includes an email address.
+        Auth class: authenticated. Identity proxy: browser.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+      parameters:
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/PageSearch"
+      responses:
+        "200":
+          description: One page of groups.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceGroupList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: Caller lacks workspace.administer, or the caller is an embed session.
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+    post:
+      operationId: postWorkspaceGroups
+      summary: Create a workspace group
+      description: |
+        Creates an empty group. displayName is trimmed and must be 1-128 characters; otherwise 400 invalid-request with errors[].path displayName.
+        A name already used in the workspace, compared without regard to case, is 409 group_name_taken with errors[].path displayName. That includes a create that loses a race on the unique index.
+        Writes audit action workspace_group.create in the same transaction.
+        Requires workspace.administer. An embed session is refused with 403 forbidden before permissions are read. Groups only target approvals. They never grant a permission, and membership never grants approval.decide. Another workspace's group is 404, the same as a missing group. A {groupId} path segment that is not a UUID is also 404, after the permission check. No response includes an email address.
+        Auth class: authenticated. Identity proxy: browser.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkspaceGroupRequest"
+      responses:
+        "201":
+          description: Created group.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceGroup"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: Caller lacks workspace.administer, or the caller is an embed session.
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "409":
+          $ref: "#/components/responses/GroupNameTaken"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /workspace/groups/{groupId}:
+    get:
+      operationId: getWorkspaceGroupsGroupId
+      summary: Get a workspace group and its members
+      description: |
+        Returns the group and every member row as userId, displayName, and canApprove.
+        canApprove is computed by the server: true only when the user is active, has a live role binding in this workspace, and those roles grant approval.decide.
+        A user removed from the workspace is not listed because removal deletes their group rows. A disabled user who still has rows stays listed with canApprove false.
+        Requires workspace.administer. An embed session is refused with 403 forbidden before permissions are read. Groups only target approvals. They never grant a permission, and membership never grants approval.decide. Another workspace's group is 404, the same as a missing group. A {groupId} path segment that is not a UUID is also 404, after the permission check. No response includes an email address.
+        Auth class: authenticated. Identity proxy: browser.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceGroupID"
+      responses:
+        "200":
+          description: Group detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceGroupDetail"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: Caller lacks workspace.administer, or the caller is an embed session.
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+    patch:
+      operationId: patchWorkspaceGroupsGroupId
+      summary: Rename a workspace group
+      description: |
+        Sets displayName. Same validation and 409 group_name_taken rules as create, including a rename that loses a race on the unique index. Renaming a group to its own name in another case is allowed.
+        Writes audit action workspace_group.rename in the same transaction when the name changes. A rename to the exact current name (after trimming) changes nothing and writes no audit row.
+        Requires workspace.administer. An embed session is refused with 403 forbidden before permissions are read. Groups only target approvals. They never grant a permission, and membership never grants approval.decide. Another workspace's group is 404, the same as a missing group. A {groupId} path segment that is not a UUID is also 404, after the permission check. No response includes an email address.
+        Auth class: authenticated. Identity proxy: browser.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceGroupID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkspaceGroupRequest"
+      responses:
+        "200":
+          description: Renamed group.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceGroup"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: Caller lacks workspace.administer, or the caller is an embed session.
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/GroupNameTaken"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+    delete:
+      operationId: deleteWorkspaceGroupsGroupId
+      summary: Delete a workspace group
+      description: |
+        Hard-deletes the group and its membership rows. There is no restore.
+        Workflow YAML that still names the deleted group id resolves to nobody, so that approval target fails closed.
+        Writes audit action workspace_group.delete in the same transaction.
+        Requires workspace.administer. An embed session is refused with 403 forbidden before permissions are read. Groups only target approvals. They never grant a permission, and membership never grants approval.decide. Another workspace's group is 404, the same as a missing group. A {groupId} path segment that is not a UUID is also 404, after the permission check. No response includes an email address.
+        Auth class: authenticated. Identity proxy: browser.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceGroupID"
+      responses:
+        "204":
+          description: Deleted. No body.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: Caller lacks workspace.administer, or the caller is an embed session.
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /workspace/groups/{groupId}/members:
+    post:
+      operationId: postWorkspaceGroupsGroupIdMembers
+      summary: Add a workspace group member
+      description: |
+        Adds userId to the group. Idempotent: adding an existing member is 204 and writes no second row.
+        The user must be active and hold a role binding in this workspace; otherwise 400 group_member_not_in_workspace with errors[].path userId. A userId that is not a UUID is 400 invalid-request with errors[].path userId.
+        Writes audit action workspace_group.member_add when a row is added.
+        Requires workspace.administer. An embed session is refused with 403 forbidden before permissions are read. Groups only target approvals. They never grant a permission, and membership never grants approval.decide. Another workspace's group is 404, the same as a missing group. A {groupId} path segment that is not a UUID is also 404, after the permission check. No response includes an email address.
+        Auth class: authenticated. Identity proxy: browser.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceGroupID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddWorkspaceGroupMemberRequest"
+      responses:
+        "204":
+          description: Member present. No body.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: Caller lacks workspace.administer, or the caller is an embed session.
+        "400":
+          $ref: "#/components/responses/AddGroupMemberInvalid"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /workspace/groups/{groupId}/members/{userId}:
+    delete:
+      operationId: deleteWorkspaceGroupsGroupIdMembersUserId
+      summary: Remove a workspace group member
+      description: |
+        Removes userId from the group. Idempotent: removing a user who is not a member is 204. A userId path segment that is not a UUID is 400 invalid-request with errors[].path userId, the same status and code as DELETE /api/v1/workspace/members/{userID}.
+        Writes audit action workspace_group.member_remove when a row is removed.
+        Requires workspace.administer. An embed session is refused with 403 forbidden before permissions are read. Groups only target approvals. They never grant a permission, and membership never grants approval.decide. Another workspace's group is 404, the same as a missing group. A {groupId} path segment that is not a UUID is also 404, after the permission check. No response includes an email address.
+        Auth class: authenticated. Identity proxy: browser.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceGroupID"
+        - $ref: "#/components/parameters/WorkspaceGroupUserID"
+      responses:
+        "204":
+          description: Member absent. No body.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          description: Caller lacks workspace.administer, or the caller is an embed session.
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
   /workspace/records:
     get:
       operationId: getWorkspaceRecords
@@ -5739,6 +6009,22 @@ components:
       schema:
         type: string
         format: uuid
+    WorkspaceGroupID:
+      name: groupId
+      in: path
+      required: true
+      description: Workspace group id. Unknown ids, ids from another workspace, and values that are not a UUID are 404.
+      schema:
+        type: string
+        format: uuid
+    WorkspaceGroupUserID:
+      name: userId
+      in: path
+      required: true
+      description: User id. A value that is not a UUID is 400 invalid-request with errors[].path userId. A valid id that is not a member is a 204 no-op.
+      schema:
+        type: string
+        format: uuid
     WorkflowFolderQuery:
       name: folderId
       in: query
@@ -6854,6 +7140,8 @@ components:
             - step_attempt_superseded
             - approval_closed
             - approval_requirement_unavailable
+            - group_name_taken
+            - group_member_not_in_workspace
         request_id:
           type: string
         reason:
@@ -6865,8 +7153,12 @@ components:
             Field-level errors. invalid-workflow lists YAML paths. Create and
             import slug conflicts (workflow_slug_taken, workflow_slug_reserved),
             an invalid new slug (invalid-request), and a draft save that changes
-            metadata.slug (slug_immutable) use path slug. Clients place field
-            errors by path, never by message text.
+            metadata.slug (slug_immutable) use path slug. Workspace group
+            name clashes (group_name_taken) and invalid group names
+            (invalid-request) use path displayName. A group member that is not
+            an active, bound workspace member (group_member_not_in_workspace)
+            uses path userId. Clients place field errors by path, never by
+            message text.
           items:
             $ref: "#/components/schemas/WorkflowFieldError"
         suggestedSlug:
@@ -8988,6 +9280,115 @@ components:
         next:
           type: string
           description: Opaque token for the following page. Empty when this page is the last. Always present.
+    WorkspaceGroup:
+      type: object
+      description: >
+        A named set of workspace members used only to target approvals.
+        A group never grants a permission. Membership never grants
+        approval.decide. Groups are not nested and carry no roles, email,
+        or SCIM data.
+      required: [id, displayName, memberCount, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: >
+            Trimmed, 1-128 characters. Unique in the workspace without
+            regard to case.
+        memberCount:
+          type: integer
+          minimum: 0
+          description: >
+            Number of membership rows. Counts the same rows the detail
+            members array lists, including a disabled user that still
+            has rows.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    WorkspaceGroupMember:
+      type: object
+      description: >
+        One group member. No email is returned. A user removed from the
+        workspace is not listed: removal deletes their group rows in the
+        same transaction that deletes their role bindings. A user whose
+        account is disabled (for example by SCIM) but who still has rows
+        stays listed with canApprove false so an administrator can see and
+        remove the row.
+      required: [userId, displayName, canApprove]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        canApprove:
+          type: boolean
+          description: >
+            Server-computed. True only when the user is active, has a live
+            role binding in this workspace, and those roles grant
+            approval.decide. Never true for an inactive user or a user with
+            no live binding. Group membership itself never grants
+            approval.decide; this flag only reports what the user's roles
+            already allow.
+    WorkspaceGroupDetail:
+      allOf:
+        - $ref: "#/components/schemas/WorkspaceGroup"
+        - type: object
+          required: [members]
+          properties:
+            members:
+              type: array
+              description: Every member row, ordered by display name without regard to case, then user id.
+              items:
+                $ref: "#/components/schemas/WorkspaceGroupMember"
+    WorkspaceGroupList:
+      type: object
+      required: [items, limit, cursor, next]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkspaceGroup"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Applied page size. Default 50. Always present.
+        cursor:
+          type: string
+          description: Opaque keyset token that produced this page. Empty on the first page. Always present.
+        next:
+          type: string
+          description: Opaque token for the following page. Empty when this page is the last. Always present.
+    CreateWorkspaceGroupRequest:
+      type: object
+      required: [displayName]
+      properties:
+        displayName:
+          type: string
+          description: Trimmed before validation. Empty or longer than 128 characters is 400 invalid-request with errors[].path displayName.
+    UpdateWorkspaceGroupRequest:
+      type: object
+      required: [displayName]
+      properties:
+        displayName:
+          type: string
+          description: New display name. Same rules as create.
+    AddWorkspaceGroupMemberRequest:
+      type: object
+      required: [userId]
+      properties:
+        userId:
+          type: string
+          format: uuid
+          description: Must be an active user with a role binding in this workspace.
     MembershipList:
       type: object
       required: [items]
@@ -9510,6 +9911,74 @@ components:
             instance: /api/v1/example
             code: forbidden
             request_id: 0123456789abcdef0123456789abcdef
+    GroupNameTaken:
+      description: >
+        Another group in this workspace already has this display name,
+        compared without regard to case. Concurrent creates or renames that
+        race on the unique index also return this code. errors[].path is
+        displayName.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:group_name_taken
+            title: Conflict
+            status: 409
+            detail: A group with this name already exists in the workspace.
+            instance: /api/v1/workspace/groups
+            code: group_name_taken
+            request_id: 0123456789abcdef0123456789abcdef
+            errors:
+              - path: displayName
+                code: group_name_taken
+                message: A group with this name already exists in the workspace.
+    AddGroupMemberInvalid:
+      description: >
+        group_member_not_in_workspace: the user is not an active member of
+        this workspace (no role binding here, a disabled account, or an
+        unknown user id). invalid-request: malformed JSON, a missing body,
+        or a userId that is not a UUID. Both set errors[].path to userId,
+        except a malformed or missing body, which has no errors[].
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            notInWorkspace:
+              summary: The user is not an active member of this workspace
+              value:
+                type: urn:flowforge:problem:group_member_not_in_workspace
+                title: Invalid Request
+                status: 400
+                detail: The user is not an active member of this workspace.
+                instance: /api/v1/workspace/groups/3f1c2a4e-9d7b-4c1a-8e2f-0a1b2c3d4e5f/members
+                code: group_member_not_in_workspace
+                request_id: 0123456789abcdef0123456789abcdef
+                errors:
+                  - path: userId
+                    code: group_member_not_in_workspace
+                    message: The user is not an active member of this workspace.
+            invalidUserId:
+              summary: userId is not a UUID
+              value:
+                type: urn:flowforge:problem:invalid-request
+                title: Invalid Request
+                status: 400
+                detail: userId must be a UUID.
+                instance: /api/v1/workspace/groups/3f1c2a4e-9d7b-4c1a-8e2f-0a1b2c3d4e5f/members
+                code: invalid-request
+                request_id: 0123456789abcdef0123456789abcdef
+                errors:
+                  - path: userId
+                    code: invalid-request
+                    message: userId must be a UUID.
     Conflict:
       description: Unique identity collision or last-admin protection
       headers:

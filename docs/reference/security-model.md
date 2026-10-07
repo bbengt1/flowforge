@@ -60,10 +60,16 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
  OIDC `sub` (otherwise `userName` becomes `external_subject`).
  Passwords and secret-like fields are `400` and are not echoed.
  `active: false` and `DELETE` disable the user, revoke sessions, and
- drop workspace memberships except the last admin. `DELETE` also hides
- the user from SCIM (`404`). Groups are existing workspaces; adding a
- member grants `SCIM_DEFAULT_ROLE` (default `viewer`) without removing
- other roles. Group create, replace, and delete are rejected. A query
+ drop workspace memberships except the last admin. Dropping a
+ membership also deletes that user's workspace group rows in the same
+ transaction. `DELETE` also hides the user from SCIM (`404`). SCIM
+ Groups are workspaces, not workspace groups: adding a SCIM Group
+ member grants `SCIM_DEFAULT_ROLE` (default `viewer`) in that workspace
+ without removing other roles. SCIM never creates or edits workspace
+ groups. Group create, replace, and delete are rejected. Workspace
+ groups (`/workspace/groups`) never grant a permission. They only name
+ who an approval targets, and a member still needs `approval.decide`
+ from their own roles. A query
  `access_token` is `401` and is not echoed. Self-asserted header identity is enabled only by the
  explicit, non-default `TRUSTED_DEV_IDENTITY_HEADERS` flag together with
  `APP_ENV=development|dev|local|test`. Empty or missing config denies

@@ -7,6 +7,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/page"
+	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -656,8 +657,19 @@ func (p *Postgres) SetMemberRoles(ctx context.Context, workspaceID, userID strin
 	return tx.Commit(ctx)
 }
 
+// RemoveMember deletes the user's role bindings and their workspace group
+// rows in one transaction scoped to workspaceID, so FORCE RLS on the group
+// tables applies. SCIM deprovision calls this once per workspace and gets
+// the same cleanup. Lock order is bindings first, then group rows, the
+// same order as AddGroupMember, so the two cannot deadlock: a concurrent
+// add holds FOR SHARE on the binding rows, this waits for it, and the
+// group-row delete that follows sees the new row. ErrLastAdmin rolls back
+// both deletes.
 func (p *Postgres) RemoveMember(ctx context.Context, workspaceID, userID string) error {
-	tx, err := p.db.Begin(ctx)
+	if !authz.ValidUUID(workspaceID) || !authz.ValidUUID(userID) {
+		return ErrInvalid
+	}
+	tx, err := postgres.BeginScoped(ctx, p.db, workspaceID)
 	if err != nil {
 		return mapDBErr(err)
 	}
@@ -674,6 +686,11 @@ func (p *Postgres) RemoveMember(ctx context.Context, workspaceID, userID string)
 	}
 	if err := ensureAdmin(ctx, tx, workspaceID); err != nil {
 		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM workspace_group_members WHERE workspace_id = $1::uuid AND user_id = $2::uuid
+	`, workspaceID, userID); err != nil {
+		return mapDBErr(err)
 	}
 	return tx.Commit(ctx)
 }
