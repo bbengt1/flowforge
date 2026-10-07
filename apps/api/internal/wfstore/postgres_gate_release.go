@@ -8,6 +8,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/parkedapproval"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -25,6 +26,17 @@ import (
 // run. A gate that is not waiting is left alone. This does not rewrite
 // the approval row the caller already canceled.
 func SettleUnresolvableGate(ctx context.Context, tx pgx.Tx, scope isolation.Scope, workflowID, executionID, nodeID string, now time.Time) error {
+	return settleUnresolvableGate(ctx, tx, scope, workflowID, executionID, nodeID, now, requirementUnresolvableStepError())
+}
+
+// SettleNoEligibleDeciderGate is SettleUnresolvableGate with the step
+// error details.cause no_eligible_decider (boot resync found that nobody
+// but the requester could decide a targeted gate).
+func SettleNoEligibleDeciderGate(ctx context.Context, tx pgx.Tx, scope isolation.Scope, workflowID, executionID, nodeID string, now time.Time) error {
+	return settleUnresolvableGate(ctx, tx, scope, workflowID, executionID, nodeID, now, NoEligibleDeciderError())
+}
+
+func settleUnresolvableGate(ctx context.Context, tx pgx.Tx, scope isolation.Scope, workflowID, executionID, nodeID string, now time.Time, stepErr map[string]any) error {
 	executionID = strings.TrimSpace(executionID)
 	nodeID = strings.TrimSpace(nodeID)
 	if !authz.ValidUUID(executionID) || nodeID == "" {
@@ -70,7 +82,7 @@ func SettleUnresolvableGate(ctx context.Context, tx pgx.Tx, scope isolation.Scop
 		}
 		return mapDBErr(err)
 	}
-	errRaw, err := marshalObject(requirementUnresolvableStepError())
+	errRaw, err := marshalObject(stepErr)
 	if err != nil {
 		return ErrInvalid
 	}
@@ -109,6 +121,20 @@ func SettleUnresolvableGate(ctx context.Context, tx pgx.Tx, scope isolation.Scop
 		Details:      map[string]any{"reason": ReasonRequirementUnresolvable, "nodeId": nodeID},
 	})
 	return err
+}
+
+// ErrNoEligibleDecider is returned by WaitJob when a targeted gate has
+// no possible decider besides the requester. Nothing is written; the
+// caller fails the job with NoEligibleDeciderError.
+var ErrNoEligibleDecider = parkedapproval.ErrNoEligibleDecider
+
+// NoEligibleDeciderError is the step error for a targeted gate that
+// nobody but the requester could ever decide.
+func NoEligibleDeciderError() map[string]any {
+	out := requirementUnresolvableStepError()
+	out["message"] = "No one other than the requester can decide this approval."
+	out["details"] = map[string]any{"cause": parkedapproval.CauseNoEligibleDecider}
+	return out
 }
 
 // RequirementUnresolvableError is the job and step failure compose writes

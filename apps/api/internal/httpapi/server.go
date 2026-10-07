@@ -320,6 +320,17 @@ func newServer(d Deps) *API {
 			wfMem.SetApprovalUnresolvable(apMem.CancelUnresolvableGate)
 		}
 	}
+	if apMem, ok := approvalStore.(*approval.Memory); ok {
+		if idMem, ok := d.Store.(*identity.Memory); ok {
+			apMem.SetGroupMembership(idMem.InTargetGroups)
+			if wfMem, ok := workflows.(*wfstore.Memory); ok {
+				wfMem.SetApprovalDecider(func(ctx context.Context, workspaceID string, p wfstore.ParkedApproval) (bool, error) {
+					snap, err := idMem.ResolveApprovalSnapshot(ctx, workspaceID, p.RequestedBy, p.ApproverRole, p.ApproverUsers, p.ApproverGroups)
+					return snap.HasDecider, err
+				})
+			}
+		}
+	}
 	alertStore := d.Alerts
 	if alertStore == nil {
 		alertStore = inferAlerts(d.DB)

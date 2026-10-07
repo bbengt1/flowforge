@@ -13,6 +13,7 @@ func Routes(s *core.Server) []rt.Route {
 	}
 	return []rt.Route{
 		rt.R(http.MethodGet, "/api/v1/approvals/catalog", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, getApprovalCatalog)),
+		rt.R(http.MethodGet, "/api/v1/approvals/approver-candidates", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, listApproverCandidates)),
 		rt.R(http.MethodPost, "/api/v1/policy/evaluate", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, evaluatePolicy)),
 		rt.R(http.MethodGet, "/api/v1/approvals", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, listApprovals)),
 		rt.R(http.MethodPost, "/api/v1/approvals", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, createApprovals)),

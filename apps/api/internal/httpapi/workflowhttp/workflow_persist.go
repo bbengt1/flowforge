@@ -94,12 +94,15 @@ type PublishResponse struct {
 
 type ExecutionResponse struct {
 	wfstore.Execution
-	StatusReason string                  `json:"statusReason,omitempty"`
-	Pins         []opsconfig.Pin         `json:"pins"`
-	Steps        []wfstore.ExecutionStep `json:"steps"`
-	Jobs         []wfstore.ExecutionJob  `json:"jobs"`
-	AuditEvents  []wfstore.AuditEvent    `json:"auditEvents"`
-	Artifacts    []wfstore.Artifact      `json:"artifacts"`
+	StatusReason string `json:"statusReason,omitempty"`
+	// StatusReasonDetails carries cause no_eligible_decider with
+	// statusReason requirement_unresolvable when the failing gate set it.
+	StatusReasonDetails map[string]any          `json:"statusReasonDetails,omitempty"`
+	Pins                []opsconfig.Pin         `json:"pins"`
+	Steps               []wfstore.ExecutionStep `json:"steps"`
+	Jobs                []wfstore.ExecutionJob  `json:"jobs"`
+	AuditEvents         []wfstore.AuditEvent    `json:"auditEvents"`
+	Artifacts           []wfstore.Artifact      `json:"artifacts"`
 }
 
 type ExportResponse struct {
@@ -344,6 +347,13 @@ func PublishWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	draft, err := s.Workflows.GetDraft(r.Context(), scope, strings.TrimSpace(r.PathValue("workflowId")))
 	if err != nil {
 		WriteWorkflowStoreError(w, r, err)
+		return
+	}
+	if errs, err := validatePublishApprovers(r.Context(), s, scope, draft.DefinitionYAML); err != nil {
+		core.WriteProblem(w, r, http.StatusServiceUnavailable, core.CodeDependencyUnavailable, "Dependency Unavailable", "Approvers could not be checked. Retry.")
+		return
+	} else if len(errs) > 0 {
+		writeWorkflowErrors(w, r, errs)
 		return
 	}
 	if refs := opsconfig.ExtractRefs(draft.DefinitionYAML); len(refs) > 0 && s.Ops != nil {

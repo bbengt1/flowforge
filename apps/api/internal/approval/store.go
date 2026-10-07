@@ -32,6 +32,10 @@ var (
 	// failure while rebuilding a requirement. It is not a missing version
 	// or a deterministic evaluation failure. Callers retry and record nothing.
 	ErrBindingTransient = errors.New("approval binding lookup failed temporarily")
+	// ErrApproverNotTargeted is a targeted gate decided by someone who is
+	// not a snapshot user, not a live snapshot group member, and not a
+	// non-requester admin. Nothing is recorded.
+	ErrApproverNotTargeted = errors.New("caller is not a targeted approver")
 )
 
 // Status values.
@@ -97,7 +101,66 @@ type Record struct {
 	CloseReason        string     `json:"closeReason,omitempty"`
 	CreatedAt          time.Time  `json:"createdAt"`
 	UpdatedAt          time.Time  `json:"updatedAt"`
+
+	// ApproversDigest is '' when untargeted. It is the authority on
+	// whether the row is targeted, not whether snapshot rows exist.
+	ApproversDigest string `json:"-"`
+	// ApproverUserIDs and ApproverGroupIDs are the park-time snapshot.
+	ApproverUserIDs  []string `json:"-"`
+	ApproverGroupIDs []string `json:"-"`
+	// CloseReasonDetails carries cause no_eligible_decider when known.
+	CloseReasonDetails map[string]any `json:"closeReasonDetails,omitempty"`
+	// Approvers and Capabilities are filled in by the API layer.
+	Approvers    *Approvers    `json:"approvers,omitempty"`
+	Capabilities *Capabilities `json:"capabilities,omitempty"`
 }
+
+// Targeted reports whether the gate names approvers.
+func (r Record) Targeted() bool { return r.ApproversDigest != "" }
+
+// PrincipalRef is a display name and UUID only.
+type PrincipalRef struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"displayName"`
+}
+
+// Approvers is the API view of a targeted gate's snapshot.
+type Approvers struct {
+	Users  []PrincipalRef `json:"users"`
+	Groups []PrincipalRef `json:"groups"`
+}
+
+// Capabilities is the caller's read-only view of what they may do.
+type Capabilities struct {
+	Decide DecideCapability `json:"decide"`
+}
+
+// DecideCapability mirrors decide's checks on the stored row.
+type DecideCapability struct {
+	Allowed bool   `json:"allowed"`
+	Via     string `json:"via,omitempty"`
+	Code    string `json:"code,omitempty"`
+	Reason  string `json:"reason,omitempty"`
+}
+
+// Decide routes and capability codes.
+const (
+	ViaTarget        = "target"
+	ViaAdminOverride = "admin_override"
+
+	CapMissingPermission   = "missing_permission"
+	CapSelfApproval        = "self_approval"
+	CapRoleMismatch        = "role_mismatch"
+	CapApproverNotTargeted = "approver_not_targeted"
+	CapNotPending          = "not_pending"
+	CapApprovalClosed      = "approval_closed"
+
+	// AuditDecidedByAdminOverride is the audit action for an override.
+	AuditDecidedByAdminOverride = "approval.decided_by_admin_override"
+	// CauseNoEligibleDecider is the requirement_unresolvable cause for a
+	// targeted gate nobody but the requester could decide.
+	CauseNoEligibleDecider = parkedapproval.CauseNoEligibleDecider
+)
 
 // Event is a secret-free approval audit row.
 type Event struct {
@@ -119,7 +182,16 @@ type Filter struct {
 	Page              page.Query
 	// Actionable limits a pending list to rows this caller may decide
 	// from the stored role. It does not re-evaluate policy.
+	//
+	// On a targeted row the caller must also be a snapshot user or a live
+	// member of a snapshot group, unless they are an admin who is not the
+	// requester (admin override).
 	Actionable bool
+	// AwaitingMe limits to pending rows the caller may decide without an
+	// admin override: untargeted rows they hold the role for, and targeted
+	// rows that name them directly or through a group. Never the
+	// requester's own rows.
+	AwaitingMe bool
 	ActorID    string
 	ActorRoles []string
 }
@@ -207,13 +279,17 @@ type Store interface {
 	Refresh(ctx context.Context, scope isolation.Scope, id string, heads CurrentHeads, now time.Time) (Record, error)
 	InvalidateMatching(ctx context.Context, scope isolation.Scope, in InvalidateInput) (int, error)
 	Events(ctx context.Context, scope isolation.Scope, id string) ([]Event, error)
+	// TargetsCaller reports, per record id, whether userID is a snapshot
+	// user or a live eligible member of a snapshot group. Untargeted rows
+	// are omitted. Read-only; decide stays authoritative.
+	TargetsCaller(ctx context.Context, scope isolation.Scope, recs []Record, userID string) (map[string]bool, error)
 }
 
 // BindingFingerprint is the immutable bind of version + target + policy +
 // operation + approver role. Pass a non-empty executionID only for mid-run
 // waits so pre-run fingerprints stay stable.
-func BindingFingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID, approverRole, executionID string) string {
-	return parkedapproval.Fingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID, approverRole, executionID)
+func BindingFingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID, approverRole, executionID, approversDigest string) string {
+	return parkedapproval.Fingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID, approverRole, executionID, approversDigest)
 }
 
 // Freshness reports whether a record is still usable against current heads.

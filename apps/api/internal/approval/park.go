@@ -41,9 +41,15 @@ func InsertParked(ctx context.Context, tx pgx.Tx, scope isolation.Scope, in Crea
 		PolicyRevision:    req.PolicyRevision,
 		ApproverRole:      req.ApproverRole,
 		ExpiresAt:         expiresAt,
+		ApproversDigest:   req.ApproversDigest,
+		ApproverUsers:     req.ApproverUsers,
+		ApproverGroups:    req.ApproverGroups,
 	})
 	if errors.Is(err, parkedapproval.ErrInvalid) {
 		return ErrInvalid
+	}
+	if errors.Is(err, parkedapproval.ErrNoEligibleDecider) {
+		return err
 	}
 	return mapDBErr(err)
 }

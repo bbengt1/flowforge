@@ -52,6 +52,7 @@ const (
 	CodeApprovalRequirementUnavailable = core.CodeApprovalRequirementUnavailable
 	CodeGroupNameTaken                 = core.CodeGroupNameTaken
 	CodeGroupMemberNotInWorkspace      = core.CodeGroupMemberNotInWorkspace
+	CodeApproverNotTargeted            = core.CodeApproverNotTargeted
 	MaxRequestBody                     = core.MaxRequestBody
 	RequestIDHeader                    = core.RequestIDHeader
 	AuthPublic                         = rt.AuthPublic

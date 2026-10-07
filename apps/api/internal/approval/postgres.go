@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -25,7 +26,7 @@ const recordColumns = `
 	status, expires_at,
 	COALESCE(requested_by::text, ''), COALESCE(decided_by::text, ''), decided_at, decision_note,
 	COALESCE(close_reason, ''),
-	created_at, updated_at
+	created_at, updated_at, approvers_digest
 `
 
 // DB is the subset of pgx used by Postgres.
@@ -117,12 +118,22 @@ func (p *Postgres) List(ctx context.Context, scope isolation.Scope, filter Filte
 			parts = append(parts, "expires_at > now()")
 		}
 	}
-	if filter.Actionable {
+	if filter.Actionable || filter.AwaitingMe {
 		roles := filter.ActorRoles
 		if roles == nil {
 			roles = []string{}
 		}
-		parts = append(parts, `(approver_role = ANY($`+page.Place(&args, roles)+`::text[]) OR 'admin' = ANY($`+page.Place(&args, roles)+`::text[]))`)
+		rolesArg := page.Place(&args, roles)
+		roleMatch := `(approver_role = ANY($` + rolesArg + `::text[]) OR 'admin' = ANY($` + rolesArg + `::text[]))`
+		actor := page.Place(&args, nullUUID(filter.ActorID))
+		targeted := targetedPredicate("$" + actor)
+		notRequester := `requested_by IS DISTINCT FROM $` + actor + `::uuid`
+		if filter.AwaitingMe {
+			parts = append(parts, notRequester, `(`+roleMatch+` AND (approvers_digest = '' OR `+targeted+`))`)
+		} else {
+			parts = append(parts, `((approvers_digest = '' AND `+roleMatch+`)
+			  OR (approvers_digest <> '' AND (('admin' = ANY($`+rolesArg+`::text[]) AND `+notRequester+`) OR (`+roleMatch+` AND `+targeted+`))))`)
+		}
 	}
 	if filter.WorkflowID != "" {
 		parts = append(parts, "workflow_id = $"+page.Place(&args, filter.WorkflowID)+"::uuid")
@@ -177,6 +188,54 @@ func (p *Postgres) List(ctx context.Context, scope isolation.Scope, filter Filte
 		page.Remember(filter.Page, next)
 		out = paged
 	}
+	if err := loadTargetsTx(ctx, tx, out); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, mapDBErr(err)
+	}
+	return out, nil
+}
+
+// targetedPredicate matches a row whose snapshot names actor directly or
+// through a group the actor is a live, active, bound member of.
+func targetedPredicate(actor string) string {
+	return `(EXISTS (SELECT 1 FROM approval_approver_users au
+	                  WHERE au.workspace_id = approvals.workspace_id AND au.approval_id = approvals.id AND au.user_id = ` + actor + `::uuid)
+	      OR EXISTS (SELECT 1 FROM approval_approver_groups ag
+	                   JOIN workspace_group_members m ON m.workspace_id = ag.workspace_id AND m.group_id = ag.group_id
+	                   JOIN users u ON u.id = m.user_id AND u.status = 'active'
+	                  WHERE ag.workspace_id = approvals.workspace_id AND ag.approval_id = approvals.id AND m.user_id = ` + actor + `::uuid
+	                    AND EXISTS (SELECT 1 FROM workspace_role_bindings b WHERE b.workspace_id = m.workspace_id AND b.user_id = m.user_id)))`
+}
+
+// TargetsCaller implements Store.
+func (p *Postgres) TargetsCaller(ctx context.Context, scope isolation.Scope, recs []Record, userID string) (map[string]bool, error) {
+	if scope.Zero() {
+		return nil, ErrNoScope
+	}
+	out := map[string]bool{}
+	var targeted []Record
+	for _, rec := range recs {
+		if rec.Targeted() {
+			targeted = append(targeted, rec)
+		}
+	}
+	if len(targeted) == 0 || !authz.ValidUUID(userID) {
+		return out, nil
+	}
+	tx, err := postgres.BeginScoped(ctx, p.db, scope.WorkspaceID())
+	if err != nil {
+		return nil, mapDBErr(err)
+	}
+	defer tx.Rollback(ctx)
+	for _, rec := range targeted {
+		in, err := isTargetedCallerTx(ctx, tx, scope.WorkspaceID(), rec, userID)
+		if err != nil {
+			return nil, err
+		}
+		out[rec.ID] = in
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, mapDBErr(err)
 	}
@@ -199,10 +258,14 @@ func (p *Postgres) Get(ctx context.Context, scope isolation.Scope, id string) (R
 	if err := scanRecord(tx.QueryRow(ctx, `SELECT `+recordColumns+` FROM approvals WHERE id = $1::uuid`, id), &rec); err != nil {
 		return Record{}, err
 	}
+	recs := []Record{rec}
+	if err := loadTargetsTx(ctx, tx, recs); err != nil {
+		return Record{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return Record{}, mapDBErr(err)
 	}
-	return rec, nil
+	return recs[0], nil
 }
 
 func (p *Postgres) Decide(ctx context.Context, scope isolation.Scope, id string, in DecideInput) (Record, error) {
@@ -288,6 +351,13 @@ func (p *Postgres) Decide(ctx context.Context, scope isolation.Scope, id string,
 	if rec.Status != StatusPending {
 		return Record{}, ErrNotPending
 	}
+	if rec.Targeted() {
+		recs := []Record{rec}
+		if err := loadTargetsTx(ctx, tx, recs); err != nil {
+			return Record{}, fmt.Errorf("%w: approver snapshot", ErrBindingTransient)
+		}
+		rec = recs[0]
+	}
 	next, changed, err := authorizeDerived(ctx, scope, rec, in)
 	if err != nil {
 		if errors.Is(err, ErrBindingTransient) || errors.Is(err, ErrBindingUnresolved) {
@@ -307,6 +377,14 @@ func (p *Postgres) Decide(ctx context.Context, scope isolation.Scope, id string,
 		}
 		return Record{}, err
 	}
+	// Step 8: approver check, after the role check and before any write.
+	// A refusal records nothing and corrects nothing.
+	via := ViaTarget
+	if rec.Targeted() {
+		if via, err = decideRouteTx(ctx, tx, scope.WorkspaceID(), rec, scope.ActorID(), in.Roles); err != nil {
+			return Record{}, err
+		}
+	}
 	if changed {
 		before := rec
 		if rec, err = updateBinding(ctx, tx, next, now); err != nil {
@@ -323,13 +401,22 @@ func (p *Postgres) Decide(ctx context.Context, scope isolation.Scope, id string,
 		RETURNING `+recordColumns, id, decision, actorArg(scope), now, note).Scan(recordDest(&rec)...); err != nil {
 		return Record{}, mapDBErr(err)
 	}
-	if err := insertEvent(ctx, tx, scope, rec.ID, decision, scope.ActorID(), map[string]any{"noteLength": len(note)}); err != nil {
+	if err := insertEvent(ctx, tx, scope, rec.ID, decision, scope.ActorID(), map[string]any{"noteLength": len(note), "via": via}); err != nil {
+		return Record{}, err
+	}
+	if via == ViaAdminOverride {
+		if err := insertOverrideAuditTx(ctx, tx, scope.WorkspaceID(), scope.ActorID(), rec, decision); err != nil {
+			return Record{}, err
+		}
+	}
+	recs := []Record{rec}
+	if err := loadTargetsTx(ctx, tx, recs); err != nil {
 		return Record{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Record{}, mapDBErr(err)
 	}
-	return rec, nil
+	return recs[0], nil
 }
 
 func (p *Postgres) ClosePendingForExecution(ctx context.Context, scope isolation.Scope, executionID, reason string, now time.Time) error {
@@ -591,7 +678,7 @@ func scanRecord(row rowScanner, rec *Record) error {
 		&rec.PolicyResourceID, &rec.PolicyVersionID, &rec.PolicyDigest, &rec.PolicyRevision,
 		&rec.BindingFingerprint, &rec.ApproverRole, &rec.Status, &rec.ExpiresAt,
 		&rec.RequestedBy, &rec.DecidedBy, &decidedAt, &rec.DecisionNote, &rec.CloseReason,
-		&rec.CreatedAt, &rec.UpdatedAt,
+		&rec.CreatedAt, &rec.UpdatedAt, &rec.ApproversDigest,
 	)
 	if err != nil {
 		return mapDBErr(err)
@@ -608,7 +695,7 @@ func recordDest(rec *Record) []any {
 		&rec.PolicyResourceID, &rec.PolicyVersionID, &rec.PolicyDigest, &rec.PolicyRevision,
 		&rec.BindingFingerprint, &rec.ApproverRole, &rec.Status, &rec.ExpiresAt,
 		&rec.RequestedBy, &rec.DecidedBy, &rec.DecidedAt, &rec.DecisionNote, &rec.CloseReason,
-		&rec.CreatedAt, &rec.UpdatedAt,
+		&rec.CreatedAt, &rec.UpdatedAt, &rec.ApproversDigest,
 	}
 }
 

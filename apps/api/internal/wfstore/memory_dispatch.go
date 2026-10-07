@@ -610,9 +610,30 @@ func (m *Memory) expiredApprovalCandidatesLocked(scope isolation.Scope, now time
 	return out
 }
 
-func (m *Memory) WaitJob(_ context.Context, scope isolation.Scope, now time.Time, in WaitJobInput) (DispatchResult, error) {
+func (m *Memory) WaitJob(ctx context.Context, scope isolation.Scope, now time.Time, in WaitJobInput) (DispatchResult, error) {
 	if now.IsZero() {
 		now = time.Now().UTC()
+	}
+	// Item 6, same rule as Postgres ensureParkedApprovalTx: a targeted
+	// gate nobody but the requester could decide is not parked. The
+	// caller fails it with NoEligibleDeciderError.
+	if in.Approval != nil && in.Approval.ApproversDigest != "" && !scope.Zero() {
+		m.mu.Lock()
+		decider := m.approvalDecider
+		waiting := false
+		if _, job, ok := m.lookupJobLocked(scope.WorkspaceID(), in.JobID); ok {
+			waiting = job.Status == JobWaiting
+		}
+		m.mu.Unlock()
+		if decider != nil && !waiting {
+			ok, err := decider(ctx, scope.WorkspaceID(), *in.Approval)
+			if err != nil {
+				return DispatchResult{}, err
+			}
+			if !ok {
+				return DispatchResult{}, ErrNoEligibleDecider
+			}
+		}
 	}
 	return m.mutateWait(scope, now, in.JobID, func(exec *memExecution, job *ExecutionJob, step *ExecutionStep) error {
 		if job.Status == JobWaiting {

@@ -3,7 +3,10 @@
 package policy
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -44,6 +47,31 @@ type Requirement struct {
 	ExpiresAt        time.Time `json:"expiresAt"`
 	Reason           string    `json:"reason,omitempty"`
 	Wait             bool      `json:"wait,omitempty"`
+	// ApproverUsers and ApproverGroups come from the step's with.approvers
+	// only, never from a pinned policy. ApproversDigest is '' when the
+	// step names no approvers (untargeted).
+	ApproverUsers   []string `json:"approverUsers,omitempty"`
+	ApproverGroups  []string `json:"approverGroups,omitempty"`
+	ApproversDigest string   `json:"approversDigest,omitempty"`
+}
+
+// ApproversDigest is sha256 over the sorted user and group ids, or ” when
+// untargeted. Users and groups are tagged so the same UUID in either list
+// cannot collide.
+func ApproversDigest(users, groups []string, targeted bool) string {
+	if !targeted {
+		return ""
+	}
+	parts := make([]string, 0, len(users)+len(groups))
+	for _, id := range users {
+		parts = append(parts, "u:"+strings.ToLower(strings.TrimSpace(id)))
+	}
+	for _, id := range groups {
+		parts = append(parts, "g:"+strings.ToLower(strings.TrimSpace(id)))
+	}
+	sort.Strings(parts)
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\n")))
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 // OperationResult is the per-node evaluation outcome.
@@ -276,7 +304,11 @@ func finishRequirement(node workflow.Node, target, policyPin opsconfig.Pin, role
 		role = defaultApproverRole
 	}
 	exp, expiresIn := workflow.ApprovalWaitDuration(expiresIn)
+	users, groups, targeted := workflow.ApprovalApprovers(node.With)
 	return Requirement{
+		ApproverUsers:    users,
+		ApproverGroups:   groups,
+		ApproversDigest:  ApproversDigest(users, groups, targeted),
 		NodeID:           node.ID,
 		NodeName:         node.Name,
 		Operation:        strings.TrimSpace(node.Type),

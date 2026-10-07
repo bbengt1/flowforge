@@ -1195,6 +1195,12 @@ export const GENERATED_PROXY_ROUTES: readonly GeneratedProxyRoute[] = [
     params: {},
   },
   {
+    methods: ["GET"],
+    pattern: ["approvals", "approver-candidates"],
+    auth: "authenticated",
+    params: {},
+  },
+  {
     methods: ["POST"],
     pattern: ["policy", "evaluate"],
     auth: "authenticated",

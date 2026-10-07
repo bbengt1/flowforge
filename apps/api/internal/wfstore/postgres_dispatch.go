@@ -826,9 +826,15 @@ func ensureParkedApprovalTx(ctx context.Context, tx pgx.Tx, scope isolation.Scop
 		PolicyDigest:      seed.PolicyDigest,
 		PolicyRevision:    seed.PolicyRevision,
 		ExpiresAt:         deadline,
+		ApproversDigest:   seed.ApproversDigest,
+		ApproverUsers:     seed.ApproverUsers,
+		ApproverGroups:    seed.ApproverGroups,
 	})
 	if errors.Is(err, parkedapproval.ErrInvalid) {
 		return ErrInvalid
+	}
+	if errors.Is(err, parkedapproval.ErrNoEligibleDecider) {
+		return err
 	}
 	return mapDBErr(err)
 }

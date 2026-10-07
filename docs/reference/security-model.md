@@ -69,7 +69,14 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
  groups. Group create, replace, and delete are rejected. Workspace
  groups (`/workspace/groups`) never grant a permission. They only name
  who an approval targets, and a member still needs `approval.decide`
- from their own roles. A query
+ from their own roles. A targeted gate (`with.approvers`) is decided by
+ a named user or a live member of a named group who also holds the
+ role. Otherwise an admin who is not the requester may decide it as an
+ override, which is recorded as `via: admin_override` on the approval
+ event and as audit action `approval.decided_by_admin_override`. Anyone
+ else gets `403` `approver_not_targeted`. The requester can never
+ decide, even as admin. A group id from another workspace or tenant is
+ rejected at publish exactly like a random UUID. A query
  `access_token` is `401` and is not echoed. Self-asserted header identity is enabled only by the
  explicit, non-default `TRUSTED_DEV_IDENTITY_HEADERS` flag together with
  `APP_ENV=development|dev|local|test`. Empty or missing config denies

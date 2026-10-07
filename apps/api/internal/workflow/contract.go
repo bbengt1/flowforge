@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 )
 
 var conditionOps = []string{"eq", "ne", "gt", "lt", "gte", "lte", "exists", "contains"}
@@ -237,6 +239,7 @@ func flowApprovalContract() NodeType {
 			{Name: "approverRole", Kind: "string", Required: true, Description: "Workspace role that may decide. Requester self-approval is denied."},
 			{Name: "expiresIn", Kind: "duration", Required: true, Description: "ISO-8601 wait expiry. Max P7D."},
 			{Name: "policyId", Kind: "uuid", Description: "Optional published policy UUID bound into the approval snapshot."},
+			{Name: "approvers", Kind: "object", Description: "Optional {users, groups} lists of user and workspace group UUIDs that may decide. At least 1 and at most 25 entries combined, no duplicates. Targeting only narrows: deciders still need approval.decide and the role."},
 		},
 		Policy: &NodePolicy{
 			Permissions:        []string{"workflow.execute", "approval.decide"},
@@ -414,7 +417,12 @@ func validateApprovalWith(n Node, path string) ErrorList {
 		s, ok := raw.(string)
 		if !ok || strings.TrimSpace(s) == "" {
 			errs = append(errs, fieldError(path+".with.approverRole", n.pos.Line, n.pos.Column, CodeInvalidType, "approverRole must be a non-empty string."))
+		} else if _, targeted := n.With["approvers"]; targeted && !authz.KnownRole(strings.TrimSpace(s)) {
+			errs = append(errs, fieldError(path+".with.approverRole", n.pos.Line, n.pos.Column, CodeInvalidWith, "approverRole must be a known workspace role when approvers is set."))
 		}
+	}
+	if raw, ok := n.With["approvers"]; ok {
+		errs = append(errs, validateApprovers(raw, path+".with.approvers", n.pos.Line, n.pos.Column)...)
 	}
 	raw, ok := n.With["expiresIn"]
 	if !ok {
@@ -435,6 +443,90 @@ func validateApprovalWith(n Node, path string) ErrorList {
 		errs = append(errs, fieldError(path+".with.expiresIn", n.pos.Line, n.pos.Column, CodeDurationLimit, fmt.Sprintf("expiresIn cannot exceed P7D (%d seconds).", MaxDelaySeconds)))
 	}
 	return errs
+}
+
+// MaxApprovers caps with.approvers users plus groups.
+const MaxApprovers = 25
+
+// validateApprovers checks with.approvers: an object whose only keys are
+// users and groups, each a list of UUIDs, at least one entry across both,
+// at most MaxApprovers combined, and no duplicates.
+func validateApprovers(raw any, path string, line, col int) ErrorList {
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return ErrorList{fieldError(path, line, col, CodeInvalidType, "approvers must be an object with users and/or groups.")}
+	}
+	var errs ErrorList
+	for k := range m {
+		if k != "users" && k != "groups" {
+			errs = append(errs, fieldError(path+"."+k, line, col, CodeUnknownField, fmt.Sprintf("approvers does not allow %s.", k)))
+		}
+	}
+	total := 0
+	seen := map[string]bool{}
+	for _, key := range []string{"users", "groups"} {
+		v, present := m[key]
+		if !present || v == nil {
+			continue
+		}
+		list, ok := v.([]any)
+		if !ok {
+			errs = append(errs, fieldError(path+"."+key, line, col, CodeInvalidType, key+" must be a list of UUIDs."))
+			continue
+		}
+		for i, item := range list {
+			p := fmt.Sprintf("%s.%s[%d]", path, key, i)
+			id, ok := item.(string)
+			id = strings.ToLower(strings.TrimSpace(id))
+			if !ok || !authz.ValidUUID(id) {
+				errs = append(errs, fieldError(p, line, col, CodeInvalidUUID, "Each approver must be a UUID."))
+				continue
+			}
+			if seen[key+":"+id] {
+				errs = append(errs, fieldError(p, line, col, CodeInvalidWith, "Duplicate approver."))
+				continue
+			}
+			seen[key+":"+id] = true
+			total++
+		}
+	}
+	if len(errs) > 0 {
+		return errs
+	}
+	if total == 0 {
+		return ErrorList{fieldError(path, line, col, CodeInvalidWith, "approvers must name at least one user or group.")}
+	}
+	if total > MaxApprovers {
+		return ErrorList{fieldError(path, line, col, CodeInvalidWith, fmt.Sprintf("approvers cannot name more than %d users and groups combined.", MaxApprovers))}
+	}
+	return nil
+}
+
+// ApprovalApprovers reads with.approvers from a validated flow.approval
+// node: lowercased, de-duplicated user and group UUIDs in YAML order.
+// targeted is true when the key is present.
+func ApprovalApprovers(with map[string]any) (users, groups []string, targeted bool) {
+	raw, ok := with["approvers"]
+	if !ok {
+		return nil, nil, false
+	}
+	m, _ := raw.(map[string]any)
+	read := func(key string) []string {
+		list, _ := m[key].([]any)
+		out := []string{}
+		seen := map[string]bool{}
+		for _, item := range list {
+			id, _ := item.(string)
+			id = strings.ToLower(strings.TrimSpace(id))
+			if !authz.ValidUUID(id) || seen[id] {
+				continue
+			}
+			seen[id] = true
+			out = append(out, id)
+		}
+		return out
+	}
+	return read("users"), read("groups"), true
 }
 
 func validateDelayWith(n Node, path string) ErrorList {

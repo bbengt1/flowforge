@@ -286,6 +286,9 @@ func parkedApproval(in *approval.CreateInput) *wfstore.ParkedApproval {
 		PolicyVersionID:   req.PolicyVersionID,
 		PolicyDigest:      req.PolicyDigest,
 		PolicyRevision:    req.PolicyRevision,
+		ApproversDigest:   req.ApproversDigest,
+		ApproverUsers:     req.ApproverUsers,
+		ApproverGroups:    req.ApproverGroups,
 	}
 }
 
