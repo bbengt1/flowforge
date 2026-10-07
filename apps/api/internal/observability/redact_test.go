@@ -57,3 +57,22 @@ func TestShouldRedactKey(t *testing.T) {
 		t.Fatal("safe keys should not redact")
 	}
 }
+
+func TestRedactingHandlerRedactsSCIMWorkspaceTokens(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(NewRedactingHandler(slog.NewJSONHandler(&buf, nil)))
+	tok := scimTokenPrefix + strings.Repeat("Ab1-_", 8) + "xyz"
+	log.Info("scim request",
+		"detail", "presented "+tok,
+		"err", errors.New("lookup failed for "+tok),
+		slog.Group("req", slog.String("header", tok)),
+		"path", "/scim/v2/Users",
+	)
+	out := buf.String()
+	if strings.Contains(out, tok) || strings.Contains(out, scimTokenPrefix) {
+		t.Fatalf("scim token leaked: %s", out)
+	}
+	if !strings.Contains(out, "/scim/v2/Users") {
+		t.Fatalf("path should remain: %s", out)
+	}
+}

@@ -9,6 +9,10 @@ import (
 
 const redacted = "[redacted]"
 
+// scimTokenPrefix matches scim.TokenPrefix. It is repeated here so the
+// log handler does not import the SCIM package.
+const scimTokenPrefix = "ffscim_"
+
 // NewRedactingHandler wraps next so secret-bearing keys and values never
 // reach the output. Used for structured JSON logs.
 func NewRedactingHandler(next slog.Handler) slog.Handler {
@@ -119,6 +123,11 @@ func looksLikeSecret(s string) bool {
 	}
 	lower := strings.ToLower(s)
 	if strings.HasPrefix(lower, "bearer ") {
+		return true
+	}
+	// SCIM workspace tokens carry a fixed prefix so any value that holds
+	// one is dropped whole, whatever its key.
+	if strings.Contains(s, scimTokenPrefix) {
 		return true
 	}
 	if strings.Contains(s, "://") && strings.Contains(s, "@") {
