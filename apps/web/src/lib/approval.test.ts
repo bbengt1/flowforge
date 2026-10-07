@@ -702,7 +702,7 @@ describe("approval decide 403", () => {
   it("renders a plain sentence for each close reason and hides unknown ones", () => {
     assert.equal(
       approvalCloseReasonSentence("requirement_unresolvable"),
-      "Closed because no one eligible could decide it.",
+      "Closed because its approval requirement could no longer be met.",
     );
     assert.equal(
       approvalCloseReasonSentence("workflow_deleted"),

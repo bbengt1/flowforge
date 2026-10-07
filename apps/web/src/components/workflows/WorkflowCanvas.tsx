@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { TooltipText, useTooltip } from "@/components/a11y/Tooltip";
 import { ACTION_DRAG_MIME } from "@/components/workflows/ActionLibrary";
+import { FF_STATUS_TIP_TRIGGER_CLASS } from "@/lib/a11y-tooltip";
 import type { ActionLibraryEntry } from "@/lib/workflow-action-library";
 import {
   EDITOR_CANVAS_REDO_LABEL,
@@ -804,6 +806,9 @@ function CanvasNode({
   const familyShape = editorNodeFamilyShapeClass(family);
   const stateLabel = canvasNodeStateLabel(node.state);
   const stateHelp = canvasNodeStateDescription(node.state);
+  // The node is the tab stop and its aria-label already carries the
+  // state help. Keyboard focus on the node shows the same help visibly.
+  const stateTip = useTooltip(stateHelp || undefined);
   return (
     <div
       id={readOnly ? `replay-node-${node.id}` : undefined}
@@ -815,6 +820,7 @@ function CanvasNode({
         stateHelp ? `. ${stateHelp}` : ""
       }${current ? " current node" : ""}${selected ? " selected" : ""}`}
       tabIndex={0}
+      {...stateTip.focusProps}
       onPointerDown={(event) => {
         event.stopPropagation();
         onSelect(event);
@@ -872,12 +878,25 @@ function CanvasNode({
           <p className={`font-mono text-[11px] ${FF_EDITOR_MUTED_CLASS}`}>{node.type}</p>
         </div>
         <p
-          className="flex items-center gap-1 text-[11px] font-medium"
+          className={`flex items-center gap-1 text-[11px] font-medium ${
+            stateHelp ? FF_STATUS_TIP_TRIGGER_CLASS : ""
+          }`}
           aria-label={stateHelp ? `State ${stateLabel}. ${stateHelp}` : `State ${stateLabel}`}
-          title={stateHelp || undefined}
+          data-ff-status-tip={stateHelp ? "node" : undefined}
+          {...(stateHelp ? stateTip.hoverProps : {})}
         >
           <span aria-hidden>{canvasNodeStateIcon(node.state)}</span>
           <span>{stateLabel}</span>
+          {stateHelp ? (
+            <span aria-hidden="true">
+              <TooltipText
+                controls={stateTip}
+                text={stateHelp}
+                align="end"
+                labelled={false}
+              />
+            </span>
+          ) : null}
         </p>
       </div>
       <div className="mt-2 flex justify-between gap-2">

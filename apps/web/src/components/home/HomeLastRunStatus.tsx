@@ -1,4 +1,8 @@
+"use client";
+
 import Link from "next/link";
+import { TooltipText, useTooltip } from "@/components/a11y/Tooltip";
+import { FF_STATUS_TIP_TRIGGER_CLASS } from "@/lib/a11y-tooltip";
 import {
   LOUD_ERROR_CLASS,
   LOUD_INDETERMINATE_CLASS,
@@ -57,12 +61,22 @@ export function HomeLastRunStatus({
         lastRunId: item.lastRunId,
       })
     : null;
-  const className = lastRunClassName(presentation.kind);
+  const className = `${lastRunClassName(presentation.kind)} ${FF_STATUS_TIP_TRIGGER_CLASS}`;
+  // The link is already a tab stop and its name already includes the
+  // help, so keyboard focus shows that help visibly. Without a link the
+  // chip adds no tab stop to the explorer row; the help stays in the
+  // row text and shows on hover.
+  const tip = useTooltip(presentation.help);
   const body = (
     <>
       <span aria-hidden="true">{presentation.icon}</span>
       <span className="truncate">{presentation.label}</span>
-      <span className="sr-only">{presentation.help}</span>
+      <TooltipText
+        controls={tip}
+        text={presentation.help}
+        align="start"
+        labelled={false}
+      />
     </>
   );
   return (
@@ -75,11 +89,16 @@ export function HomeLastRunStatus({
       className="min-w-0"
     >
       {href ? (
-        <Link href={href} title={presentation.help} className={`${className} hover:opacity-90`}>
+        <Link
+          href={href}
+          {...tip.focusProps}
+          {...tip.hoverProps}
+          className={`${className} hover:opacity-90`}
+        >
           {body}
         </Link>
       ) : (
-        <span title={presentation.help} className={className}>
+        <span {...tip.hoverProps} className={className}>
           {body}
         </span>
       )}

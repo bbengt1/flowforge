@@ -14,7 +14,7 @@ const REASONS = [
   {
     id: "a1111111-1111-4111-8111-111111111111",
     closeReason: "requirement_unresolvable",
-    sentence: "Closed because no one eligible could decide it.",
+    sentence: "Closed because its approval requirement could no longer be met.",
     name: "Unresolvable gate",
   },
   {
