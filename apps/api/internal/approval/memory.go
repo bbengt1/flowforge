@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -44,6 +45,49 @@ type Memory struct {
 	runPins map[string]memExecutionPin
 	gate    GateWaiting
 	failRun UnresolvableRun
+	groups  GroupMembership
+}
+
+// GroupMembership reports whether userID is an active, bound member of
+// any of groupIDs in the workspace. Memory uses it for targeted gates.
+// A nil hook means no group ever matches (fail closed).
+type GroupMembership func(ctx context.Context, workspaceID, userID string, groupIDs []string) (bool, error)
+
+// SetGroupMembership installs the live group check for targeted gates.
+func (m *Memory) SetGroupMembership(fn GroupMembership) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.groups = fn
+}
+
+func (m *Memory) targetsLocked(ctx context.Context, workspaceID string, rec Record, userID string) bool {
+	if slices.Contains(rec.ApproverUserIDs, userID) {
+		return true
+	}
+	if m.groups == nil || len(rec.ApproverGroupIDs) == 0 || userID == "" {
+		return false
+	}
+	in, err := m.groups(ctx, workspaceID, userID, rec.ApproverGroupIDs)
+	return err == nil && in
+}
+
+// TargetsCaller implements Store.
+func (m *Memory) TargetsCaller(ctx context.Context, scope isolation.Scope, recs []Record, userID string) (map[string]bool, error) {
+	if scope.Zero() {
+		return nil, ErrNoScope
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := map[string]bool{}
+	for _, rec := range recs {
+		if rec.Targeted() {
+			out[rec.ID] = m.targetsLocked(ctx, scope.WorkspaceID(), rec, userID)
+		}
+	}
+	return out, nil
 }
 
 // SetGateWaiting installs the check Decide uses before it accepts a decision.
@@ -248,7 +292,7 @@ func (m *Memory) Create(_ context.Context, scope isolation.Scope, in CreateInput
 	return cloneRecord(rec), nil
 }
 
-func (m *Memory) List(_ context.Context, scope isolation.Scope, filter Filter) ([]Record, error) {
+func (m *Memory) List(ctx context.Context, scope isolation.Scope, filter Filter) ([]Record, error) {
 	if scope.Zero() {
 		return nil, ErrNoScope
 	}
@@ -260,6 +304,9 @@ func (m *Memory) List(_ context.Context, scope isolation.Scope, filter Filter) (
 			continue
 		}
 		if !matchFilter(row.record, filter) {
+			continue
+		}
+		if (filter.Actionable || filter.AwaitingMe) && !m.actionableLocked(ctx, scope.WorkspaceID(), row.record, filter) {
 			continue
 		}
 		if filter.Status == StatusPending && !row.record.ExpiresAt.After(time.Now().UTC()) {
@@ -372,6 +419,16 @@ func (m *Memory) Decide(ctx context.Context, scope isolation.Scope, id string, i
 		}
 		return Record{}, err
 	}
+	via := ViaTarget
+	if rec.Targeted() {
+		switch {
+		case m.targetsLocked(ctx, scope.WorkspaceID(), rec, scope.ActorID()):
+		case slices.Contains(in.Roles, "admin"):
+			via = ViaAdminOverride
+		default:
+			return Record{}, ErrApproverNotTargeted
+		}
+	}
 	if changed {
 		m.appendEventLocked(scope, rec.ID, EventCorrected, scope.ActorID(), correctionDetails(rec, next))
 		rec = next
@@ -382,7 +439,7 @@ func (m *Memory) Decide(ctx context.Context, scope isolation.Scope, id string, i
 	rec.DecisionNote = note
 	rec.UpdatedAt = now
 	m.rows[id] = memRow{workspaceID: scope.WorkspaceID(), record: rec}
-	m.appendEventLocked(scope, rec.ID, decision, scope.ActorID(), map[string]any{"noteLength": len(rec.DecisionNote)})
+	m.appendEventLocked(scope, rec.ID, decision, scope.ActorID(), map[string]any{"noteLength": len(rec.DecisionNote), "via": via})
 	return cloneRecord(rec), nil
 }
 
@@ -548,7 +605,7 @@ func recordFromCreate(scope isolation.Scope, in CreateInput, now time.Time) (Rec
 	if role == "" {
 		role = "approver"
 	}
-	fp := BindingFingerprint(scope.WorkspaceID(), in.WorkflowVersionID, in.WorkflowDigest, req.TargetVersionID, req.PolicyVersionID, req.PolicyDigest, req.Operation, req.NodeID, role, in.ExecutionID)
+	fp := BindingFingerprint(scope.WorkspaceID(), in.WorkflowVersionID, in.WorkflowDigest, req.TargetVersionID, req.PolicyVersionID, req.PolicyDigest, req.Operation, req.NodeID, role, in.ExecutionID, req.ApproversDigest)
 	requestedBy := strings.TrimSpace(in.RequestedBy)
 	if requestedBy == "" {
 		requestedBy = scope.ActorID()
@@ -576,7 +633,44 @@ func recordFromCreate(scope isolation.Scope, in CreateInput, now time.Time) (Rec
 		RequestedBy:        requestedBy,
 		CreatedAt:          now,
 		UpdatedAt:          now,
+		ApproversDigest:    req.ApproversDigest,
+		ApproverUserIDs:    targetIDs(req.ApproversDigest, req.ApproverUsers, requestedBy),
+		ApproverGroupIDs:   targetIDs(req.ApproversDigest, req.ApproverGroups, ""),
 	}, nil
+}
+
+// targetIDs is the memory snapshot: the named ids, minus the requester.
+// Memory has no role or status view, so decide's own checks cover those.
+func targetIDs(digest string, ids []string, requester string) []string {
+	if digest == "" {
+		return nil
+	}
+	out := []string{}
+	for _, id := range ids {
+		if id != requester {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// actionableLocked is the memory twin of the Postgres list predicate.
+func (m *Memory) actionableLocked(ctx context.Context, workspaceID string, rec Record, filter Filter) bool {
+	roleOK := MayAct(filter.ActorRoles, rec)
+	requester := filter.ActorID != "" && rec.RequestedBy == filter.ActorID
+	if filter.AwaitingMe {
+		if requester || !roleOK {
+			return false
+		}
+		return !rec.Targeted() || m.targetsLocked(ctx, workspaceID, rec, filter.ActorID)
+	}
+	if !rec.Targeted() {
+		return roleOK
+	}
+	if slices.Contains(filter.ActorRoles, "admin") && !requester {
+		return true
+	}
+	return roleOK && m.targetsLocked(ctx, workspaceID, rec, filter.ActorID)
 }
 
 // ResyncPending rebuilds every pending row with ResolveGateRequirement.
@@ -701,9 +795,6 @@ func matchFilter(rec Record, filter Filter) bool {
 	if filter.ExecutionID != "" && rec.ExecutionID != filter.ExecutionID {
 		return false
 	}
-	if filter.Actionable && !MayAct(filter.ActorRoles, rec) {
-		return false
-	}
 	return true
 }
 
@@ -725,6 +816,8 @@ func cloneRecord(in Record) Record {
 		t := *in.DecidedAt
 		in.DecidedAt = &t
 	}
+	in.ApproverUserIDs = slices.Clone(in.ApproverUserIDs)
+	in.ApproverGroupIDs = slices.Clone(in.ApproverGroupIDs)
 	return in
 }
 

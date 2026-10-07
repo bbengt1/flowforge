@@ -249,13 +249,14 @@ func WriteExecutionDetail(s *core.Server, w http.ResponseWriter, r *http.Request
 		return
 	}
 	core.WriteJSON(w, status, ExecutionResponse{
-		Execution:    exec,
-		StatusReason: ExecutionStatusReason(exec, steps, jobs, Now(s)),
-		Pins:         pins,
-		Steps:        wfstore.BoundSteps(steps),
-		Jobs:         jobs,
-		AuditEvents:  audits,
-		Artifacts:    publicArtifacts(arts),
+		Execution:           exec,
+		StatusReason:        ExecutionStatusReason(exec, steps, jobs, Now(s)),
+		StatusReasonDetails: ExecutionStatusReasonDetails(exec, steps),
+		Pins:                pins,
+		Steps:               wfstore.BoundSteps(steps),
+		Jobs:                jobs,
+		AuditEvents:         audits,
+		Artifacts:           publicArtifacts(arts),
 	})
 }
 
@@ -279,6 +280,24 @@ func ExecutionStatusReason(exec wfstore.Execution, steps []wfstore.ExecutionStep
 		}
 	}
 	return QueuedUnclaimedReason(exec, jobs, now)
+}
+
+// ExecutionStatusReasonDetails copies details.cause from the step that
+// failed the run with requirement_unresolvable, when it carries one.
+func ExecutionStatusReasonDetails(exec wfstore.Execution, steps []wfstore.ExecutionStep) map[string]any {
+	if exec.Status != wfstore.ExecutionFailed {
+		return nil
+	}
+	for _, step := range steps {
+		if code, _ := step.Error["code"].(string); code != wfstore.ReasonRequirementUnresolvable {
+			continue
+		}
+		details, _ := step.Error["details"].(map[string]any)
+		if cause, _ := details["cause"].(string); cause != "" {
+			return map[string]any{"cause": cause}
+		}
+	}
+	return nil
 }
 
 // QueuedUnclaimedReason is an operator-visible hint when a run is still

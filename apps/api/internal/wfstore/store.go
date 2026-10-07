@@ -671,6 +671,11 @@ type ParkedApproval struct {
 	PolicyVersionID   string
 	PolicyDigest      string
 	PolicyRevision    int
+	// Approver targeting from the step's with.approvers. ApproversDigest
+	// is '' when untargeted.
+	ApproversDigest string
+	ApproverUsers   []string
+	ApproverGroups  []string
 }
 
 // WaitJobInput parks a claimed or queued job without a worker lease.

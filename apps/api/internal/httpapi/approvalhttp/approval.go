@@ -462,6 +462,9 @@ func parkedApprovalInput(in *approval.CreateInput) *wfstore.ParkedApproval {
 		PolicyVersionID:   req.PolicyVersionID,
 		PolicyDigest:      req.PolicyDigest,
 		PolicyRevision:    req.PolicyRevision,
+		ApproversDigest:   req.ApproversDigest,
+		ApproverUsers:     req.ApproverUsers,
+		ApproverGroups:    req.ApproverGroups,
 	}
 }
 
@@ -513,6 +516,16 @@ func ParkApprovalClaim(s *core.Server, ctx context.Context, scope isolation.Scop
 		AvailableAt: expires,
 		Approval:    parkedApprovalInput(seed),
 	})
+	if errors.Is(err, wfstore.ErrNoEligibleDecider) {
+		// Same payload as the production runner: nothing was parked, so
+		// fail the gate now with cause no_eligible_decider.
+		failed := claimAction(result)
+		failed.Error = wfstore.NoEligibleDeciderError()
+		if _, failErr := s.Workflows.FailJob(ctx, scope, s.Clock().UTC(), failed); failErr != nil {
+			return result, failErr
+		}
+		return result, fmt.Errorf("%w: %s", approval.ErrBindingUnresolved, approval.CauseNoEligibleDecider)
+	}
 	if err != nil {
 		return result, err
 	}
@@ -665,7 +678,7 @@ func DispatchApprovalsOK(s *core.Server, ctx context.Context, scope isolation.Sc
 		if fresh.Status != approval.StatusApproved {
 			return created, ErrApprovalRequired
 		}
-		if fresh.BindingFingerprint != approval.BindingFingerprint(scope.WorkspaceID(), versionID, eval.WorkflowDigest, rec.TargetVersionID, rec.PolicyVersionID, rec.PolicyDigest, rec.Operation, rec.NodeID, rec.ApproverRole, rec.ExecutionID) {
+		if fresh.BindingFingerprint != approval.BindingFingerprint(scope.WorkspaceID(), versionID, eval.WorkflowDigest, rec.TargetVersionID, rec.PolicyVersionID, rec.PolicyDigest, rec.Operation, rec.NodeID, rec.ApproverRole, rec.ExecutionID, rec.ApproversDigest) {
 			return created, ErrApprovalRequired
 		}
 	}

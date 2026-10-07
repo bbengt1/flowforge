@@ -227,6 +227,18 @@ func (r *Runner) claimOne(ctx context.Context, ws Workspace) (bool, error) {
 			if errors.Is(err, approval.ErrBindingTransient) {
 				return r.leaveTransientApproval(ctx, ws, *job)
 			}
+			if errors.Is(err, wfstore.ErrNoEligibleDecider) {
+				// Same payload as compose ParkApprovalClaim: the targeted
+				// gate has nobody but the requester to decide it, so it
+				// fails now with cause no_eligible_decider instead of
+				// waiting to expire. Nothing was parked.
+				failure := wfstore.NoEligibleDeciderError()
+				if failErr := r.queue.Fail(ctx, ws, *job, failure); failErr != nil {
+					return true, failErr
+				}
+				r.log.Info("production runner failed job", "job_id", job.Job.ID, "node_type", job.Step.NodeType, "code", failure["code"], "cause", approval.CauseNoEligibleDecider)
+				return true, nil
+			}
 			var unresolved approvalBindingError
 			if errors.As(err, &unresolved) {
 				// Same payload as compose ParkApprovalClaim: FailJob

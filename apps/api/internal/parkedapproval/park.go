@@ -19,6 +19,17 @@ import (
 // ErrInvalid means the parked approval is missing a required field.
 var ErrInvalid = errors.New("invalid parked approval")
 
+// ErrNoEligibleDecider means a targeted gate has nobody but the requester
+// who could ever decide it: no named user or live group member who is
+// active, bound, holds approval.decide, meets the role, and is not the
+// requester, and no active admin other than the requester. The caller
+// fails the gate with requirement_unresolvable and cause
+// no_eligible_decider. Nothing is written.
+var ErrNoEligibleDecider = errors.New("approval gate has no eligible decider")
+
+// CauseNoEligibleDecider is the details.cause for ErrNoEligibleDecider.
+const CauseNoEligibleDecider = "no_eligible_decider"
+
 // Pending is the row inserted when a gate starts waiting.
 // ExpiresAt is the wait deadline. It is not recomputed here.
 type Pending struct {
@@ -42,12 +53,20 @@ type Pending struct {
 	PolicyRevision    int
 	ApproverRole      string
 	ExpiresAt         time.Time
+	// ApproversDigest is '' for an untargeted gate. When set, the named
+	// users and groups are resolved in this transaction.
+	ApproversDigest string
+	ApproverUsers   []string
+	ApproverGroups  []string
 }
 
 // Fingerprint matches approval.BindingFingerprint. The approver role and
 // the target and policy version ids are part of the bind, so a row minted
 // for a different role cannot be reused.
-func Fingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID, approverRole, executionID string) string {
+//
+// approversDigest is appended only when non-empty, so an untargeted gate
+// keeps the fingerprint it had before approver targeting existed.
+func Fingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID, policyVersionID, policyDigest, operation, nodeID, approverRole, executionID, approversDigest string) string {
 	role := strings.TrimSpace(approverRole)
 	if role == "" {
 		role = "approver"
@@ -65,6 +84,9 @@ func Fingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID
 	}
 	if exec := strings.TrimSpace(executionID); exec != "" {
 		parts = append(parts, exec)
+	}
+	if d := strings.TrimSpace(approversDigest); d != "" {
+		parts = append(parts, "approvers="+d)
 	}
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x1f")))
 	return "sha256:" + hex.EncodeToString(sum[:])
@@ -91,7 +113,19 @@ func Insert(ctx context.Context, tx pgx.Tx, in Pending) error {
 	}
 	expires := in.ExpiresAt.UTC()
 	now := time.Now().UTC()
-	fp := Fingerprint(in.WorkspaceID, in.WorkflowVersionID, in.WorkflowDigest, in.TargetVersionID, in.PolicyVersionID, in.PolicyDigest, operation, nodeID, role, in.ExecutionID)
+	digest := strings.TrimSpace(in.ApproversDigest)
+	var snap Snapshot
+	if digest != "" {
+		var err error
+		snap, err = ResolveSnapshot(ctx, tx, in.WorkspaceID, in.RequestedBy, role, in.ApproverUsers, in.ApproverGroups)
+		if err != nil {
+			return err
+		}
+		if !snap.HasDecider {
+			return ErrNoEligibleDecider
+		}
+	}
+	fp := Fingerprint(in.WorkspaceID, in.WorkflowVersionID, in.WorkflowDigest, in.TargetVersionID, in.PolicyVersionID, in.PolicyDigest, operation, nodeID, role, in.ExecutionID, digest)
 	if err := SupersedeOtherPending(ctx, tx, in.WorkspaceID, in.ExecutionID, nodeID, fp, now); err != nil {
 		return err
 	}
@@ -121,21 +155,26 @@ func Insert(ctx context.Context, tx pgx.Tx, in Pending) error {
 			workspace_id, workflow_id, workflow_version_id, workflow_digest, execution_id,
 			node_id, node_name, operation, target_kind, target_id, target_version_id, target_digest,
 			policy_resource_id, policy_version_id, policy_digest, policy_revision,
-			binding_fingerprint, approver_role, status, expires_at, requested_by
+			binding_fingerprint, approver_role, status, expires_at, requested_by, approvers_digest
 		) VALUES (
 			$1::uuid, $2::uuid, $3::uuid, $4, $5::uuid,
 			$6, $7, $8, $9, $10::uuid, $11::uuid, $12,
 			$13::uuid, $14::uuid, $15, $16,
-			$17, $18, 'pending', $19, $20::uuid
+			$17, $18, 'pending', $19, $20::uuid, $21
 		)
 		RETURNING id::text
 	`, in.WorkspaceID, in.WorkflowID, in.WorkflowVersionID, strings.TrimSpace(in.WorkflowDigest), nullUUID(in.ExecutionID),
 		nodeID, in.NodeName, operation, in.TargetKind, nullUUID(in.TargetID), nullUUID(in.TargetVersionID), in.TargetDigest,
 		nullUUID(in.PolicyResourceID), nullUUID(in.PolicyVersionID), in.PolicyDigest, in.PolicyRevision,
-		fp, role, expires, requestedBy(in),
+		fp, role, expires, requestedBy(in), digest,
 	).Scan(&id)
 	if err != nil {
 		return err
+	}
+	if digest != "" {
+		if err := WriteSnapshot(ctx, tx, in.WorkspaceID, id, snap); err != nil {
+			return err
+		}
 	}
 	raw, err := json.Marshal(map[string]any{"operation": operation, "nodeId": nodeID})
 	if err != nil {

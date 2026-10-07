@@ -173,7 +173,7 @@ func ProjectRequirement(rec Record, workspaceID string, req policy.Requirement) 
 	next.PolicyVersionID = req.PolicyVersionID
 	next.PolicyDigest = req.PolicyDigest
 	next.PolicyRevision = req.PolicyRevision
-	next.BindingFingerprint = BindingFingerprint(workspaceID, rec.WorkflowVersionID, rec.WorkflowDigest, rec.TargetVersionID, req.PolicyVersionID, req.PolicyDigest, rec.Operation, rec.NodeID, role, rec.ExecutionID)
+	next.BindingFingerprint = BindingFingerprint(workspaceID, rec.WorkflowVersionID, rec.WorkflowDigest, rec.TargetVersionID, req.PolicyVersionID, req.PolicyDigest, rec.Operation, rec.NodeID, role, rec.ExecutionID, rec.ApproversDigest)
 	changed := next.ApproverRole != rec.ApproverRole ||
 		next.PolicyResourceID != rec.PolicyResourceID ||
 		next.PolicyVersionID != rec.PolicyVersionID ||

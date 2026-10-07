@@ -8,6 +8,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/parkedapproval"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -115,6 +116,20 @@ func SettleUnresolvableGate(ctx context.Context, tx pgx.Tx, scope isolation.Scop
 // when a pinned approval requirement cannot be rebuilt. FailJob stores
 // this code, cancels a pending approval for that execution and node, and
 // rolls the run up so statusReason is requirement_unresolvable.
+// ErrNoEligibleDecider is returned by WaitJob when a targeted gate has
+// no possible decider besides the requester. Nothing is written; the
+// caller fails the job with NoEligibleDeciderError.
+var ErrNoEligibleDecider = parkedapproval.ErrNoEligibleDecider
+
+// NoEligibleDeciderError is the step error for a targeted gate that
+// nobody but the requester could ever decide.
+func NoEligibleDeciderError() map[string]any {
+	out := requirementUnresolvableStepError()
+	out["message"] = "No one other than the requester can decide this approval."
+	out["details"] = map[string]any{"cause": parkedapproval.CauseNoEligibleDecider}
+	return out
+}
+
 func RequirementUnresolvableError() map[string]any {
 	return requirementUnresolvableStepError()
 }

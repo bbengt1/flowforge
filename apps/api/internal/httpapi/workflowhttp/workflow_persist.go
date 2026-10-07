@@ -94,12 +94,15 @@ type PublishResponse struct {
 
 type ExecutionResponse struct {
 	wfstore.Execution
-	StatusReason string                  `json:"statusReason,omitempty"`
-	Pins         []opsconfig.Pin         `json:"pins"`
-	Steps        []wfstore.ExecutionStep `json:"steps"`
-	Jobs         []wfstore.ExecutionJob  `json:"jobs"`
-	AuditEvents  []wfstore.AuditEvent    `json:"auditEvents"`
-	Artifacts    []wfstore.Artifact      `json:"artifacts"`
+	StatusReason string `json:"statusReason,omitempty"`
+	// StatusReasonDetails carries cause no_eligible_decider with
+	// statusReason requirement_unresolvable when the failing gate set it.
+	StatusReasonDetails map[string]any          `json:"statusReasonDetails,omitempty"`
+	Pins                []opsconfig.Pin         `json:"pins"`
+	Steps               []wfstore.ExecutionStep `json:"steps"`
+	Jobs                []wfstore.ExecutionJob  `json:"jobs"`
+	AuditEvents         []wfstore.AuditEvent    `json:"auditEvents"`
+	Artifacts           []wfstore.Artifact      `json:"artifacts"`
 }
 
 type ExportResponse struct {
