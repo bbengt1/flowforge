@@ -59,6 +59,24 @@ type Memory struct {
 	audits               []memAudit
 	approvalPending      func(executionID, nodeID string) (time.Time, bool)
 	approvalUnresolvable func(executionID, nodeID string, now time.Time)
+	approvalDecider      ApprovalDecider
+}
+
+// ApprovalDecider reports whether a targeted gate has anyone besides the
+// requester who could decide it (parkedapproval.Snapshot.HasDecider).
+// An error is transient and parks nothing.
+type ApprovalDecider func(ctx context.Context, workspaceID string, p ParkedApproval) (bool, error)
+
+// SetApprovalDecider installs the park-time item-6 check for targeted
+// gates. Without it, a targeted gate parks as before. WaitJob calls it
+// before taking the workflow lock and writes nothing when it is false.
+func (m *Memory) SetApprovalDecider(fn ApprovalDecider) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.approvalDecider = fn
 }
 
 // SetApprovalPending reports a pending approval for a flow.approval step

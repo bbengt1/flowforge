@@ -81,6 +81,7 @@ func ResolveSnapshot(ctx context.Context, tx pgx.Tx, workspaceID, requester, rol
 		}
 	}
 
+	var cands []Candidate
 	rows, err := tx.Query(ctx, `
 		WITH cand AS (
 		    SELECT unnest($2::uuid[]) AS user_id, true AS named
@@ -102,30 +103,57 @@ func ResolveSnapshot(ctx context.Context, tx pgx.Tx, workspaceID, requester, rol
 		return Snapshot{}, err
 	}
 	for rows.Next() {
-		var id, status string
-		var named bool
-		var keys []string
-		if err := rows.Scan(&id, &named, &status, &keys); err != nil {
+		var c Candidate
+		if err := rows.Scan(&c.ID, &c.Named, &c.Status, &c.Roles); err != nil {
 			rows.Close()
 			return Snapshot{}, err
 		}
-		if !Eligible(id, status, requester, role, keys) {
-			continue
-		}
-		snap.Targeted = true
-		if named {
-			snap.Users = append(snap.Users, id)
-		}
+		cands = append(cands, c)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return Snapshot{}, err
 	}
+	return BuildSnapshot(requester, role, snap.Groups, cands, func() (bool, error) {
+		return OtherActiveAdmin(ctx, tx, workspaceID, requester)
+	})
+}
+
+// Candidate is one possible decider for a targeted gate: a named user
+// (Named) or a live member of a named group, with the user's status and
+// role keys in the gate's workspace.
+type Candidate struct {
+	ID     string
+	Named  bool
+	Status string
+	Roles  []string
+}
+
+// BuildSnapshot applies the item-6 rule to candidates. Postgres
+// (ResolveSnapshot) and the in-memory identity store both call it, so the
+// two stores share one eligibility rule. groups are the named groups that
+// exist in the workspace. otherAdmin is called only when no candidate is
+// eligible; it reports an active admin other than the requester.
+func BuildSnapshot(requester, role string, groups []string, cands []Candidate, otherAdmin func() (bool, error)) (Snapshot, error) {
+	requester = strings.ToLower(strings.TrimSpace(requester))
+	snap := Snapshot{Users: []string{}, Groups: append([]string{}, groups...)}
+	for _, c := range cands {
+		if !Eligible(c.ID, c.Status, requester, role, c.Roles) {
+			continue
+		}
+		snap.Targeted = true
+		if c.Named {
+			snap.Users = append(snap.Users, c.ID)
+		}
+	}
 	if snap.Targeted {
 		snap.HasDecider = true
 		return snap, nil
 	}
-	admin, err := OtherActiveAdmin(ctx, tx, workspaceID, requester)
+	if otherAdmin == nil {
+		return snap, nil
+	}
+	admin, err := otherAdmin()
 	if err != nil {
 		return Snapshot{}, err
 	}

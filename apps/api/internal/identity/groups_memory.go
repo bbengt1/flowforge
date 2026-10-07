@@ -2,12 +2,14 @@ package identity
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/page"
+	"github.com/bbengt1/flowforge/apps/api/internal/parkedapproval"
 )
 
 var _ GroupStore = (*Memory)(nil)
@@ -254,6 +256,62 @@ func (m *Memory) InTargetGroups(_ context.Context, workspaceID, userID string, g
 		}
 	}
 	return false, nil
+}
+
+// ResolveApprovalSnapshot is the in-memory twin of
+// parkedapproval.ResolveSnapshot. It gathers the same candidates (named
+// users plus members of named groups that exist in the workspace, with
+// status and role keys) and applies the shared parkedapproval.BuildSnapshot
+// rule, so park in memory fails no_eligible_decider exactly when Postgres
+// would.
+func (m *Memory) ResolveApprovalSnapshot(_ context.Context, workspaceID, requester, role string, users, groups []string) (parkedapproval.Snapshot, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	requester = strings.ToLower(strings.TrimSpace(requester))
+	existing := []string{}
+	named := map[string]bool{}
+	order := []string{}
+	add := func(id string, isNamed bool) {
+		if _, seen := named[id]; !seen {
+			order = append(order, id)
+		}
+		named[id] = named[id] || isNamed
+	}
+	for _, id := range validGroupIDs(users) {
+		add(id, true)
+	}
+	for _, id := range validGroupIDs(groups) {
+		g, err := m.groupLocked(workspaceID, id)
+		if err != nil {
+			continue
+		}
+		existing = append(existing, id)
+		for userID := range g.members {
+			add(userID, false)
+		}
+	}
+	sort.Strings(existing)
+	sort.Strings(order)
+	cands := make([]parkedapproval.Candidate, 0, len(order))
+	for _, id := range order {
+		u, ok := m.users[id]
+		if !ok {
+			continue
+		}
+		cands = append(cands, parkedapproval.Candidate{ID: id, Named: named[id], Status: u.Status, Roles: append([]string(nil), m.bindings[bindKey(workspaceID, id)]...)})
+	}
+	return parkedapproval.BuildSnapshot(requester, role, existing, cands, func() (bool, error) {
+		for key, roles := range m.bindings {
+			ws, userID, ok := strings.Cut(key, "\x00")
+			if !ok || ws != workspaceID || userID == requester || !slices.Contains(roles, "admin") {
+				continue
+			}
+			if u, ok := m.users[userID]; ok && u.Status == "active" {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
 }
 
 // ResolveTargetUsers is the in-memory twin of the package-level helper.
