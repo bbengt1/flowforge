@@ -305,7 +305,11 @@ func listApprovalEvents(s *core.Server, w http.ResponseWriter, r *http.Request) 
 }
 
 func reservedApprovalCollection(id string) bool {
-	return strings.TrimSpace(id) == "catalog"
+	switch strings.TrimSpace(id) {
+	case "catalog", "approver-candidates":
+		return true
+	}
+	return false
 }
 
 func EvaluateVersion(s *core.Server, ctx context.Context, scope isolation.Scope, workflowID, versionID string) (policy.Result, error) {
