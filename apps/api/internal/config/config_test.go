@@ -12,6 +12,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
+	"github.com/bbengt1/flowforge/apps/api/internal/localworker"
 	"github.com/bbengt1/flowforge/apps/api/internal/machine"
 	"github.com/bbengt1/flowforge/apps/api/internal/mfa"
 	"github.com/bbengt1/flowforge/apps/api/internal/scheduler"
@@ -944,5 +945,46 @@ func TestLoadMFAEnforcementGate(t *testing.T) {
 		if strings.Contains(err.Error(), canary) || !strings.Contains(err.Error(), mfa.EnvEnforcement) {
 			t.Fatalf("APP_ENV=%q error = %v", tc.appEnv, err)
 		}
+	}
+}
+
+func TestLoadLocalWorkerBinding(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	t.Setenv("EMBED_AUDIENCE", "")
+	t.Setenv("REQUIRE_TLS", "false")
+	t.Setenv("FLOWFORGE_ENV", "")
+	t.Setenv(localseed.EnvSeedLocalDefaults, "")
+	t.Setenv(localworker.EnvLocalWorker, "")
+	t.Setenv(localworker.EnvWorkerIssuer, "")
+	t.Setenv(localworker.EnvWorkerSubject, "")
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("TRUSTED_DEV_IDENTITY_HEADERS", "true")
+
+	cfg, err := loadTestConfig(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.BindLocalWorker {
+		t.Fatal("compose dev must bind the worker")
+	}
+	if cfg.LocalWorker.Issuer != localworker.DefaultIssuer || cfg.LocalWorker.Subject != localworker.DefaultSubject {
+		t.Fatalf("worker = %+v", cfg.LocalWorker)
+	}
+
+	t.Setenv(localworker.EnvWorkerSubject, "ci-worker")
+	if cfg, err = loadTestConfig(t); err != nil || cfg.LocalWorker.Subject != "ci-worker" {
+		t.Fatalf("subject override = %+v %v", cfg.LocalWorker, err)
+	}
+
+	t.Setenv(localworker.EnvLocalWorker, "0")
+	if cfg, err = loadTestConfig(t); err != nil || cfg.BindLocalWorker {
+		t.Fatalf("LOCAL_WORKER=0 must skip binding: %v %v", cfg.BindLocalWorker, err)
+	}
+
+	t.Setenv(localworker.EnvLocalWorker, "")
+	t.Setenv("TRUSTED_DEV_IDENTITY_HEADERS", "")
+	if cfg, err = loadTestConfig(t); err != nil || cfg.BindLocalWorker {
+		t.Fatalf("no trusted headers must skip binding: %v %v", cfg.BindLocalWorker, err)
 	}
 }
