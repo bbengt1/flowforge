@@ -34,7 +34,6 @@ import {
   SATELLITE_RAIL_WIDTH,
   SATELLITE_TITLE_CLASS,
   TYPE_CAPTION_CLASS,
-  TYPE_EYEBROW_CLASS,
   TYPE_HEADING_CLASS,
   TYPE_PAGE_HELP_CLASS,
   UXL8_BRIEF,
@@ -135,7 +134,10 @@ describe("UXL.8 Aesthetic-Usability density pass", () => {
     assert.match(vaultPage, /PAGE_SHELL_CLASS/);
     assert.match(inboxPage, /PAGE_SHELL_CLASS/);
     assert.match(homePage, /TYPE_HEADING_CLASS|TYPE_EYEBROW_CLASS/);
-    assert.equal(homePage.includes(TYPE_EYEBROW_CLASS) || homePage.includes("TYPE_EYEBROW_CLASS"), true);
+    // The /workflows eyebrow only carried internal tracker ids, so it was removed;
+    // the page keeps the shared heading type instead.
+    assert.match(homePage, /TYPE_HEADING_CLASS/);
+    assert.doesNotMatch(homePage, /\bE\d+\.\d+\b|Chloe UI/);
     assert.equal(AESTHETIC_USABILITY.sameTokensStandaloneAndEmbed, true);
     assert.equal(AESTHETIC_USABILITY.fittsPrimaryControlsUnchanged, true);
     assert.equal(

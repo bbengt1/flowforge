@@ -107,16 +107,6 @@ export function ApprovalDecideControls({
           {APPROVAL_CLOSED_MESSAGE}
         </p>
       ) : null}
-      {offerDecision && selfRequested ? (
-        <p
-          role="status"
-          className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
-        >
-          You requested this approval. Another operator with{" "}
-          <code className="font-mono text-xs">approval.decide</code> must
-          approve or reject it. Self-approval is forbidden.
-        </p>
-      ) : null}
       {offerDecision && !selfRequested && notTargeted && !problem ? (
         <p
           role="status"
@@ -166,6 +156,10 @@ export function ApprovalDecideControls({
           </button>
         </div>
       ) : null}
+      {/*
+        The only requester sentence. A requester sees it in place of the
+        decision note and buttons; everyone else sees it under them.
+      */}
       {offerDecision ? (
         <p className="text-xs text-[var(--ff-muted)]">
           {APPROVAL_DECIDE_NOTE}

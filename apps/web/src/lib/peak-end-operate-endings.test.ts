@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { EDITOR_NDV_RUN_IO } from "./editor-ndv-run-io.ts";
 import { EDITOR_RUNS, EDITOR_RUNS_DETAIL_PATH } from "./editor-runs.ts";
 import { INDETERMINATE_STATUS_HELP } from "./execution-contract.ts";
+import { WAITING_STATUS_HELP } from "./execution-types.ts";
 import {
   EXECUTION_INBOX,
   EXECUTION_INBOX_DETAIL_PATH,
@@ -148,7 +149,14 @@ describe("UXL.4 peak-end operate endings", () => {
     assert.match(peakEndLabel("success"), /succeed/i);
     assert.equal(/indeterminate/i.test(peakEndLabel("success")), false);
     assert.match(peakEndLabel("failed"), /jump/i);
-    assert.match(peakEndLabel("waiting"), /decide/i);
+    // Waiting reads the same plain sentence as the Waiting chip, on every surface.
+    assert.equal(peakEndLabel("waiting"), WAITING_STATUS_HELP);
+    assert.equal(peakEndLabel("waiting", "inbox"), WAITING_STATUS_HELP);
+    assert.equal(peakEndLabel("waiting", "ndv"), WAITING_STATUS_HELP);
+    assert.equal(PEAK_END_HEADLINES.waiting, "Waiting");
+    for (const surface of ["overlay", "inbox", "ndv"] as const) {
+      assert.doesNotMatch(peakEndLabel("waiting", surface), /decide|Resume/);
+    }
     assert.equal(PEAK_END_HEADLINES.success, "Run succeeded");
     assert.notEqual(PEAK_END_INBOX_LABELS.success, PEAK_END_INBOX_LABELS.indeterminate);
     assert.notEqual(PEAK_END_NDV_LABELS.success, PEAK_END_NDV_LABELS.indeterminate);

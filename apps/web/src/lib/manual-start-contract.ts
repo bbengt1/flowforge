@@ -68,34 +68,42 @@ export const MANUAL_START_PROBLEM_CODES = {
   invalidRequest: "invalid-request",
 } as const;
 
+/** Contract note for route checks. Not UI copy: never render it in the Start dialog. */
 export const MANUAL_START_CONTRACT_FALLBACK_HELP =
   "Using marked e10-#111 start defaults because GET /workflows/catalog triggers[type=manual].start was unavailable. Prefer existing POST /workflows/{id}/executions {workflowVersionId, idempotencyKey, input} plus Idempotency-Key with cookie session + X-CSRF-Token. HTTP 201 is a new run; 200 replays the same (workspace, workflow version, idempotency key); 400 is a draft or bad/oversized input; 403 is missing workflow.execute or policy deny; 409 is a fingerprint mismatch or approval-required. Drafts never run. Do not invent POST /executions.";
 
+/** Contract note for route checks. Not UI copy: never render it in the Start dialog. */
 export const MANUAL_START_CATALOG_HELP =
   "Start follows jonny's #111 catalog map (e10-#111): GET /workflows/catalog triggers[type=manual].start. POST /workflows/{id}/executions {workflowVersionId, idempotencyKey, input} plus Idempotency-Key. Cookie session + X-CSRF-Token. 201 new / 200 replayed / 400 draft or bad input / 403 authz or policy deny / 409 fingerprint mismatch or approval-required. Do not invent POST /executions.";
 
 export const MANUAL_START_PUBLISHED_ONLY_HELP = PRE_RUN_PUBLISHED_ONLY_HELP;
 
+/** Start input hint. Plain words, no schema keys. */
 export const MANUAL_START_INPUT_HELP =
-  "Typed start input comes from the published version's manual trigger schema (JSON Schema subset: schema / inputSchema / with.schema / with.inputSchema). Values are bounded (16 KiB), secret field names are stripped, and extra keys are rejected when additionalProperties is false. The body always includes input (empty object when none).";
+  "Fill in the input this published version asks for. Input can be up to 16 KiB, and fields that look like secrets are removed.";
 
 export const MANUAL_START_IDEMPOTENCY_HELP =
-  "Required. This UI generates a key (1–128, [A-Za-z0-9._~:-]) and sends it in the body and the Idempotency-Key header. Same key + same input returns the original run (200). Same key + different input is 409 fingerprint mismatch.";
+  "Starting again with the same key and the same input opens the original run instead of starting a second one. Leave it blank to get a new key.";
 
 export const MANUAL_START_FORBIDDEN_MESSAGE =
-  "Start requires workflow.execute. HTTP 403 is fail-closed (missing permission or policy deny). This UI does not treat a run as started.";
+  "You can't start this run. Your role doesn't allow it, or a policy blocked it. Nothing was started.";
 
 export const MANUAL_START_UNAUTHENTICATED_MESSAGE =
-  "Session is missing or stale (HTTP 401). Start is fail-closed; sign in again. This UI does not treat a run as started.";
+  "Your session has ended. Sign in again, then start the run. Nothing was started.";
 
+/** Contract note. Not UI copy: never render it in the Start dialog. */
 export const MANUAL_START_CSRF_HELP =
   "Start sends X-CSRF-Token with the session cookie. Missing CSRF fails closed before the Go API is called.";
 
+/** Shown when a start fails its session check. */
+export const MANUAL_START_CSRF_MESSAGE =
+  "Your session needs a refresh. Reload the page and try again. Nothing was started.";
+
 export const MANUAL_START_AUDIT_HELP =
-  "Audit action execution.start is secret-free: actor, published workflowVersionId, digest, correlation, outcome, and idempotency key. Input is redacted; secrets are stripped before display and POST.";
+  "Secrets are removed from the input before it's shown or sent.";
 
 export const MANUAL_START_CONFIRM_HELP =
-  "Review the published version digest, typed input, and idempotency key before starting. The confirmation below is the secret-free record audit action execution.start will keep.";
+  "Check the version, input, and idempotency key before you start. The audit log keeps this record.";
 
 export const MANUAL_START_BAD_INPUT_MESSAGE =
   "HTTP 400: drafts cannot run, or the start body/input is invalid or exceeds 16 KiB.";
@@ -821,7 +829,7 @@ export function manualStartAuthFailureMessage(
     return null;
   }
   if (isCsrfProblem(problem)) {
-    return MANUAL_START_CSRF_HELP;
+    return MANUAL_START_CSRF_MESSAGE;
   }
   if (isUnauthenticatedProblem(problem) || problem.status === 401) {
     return MANUAL_START_UNAUTHENTICATED_MESSAGE;

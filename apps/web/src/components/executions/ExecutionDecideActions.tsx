@@ -16,10 +16,12 @@ import { approveApproval, rejectApproval } from "@/lib/approval-client";
 import type { ApprovalRequest } from "@/lib/approval-types";
 import {
   EXECUTION_DECIDE_APPROVE_LABEL,
-  EXECUTION_DECIDE_HELP,
+  EXECUTION_DECIDE_APPROVED_MESSAGE,
   EXECUTION_DECIDE_MISSING_COPY,
   EXECUTION_DECIDE_OPEN_LABEL,
+  EXECUTION_DECIDE_OPEN_RUN_LABEL,
   EXECUTION_DECIDE_REJECT_LABEL,
+  EXECUTION_DECIDE_REJECTED_MESSAGE,
   EXECUTION_DECIDE_SELF_REQUESTED_COPY,
   EXECUTION_DECIDE_WAITING_COPY,
   executionDecideAffordances,
@@ -134,7 +136,9 @@ export function ExecutionDecideActions({
       return;
     }
     setMessage(
-      action === "approve" ? "Approved — resume is decide." : "Rejected.",
+      action === "approve"
+        ? EXECUTION_DECIDE_APPROVED_MESSAGE
+        : EXECUTION_DECIDE_REJECTED_MESSAGE,
     );
     onDecided?.();
   }
@@ -220,23 +224,19 @@ export function ExecutionDecideActions({
       })}
       {affordances.waiting && affordances.approvalsLoaded && affordances.pending.length === 0 ? (
         <p className={`text-[11px] ${FF_INBOX_MUTED_CLASS}`}>
-          Open{" "}
           <Link
             href={`/executions/${executionId}`}
             className={FF_INBOX_LINK_CLASS}
           >
-            /executions/{executionId}
-          </Link>{" "}
-          for bound approval detail.
+            {EXECUTION_DECIDE_OPEN_RUN_LABEL}
+          </Link>
         </p>
       ) : null}
       {message ? (
         <p role="status" className="text-[11px]">
           {message}
         </p>
-      ) : compact ? null : (
-        <p className="sr-only">{EXECUTION_DECIDE_HELP}</p>
-      )}
+      ) : null}
       {confirming ? (
         <AdminOverrideConfirm
           action={confirming.action}

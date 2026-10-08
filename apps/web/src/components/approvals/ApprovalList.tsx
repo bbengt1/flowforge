@@ -9,8 +9,7 @@ import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import {
   APPROVAL_BINDING_HELP,
-  APPROVAL_SOD_HELP,
-  APPROVAL_WAIT_DURABLE_HELP,
+  APPROVALS_VIEW_DENIED,
 } from "@/lib/approval-contract";
 import {
   approvalStatusLabel,
@@ -149,9 +148,7 @@ export function ApprovalList() {
       ) : null}
 
       {denied ? (
-        <p className="text-sm text-[var(--ff-muted)]">
-          This role cannot view approvals (<code>approval.view</code> missing).
-        </p>
+        <p className="text-sm text-[var(--ff-muted)]">{APPROVALS_VIEW_DENIED}</p>
       ) : null}
 
       <div className="flex flex-wrap items-end gap-3">
@@ -201,15 +198,12 @@ export function ApprovalList() {
       {problem ? <ProblemBanner problem={problem} /> : null}
 
       <p className="text-sm text-[var(--ff-muted)]">
-        {pendingApprovals(items).length} pending in the last list · status
-        uses documented <code className="font-mono text-xs">?status=</code>
+        {pendingApprovals(items).length} pending
         {lastRequestId ? (
           <span className="font-mono text-xs"> · {lastRequestId}</span>
         ) : null}
       </p>
-      <p className="text-xs text-[var(--ff-muted)]">
-        {APPROVAL_BINDING_HELP} {APPROVAL_SOD_HELP} {APPROVAL_WAIT_DURABLE_HELP}
-      </p>
+      <p className="text-xs text-[var(--ff-muted)]">{APPROVAL_BINDING_HELP}</p>
 
       {visible.length === 0 ? (
         <p className="text-sm text-[var(--ff-muted)]">

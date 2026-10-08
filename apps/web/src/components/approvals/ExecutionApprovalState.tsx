@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { useId } from "react";
 import { ApprovalBindingSnapshot } from "@/components/approvals/ApprovalBindingSnapshot";
 import { ApprovalCloseReason } from "@/components/approvals/ApprovalCloseReason";
 import { ApprovalDecideControls } from "@/components/approvals/ApprovalDecideControls";
@@ -35,22 +36,26 @@ export function ExecutionApprovalState({
   const terminal = isTerminalRunStatus(executionStatus);
   const waiting = !terminal && isExecutionAwaitingApproval(executionStatus);
   const waitControls = approvalWaitControls();
+  // A run page or Start dialog can hold more than one panel, so ids are
+  // per instance. aria-describedby below points at this panel's sentence.
+  const headingId = useId();
+  const resumeId = useId();
   if (!waiting && approvals.length === 0) {
     return null;
   }
 
   return (
     <section
-      aria-labelledby="execution-approval-heading"
+      aria-labelledby={headingId}
       className="rounded-xl border border-border bg-bg px-4 py-3"
     >
-      <h3 id="execution-approval-heading" className="text-sm font-semibold">
+      <h3 id={headingId} className="text-sm font-semibold">
         Execution approval state
       </h3>
       <p className="mt-1 text-sm text-fg">
         {waiting
-          ? "This pin is waiting on a current approval. Dispatch does not proceed on a stale decision. The wait state survives worker or pod loss."
-          : "Approvals bound to this execution."}
+          ? "This run is waiting for an approval."
+          : "Approvals for this run."}
       </p>
       <p className="mt-1 text-xs text-fg">{APPROVAL_BINDING_HELP}</p>
       <ul className="mt-3 space-y-3">
@@ -103,7 +108,7 @@ export function ExecutionApprovalState({
       */}
       {waiting ? (
         <p
-          id="execution-approval-resume"
+          id={resumeId}
           role="status"
           className="mt-4 text-sm text-fg"
         >
@@ -115,7 +120,7 @@ export function ExecutionApprovalState({
           <button
             type="button"
             disabled
-            aria-describedby={waiting ? "execution-approval-resume" : undefined}
+            aria-describedby={waiting ? resumeId : undefined}
             className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm text-fg disabled:cursor-not-allowed disabled:opacity-60"
           >
             Wait for approval
@@ -123,7 +128,7 @@ export function ExecutionApprovalState({
           <button
             type="button"
             disabled
-            aria-describedby={waiting ? "execution-approval-resume" : undefined}
+            aria-describedby={waiting ? resumeId : undefined}
             className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm text-fg disabled:cursor-not-allowed disabled:opacity-60"
           >
             Resume

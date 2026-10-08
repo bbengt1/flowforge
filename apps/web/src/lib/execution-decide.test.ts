@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { APPROVAL_DECIDE_NOTE } from "./approval-contract.ts";
 import type { ApprovalBinding, ApprovalRequest } from "./approval-types.ts";
 import {
   EXECUTION_DECIDE,
@@ -166,7 +167,10 @@ describe("R4.5 waiting → decide density", () => {
     assert.equal(unloaded.approvalsLoaded, false);
     assert.equal(unloaded.canDecide, false);
     assert.match(unloaded.blockedReason, /waiting/i);
-    assert.match(EXECUTION_DECIDE_WAITING_COPY, /decide/);
+    assert.equal(
+      EXECUTION_DECIDE_WAITING_COPY,
+      "This run is waiting for someone to approve or reject a step.",
+    );
   });
 
   it("offers decide on pending bound approvals and blocks the requester", () => {
@@ -192,8 +196,11 @@ describe("R4.5 waiting → decide density", () => {
     assert.equal(requester.canDecide, false);
     assert.equal(requester.selfRequested, true);
     assert.equal(requester.selfRequestedApprovals[0]?.id, APPROVAL_ID);
-    assert.match(requester.blockedReason, /Self-approval is forbidden/);
-    assert.match(EXECUTION_DECIDE_SELF_REQUESTED_COPY, /approval\.decide/);
+    assert.equal(
+      requester.blockedReason,
+      "The person who requested this approval can't approve or reject it.",
+    );
+    assert.equal(EXECUTION_DECIDE_SELF_REQUESTED_COPY, APPROVAL_DECIDE_NOTE);
 
     const viewer = executionDecideAffordances({
       status: "waiting",

@@ -29,10 +29,7 @@ export function PreRunPolicyReview({
         Pre-run policy review
       </h3>
       <p className="mt-1 text-sm text-fg">
-        Policy is evaluated on the server before dispatch. A stale local
-        &quot;approved&quot; flag never starts a run.{" "}
-        <code className="font-mono text-xs">dispatchAllowed</code> is
-        authoritative.
+        FlowForge checks policy before the run starts.
       </p>
       {pending ? (
         <p className="mt-3 text-sm text-fg">Evaluating policy…</p>
@@ -54,13 +51,13 @@ export function PreRunPolicyReview({
           </p>
           {canDispatchFromEvaluation(evaluation) ? (
             <p className="text-sm text-fg">
-              Server evaluation allows dispatch of this published version.
+              Policy allows this published version to run.
             </p>
           ) : (
             <p className="text-sm text-fg">
-              Run stays blocked until evaluate allows dispatch or every
-              bound approval is a current <code className="font-mono text-xs">approved</code>{" "}
-              row. Start execution still rechecks on the server.
+              This run can&apos;t start until policy allows it or every
+              approval it needs is approved. FlowForge checks again when you
+              start.
             </p>
           )}
           {evaluation.denied.map((item, index) => (

@@ -345,7 +345,7 @@ describe("execution redaction and list/detail rendering", () => {
     assert.match(rendered, /indeterminate/);
     assert.match(rendered, /corr-16-characters/);
     assert.match(rendered, /deploy-prod-1/);
-    assert.match(rendered, /did not start a second/);
+    assert.match(rendered, /instead of starting a second one/);
     assert.equal(rendered.includes("should-not-leak"), false);
     assert.equal(rendered.includes("kind: Config"), false);
 
@@ -930,7 +930,15 @@ describe("execution redaction and list/detail rendering", () => {
       }),
       true,
     );
-    assert.match(IDEMPOTENCY_CONFLICT_MESSAGE, /409/);
+    assert.equal(
+      IDEMPOTENCY_CONFLICT_MESSAGE,
+      "This idempotency key was already used with different input, so no run was started. Use a new key only if you mean to start a new run.",
+    );
+    assert.equal(IDEMPOTENCY_CREATED_MESSAGE, "Started a new run.");
+    assert.doesNotMatch(
+      `${IDEMPOTENCY_CONFLICT_MESSAGE} ${IDEMPOTENCY_CREATED_MESSAGE} ${IDEMPOTENCY_REPLAY_MESSAGE}`,
+      /HTTP|\b\d{3}\b/,
+    );
   });
 });
 

@@ -79,18 +79,35 @@ export const APPROVAL_DECIDE_HELP =
 export const APPROVAL_DECIDE_NOTE =
   "The person who requested this approval can't approve or reject it.";
 
+/** Header on the approvals list. Plain words, no routes or flags. */
+export const APPROVALS_PAGE_HELP =
+  "Approval requests in this workspace. A waiting run continues once someone approves or rejects its request.";
+
+/** Header on one approval request. */
+export const APPROVAL_DETAIL_PAGE_HELP =
+  "Check what this request covers before you approve or reject it.";
+
+/** On the approvals list when the role can't view approvals. */
+export const APPROVALS_VIEW_DENIED =
+  "Your role can't view approvals.";
+
+/** Contract note for route checks. Not UI copy: never render it. */
 export const APPROVAL_SOD_HELP =
   "Separation of duties: the requester cannot approve or reject their own request. Compare GET /workspace principal.id to requestedBy (user UUIDs — never session.subject).";
 
+/** Shown with approvals. Plain words: what an approval covers and when it stops applying. */
 export const APPROVAL_BINDING_HELP =
-  "Approvals bind the exact workflow version, target, operation, and policy snapshot. A later publish of policy, target, or workflow version invalidates a prior pending or approved row.";
+  "Each approval covers one exact workflow version, target, operation, and policy. If any of them is published again, an earlier approval no longer applies, even one that was already approved.";
 
+/** Contract note for route checks. Not UI copy: never render it. */
 export const APPROVAL_EXPIRY_HELP =
   "Expiry is bound at request time. Expired rows fail closed (409). A new evaluation is required; a stale local approve is never enough.";
 
+/** Contract note for route checks. Not UI copy: never render it. */
 export const APPROVAL_WAIT_DURABLE_HELP =
   "GET /approvals/catalog waitResumeEnabled is true (#116). Mid-run wait parks as waiting and survives recover. This UI does not invent /executions/{id}/resume — decide the bound approval.";
 
+/** Contract note for route checks. Not UI copy: never render it. */
 export const APPROVAL_RESUME_VIA_DECIDE_HELP =
   "Resume is decide (#116 resumeRoute). POST /approvals/{id}/decide with CSRF. Do not invent POST /executions/{id}/resume or …/wait.";
 
