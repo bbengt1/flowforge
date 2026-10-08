@@ -63,7 +63,10 @@ import {
   isIndeterminateStatus,
   normalizeExecutionStatus,
 } from "./execution.ts";
-import { NOT_REACHED_STATUS_HELP } from "./execution-types.ts";
+import {
+  NOT_REACHED_STATUS_HELP,
+  WAITING_STATUS_HELP,
+} from "./execution-types.ts";
 import { workflowEditorHref } from "./product-home.ts";
 import { R7_HARD_LINE } from "./rewrite-embed-mount.ts";
 
@@ -118,7 +121,8 @@ export const PEAK_END_LABELS = {
   success: "Run succeeded.",
   failed: "Run failed — jumped to the node.",
   indeterminate: `Indeterminate — ${INDETERMINATE_STATUS_HELP}`,
-  waiting: "Waiting — decide the bound approval. Resume is decide.",
+  // The Waiting chip sentence, so every surface says the same thing.
+  waiting: WAITING_STATUS_HELP,
   running: "Run is in progress on this canvas.",
   canceled: "Run canceled.",
   queued: "Run queued — watching on this canvas.",
@@ -133,7 +137,8 @@ export const PEAK_END_INBOX_LABELS = {
   success: "Succeeded — completed successfully.",
   failed: "Failed — open execution to inspect.",
   indeterminate: "Indeterminate — do not assume the action did not run.",
-  waiting: "Waiting — decide the bound approval. Resume is decide.",
+  // The Waiting chip sentence, so every surface says the same thing.
+  waiting: WAITING_STATUS_HELP,
   running: "Running.",
   canceled: "Canceled.",
   queued: "Queued.",
@@ -147,7 +152,8 @@ export const PEAK_END_NDV_LABELS = {
   success: "Last run succeeded.",
   failed: "Last run failed — jumped to the node.",
   indeterminate: INDETERMINATE_STATUS_HELP,
-  waiting: "Waiting on approval. Decide the bound approval — resume is decide.",
+  // The Waiting chip sentence, so every surface says the same thing.
+  waiting: WAITING_STATUS_HELP,
   running: "Last run is still in progress.",
   canceled: "Last run was canceled.",
   queued: "Last run is queued.",
@@ -161,7 +167,7 @@ export const PEAK_END_HEADLINES = {
   success: "Run succeeded",
   failed: "Run failed",
   indeterminate: "Indeterminate",
-  waiting: "Waiting — decide",
+  waiting: "Waiting",
   running: "On this canvas",
   canceled: "Run canceled",
   queued: "On this canvas",

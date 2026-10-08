@@ -324,8 +324,11 @@ describe("no_eligible_decider", () => {
     );
     assert.equal(
       NO_ELIGIBLE_DECIDER_RUN_SENTENCE,
-      "No one other than the requester can approve this step, so it failed right away.",
+      "No one other than the requester could approve this step, so it failed.",
     );
+    // True whether the gate closed at once or after waiting (a demotion or
+    // removal later left no one to decide), so no timing claim.
+    assert.doesNotMatch(NO_ELIGIBLE_DECIDER_RUN_SENTENCE, /right away|immediately|at once/);
     assert.equal(/no_eligible_decider|requirement_unresolvable/.test(noCause ?? ""), false);
     const bare = approvalClosedExplanation({ status: "canceled" });
     assert.equal(/no_eligible_decider|requirement_unresolvable/.test(bare ?? ""), false);

@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { shortDigest } from "@/lib/workflow";
 import type { ApprovalBinding } from "@/lib/approval-types";
 
@@ -8,15 +9,17 @@ type ApprovalBindingSnapshotProps = {
 
 export function ApprovalBindingSnapshot({
   binding,
-  caption = "Read-only binding snapshot. A later policy, target, or version change invalidates this approval.",
+  caption = "It no longer applies if the policy, target, or workflow version changes.",
 }: ApprovalBindingSnapshotProps) {
+  // Detail pages and run panels can show more than one snapshot.
+  const headingId = useId();
   return (
     <section
-      aria-labelledby="approval-binding-heading"
+      aria-labelledby={headingId}
       className="rounded-xl border border-border bg-bg px-4 py-3"
     >
-      <h3 id="approval-binding-heading" className="text-sm font-semibold">
-        Bound fields
+      <h3 id={headingId} className="text-sm font-semibold">
+        What this approval covers
       </h3>
       <p className="mt-1 text-sm text-fg">{caption}</p>
       <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">

@@ -58,7 +58,7 @@ export const HOME_ROW_SCAN_TRAIL = "lastRun" as const;
 export const HOME_ROW_LAST_RUN_COLUMN_ID = HOME_ROW_SCAN_TRAIL;
 
 export const HOME_ROW_SCAN_HELP =
-  "Scan ends are activation and last run. Activation is the activation path — not a fourth drawer. Last run stays loud for waiting and indeterminate when those joins already exist. Home ?start= / ?webhooks= / ?schedules= drawers still work; they are not the activation lesson.";
+  "Scan ends are activation and last run. Activation is the activation path — not a fourth drawer. Last run stays loud for waiting and indeterminate when those joins already exist.";
 
 export const HOME_ROW_SCAN_NEVER_LABEL = "Never run";
 export const HOME_ROW_SCAN_UNKNOWN_LABEL = "—";
@@ -222,13 +222,12 @@ export function homeLastRunPresentation(input: {
     kind === "waiting" ? "waiting" : input.status,
   );
   const loud = kind === "indeterminate" || kind === "waiting";
-  const label = loud ? peakEndLabel(kind, "inbox") : status.label;
+  // Waiting stays loud but uses the short "Waiting" label and the shared
+  // Waiting sentence as its help, like every other Waiting chip.
+  const label =
+    kind === "indeterminate" ? peakEndLabel(kind, "inbox") : status.label;
   const help =
-    kind === "indeterminate"
-      ? INDETERMINATE_STATUS_HELP
-      : kind === "waiting"
-        ? peakEndLabel(kind, "inbox")
-        : status.description;
+    kind === "indeterminate" ? INDETERMINATE_STATUS_HELP : status.description;
   return {
     kind,
     label,

@@ -39,7 +39,7 @@ import {
 } from "./home-row-scan.ts";
 import { EMPTY_WORKFLOW_HOME_FILTERS, buildWorkflowHomeItems, filterWorkflowHomeItems } from "./workflow-home.ts";
 import type { ApprovalRequest } from "./approval-types.ts";
-import type { ExecutionRecord } from "./execution-types.ts";
+import { WAITING_STATUS_HELP, type ExecutionRecord } from "./execution-types.ts";
 import type { WorkflowRecord } from "./workflow-types.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -200,7 +200,10 @@ describe("UXL.5 home row scan order", () => {
     });
     assert.equal(waiting.kind, "waiting");
     assert.equal(waiting.loud, true);
-    assert.match(waiting.label, /decide/i);
+    // Short label like every other Waiting chip; the help is the Waiting sentence.
+    assert.equal(waiting.label, "Waiting");
+    assert.equal(waiting.help, WAITING_STATUS_HELP);
+    assert.doesNotMatch(`${waiting.label} ${waiting.help}`, /decide|Resume/);
 
     const joinedWaiting = homeLastRunIsWaiting(execution({ status: "succeeded" }), [
       approval(),

@@ -19,7 +19,6 @@ import { buildPreRunReview, publishedRunVersions } from "@/lib/execution-replay"
 import {
   MANUAL_START_AUDIT_HELP,
   MANUAL_START_CONFIRM_HELP,
-  MANUAL_START_CSRF_HELP,
   MANUAL_START_FORBIDDEN_MESSAGE,
   MANUAL_START_IDEMPOTENCY_HELP,
   buildManualStartRequest,
@@ -27,7 +26,6 @@ import {
   extractManualStartSchema,
   generateManualStartIdempotencyKey,
   manualStartAuthFailureMessage,
-  manualStartHelp,
 } from "@/lib/manual-start-contract";
 import type { OpsConfigPin } from "@/lib/ops-config-types";
 import type { DevIdentity } from "@/lib/identity-headers";
@@ -148,20 +146,7 @@ export function RunControl({
       <h2 id="run-control-heading" className="text-base font-semibold">
         Run published version
       </h2>
-      <p className="mt-1 text-sm text-fg">
-        {PRE_RUN_PUBLISHED_ONLY_HELP} POST body is{" "}
-        <code className="font-mono text-xs">
-          {"{workflowVersionId, idempotencyKey, input}"}
-        </code>
-        {" "}plus <code className="font-mono text-xs">Idempotency-Key</code>.
-        CSRF is required.{" "}
-        <code className="font-mono text-xs">201</code> is a new run;{" "}
-        <code className="font-mono text-xs">200</code> is a replay;{" "}
-        <code className="font-mono text-xs">400</code> is draft or bad input;{" "}
-        <code className="font-mono text-xs">403</code> is authz or policy deny;{" "}
-        <code className="font-mono text-xs">409</code> is fingerprint mismatch
-        or approval-required. {manualStartHelp(catalog)}
-      </p>
+      <p className="mt-1 text-sm text-fg">{PRE_RUN_PUBLISHED_ONLY_HELP}</p>
 
       {published.length === 0 ? (
         <p className="mt-4 text-sm text-fg">
@@ -216,7 +201,6 @@ export function RunControl({
             onFieldValues={(value) => onFieldValues?.(value)}
             onJsonText={onTriggerInput}
           />
-          <p className="text-xs text-fg">{MANUAL_START_CSRF_HELP}</p>
           <div className="flex items-end">
             <button
               type="button"
@@ -368,19 +352,19 @@ export function RunControl({
       {execution ? (
         <div className="mt-4 space-y-2 rounded-lg bg-bg px-3 py-3 text-sm">
           <p className="font-medium">
-            Pin {execution.status} · {execution.id}
+            Run {execution.status} · {execution.id}
           </p>
           <p className="font-mono text-xs break-all text-fg">
-            workflowVersionId {execution.workflowVersionId}
+            Version {execution.workflowVersionId}
           </p>
           <p className="font-mono text-xs break-all text-fg">
-            workflowDigest {execution.workflowDigest}
+            Digest {execution.workflowDigest}
           </p>
           <div className="pt-1">
             <p className="text-xs font-medium text-fg">Config pins</p>
             <ConfigPinList
               pins={execution.pins}
-              empty="No ops-config pins on this execution."
+              empty="No config pins on this run."
             />
           </div>
           <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -390,7 +374,7 @@ export function RunControl({
               disabled={pending}
               className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm hover:bg-fg/10 disabled:opacity-60"
             >
-              Re-read pin
+              Refresh run
             </button>
             <Link
               href={executionHistoryHref(execution.id, execution.workflowId)}

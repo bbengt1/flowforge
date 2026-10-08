@@ -4,10 +4,12 @@ import {
   DEFAULT_MANUAL_START_SCHEMA,
   MANUAL_START_API_PR,
   MANUAL_START_AUDIT_ACTION,
+  MANUAL_START_AUDIT_HELP,
   MANUAL_START_CATALOG_HELP,
   MANUAL_START_CONFLICT_MESSAGE,
   MANUAL_START_CONTRACT_FALLBACK_HELP,
   MANUAL_START_CSRF_HELP,
+  MANUAL_START_CSRF_MESSAGE,
   MANUAL_START_DEFAULT_START,
   MANUAL_START_EPIC,
   MANUAL_START_FORBIDDEN_MESSAGE,
@@ -253,7 +255,7 @@ describe("manual-start contract adapter", () => {
     assert.equal(denied.ok, false);
     assert.equal(denied.authClosed, true);
     assert.equal(denied.body, null);
-    assert.match(denied.reason, /workflow.execute/);
+    assert.equal(denied.reason, MANUAL_START_FORBIDDEN_MESSAGE);
 
     const draft = buildManualStartRequest({
       versions,
@@ -285,7 +287,8 @@ describe("manual-start contract adapter", () => {
     assert.equal(started.confirmation?.routeMapSource, "e10-#111");
     assert.equal(started.confirmation?.catalogSource, "catalog-fallback");
     assert.equal(started.confirmation?.permission, "workflow.execute");
-    assert.match(started.confirmation?.auditHelp ?? "", /execution\.start/);
+    assert.equal(started.confirmation?.auditHelp, MANUAL_START_AUDIT_HELP);
+    assert.doesNotMatch(started.confirmation?.auditHelp ?? "", /execution\.start|POST|CSRF/);
 
     const emptyInput = buildManualStartRequest({
       versions: [version({ definitionYaml: "" })],
@@ -344,9 +347,31 @@ describe("manual-start contract adapter", () => {
       true,
     );
     assert.match(MANUAL_START_CSRF_HELP, /X-CSRF-Token/);
-    assert.match(startOutcomeMessage(201), /201/);
-    assert.match(startOutcomeMessage(200), /200/);
-    assert.match(MANUAL_START_FORBIDDEN_MESSAGE, /policy deny/);
+    // A CSRF failure shows a plain sentence, not the contract note.
+    assert.equal(
+      manualStartAuthFailureMessage({
+        type: "urn:flowforge:problem:csrf-required",
+        title: "CSRF required",
+        status: 403,
+        detail: "csrf header missing",
+        instance: "/workflows",
+        code: "csrf-required",
+        request_id: "req-3",
+      }),
+      MANUAL_START_CSRF_MESSAGE,
+    );
+    assert.equal(startOutcomeMessage(201), "Started a new run.");
+    assert.match(startOutcomeMessage(200), /opened that run instead of starting a second one/);
+    assert.match(MANUAL_START_FORBIDDEN_MESSAGE, /a policy blocked it/);
+    for (const message of [
+      MANUAL_START_FORBIDDEN_MESSAGE,
+      MANUAL_START_UNAUTHENTICATED_MESSAGE,
+      MANUAL_START_CSRF_MESSAGE,
+      startOutcomeMessage(200),
+      startOutcomeMessage(201),
+    ]) {
+      assert.doesNotMatch(message, /HTTP|CSRF|workflow\.execute|\b\d{3}\b|This UI/, message);
+    }
     assert.match(MANUAL_START_CONFLICT_MESSAGE, /approval/);
     assert.equal(
       startFailureMessage({

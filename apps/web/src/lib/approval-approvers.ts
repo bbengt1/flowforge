@@ -80,7 +80,7 @@ export const APPROVAL_NOT_TARGETED_MESSAGE =
   "You're not one of the named approvers for this step, so you can't decide it.";
 
 export const NO_ELIGIBLE_DECIDER_RUN_SENTENCE =
-  "No one other than the requester can approve this step, so it failed right away.";
+  "No one other than the requester could approve this step, so it failed.";
 export const NO_ELIGIBLE_DECIDER_CLOSE_SENTENCE =
   "Closed because no one other than the requester could approve it.";
 

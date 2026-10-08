@@ -1,8 +1,6 @@
 import { ExecutionDetail } from "@/components/executions/ExecutionDetail";
-import {
-  FF_INBOX_EYEBROW_CLASS,
-  FF_INBOX_HELP_CLASS,
-} from "@/lib/vault-executions-visual";
+import { EXECUTION_DETAIL_PAGE_HELP } from "@/lib/execution-contract";
+import { FF_INBOX_HELP_CLASS } from "@/lib/vault-executions-visual";
 
 export const dynamic = "force-dynamic";
 
@@ -20,27 +18,10 @@ export default async function ExecutionDetailPage({
   return (
     <main className="mx-auto flex min-h-full w-full max-w-7xl flex-col gap-8 px-6 py-12">
       <header className="space-y-3">
-        <p className={FF_INBOX_EYEBROW_CLASS}>
-          E6.4 · Graph replay
-        </p>
         <h1 className="text-3xl font-semibold tracking-tight">
           Execution
         </h1>
-        <p className={FF_INBOX_HELP_CLASS}>
-          Graph replay overlays step status on the E6.2 canvas from the
-          pinned published version YAML. Cancel stays idempotent. Emergency
-          stop of a script is separately authorized (
-          <code className="font-mono text-sm">script.emergencyStop</code>)
-          and is not Cancel — queued stays canceled, running/uncertain stays
-          loud{" "}
-          <code className="font-mono text-sm">indeterminate</code> until
-          verified, with no blind retry.           Retry appears only when{" "}
-          <code className="font-mono text-sm">capabilities.retry.allowed</code>{" "}
-          is true. Durable approval wait is enabled; resume is decide (SoD
-          fail-closed). Error links
-          jump to the failed or indeterminate node. Secrets appear as{" "}
-          <code className="font-mono text-sm">[redacted]</code>.
-        </p>
+        <p className={FF_INBOX_HELP_CLASS}>{EXECUTION_DETAIL_PAGE_HELP}</p>
       </header>
       <ExecutionDetail executionId={id} workflowId={query.workflowId} />
     </main>

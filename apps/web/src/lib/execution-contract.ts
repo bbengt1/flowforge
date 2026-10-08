@@ -76,13 +76,12 @@ export const EXECUTION_PROBLEM_CODES = {
 } as const;
 
 export const IDEMPOTENCY_REPLAY_MESSAGE =
-  "Replayed existing run (HTTP 200). The same (workspace, workflow version, idempotency key) did not start a second execution.";
+  "This key already started a run, so FlowForge opened that run instead of starting a second one.";
 
-export const IDEMPOTENCY_CREATED_MESSAGE =
-  "Started a new execution (HTTP 201).";
+export const IDEMPOTENCY_CREATED_MESSAGE = "Started a new run.";
 
 export const IDEMPOTENCY_CONFLICT_MESSAGE =
-  "This idempotency key was already used with a different input (HTTP 409). The API did not start a new run. Do not retry with a new key unless you intend a new execution.";
+  "This idempotency key was already used with different input, so no run was started. Use a new key only if you mean to start a new run.";
 
 export const IDEMPOTENCY_KEY_HELP =
   "Optional. Unique per workspace and workflow version. Same key + same input returns the original run (200). Same key + different input is 409.";
@@ -99,6 +98,7 @@ export const CANCEL_IDEMPOTENT_MESSAGE =
 export const CANCEL_FORBIDDEN_MESSAGE =
   "Cancel is separately authorized (execution.cancel). HTTP 403 is fail-closed; this UI does not treat the run as canceled.";
 
+/** Contract note. Not UI copy: never render it. */
 export const CANCEL_CSRF_HELP =
   "Cancel sends X-CSRF-Token with the session cookie. Missing CSRF fails closed before the Go API is called.";
 
@@ -120,11 +120,24 @@ export const RETRY_FORBIDDEN_MESSAGE =
 export const RETRY_CONFLICT_MESSAGE =
   "This execution can't be retried.";
 
+/** Contract note. Not UI copy: never render it. */
 export const RETRY_CSRF_HELP =
   "Retry sends X-CSRF-Token with the session cookie. Missing CSRF fails closed before the Go API is called.";
 
+/** Contract note. Not UI copy: never render it. */
 export const STATUS_POLL_HELP =
   "While queued or running and this tab is visible, this page polls GET /executions/{id} for steps and jobs, with backoff and jitter. Hidden tabs pause. It never calls /jobs/*.";
+
+/** Header on the run page. Plain words, no routes, flags, or permission keys. */
+export const EXECUTION_DETAIL_PAGE_HELP =
+  "Each step's status is shown on the graph of the published version that ran. Error links jump to the step that failed. A step whose result is unknown stays marked Indeterminate until someone checks it, and it's never retried automatically. Secrets show as [redacted].";
+
+/** On the run page when the role can't cancel. */
+export const EXECUTION_CANCEL_DENIED_NOTE = "Your role can't cancel runs.";
+
+/** Above the run's audit events. */
+export const EXECUTION_AUDIT_EVENTS_HELP =
+  "Who did what to this run, and when.";
 
 /** E6.4 replay / pre-run / compare. No new API routes. */
 export const EXECUTION_REPLAY_STORY = 63;
@@ -149,7 +162,7 @@ export const APPROVAL_STATE_RESUME_SENTENCE =
   "The run continues once someone approves or rejects this step, here or on its approval page.";
 
 export const PRE_RUN_PUBLISHED_ONLY_HELP =
-  "Only a published workflowVersionId can run. Drafts are never sent on POST /workflows/{id}/executions.";
+  "Only published versions can run. Drafts and unsaved changes never run.";
 
 export const PRE_RUN_SIDE_EFFECT_HELP =
   "This published version includes nodes that may change a remote system. Review the digest, trigger input, targets, and policy before starting.";

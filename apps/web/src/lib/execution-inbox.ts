@@ -418,8 +418,8 @@ export function executionInboxDraftsNeverRun(): boolean {
     EXECUTION_INBOX.draftsNeverRun &&
     R4_GUARDRAILS.draftsNeverRun &&
     R4_GUARDRAILS.publishedWorkflowVersionIdOnly &&
-    /drafts? are never/i.test(PRE_RUN_PUBLISHED_ONLY_HELP) &&
-    /workflowVersionId/.test(PRE_RUN_PUBLISHED_ONLY_HELP)
+    /drafts\b.*never run/i.test(PRE_RUN_PUBLISHED_ONLY_HELP) &&
+    /only published versions can run/i.test(PRE_RUN_PUBLISHED_ONLY_HELP)
   );
 }
 
