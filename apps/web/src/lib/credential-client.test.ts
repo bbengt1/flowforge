@@ -13,6 +13,8 @@ import {
 } from "./credential-client.ts";
 import { emptySecretDraft } from "./credential-contract.ts";
 import type { DevIdentity } from "./identity-headers.ts";
+import { subscribeMfaRequired } from "./oidc-mfa.ts";
+import { PROBLEM_JSON } from "./problem.ts";
 import { CSRF_HEADER } from "./session-contract.ts";
 import { clearSession, setActiveSession } from "./session-store.ts";
 
@@ -347,5 +349,41 @@ describe("credential client", () => {
       assert.equal(result.problem.code, "csrf-required");
     }
     assert.equal(draft.token, "");
+  });
+
+  it("a quiet list returns mfa-required without opening the step-up dialog", async () => {
+    withSession();
+    const notices: string[] = [];
+    const stop = subscribeMfaRequired((notice) => notices.push(notice.kind));
+    const seen: string[] = [];
+    globalThis.fetch = (async (input) => {
+      seen.push(String(input));
+      return new Response(
+        JSON.stringify({
+          type: "urn:flowforge:problem:mfa-required",
+          title: "MFA Required",
+          status: 403,
+          detail: "Verify MFA before using this permission.",
+          instance: "/api/v1/credentials",
+          code: "mfa-required",
+          request_id: "req-mfa",
+        }),
+        { status: 403, headers: { "content-type": PROBLEM_JSON } },
+      );
+    }) as typeof fetch;
+    try {
+      // The search bar's background read: no prompt, just no results.
+      const quiet = await listCredentials(identity, {}, { quietMfa: true });
+      assert.equal(quiet.ok, false);
+      assert.equal(!quiet.ok && quiet.problem.code, "mfa-required");
+      assert.deepEqual(notices, []);
+      // The credentials page's own read still asks for step-up.
+      const loud = await listCredentials(identity);
+      assert.equal(!loud.ok && loud.problem.code, "mfa-required");
+      assert.equal(notices.length, 1);
+      assert.equal(seen.length, 2);
+    } finally {
+      stop();
+    }
   });
 });

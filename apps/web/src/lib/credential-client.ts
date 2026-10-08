@@ -169,9 +169,16 @@ export async function getCredentialCatalog(
   };
 }
 
+/**
+ * `quietMfa` is for background reads from other pages (the search bar
+ * lists credentials on every page): a 403 `mfa-required` is returned
+ * without opening the step-up dialog. The credentials page itself reads
+ * without it, so it still asks for step-up.
+ */
 export async function listCredentials(
   identity: DevIdentity,
   query: CollectionPageQuery = {},
+  options: { quietMfa?: boolean } = {},
 ): Promise<CredentialListSuccess | CredentialClientFailure> {
   const opened = openCollectionPath(credentialListPath(), query);
   if (!opened.ok) {
@@ -183,7 +190,11 @@ export async function listCredentials(
       strippedKeys: [],
     };
   }
-  const result = await callIdentityProxy<unknown>(opened.path, identity);
+  const result = await callIdentityProxy<unknown>(
+    opened.path,
+    identity,
+    options.quietMfa ? { quietMfa: true } : {},
+  );
   if (!result.ok) {
     return failure(result, true);
   }
