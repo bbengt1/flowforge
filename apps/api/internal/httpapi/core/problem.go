@@ -84,8 +84,8 @@ const (
 	// the workspace already has the maximum number of active tokens.
 	CodeScimTokenLimit = "scim_token_limit"
 	// CodeScimNotConfigured refuses creating a SCIM workspace token when
-	// the instance has no SCIM issuer (SCIM_ISSUER or OIDC_ISSUER), so a
-	// token could not provision anyone.
+	// SCIM is off on the instance (no SCIM_* variable set, so no issuer
+	// and default role), so a token could not provision anyone.
 	CodeScimNotConfigured = "scim_not_configured"
 )
 

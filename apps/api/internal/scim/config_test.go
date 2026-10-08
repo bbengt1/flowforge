@@ -56,3 +56,46 @@ func TestLoadMatchesOIDCIssuer(t *testing.T) {
 		t.Fatal("bearer match failed")
 	}
 }
+
+func TestLoadIssuerOnlyEnablesWorkspaceTokens(t *testing.T) {
+	t.Setenv(EnvBearerToken, "")
+	t.Setenv(EnvIssuer, "https://idp.example/")
+	t.Setenv(EnvDefaultRole, "")
+	got, err := Load(true, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Ready() || !got.WorkspaceReady() || got.Issuer != "https://idp.example" || got.DefaultRole != DefaultRole {
+		t.Fatalf("issuer-only settings: %+v", got)
+	}
+	if got.Match("") || got.Match("anything-at-all-that-is-long-enough") {
+		t.Fatal("issuer-only config must not accept an instance bearer")
+	}
+
+	// OIDC alone does not turn SCIM on; some SCIM_* variable must be set.
+	t.Setenv(EnvIssuer, "")
+	got, err = Load(true, "https://idp.example")
+	if err != nil || got.WorkspaceReady() || got.Ready() {
+		t.Fatalf("OIDC only = %+v %v", got, err)
+	}
+	t.Setenv(EnvDefaultRole, "viewer")
+	got, err = Load(true, "https://idp.example")
+	if err != nil || !got.WorkspaceReady() || got.Issuer != "https://idp.example" {
+		t.Fatalf("role + OIDC issuer = %+v %v", got, err)
+	}
+
+	// A role with no issuer anywhere is a boot failure.
+	if _, err := Load(true, ""); err == nil {
+		t.Fatal("role without issuer must fail")
+	}
+
+	// The instance bearer cannot look like a workspace token.
+	tok, err := NewToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(EnvBearerToken, tok)
+	if _, err := Load(true, "https://idp.example"); err == nil || strings.Contains(err.Error(), tok) {
+		t.Fatalf("workspace-shaped instance bearer: %v", err)
+	}
+}

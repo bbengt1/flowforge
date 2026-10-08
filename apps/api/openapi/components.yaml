@@ -4057,9 +4057,9 @@ components:
         configured:
           type: boolean
           description: >
-            false when the instance has no SCIM issuer (SCIM_ISSUER, else
-            OIDC_ISSUER). Create is then 503 scim_not_configured. Existing
-            tokens still list.
+            false when SCIM is off on the instance (no SCIM_* variable
+            set). Create is then 503 scim_not_configured. Existing tokens
+            still list but cannot authenticate until SCIM is on again.
     ScimTokenCreated:
       allOf:
         - $ref: "#/components/schemas/ScimToken"
@@ -4077,11 +4077,10 @@ components:
     CreateScimTokenRequest:
       type: object
       required: [displayName]
-      additionalProperties: false
       properties:
         displayName:
           type: string
-          description: Trimmed before validation. Empty or longer than 128 characters is 400 invalid-request with errors[].path displayName.
+          description: Trimmed before validation. Empty, longer than 128 characters, or containing a control character is 400 invalid-request with errors[].path displayName. Other fields are ignored.
     MembershipList:
       type: object
       required: [items]
@@ -4983,9 +4982,9 @@ components:
             request_id: 0123456789abcdef0123456789abcdef
     ScimTokenCreateUnavailable:
       description: >
-        scim_not_configured: the instance has no SCIM issuer (SCIM_ISSUER,
-        else OIDC_ISSUER), so a token could not provision anyone. A platform
-        operator must configure it. dependency-unavailable: the store is not
+        scim_not_configured: SCIM is off on the instance (no SCIM_*
+        variable set), so a token could not provision anyone. A platform
+        operator must turn it on (SCIM_ISSUER is enough). dependency-unavailable: the store is not
         reachable. Nothing is stored in either case.
       headers:
         X-Request-ID:
@@ -4996,7 +4995,7 @@ components:
             $ref: "#/components/schemas/Problem"
           examples:
             notConfigured:
-              summary: No SCIM issuer on this instance
+              summary: SCIM is off on this instance
               value:
                 type: urn:flowforge:problem:scim_not_configured
                 title: Service Unavailable

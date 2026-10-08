@@ -18,7 +18,10 @@
 -- Both are unique per workspace only, so two workspaces may use the same
 -- userName for the same or different people. FORCE RLS via the
 -- isolation helper. A row exists while that workspace's token can see
--- the user; SCIM DELETE removes it.
+-- the user; SCIM DELETE removes it. deactivated_at is set by SCIM
+-- active:false, which also removes the user's role bindings and group
+-- rows in that workspace but keeps the link; active:true clears it and
+-- restores membership. Neither touches users.status.
 --
 -- Schema migrations are forward-only, so this file has no down script.
 -- Audit actions need no schema change because audit_events.action has a
@@ -55,6 +58,7 @@ CREATE TABLE scim_workspace_users (
     user_id       uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     user_name     text NOT NULL,
     external_id   text NOT NULL DEFAULT '',
+    deactivated_at timestamptz,
     created_at    timestamptz NOT NULL DEFAULT now(),
     updated_at    timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (workspace_id, user_id),

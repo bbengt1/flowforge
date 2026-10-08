@@ -84,6 +84,7 @@ type Server struct {
 	MFAKey           []byte
 	SCIMSettings     scim.Settings
 	SCIMDir          scim.Store
+	ScimTokens       scim.WorkspaceDirectory
 	Lockouts         lockout.Store
 	LockoutMax       int
 	EmbedAuditor     embed.Auditor

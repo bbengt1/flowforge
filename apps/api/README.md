@@ -46,9 +46,11 @@ Go module `github.com/bbengt1/flowforge/apps/api` (Go **1.26**). Listens on **80
 | `POST` | `/api/v1/login` | V.0a local login (email/username + password). Mints standalone `ff_session` / `ff_csrf`. The seeded `admin` has no usable password until `POST /bootstrap/admin-password`. The literal password `admin` is the same `401` as unknown. `session.must_change_password` is set only by an administrator-initiated reset. Never echoes the password. Rate-limited before bcrypt (`429` + `Retry-After`). A durable `auth_lockouts` row is the same `401` after a correct password. Embed stays `POST /embed/exchange`. |
 | `GET` | `/api/v1/users/{userID}/lockout` | Durable lock state (`platform.administer`). `user_id`, `locked`, `failed_count`, optional `locked_at`. No hash. Embed is `403`. |
 | `POST` | `/api/v1/users/{userID}/unlock` | Clear the lockout row (CSRF + `platform.administer`). Does not re-enable a disabled user. |
-| `GET` / `POST` | `/scim/v2/Users` | SCIM 2.0 provision. Bearer `SCIM_BEARER_TOKEN` only. Unset is `503`. `externalId` should be the OIDC `sub`. Passwords are `400` and are not echoed. |
-| `GET` / `PUT` / `PATCH` / `DELETE` | `/scim/v2/Users/{id}` | Read, replace, patch (`active: false` disables and revokes sessions), or deprovision (`204`, later GET `404`). |
-| `GET` / `PATCH` | `/scim/v2/Groups` | Groups are existing workspaces. PATCH adds or removes members. Add grants `SCIM_DEFAULT_ROLE` (default `viewer`) without removing other roles. POST/PUT/DELETE of a group are `400`. |
+| `GET` / `POST` | `/scim/v2/Users` | SCIM 2.0 provision. Bearer `SCIM_BEARER_TOKEN` or a per-workspace `ffscim_` token. Unset is `503`. `externalId` should be the OIDC `sub`. Passwords are `400` and are not echoed. A workspace token lists and links users in its workspace only, and adds `SCIM_DEFAULT_ROLE` only when the user has no role there. |
+| `GET` / `PUT` / `PATCH` / `DELETE` | `/scim/v2/Users/{id}` | Read, replace, patch (`active: false` disables and revokes sessions), or deprovision (`204`, later GET `404`). With a workspace token: `active: false` removes membership in that workspace only and keeps the link; `active: true` restores it with `SCIM_DEFAULT_ROLE`; `DELETE` removes the link and membership. Name changes and account enable/disable are ignored. |
+| `GET` / `PATCH` | `/scim/v2/Groups` | Groups are existing workspaces (`externalId` is the workbench key). PATCH adds or removes members. Add grants `SCIM_DEFAULT_ROLE` (default `viewer`) without removing other roles. POST/PUT/DELETE of a group are `400`. A workspace token sees only its own workspace. |
+| `GET` / `POST` | `/api/v1/workspace/scim-tokens` | List or create per-workspace SCIM tokens (`workspace.administer` + MFA step-up; embed refused). The token is in the create response once. Third active token is `409` `scim_token_limit`. SCIM off is `503` `scim_not_configured`. |
+| `DELETE` | `/api/v1/workspace/scim-tokens/{tokenId}` | Revoke. The token is `401` at `/scim/v2` from the next request; the other token keeps working. |
 | `POST` | `/api/v1/session` | Trusted-dev only: create browser session from self-asserted issuer/subject. Production is `401` (use `POST /login` or `POST /embed/exchange`). Not the local one-time credential. |
 | `GET` | `/api/v1/session` | Current browser session (cookie required). Exposes `session.must_change_password` so chrome can gate until rotation. |
 | `POST` | `/api/v1/session/refresh` | Extend idle expiry; rotate CSRF. |
@@ -205,8 +207,8 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `QUOTA_EXECUTE_PER_MINUTE` | `30` | Per-workspace execution-start refill. |
 | `QUOTA_EXECUTE_BURST` | per-minute rate | Execution-start token-bucket capacity. |
 | `QUOTA_EXECUTE_CONCURRENCY` | `20` | Open executions per workspace, shared by manual start, webhooks, and schedules. `GET /api/v1/health` and `GET /api/v1/readiness` stay unlimited. |
-| `SCIM_BEARER_TOKEN` | empty | Dedicated `/scim/v2` bearer (32–256 chars, no spaces). Never logged or returned. Empty with the other `SCIM_*` unset fails SCIM closed (`503`). Not an `ff_session`. |
-| `SCIM_ISSUER` | `OIDC_ISSUER` when the bearer is set and this is omitted | Issuer on provisioned users. Must match `OIDC_ISSUER` when both are set. Production requires `https`. Map IdP `externalId` to the OIDC `sub`. |
+| `SCIM_BEARER_TOKEN` | empty | Optional instance-wide `/scim/v2` bearer (32–256 chars, no spaces, not `ffscim_`). Never logged or returned. Empty with the other `SCIM_*` unset fails SCIM closed (`503`). Not an `ff_session`. |
+| `SCIM_ISSUER` | `OIDC_ISSUER` when another `SCIM_*` is set and this is omitted | Issuer on provisioned users. Alone, it turns on per-workspace tokens. Must match `OIDC_ISSUER` when both are set. Production requires `https`. Map IdP `externalId` to the OIDC `sub`. |
 | `SCIM_DEFAULT_ROLE` | `viewer` | Workspace role added for a new SCIM Group member. Non-workspace roles (including `platform-admin`) are a boot-fail. |
 
 Suggested local URL (compose service hostname `postgres`):

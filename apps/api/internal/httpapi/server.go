@@ -102,6 +102,10 @@ type Deps struct {
 	// SCIMDir stores directory rows. Nil selects Postgres when DB is a
 	// pool and an in-memory store otherwise.
 	SCIMDir scim.Store
+	// ScimTokens stores per-workspace SCIM tokens and links. Nil selects
+	// Postgres when DB is a pool and leaves workspace tokens unavailable
+	// (503) otherwise. There is no in-memory implementation.
+	ScimTokens scim.WorkspaceDirectory
 	// Lockouts is the durable failed-auth counter. Nil selects Postgres
 	// when DB is a pool and an in-memory store otherwise.
 	Lockouts lockout.Store
@@ -503,6 +507,12 @@ func newServer(d Deps) *API {
 			s.SCIMDir = scim.NewPostgres(p)
 		} else {
 			s.SCIMDir = scim.NewMemory()
+		}
+	}
+	s.ScimTokens = d.ScimTokens
+	if s.ScimTokens == nil {
+		if p, ok := d.DB.(*postgres.Pool); ok {
+			s.ScimTokens = scim.NewWorkspacePostgres(p)
 		}
 	}
 	s.Lockouts = d.Lockouts
