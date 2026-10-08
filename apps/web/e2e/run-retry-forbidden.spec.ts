@@ -30,12 +30,12 @@ function controlPlanePath(url: string): string | null {
   return match ? match[1] : null;
 }
 
-function problemBody(path: string, status: number, code: string) {
+function problemBody(path: string, status: number, code: string, detail: string) {
   return JSON.stringify({
     type: `urn:flowforge:problem:${code}`,
     title: "Forbidden",
     status,
-    detail: "The request was refused.",
+    detail,
     instance: path,
     code,
     request_id: "req-e2e-630",
@@ -48,6 +48,7 @@ async function refuse(
   method: "GET" | "POST",
   matches: (path: string) => boolean,
   code = "forbidden",
+  detail = "The request was refused.",
 ) {
   await page.route(
     (url) => {
@@ -63,7 +64,7 @@ async function refuse(
       await route.fulfill({
         status: 403,
         contentType: "application/problem+json",
-        body: problemBody(path, 403, code),
+        body: problemBody(path, 403, code, detail),
       });
     },
   );
@@ -138,6 +139,28 @@ test("a session check on retry keeps the run page and shows its notice", async (
   await expect(page.locator("#execution-errors [role='alert']")).toBeVisible();
   await expectRunPageStays(page);
   // Not a role refusal, so the role sentence stays away.
+  await expect(main.getByText(RETRY_FORBIDDEN)).toHaveCount(0);
+});
+
+test("the server's CSRF rejection on retry is a session notice, not a role refusal", async ({
+  page,
+}) => {
+  await installOperatorApi(page, { permissions: PERMISSIONS });
+  // Shaped like core/session.go: 403, code forbidden, this exact detail.
+  await refuse(
+    page,
+    "POST",
+    (path) => path === `${RUN_PATH}/retry`,
+    "forbidden",
+    "CSRF validation failed.",
+  );
+  const main = await openRun(page);
+
+  await main.getByRole("button", { name: "Retry execution" }).click();
+  const banner = page.locator("#execution-errors [role='alert']");
+  await expect(banner).toBeVisible();
+  await expect(banner).toContainText("CSRF fail-closed.");
+  await expectRunPageStays(page);
   await expect(main.getByText(RETRY_FORBIDDEN)).toHaveCount(0);
 });
 
