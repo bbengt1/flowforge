@@ -3,6 +3,7 @@ import { expectNoBlockingAxeViolations } from "./axe";
 import { expectNoSecretsInBrowserStorage, installOperatorApi } from "./operator-api";
 import {
   SCIM_TOKEN_ALREADY_REVOKED,
+  SCIM_TOKEN_NAME_CONTROL_MESSAGE,
   SCIM_TOKEN_NAME_INVALID_MESSAGE,
   SCIM_TOKEN_NAME_REQUIRED_MESSAGE,
   SCIM_TOKEN_NEVER_USED,
@@ -51,7 +52,14 @@ type StoredToken = {
   lastUsedAt: string | null;
 };
 
-type Mode = "ok" | "stub" | "mfa" | "limit-race" | "create-unconfigured" | "revoke-gone";
+type Mode =
+  | "ok"
+  | "stub"
+  | "mfa"
+  | "store-down"
+  | "limit-race"
+  | "create-unconfigured"
+  | "revoke-gone";
 
 type TokensApi = {
   tokens: StoredToken[];
@@ -62,22 +70,32 @@ const OKTA: StoredToken = {
   id: OKTA_ID,
   displayName: "Okta production",
   createdBy: { id: ADA, displayName: "Ada Admin" },
-  createdAt: "2026-10-01T12:00:00.000Z",
-  lastUsedAt: "2026-10-07T09:30:00.000Z",
+  createdAt: "2026-10-01T12:00:00Z",
+  lastUsedAt: "2026-10-07T09:30:00Z",
 };
 
 const ENTRA: StoredToken = {
   id: ENTRA_ID,
   displayName: "Entra staging",
   createdBy: null,
-  createdAt: "2026-09-20T08:00:00.000Z",
+  createdAt: "2026-09-20T08:00:00Z",
   lastUsedAt: null,
+};
+
+// Titles match the live API. The web must key off `code`, never these.
+const TITLES: Record<number, string> = {
+  400: "Invalid Request",
+  403: "Forbidden",
+  404: "Not Found",
+  409: "Conflict",
+  501: "Not Implemented",
+  503: "Service Unavailable",
 };
 
 function problem(path: string, status: number, code: string, errorPath?: string) {
   return {
     type: `urn:flowforge:problem:${code}`,
-    title: "Problem",
+    title: TITLES[status] ?? "Problem",
     status,
     detail: "raw server detail",
     instance: `/api/v1${path}`,
@@ -133,6 +151,10 @@ async function installScimTokensApi(
       await send(route, 501, problem(path, 501, "internal-error"));
       return;
     }
+    if (mode === "store-down" && method === "GET") {
+      await send(route, 503, problem(path, 503, "dependency-unavailable"));
+      return;
+    }
     if (mode === "mfa") {
       await send(route, 403, {
         ...problem(path, 403, "mfa-required"),
@@ -162,6 +184,11 @@ async function installScimTokensApi(
         await send(route, 409, problem(path, 409, "scim_token_limit"));
         return;
       }
+      // The live API ignores extra fields; the web must not send any.
+      if (Object.keys(body).some((key) => key !== "displayName")) {
+        await send(route, 500, problem(path, 500, "internal-error"));
+        return;
+      }
       if (name.toLowerCase() === "bad name") {
         await send(route, 400, problem(path, 400, "invalid-request", "displayName"));
         return;
@@ -170,7 +197,7 @@ async function installScimTokensApi(
         id: NEW_ID,
         displayName: name,
         createdBy: { id: ADA, displayName: "Ada Admin" },
-        createdAt: "2026-10-07T23:59:00.000Z",
+        createdAt: "2026-10-07T23:59:00Z",
         lastUsedAt: null,
       };
       api.tokens.unshift(created);
@@ -242,6 +269,14 @@ test.describe("SCIM tokens admin", () => {
     );
     expect(api.calls.filter((call) => call.startsWith("POST"))).toEqual([]);
 
+    await name.fill("Okta\tproduction");
+    await dialog.getByRole("button", { name: "Create token" }).click();
+    await expect(page.locator("#scim-token-name-error")).toHaveText(
+      SCIM_TOKEN_NAME_CONTROL_MESSAGE,
+    );
+    expect(api.calls.filter((call) => call.startsWith("POST"))).toEqual([]);
+
+    // The server stays the authority: a 400 on displayName lands on the field.
     await name.fill("bad name");
     await dialog.getByRole("button", { name: "Create token" }).click();
     await expect(page.locator("#scim-token-name-error")).toHaveText(
@@ -341,7 +376,7 @@ test.describe("SCIM tokens admin", () => {
     await second.close();
   });
 
-  test("a server without the tokens store says not available yet, with no raw codes", async ({
+  test("a 501 from an older server says not available yet, with no raw codes", async ({
     page,
   }) => {
     const api = await installScimTokensApi(page, { mode: "stub" });
@@ -354,6 +389,16 @@ test.describe("SCIM tokens admin", () => {
     await expect(page.getByRole("button", { name: "Create token" })).toHaveCount(0);
     // Not retried: a 501 does not change on a second ask.
     expect(api.calls).toEqual(["GET /workspace/scim-tokens"]);
+  });
+
+  test("a store outage on the list shows the banner and keeps create off", async ({ page }) => {
+    await installScimTokensApi(page, { mode: "store-down" });
+    await page.goto("/scim-tokens");
+    await expect(page.locator("[data-scim-tokens-count]")).toHaveText(
+      "SCIM tokens could not be loaded.",
+    );
+    await expect(page.locator("main").getByRole("alert")).toContainText("Service Unavailable");
+    await expect(page.getByRole("button", { name: "Create token" })).toBeDisabled();
   });
 
   test("mfa-required shows the plain step-up line and opens step-up", async ({ page }) => {

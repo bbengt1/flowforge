@@ -9,6 +9,7 @@ import type { ProblemDetails } from "./problem.ts";
 import { queryKeyHasSecret, scimTokensListQueryKey } from "./query-cache.ts";
 import {
   SCIM_TOKEN_ALREADY_REVOKED,
+  SCIM_TOKEN_NAME_CONTROL_MESSAGE,
   SCIM_TOKEN_NAME_INVALID_MESSAGE,
   SCIM_TOKEN_NAME_REQUIRED_MESSAGE,
   SCIM_TOKEN_NAME_TOO_LONG_MESSAGE,
@@ -196,6 +197,16 @@ describe("SCIM token names", () => {
     assert.equal(scimTokenNameClientError("é".repeat(128)), null);
     assert.equal(scimTokenNameClientError("a".repeat(129)), SCIM_TOKEN_NAME_TOO_LONG_MESSAGE);
   });
+
+  it("refuses control characters inside the name, like the API", () => {
+    assert.equal(scimTokenNameClientError("Okta\tprod"), SCIM_TOKEN_NAME_CONTROL_MESSAGE);
+    assert.equal(scimTokenNameClientError("Okta\nprod"), SCIM_TOKEN_NAME_CONTROL_MESSAGE);
+    assert.equal(scimTokenNameClientError("Okta\u007fprod"), SCIM_TOKEN_NAME_CONTROL_MESSAGE);
+    assert.equal(scimTokenNameClientError("Okta\u0085prod"), SCIM_TOKEN_NAME_CONTROL_MESSAGE);
+    // Surrounding whitespace is trimmed first, as on the server.
+    assert.equal(scimTokenNameClientError("\tOkta prod\n"), null);
+    assert.equal(scimTokenNameClientError("Okta — prod ✓"), null);
+  });
 });
 
 describe("SCIM token labels", () => {
@@ -287,6 +298,17 @@ describe("SCIM token problems", () => {
     });
     const banner = scimTokenCreateFailure(problem(503, "dependency-unavailable"));
     assert.equal(banner.placement, "banner");
+  });
+
+  it("keys off code and status, never the title", () => {
+    const limit = { ...problem(409, "scim_token_limit"), title: "Conflict" };
+    const off = { ...problem(503, "scim_not_configured"), title: "Service Unavailable" };
+    const store = { ...problem(503, "dependency-unavailable"), title: "Service Unavailable" };
+    assert.equal(scimTokenProblemKind(limit), "limit");
+    assert.equal(scimTokenProblemKind(off), "not-configured");
+    assert.equal(scimTokenProblemKind(store), "banner");
+    const misleading: ProblemDetails = { ...problem(409, "conflict"), title: "scim_token_limit" };
+    assert.equal(scimTokenProblemKind(misleading), "banner");
   });
 
   it("does not retry list problems that retrying can't change", () => {

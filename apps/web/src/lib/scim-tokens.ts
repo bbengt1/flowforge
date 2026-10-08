@@ -12,6 +12,7 @@
  * a URL, or a log. Records read from the API never carry it.
  *
  * Field errors are placed by `errors[].path` only, never by message text.
+ * Problems are told apart by `status` and `code`, never by `title`.
  */
 
 import { sanitizeDestructiveImpact, type DestructiveImpactItem } from "./confirm-destructive.ts";
@@ -82,7 +83,7 @@ export const SCIM_TOKENS_NOT_AVAILABLE =
   "SCIM tokens aren't available on this server yet.";
 
 export const SCIM_TOKENS_NOT_CONFIGURED =
-  "SCIM isn't set up on this instance, so new tokens can't be created. A platform operator needs to configure it first.";
+  "SCIM isn't set up on this instance, so new tokens can't be created and existing ones can't sign in. A platform operator needs to turn it on first.";
 
 export const SCIM_TOKENS_LOAD_FAILED = "SCIM tokens could not be loaded.";
 
@@ -98,6 +99,9 @@ export const SCIM_TOKEN_NAME_HINT =
 export const SCIM_TOKEN_NAME_REQUIRED_MESSAGE = "Enter a token name.";
 
 export const SCIM_TOKEN_NAME_TOO_LONG_MESSAGE = `Use ${SCIM_TOKEN_NAME_MAX_CHARS} characters or fewer.`;
+
+export const SCIM_TOKEN_NAME_CONTROL_MESSAGE =
+  "Remove tabs, line breaks, and other control characters from the name.";
 
 export const SCIM_TOKEN_NAME_INVALID_MESSAGE =
   "This name can't be used. Enter 1 to 128 characters without control characters.";
@@ -256,6 +260,13 @@ export function scimTokenNameLength(name: string): number {
   return [...name].length;
 }
 
+/** Unicode Cc, the same set the API refuses (Go `unicode.IsControl`). */
+const CONTROL_CHARACTER = /\p{Cc}/u;
+
+export function scimTokenNameHasControlCharacter(name: string): boolean {
+  return CONTROL_CHARACTER.test(name);
+}
+
 /** Client-side hint only. The server stays the authority. */
 export function scimTokenNameClientError(raw: string): string | null {
   const name = normalizeScimTokenName(raw);
@@ -264,6 +275,9 @@ export function scimTokenNameClientError(raw: string): string | null {
   }
   if (scimTokenNameLength(name) > SCIM_TOKEN_NAME_MAX_CHARS) {
     return SCIM_TOKEN_NAME_TOO_LONG_MESSAGE;
+  }
+  if (scimTokenNameHasControlCharacter(name)) {
+    return SCIM_TOKEN_NAME_CONTROL_MESSAGE;
   }
   return null;
 }
