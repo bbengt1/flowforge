@@ -30,6 +30,8 @@ data:
   # Map the IdP externalId to the OIDC sub. Groups are workspaces.
   # SCIM_ISSUER: "https://idp.example"
   # SCIM_DEFAULT_ROLE: "viewer"
+  # workspaces (default) or groups. Any other value is a boot-fail.
+  # SCIM_GROUPS_MODE: "workspaces"
   # Durable lockout. Unset uses 5. Integer 1-50. 0 is a boot-fail.
   # LOCKOUT_MAX_FAILURES: "5"
   # Per-workspace token buckets (PostgreSQL). Login, embed, and machine
