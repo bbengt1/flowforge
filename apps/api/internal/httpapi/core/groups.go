@@ -103,7 +103,28 @@ func (s *Server) listWorkspaceGroups(w http.ResponseWriter, r *http.Request) {
 		writeGroupError(w, r, err)
 		return
 	}
-	WritePage(w, items, q, next)
+	if items == nil {
+		items = []identity.Group{}
+	}
+	WriteJSON(w, http.StatusOK, groupListResponse{
+		PageResponse: PageResponse[identity.Group]{Items: items, Limit: q.Limit, Cursor: q.Cursor, Next: next},
+		GroupsMode:   s.SCIMSettings.Mode(),
+	})
+}
+
+// groupListResponse is the page envelope plus the instance's
+// SCIM_GROUPS_MODE, so the admin UI knows whether a group with managedBy
+// "scim" is locked. Always present: workspaces when SCIM is off.
+type groupListResponse struct {
+	PageResponse[identity.Group]
+	GroupsMode string `json:"groupsMode"`
+}
+
+// groupDetailResponse is the group detail plus the instance's
+// SCIM_GROUPS_MODE, the same value the list reports.
+type groupDetailResponse struct {
+	identity.GroupDetail
+	GroupsMode string `json:"groupsMode"`
 }
 
 func (s *Server) createWorkspaceGroup(w http.ResponseWriter, r *http.Request) {
@@ -137,7 +158,7 @@ func (s *Server) getWorkspaceGroup(w http.ResponseWriter, r *http.Request) {
 		writeGroupError(w, r, err)
 		return
 	}
-	WriteJSON(w, http.StatusOK, d)
+	WriteJSON(w, http.StatusOK, groupDetailResponse{GroupDetail: d, GroupsMode: s.SCIMSettings.Mode()})
 }
 
 func (s *Server) renameWorkspaceGroup(w http.ResponseWriter, r *http.Request) {

@@ -3963,16 +3963,25 @@ components:
       allOf:
         - $ref: "#/components/schemas/WorkspaceGroup"
         - type: object
-          required: [members]
+          required: [members, groupsMode]
           properties:
             members:
               type: array
               description: Every member row, ordered by display name without regard to case, then user id.
               items:
                 $ref: "#/components/schemas/WorkspaceGroupMember"
+            groupsMode:
+              type: string
+              enum: [workspaces, groups]
+              description: >
+                The instance's SCIM_GROUPS_MODE, the same value the group
+                list reports. Always present; workspaces when SCIM is not
+                configured. In groups mode a group with managedBy "scim"
+                cannot be renamed, deleted, or have members changed here
+                (409 group_managed_by_scim).
     WorkspaceGroupList:
       type: object
-      required: [items, limit, cursor, next]
+      required: [items, limit, cursor, next, groupsMode]
       properties:
         items:
           type: array
@@ -3989,6 +3998,17 @@ components:
         next:
           type: string
           description: Opaque token for the following page. Empty when this page is the last. Always present.
+        groupsMode:
+          type: string
+          enum: [workspaces, groups]
+          description: >
+            The instance's SCIM_GROUPS_MODE. Always present; workspaces
+            when SCIM is not configured. workspaces: SCIM Groups are
+            workspaces, and every group here can be changed locally.
+            groups: SCIM Groups are this workspace's groups, managed only
+            by its workspace SCIM tokens, and a group with managedBy
+            "scim" cannot be renamed, deleted, or have members changed
+            here (409 group_managed_by_scim).
     CreateWorkspaceGroupRequest:
       type: object
       required: [displayName]

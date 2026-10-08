@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/scim"
@@ -35,6 +37,7 @@ type gmHarness struct {
 	ctx    context.Context
 	gm, ws http.Handler
 	admin  *pgxpool.Pool
+	pool   *pgxpool.Pool
 	owner  identity.User
 	n      int64
 	seq    int
@@ -82,7 +85,7 @@ func newGMHarness(t *testing.T) *gmHarness {
 			},
 		}))
 	}
-	return &gmHarness{t: t, ctx: ctx, gm: build(scim.GroupsModeGroups), ws: build(scim.GroupsModeWorkspaces), admin: adminPool, owner: owner, n: n, logs: logs}
+	return &gmHarness{t: t, ctx: ctx, gm: build(scim.GroupsModeGroups), ws: build(scim.GroupsModeWorkspaces), admin: adminPool, pool: pool, owner: owner, n: n, logs: logs}
 }
 
 func (th *gmHarness) uniq(prefix string) string {
@@ -897,5 +900,169 @@ func TestScimGroupsModeLastAdminGuard(t *testing.T) {
 	}
 	if th.roles(w, sole) != authz.RoleAdmin {
 		t.Fatal("refused removal changed roles")
+	}
+}
+
+// groupsMode rides on the workspace group list envelope and on the group
+// detail object, the instance's SCIM_GROUPS_MODE in both modes and the
+// default workspaces when SCIM is not configured. Both routes stay under
+// workspace.administer with no MFA step-up: a password-session workspace
+// admin who never verified MFA reads them, while the step-up-gated SCIM
+// token create still refuses that same session.
+func TestScimGroupsModeFieldOnGroupListAndDetail(t *testing.T) {
+	th := newGMHarness(t)
+	w := th.workspace()
+	rec := th.local(th.ws, w, http.MethodPost, "/api/v1/workspace/groups", `{"displayName":"Reviewers"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create group: %d %s", rec.Code, rec.Body.String())
+	}
+	var created struct{ ID string }
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+	if strings.Contains(rec.Body.String(), "groupsMode") {
+		t.Fatalf("create response gained groupsMode: %s", rec.Body.String())
+	}
+
+	unconfigured := NewWithDeps(withHTTPTestIdentity(Deps{
+		Store:      identity.NewPostgres(th.pool),
+		Scoped:     isolation.NewPostgres(th.pool),
+		Sessions:   session.NewPostgres(th.pool),
+		ScimTokens: scim.NewWorkspacePostgres(th.pool),
+		Workflows:  wfstore.NewPostgres(th.pool),
+		Log:        slog.New(slog.NewJSONHandler(th.logs, nil)),
+		PlatformAdmins: []authz.PrincipalRef{{
+			Issuer: th.owner.Issuer, Subject: th.owner.ExternalSubject,
+		}},
+	}))
+
+	type listBody struct {
+		Items      []map[string]any `json:"items"`
+		Limit      *int             `json:"limit"`
+		Cursor     *string          `json:"cursor"`
+		Next       *string          `json:"next"`
+		GroupsMode *string          `json:"groupsMode"`
+	}
+	type detailBody struct {
+		ID         string           `json:"id"`
+		ManagedBy  any              `json:"managedBy"`
+		Members    []map[string]any `json:"members"`
+		GroupsMode *string          `json:"groupsMode"`
+	}
+	check := func(name string, list, detail *httptest.ResponseRecorder, want string) {
+		t.Helper()
+		if list.Code != http.StatusOK || detail.Code != http.StatusOK {
+			t.Fatalf("%s: list %d %s / detail %d %s", name, list.Code, list.Body.String(), detail.Code, detail.Body.String())
+		}
+		var l listBody
+		if err := json.Unmarshal(list.Body.Bytes(), &l); err != nil {
+			t.Fatalf("%s list: %v", name, err)
+		}
+		if l.GroupsMode == nil || *l.GroupsMode != want {
+			t.Fatalf("%s list groupsMode = %v, want %q: %s", name, l.GroupsMode, want, list.Body.String())
+		}
+		if l.Limit == nil || l.Cursor == nil || l.Next == nil || len(l.Items) != 1 || l.Items[0]["id"] != created.ID {
+			t.Fatalf("%s list envelope changed: %s", name, list.Body.String())
+		}
+		if _, ok := l.Items[0]["groupsMode"]; ok {
+			t.Fatalf("%s list item carries groupsMode: %s", name, list.Body.String())
+		}
+		var d detailBody
+		if err := json.Unmarshal(detail.Body.Bytes(), &d); err != nil {
+			t.Fatalf("%s detail: %v", name, err)
+		}
+		if d.GroupsMode == nil || *d.GroupsMode != want {
+			t.Fatalf("%s detail groupsMode = %v, want %q: %s", name, d.GroupsMode, want, detail.Body.String())
+		}
+		if d.ID != created.ID || d.Members == nil || d.ManagedBy != nil {
+			t.Fatalf("%s detail shape changed: %s", name, detail.Body.String())
+		}
+	}
+	for _, tc := range []struct {
+		name string
+		h    http.Handler
+		want string
+	}{
+		{"groups mode", th.gm, scim.GroupsModeGroups},
+		{"workspaces mode", th.ws, scim.GroupsModeWorkspaces},
+		{"scim not configured", unconfigured, scim.GroupsModeWorkspaces},
+	} {
+		check(tc.name,
+			th.local(tc.h, w, http.MethodGet, "/api/v1/workspace/groups", ""),
+			th.local(tc.h, w, http.MethodGet, "/api/v1/workspace/groups/"+created.ID, ""),
+			tc.want)
+	}
+
+	// A workspace admin on a local password session with no MFA step-up.
+	store := identity.NewPostgres(th.pool)
+	subject := th.uniq("gm-admin")
+	adminUser, err := store.UpsertUser(th.ctx, scimIssuer, subject, "WS Admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ident, err := localauth.NormalizeIdentifier(subject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := localauth.HashPassword("correct-horse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetLocalPassword(th.ctx, adminUser.ID, ident, hash); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetMemberRoles(th.ctx, w.ws.ID, adminUser.ID, []string{authz.RoleAdmin}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		h    http.Handler
+		want string
+	}{
+		{"session groups mode", th.gm, scim.GroupsModeGroups},
+		{"session workspaces mode", th.ws, scim.GroupsModeWorkspaces},
+	} {
+		token, csrf := loginLocal(t, tc.h, subject, "correct-horse")
+		list := httptest.NewRecorder()
+		tc.h.ServeHTTP(list, sessionWorkspaceRequest(http.MethodGet, "/api/v1/workspace/groups", token, csrf, w.tenant, w.ws))
+		detail := httptest.NewRecorder()
+		tc.h.ServeHTTP(detail, sessionWorkspaceRequest(http.MethodGet, "/api/v1/workspace/groups/"+created.ID, token, csrf, w.tenant, w.ws))
+		check(tc.name, list, detail, tc.want)
+
+		// Control: the same session is not stepped up, so a step-up route refuses it.
+		req := sessionWorkspaceRequest(http.MethodPost, "/api/v1/workspace/scim-tokens", token, csrf, w.tenant, w.ws)
+		req.Body = io.NopCloser(strings.NewReader(`{"displayName":"IdP"}`))
+		req.Header.Set("Content-Type", "application/json")
+		denied := httptest.NewRecorder()
+		tc.h.ServeHTTP(denied, req)
+		if denied.Code != http.StatusForbidden || !strings.Contains(denied.Body.String(), CodeMFARequired) {
+			t.Fatalf("%s: step-up control = %d %s", tc.name, denied.Code, denied.Body.String())
+		}
+
+		// Approver candidates list groups too but never carries groupsMode.
+		cand := httptest.NewRecorder()
+		tc.h.ServeHTTP(cand, sessionWorkspaceRequest(http.MethodGet, "/api/v1/approvals/approver-candidates?role=approver", token, csrf, w.tenant, w.ws))
+		if cand.Code != http.StatusOK || strings.Contains(cand.Body.String(), "groupsMode") {
+			t.Fatalf("%s: approver candidates = %d %s", tc.name, cand.Code, cand.Body.String())
+		}
+	}
+
+	// A non-admin member (editor, approver) is still 403 on list and detail.
+	for _, role := range []string{authz.RoleEditor, authz.RoleApprover} {
+		sub := th.uniq("gm-" + role)
+		u, err := store.UpsertUser(th.ctx, scimIssuer, sub, "Member "+role)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.SetMemberRoles(th.ctx, w.ws.ID, u.ID, []string{role}); err != nil {
+			t.Fatal(err)
+		}
+		for _, h := range []http.Handler{th.gm, th.ws} {
+			for _, path := range []string{"/api/v1/workspace/groups", "/api/v1/workspace/groups/" + created.ID} {
+				rec := httptest.NewRecorder()
+				h.ServeHTTP(rec, workspaceRequest(http.MethodGet, path, nil, u, w.tenant, w.ws))
+				if rec.Code != http.StatusForbidden || strings.Contains(rec.Body.String(), "groupsMode") {
+					t.Fatalf("%s %s = %d %s", role, path, rec.Code, rec.Body.String())
+				}
+			}
+		}
 	}
 }
