@@ -13,6 +13,7 @@ import {
   DIALOG_FOCUSABLE_SELECTOR,
   dialogChildShouldBeInert,
   dialogEscapeCloses,
+  dialogEscapeSwallowed,
   dialogStackIsTop,
   dialogStackPop,
   dialogStackPush,
@@ -36,6 +37,13 @@ export type DialogProps = {
    * `target` always restores `returnFocusTo` (command palette → Commands).
    */
   restoreFocus?: "opener" | "target";
+  /**
+   * Opt-in `false` stops Escape from closing the dialog (the key is
+   * swallowed so nothing behind it reacts). Default `true`: Escape closes.
+   * The dialog never closes on a backdrop click by itself; that only
+   * happens through a caller's `onClick`. Focus stays trapped either way.
+   */
+  dismissible?: boolean;
   onClick?: MouseEventHandler<HTMLDivElement>;
 };
 
@@ -100,6 +108,7 @@ export function Dialog({
   label,
   returnFocusTo = null,
   restoreFocus = "opener",
+  dismissible = true,
   onClick,
 }: DialogProps) {
   const mounted = useIsClient();
@@ -110,12 +119,14 @@ export function Dialog({
   const onCloseRef = useRef(onClose);
   const returnFocusRef = useRef(returnFocusTo);
   const restoreModeRef = useRef(restoreFocus);
+  const dismissibleRef = useRef(dismissible);
 
   useEffect(() => {
     onCloseRef.current = onClose;
     returnFocusRef.current = returnFocusTo;
     restoreModeRef.current = restoreFocus;
-  }, [onClose, restoreFocus, returnFocusTo]);
+    dismissibleRef.current = dismissible;
+  }, [dismissible, onClose, restoreFocus, returnFocusTo]);
 
   useEffect(() => {
     if (!open || !mounted) {
@@ -140,16 +151,21 @@ export function Dialog({
 
     function onKey(event: KeyboardEvent) {
       const isTop = dialogStackIsTop(dialogToken);
-      if (
-        dialogEscapeCloses({
-          key: event.key,
-          defaultPrevented: event.defaultPrevented,
-          isTop,
-        })
-      ) {
+      const escape = {
+        key: event.key,
+        defaultPrevented: event.defaultPrevented,
+        isTop,
+        dismissible: dismissibleRef.current,
+      };
+      if (dialogEscapeCloses(escape)) {
         event.preventDefault();
         event.stopPropagation();
         onCloseRef.current();
+        return;
+      }
+      if (dialogEscapeSwallowed(escape)) {
+        event.preventDefault();
+        event.stopPropagation();
         return;
       }
       if (event.key !== "Tab" || !isTop) {

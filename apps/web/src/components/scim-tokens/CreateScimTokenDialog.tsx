@@ -20,6 +20,7 @@ import {
   SCIM_TOKEN_REVEAL_LABEL,
   SCIM_TOKEN_REVEAL_WARNING,
   SCIM_TOKEN_UNREADABLE,
+  SCIM_TOKENS_API_PATH,
   normalizeScimTokenName,
   scimTokenCreateFailure,
   scimTokenNameClientError,
@@ -64,6 +65,8 @@ export function CreateScimTokenDialog({
   const [reveal, setReveal] = useState<Reveal | null>(null);
   const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
   const mounted = useRef(true);
+  const revealFirstRef = useRef<HTMLButtonElement | null>(null);
+  const revealing = reveal !== null;
 
   useEffect(() => {
     mounted.current = true;
@@ -71,6 +74,14 @@ export function CreateScimTokenDialog({
       mounted.current = false;
     };
   }, []);
+
+  // The submit button unmounts when the reveal step opens, so move focus
+  // to its first action instead of leaving it on the page body.
+  useEffect(() => {
+    if (revealing) {
+      revealFirstRef.current?.focus();
+    }
+  }, [revealing]);
 
   function close() {
     setReveal(null);
@@ -101,24 +112,32 @@ export function CreateScimTokenDialog({
     setSubmittedName(name);
     setFailure(null);
     setPending(true);
-    const result = await createScimToken(identity, sent);
-    if (!mounted.current) {
-      // Closed mid-request: the token may exist, so refresh the list,
-      // but there is nowhere to show the plaintext. Drop it.
+    let result: Awaited<ReturnType<typeof createScimToken>> | null = null;
+    try {
+      result = await createScimToken(identity, sent);
+    } catch {
+      result = null;
+    } finally {
+      // Refresh after every attempt that finishes, whatever the outcome:
+      // a create can land on the server even when the answer is lost on
+      // the way back (a dropped connection reads as a failure here).
       onChanged();
+    }
+    if (!mounted.current) {
+      // Closed mid-request: the list was refreshed above, but there is
+      // nowhere to show the plaintext. Drop it.
       return;
     }
     setPending(false);
+    if (!result) {
+      setFailure({ placement: "banner", problem: createDidNotFinishProblem() });
+      return;
+    }
     if (!result.ok) {
-      const next = scimTokenCreateFailure(result.problem, maxActive);
-      setFailure(next);
-      if (next.placement === "notice" && next.kind === "limit") {
-        onChanged();
-      }
+      setFailure(scimTokenCreateFailure(result.problem, maxActive));
       return;
     }
     setReveal({ plaintext: result.plaintext, name: result.record?.displayName ?? sent });
-    onChanged();
   }
 
   async function copyPlaintext(value: string) {
@@ -138,6 +157,10 @@ export function CreateScimTokenDialog({
     <Dialog
       open
       onClose={close}
+      // The show-once token closes only through Done: Escape is swallowed
+      // and no backdrop handler is passed, so a stray key or click can't
+      // drop it. The name form keeps the normal Escape close.
+      dismissible={!revealing}
       labelledBy={headingId}
       className="fixed inset-0 z-30 flex items-center justify-center bg-black/60 p-4"
     >
@@ -175,6 +198,7 @@ export function CreateScimTokenDialog({
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 <button
+                  ref={revealFirstRef}
                   type="button"
                   data-scim-token-copy=""
                   onClick={() => {
@@ -199,7 +223,13 @@ export function CreateScimTokenDialog({
             <p className={`mt-4 text-sm ${FF_SETTINGS_DANGER_CLASS}`}>{SCIM_TOKEN_UNREADABLE}</p>
           )}
           <div className="mt-5 flex flex-wrap gap-2">
-            <button type="button" onClick={close} className={FF_SETTINGS_GHOST_CLASS}>
+            <button
+              ref={reveal.plaintext ? undefined : revealFirstRef}
+              type="button"
+              data-scim-token-done=""
+              onClick={close}
+              className={FF_SETTINGS_GHOST_CLASS}
+            >
               Done
             </button>
           </div>
@@ -274,4 +304,17 @@ export function CreateScimTokenDialog({
       )}
     </Dialog>
   );
+}
+
+/** Banner for a create call that threw before it could answer. */
+function createDidNotFinishProblem(): ProblemDetails {
+  return {
+    type: "urn:flowforge:problem:dependency-unavailable",
+    title: "Service Unavailable",
+    status: 503,
+    detail: "The create request did not finish. Check the token list before trying again.",
+    instance: SCIM_TOKENS_API_PATH,
+    code: "dependency-unavailable",
+    request_id: "",
+  };
 }

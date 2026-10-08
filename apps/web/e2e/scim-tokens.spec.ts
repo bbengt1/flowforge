@@ -60,6 +60,7 @@ type Mode =
   | "store-down"
   | "limit-race"
   | "create-unconfigured"
+  | "create-network"
   | "revoke-gone";
 
 type TokensApi = {
@@ -181,6 +182,11 @@ async function installScimTokensApi(
       const raw = route.request().postData();
       const body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
       const name = String(body.displayName ?? "").trim();
+      if (mode === "create-network") {
+        // The connection drops before any answer reaches the browser.
+        await route.abort("connectionreset");
+        return;
+      }
       if (mode === "create-unconfigured") {
         await send(route, 503, problem(path, 503, "scim_not_configured"));
         return;
@@ -303,6 +309,8 @@ test.describe("SCIM tokens admin", () => {
 
     const reveal = page.getByRole("dialog", { name: "Token created" });
     await expect(reveal).toBeVisible();
+    // Focus moves into the reveal step, onto its first action.
+    await expect(reveal.getByRole("button", { name: "Copy token" })).toBeFocused();
     await expect(reveal).toContainText(SCIM_TOKEN_REVEAL_WARNING);
     const field = reveal.getByLabel("New SCIM token");
     await expect(field).toHaveValue(PLAINTEXT);
@@ -325,7 +333,23 @@ test.describe("SCIM tokens admin", () => {
     expect(storage.includes("ffscim_")).toBe(false);
     expect(page.url().includes("ffscim_")).toBe(false);
 
-    await reveal.getByRole("button", { name: "Done" }).click();
+    // The show-once token survives a stray Escape or backdrop click.
+    await page.keyboard.press("Escape");
+    await expect(reveal).toBeVisible();
+    await expect(field).toHaveValue(PLAINTEXT);
+    await page.mouse.click(5, 5);
+    await expect(reveal).toBeVisible();
+    await expect(field).toHaveValue(PLAINTEXT);
+    // Focus stays trapped and Done is reachable from the keyboard.
+    const done = reveal.getByRole("button", { name: "Done" });
+    for (let step = 0; step < 6; step += 1) {
+      await page.keyboard.press("Tab");
+      expect(await reveal.evaluate((node) => node.contains(document.activeElement))).toBe(true);
+    }
+    await done.focus();
+    await expect(done).toBeFocused();
+
+    await done.click();
     await expect(reveal).toHaveCount(0);
     expect(await page.content()).not.toContain(PLAINTEXT);
     // At the cap now: the create button is off with the plain sentence.
@@ -333,6 +357,37 @@ test.describe("SCIM tokens admin", () => {
     await expect(page.locator("[data-scim-tokens-create-blocked='limit']")).toHaveText(
       scimTokenLimitMessage(2),
     );
+  });
+
+  test("the name form still closes on Escape", async ({ page }) => {
+    const api = await installScimTokensApi(page);
+    await page.goto("/scim-tokens");
+    await page.getByRole("button", { name: "Create token" }).click();
+    const dialog = page.getByRole("dialog", { name: "Create SCIM token" });
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    expect(api.calls.filter((call) => call.startsWith("POST"))).toEqual([]);
+  });
+
+  test("a dropped connection on create shows the banner and still refreshes the list", async ({
+    page,
+  }) => {
+    const api = await installScimTokensApi(page, { seed: [OKTA], mode: "create-network" });
+    await page.goto("/scim-tokens");
+    await expect(page.locator(`[data-scim-token-row='${OKTA_ID}']`)).toBeVisible();
+    const lists = () => api.calls.filter((call) => call === "GET /workspace/scim-tokens").length;
+    const before = lists();
+    await page.getByRole("button", { name: "Create token" }).click();
+    const dialog = page.getByRole("dialog", { name: "Create SCIM token" });
+    await dialog.getByLabel("Token name").fill("Okta staging");
+    await dialog.getByRole("button", { name: "Create token" }).click();
+    await expect(dialog.getByRole("alert")).toBeVisible();
+    expect(api.calls).toContain("POST /workspace/scim-tokens");
+    await expect.poll(lists).toBeGreaterThan(before);
+    // The form stays open so the admin can try again or cancel.
+    await expect(dialog.getByRole("button", { name: "Create token" })).toBeEnabled();
+    await expect(dialog.getByLabel("Token name")).toHaveValue("Okta staging");
   });
 
   test("at two active tokens create is off; a lost race says the same", async ({ page }) => {

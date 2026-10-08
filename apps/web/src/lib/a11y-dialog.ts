@@ -42,12 +42,28 @@ export function dialogStackReset(): void {
   stack.length = 0;
 }
 
-export function dialogEscapeCloses(input: {
+export type DialogEscapeInput = {
   key: string;
   defaultPrevented: boolean;
   isTop: boolean;
-}): boolean {
+  /** Opt-in `false` keeps the dialog open on Escape. Default `true`. */
+  dismissible?: boolean;
+};
+
+function dialogEscapeForTop(input: DialogEscapeInput): boolean {
   return input.isTop && input.key === "Escape" && !input.defaultPrevented;
+}
+
+export function dialogEscapeCloses(input: DialogEscapeInput): boolean {
+  return input.dismissible !== false && dialogEscapeForTop(input);
+}
+
+/**
+ * Escape on the top dialog that is not dismissible is swallowed: it does
+ * not close the dialog and does not reach anything behind it.
+ */
+export function dialogEscapeSwallowed(input: DialogEscapeInput): boolean {
+  return input.dismissible === false && dialogEscapeForTop(input);
 }
 
 /**

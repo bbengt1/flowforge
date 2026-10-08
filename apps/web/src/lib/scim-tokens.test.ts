@@ -458,6 +458,36 @@ describe("SCIM token list retry", () => {
   });
 });
 
+describe("SCIM token create dialog", () => {
+  const dialog = () => source("src/components/scim-tokens/CreateScimTokenDialog.tsx");
+
+  it("the reveal step closes only through Done; the form keeps Escape", () => {
+    const text = dialog();
+    assert.match(text, /dismissible=\{!revealing\}/);
+    // No backdrop handler on the Dialog, so a stray click can't close it.
+    const open = text.slice(text.indexOf("<Dialog"), text.indexOf(">", text.indexOf("labelledBy=")));
+    assert.equal(open.includes("onClick"), false);
+    const done = text.slice(text.indexOf("data-scim-token-done"));
+    assert.ok(done.slice(0, done.indexOf("</button>")).includes("onClick={close}"));
+  });
+
+  it("moves focus into the reveal step when it opens", () => {
+    const text = dialog();
+    assert.match(text, /revealFirstRef\.current\?\.focus\(\)/);
+    assert.match(text, /ref=\{revealFirstRef\}/);
+  });
+
+  it("refreshes the list after every finished create attempt", () => {
+    const text = dialog();
+    const submit = text.slice(text.indexOf("async function submit"), text.indexOf("async function copyPlaintext"));
+    const calls = submit.match(/onChanged\(\)/g) ?? [];
+    assert.equal(calls.length, 1);
+    const finallyBlock = submit.slice(submit.indexOf("} finally {") + "} finally {".length);
+    assert.ok(finallyBlock.indexOf("onChanged()") >= 0);
+    assert.ok(finallyBlock.indexOf("onChanged()") < finallyBlock.indexOf("}"));
+  });
+});
+
 describe("SCIM token revoke", () => {
   it("names the token in the impact with ids that are not secret markers", () => {
     const impact = scimTokenRevokeImpact(readScimToken(wire)!, { timeZone: "UTC" });
