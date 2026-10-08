@@ -22,13 +22,10 @@ import {
   WorkspaceGroupsAccess,
   WorkspaceGroupsForbidden,
 } from "@/components/groups/WorkspaceGroupsAccess";
-import {
-  noteScimGroupsMode,
-  useScimGroupsMode,
-} from "@/components/groups/useScimGroupsMode";
 import type { DevIdentity } from "@/lib/identity-headers";
 import type { ProblemDetails } from "@/lib/problem";
 import { QueryCacheError } from "@/lib/query-cache";
+import type { ScimGroupsMode } from "@/lib/scim-tokens";
 import {
   FF_SETTINGS_DANGER_CLASS,
   FF_SETTINGS_EYEBROW_CLASS,
@@ -133,10 +130,12 @@ function GroupDetailBody({
   const [actionProblem, setActionProblem] = useState<ProblemDetails | null>(null);
   // Set when the server refused a local edit with 409 group_managed_by_scim.
   const [refused, setRefused] = useState(false);
-  const scim = useScimGroupsMode(identity, group?.managedBy === "scim");
+  // The mode the 409 proved. Used only while the detail itself carries
+  // no mode (an older server); the server's own value always wins.
+  const [refusedMode, setRefusedMode] = useState<ScimGroupsMode | null>(null);
   const management = workspaceGroupManagement({
     managedBy: group?.managedBy,
-    groupsMode: scim.mode,
+    groupsMode: group?.groupsMode ?? refusedMode,
   });
   const locked = management === "scim-locked";
   const lockedDescribedBy = locked ? GROUP_LOCKED_NOTE_ID : undefined;
@@ -147,9 +146,10 @@ function GroupDetailBody({
 
   /**
    * A stale page offered an edit the server refused because SCIM manages
-   * the group. Close whatever was open, show the plain sentence, record
+   * the group. Close whatever was open, show the plain sentence, note
    * that the instance is in groups mode, and refetch so the page switches
-   * to the read-only view. Status plus code only, never the title.
+   * to the read-only view from the server's own `groupsMode`. Status plus
+   * code only, never the title.
    */
   function handleScimRefusal(error: unknown): boolean {
     const problem = problemOf(error);
@@ -160,10 +160,7 @@ function GroupDetailBody({
     setRemoveId(null);
     setActionProblem(null);
     setRefused(true);
-    const mode = scimGroupsModeFromProblem(problem);
-    if (mode) {
-      noteScimGroupsMode(queryClient, identity, mode);
-    }
+    setRefusedMode(scimGroupsModeFromProblem(problem));
     void refreshAll();
     return true;
   }

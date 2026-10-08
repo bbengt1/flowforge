@@ -72,13 +72,6 @@ export async function callIdentityProxy<T>(
     mismatchWorkspaceId?: string;
     omitCsrf?: boolean;
     headers?: Record<string, string>;
-    /**
-     * A background read that only enriches the page (for example the
-     * groups screen reading the SCIM mode). A 403 `mfa-required` comes
-     * back as a normal failure without opening the shared step-up
-     * dialog, so the page never prompts for MFA the admin didn't ask for.
-     */
-    quietMfa?: boolean;
   } = {},
 ): Promise<IdentityClientResult<T>> {
   const requestId = generateRequestId();
@@ -144,7 +137,6 @@ export async function callIdentityProxy<T>(
     headers,
     body: hasBody ? JSON.stringify(init.body) : undefined,
     requestId,
-    quietMfa: init.quietMfa,
   });
 }
 
@@ -244,7 +236,6 @@ export async function fetchSameOriginProxy<T>(options: {
   headers: Record<string, string>;
   body?: string;
   requestId: string;
-  quietMfa?: boolean;
 }): Promise<IdentityClientResult<T>> {
   try {
     const response = await fetch(options.instance, {
@@ -293,9 +284,7 @@ export async function fetchSameOriginProxy<T>(options: {
         markSessionStale();
       }
       notePasswordChange(problem);
-      if (!options.quietMfa) {
-        noteMfaRequiredProblem(options.instance, problem);
-      }
+      noteMfaRequiredProblem(options.instance, problem);
       return failed(response.status, problem.request_id || echoed, problem, response.headers);
     }
 

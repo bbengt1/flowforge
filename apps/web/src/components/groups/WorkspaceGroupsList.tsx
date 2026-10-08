@@ -15,7 +15,6 @@ import {
   WorkspaceGroupsAccess,
   WorkspaceGroupsForbidden,
 } from "@/components/groups/WorkspaceGroupsAccess";
-import { useScimGroupsMode } from "@/components/groups/useScimGroupsMode";
 import type { DevIdentity } from "@/lib/identity-headers";
 import { QueryCacheError } from "@/lib/query-cache";
 import {
@@ -67,11 +66,6 @@ function GroupsListBody({ identity }: { identity: DevIdentity }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const list = useWorkspaceGroupsList(identity, true);
-  // The mode is read only when a managed group is on the page.
-  const scim = useScimGroupsMode(
-    identity,
-    list.groups.some((group) => group.managedBy === "scim"),
-  );
   const [createOpen, setCreateOpen] = useState(false);
   const create = useMutation({
     mutationFn: async (displayName: string) => {
@@ -181,7 +175,7 @@ function GroupsListBody({ identity }: { identity: DevIdentity }) {
                   tipAlign="start"
                   management={workspaceGroupManagement({
                     managedBy: group.managedBy,
-                    groupsMode: scim.mode,
+                    groupsMode: list.groupsMode,
                   })}
                 />
               </span>

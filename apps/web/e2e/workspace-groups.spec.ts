@@ -62,18 +62,18 @@ type StoredGroup = {
 };
 
 /**
- * What GET /workspace/scim-tokens answers with: a mode, or a 403
- * mfa-required (the caller hasn't stepped up, so the mode is unknown).
+ * What the group list (top level) and detail (group object) report as
+ * `groupsMode`: a mode, or nothing at all (an older server).
  */
-type TokenListAnswer = "workspaces" | "groups" | "mfa";
+type ReportedMode = "workspaces" | "groups" | "omit";
 
 type GroupsApi = {
   groups: Map<string, StoredGroup>;
   calls: string[];
   /** The instance mode the server enforces. Switchable mid-test. */
   enforce: "workspaces" | "groups";
-  /** What the token list reports. Switchable mid-test. */
-  tokenList: TokenListAnswer;
+  /** What the group list and detail report. Switchable mid-test. */
+  report: ReportedMode;
 };
 
 const MANAGED_DETAIL = "This group is managed by SCIM. Change it in the identity provider.";
@@ -102,9 +102,14 @@ function groupBody(group: StoredGroup) {
   };
 }
 
-function detailBody(group: StoredGroup) {
+function modeField(report: ReportedMode): { groupsMode?: "workspaces" | "groups" } {
+  return report === "omit" ? {} : { groupsMode: report };
+}
+
+function detailBody(group: StoredGroup, report: ReportedMode) {
   return {
     ...groupBody(group),
+    ...modeField(report),
     members: group.members.map((id) => ({
       userId: id,
       displayName: PEOPLE[id]?.name ?? "",
@@ -142,7 +147,7 @@ async function installGroupsApi(
     permissions?: readonly string[];
     embed?: boolean;
     enforce?: "workspaces" | "groups";
-    tokenList?: TokenListAnswer;
+    report?: ReportedMode;
   } = {},
 ): Promise<GroupsApi> {
   await installOperatorApi(page, {
@@ -153,29 +158,18 @@ async function installGroupsApi(
     groups: new Map((options.seed ?? []).map((group) => [group.id, { ...group, members: [...group.members] }])),
     calls: [],
     enforce: options.enforce ?? "workspaces",
-    tokenList: options.tokenList ?? options.enforce ?? "workspaces",
+    report: options.report ?? options.enforce ?? "workspaces",
   };
+  // The groups screens read the mode from their own responses. Any call
+  // here is recorded (and refused like an un-stepped-up admin) so a test
+  // can prove the screens never make it.
   await page.route(/\/api\/(?:v1|control-plane)\/workspace\/scim-tokens/, async (route) => {
-    const method = route.request().method();
     const path = apiPath(route.request().url());
-    api.calls.push(`${method} ${path}`);
-    if (method !== "GET" || path !== "/workspace/scim-tokens") {
-      await send(route, 405, problem(path, 405, "invalid-request"));
-      return;
-    }
-    if (api.tokenList === "mfa") {
-      await send(route, 403, {
-        ...problem(path, 403, "mfa-required"),
-        title: "Forbidden",
-        detail: "Verify MFA before using this permission.",
-      });
-      return;
-    }
-    await send(route, 200, {
-      items: [],
-      maxActive: 2,
-      configured: true,
-      groupsMode: api.tokenList,
+    api.calls.push(`${route.request().method()} ${path}`);
+    await send(route, 403, {
+      ...problem(path, 403, "mfa-required"),
+      title: "Forbidden",
+      detail: "Verify MFA before using this permission.",
     });
   });
   await page.route(/\/api\/(?:v1|control-plane)\/workspace\/(?:groups|members)/, async (route) => {
@@ -206,7 +200,13 @@ async function installGroupsApi(
         const items = [...api.groups.values()]
           .sort((a, b) => a.displayName.toLowerCase().localeCompare(b.displayName.toLowerCase()))
           .map(groupBody);
-        await send(route, 200, { items, limit: 50, cursor: "", next: "" });
+        await send(route, 200, {
+          items,
+          limit: 50,
+          cursor: "",
+          next: "",
+          ...modeField(api.report),
+        });
         return;
       }
       if (method === "POST") {
@@ -233,7 +233,7 @@ async function installGroupsApi(
     const isMembers = path.includes("/members");
     const userId = match[2];
     if (!isMembers && method === "GET") {
-      await send(route, 200, detailBody(group));
+      await send(route, 200, detailBody(group, api.report));
       return;
     }
     if (group.managedBy === "scim" && api.enforce === "groups") {
@@ -518,8 +518,10 @@ test.describe("SCIM-managed groups", () => {
       `${GROUP_SCIM_LOCKED_MESSAGE} ${GROUP_CANNOT_APPROVE_DESCRIPTION}`,
     );
     await expectNoBlockingAxeViolations(page);
-    // Nothing was sent but reads.
+    // Nothing was sent but reads, and the mode came from the detail itself.
     expect(api.calls.filter((call) => !call.startsWith("GET "))).toEqual([]);
+    expect(api.calls.filter((call) => call.includes("scim-tokens"))).toEqual([]);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
 
     // A local group on the same instance stays editable.
     await page.goto(`/groups/${GROUP_ID}`);
@@ -547,18 +549,29 @@ test.describe("SCIM-managed groups", () => {
       page.getByRole("heading", { level: 1, name: "Okta approvers (local)" }),
     ).toBeVisible();
     expect(api.calls).toContain(`PATCH /workspace/groups/${SCIM_GROUP_ID}`);
+    expect(api.calls.filter((call) => call.includes("scim-tokens"))).toEqual([]);
     await expectNoBlockingAxeViolations(page);
+
+    // The list reads the same mode from its one top-level field.
+    await page.getByRole("link", { name: "Workspace groups" }).first().click();
+    await expect(
+      page.locator(`[data-group-row='${SCIM_GROUP_ID}'] [data-group-scim-badge]`),
+    ).toHaveAttribute("data-group-scim-badge", "scim-unenforced");
+    await expect(page.locator(`[data-group-row='${SCIM_GROUP_ID}']`)).toContainText(
+      GROUP_SCIM_SYNCED_BEFORE_LABEL,
+    );
+    expect(api.calls.filter((call) => call.includes("scim-tokens"))).toEqual([]);
   });
 
   test("a stale edit gets the 409, shows the sentence, and switches to read-only", async ({
     page,
   }) => {
-    // The admin hasn't stepped up, so the page can't read the mode. The
-    // server enforces groups mode anyway.
+    // An older server sends no groupsMode, so the page can't tell the
+    // mode. The server enforces groups mode anyway.
     const api = await installGroupsApi(page, {
       seed: [SCIM_GROUP],
       enforce: "groups",
-      tokenList: "mfa",
+      report: "omit",
     });
     await page.goto(`/groups/${SCIM_GROUP_ID}`);
     await expect(page.getByRole("heading", { level: 1, name: "Okta approvers" })).toBeVisible();
@@ -567,8 +580,8 @@ test.describe("SCIM-managed groups", () => {
     await expect(badge.getByRole("status")).toHaveAccessibleDescription(
       GROUP_SCIM_MODE_UNKNOWN_DESCRIPTION,
     );
-    expect(api.calls).toContain("GET /workspace/scim-tokens");
-    // The background mode read never opens the MFA step-up dialog.
+    // No side read of the SCIM token list, so no MFA step-up dialog either.
+    expect(api.calls.filter((call) => call.includes("scim-tokens"))).toEqual([]);
     await expect(page.getByRole("dialog")).toHaveCount(0);
 
     const renameButton = page.getByRole("button", { name: "Rename", exact: true });
@@ -595,12 +608,8 @@ test.describe("SCIM-managed groups", () => {
       api.calls.filter((call) => call === `GET /workspace/groups/${SCIM_GROUP_ID}`).length,
     ).toBeGreaterThan(1);
     await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(api.calls.filter((call) => call.includes("scim-tokens"))).toEqual([]);
     await expectNoBlockingAxeViolations(page);
-
-    // The list now knows the mode too.
-    await page.getByRole("link", { name: "Workspace groups" }).first().click();
-    await expect(page.locator(`[data-group-row='${SCIM_GROUP_ID}'] [data-group-scim-badge]`))
-      .toHaveAttribute("data-group-scim-badge", "scim-locked");
   });
 
   test("a stale member removal gets the 409 and switches to read-only", async ({ page }) => {
@@ -612,7 +621,7 @@ test.describe("SCIM-managed groups", () => {
     await expect(page.locator("[data-group-scim-badge='scim-unenforced']")).toBeVisible();
     // The operator switches the instance to groups mode after the page loaded.
     api.enforce = "groups";
-    api.tokenList = "groups";
+    api.report = "groups";
     await page.getByRole("button", { name: "Remove Cal Viewer from this group" }).click();
     await page
       .getByRole("dialog", { name: "Remove from this group?" })
@@ -625,6 +634,19 @@ test.describe("SCIM-managed groups", () => {
       page.getByRole("button", { name: "Remove Cal Viewer from this group" }),
     ).toBeDisabled();
     expect(api.groups.get(SCIM_GROUP_ID)?.members).toEqual([ADA, CAL]);
+    // The detail read again after the refusal reports groups mode itself.
+    await expect(page.locator("[data-group-scim-badge]")).toHaveAttribute(
+      "data-group-scim-badge",
+      "scim-locked",
+    );
+    await expect(page.getByRole("button", { name: "Rename", exact: true })).toBeDisabled();
+
+    // The list now reports the new mode too.
+    await page.getByRole("link", { name: "Workspace groups" }).first().click();
+    await expect(
+      page.locator(`[data-group-row='${SCIM_GROUP_ID}'] [data-group-scim-badge]`),
+    ).toHaveAttribute("data-group-scim-badge", "scim-locked");
+    expect(api.calls.filter((call) => call.includes("scim-tokens"))).toEqual([]);
   });
 
   test("the badge and its tooltip are reachable by keyboard on the list", async ({ page }) => {
@@ -682,12 +704,23 @@ test.describe("SCIM-managed groups", () => {
     await expect(detailChip).toBeFocused();
   });
 
-  test("local-only lists don't read the SCIM mode", async ({ page }) => {
-    const api = await installGroupsApi(page, { seed: [RELEASE_GROUP], enforce: "groups" });
+  test("the groups screens never read the SCIM token list", async ({ page }) => {
+    const api = await installGroupsApi(page, {
+      seed: [RELEASE_GROUP, SCIM_GROUP],
+      enforce: "groups",
+    });
     await page.goto("/groups");
     await expect(page.locator(`[data-group-row='${GROUP_ID}']`)).toContainText("Release managers");
+    await expect(
+      page.locator(`[data-group-row='${SCIM_GROUP_ID}'] [data-group-scim-badge]`),
+    ).toHaveAttribute("data-group-scim-badge", "scim-locked");
+    await page.goto(`/groups/${SCIM_GROUP_ID}`);
+    await expect(page.locator("[data-group-scim-locked='locked']")).toHaveText(
+      GROUP_SCIM_LOCKED_MESSAGE,
+    );
     await page.goto(`/groups/${GROUP_ID}`);
     await expect(page.getByRole("heading", { level: 1, name: "Release managers" })).toBeVisible();
     expect(api.calls.filter((call) => call.includes("scim-tokens"))).toEqual([]);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 });

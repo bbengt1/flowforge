@@ -19,6 +19,7 @@ import {
   workspaceGroupsListQueryKey,
   workspaceGroupsRootQueryKey,
 } from "@/lib/query-cache";
+import type { ScimGroupsMode } from "@/lib/scim-tokens";
 import type { WorkspaceGroup, WorkspaceGroupDetail } from "@/lib/workspace-groups";
 import {
   getWorkspaceGroup,
@@ -53,9 +54,21 @@ export function useWorkspaceGroupsList(identity: DevIdentity, enabled: boolean) 
       if (!page.ok) {
         throw new QueryCacheError(page.problem);
       }
-      return { items: page.items, next: page.next };
+      return { items: page.items, next: page.next, groupsMode: page.groupsMode };
     },
   });
+  // Each page carries the instance mode once at the top level. The
+  // newest page that reported one wins; null when none did.
+  const groupsMode = useMemo((): ScimGroupsMode | null => {
+    const pages = query.data?.pages ?? [];
+    for (let index = pages.length - 1; index >= 0; index -= 1) {
+      const mode = pages[index]?.groupsMode;
+      if (mode) {
+        return mode;
+      }
+    }
+    return null;
+  }, [query.data]);
   const groups = useMemo(() => {
     const seen = new Set<string>();
     const out: WorkspaceGroup[] = [];
@@ -71,6 +84,7 @@ export function useWorkspaceGroupsList(identity: DevIdentity, enabled: boolean) 
   }, [query.data]);
   return {
     groups,
+    groupsMode,
     loaded: query.isSuccess,
     pending: query.isFetching,
     problem: queryProblem(query.error),

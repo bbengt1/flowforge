@@ -34,6 +34,7 @@ import {
   readWorkspaceGroupDetail,
   readWorkspaceGroupManagedBy,
   readWorkspaceGroups,
+  readWorkspaceGroupsMode,
   scimGroupsModeFromProblem,
   workspaceGroupApiPath,
   workspaceGroupApprovalNote,
@@ -431,6 +432,64 @@ describe("SCIM-managed groups", () => {
     assert.deepEqual(
       list.map((item) => item.managedBy),
       ["scim", null],
+    );
+  });
+
+  it("reads groupsMode once from the list top level and from the detail object", () => {
+    // List: one top-level field. Items never carry it, so a stray item
+    // field is ignored and the parsed group has no mode of its own.
+    const listBody = {
+      items: [{ ...wire, managedBy: "scim", groupsMode: "workspaces" }],
+      limit: 50,
+      cursor: "",
+      next: "",
+      groupsMode: "groups",
+    };
+    assert.equal(readWorkspaceGroupsMode(listBody), "groups");
+    assert.equal(readWorkspaceGroupsMode({ ...listBody, groupsMode: "workspaces" }), "workspaces");
+    const [item] = readWorkspaceGroups(listBody);
+    assert.ok(item);
+    assert.equal("groupsMode" in item, false);
+    // Detail: on the group object.
+    assert.equal(
+      readWorkspaceGroupDetail({ ...wire, managedBy: "scim", members: [], groupsMode: "groups" })
+        ?.groupsMode,
+      "groups",
+    );
+    assert.equal(
+      readWorkspaceGroupDetail({ ...wire, members: [], groupsMode: "workspaces" })?.groupsMode,
+      "workspaces",
+    );
+    // Missing (an older server) or anything but the two values: unknown.
+    for (const odd of [undefined, null, "", "Groups", " groups", "workspace", true, 1, {}]) {
+      assert.equal(readWorkspaceGroupsMode({ items: [], groupsMode: odd }), null, String(odd));
+      assert.equal(
+        readWorkspaceGroupDetail({ ...wire, members: [], groupsMode: odd })?.groupsMode,
+        null,
+        String(odd),
+      );
+    }
+    assert.equal(readWorkspaceGroupsMode({ items: [] }), null);
+    assert.equal(readWorkspaceGroupsMode(null), null);
+    assert.equal(readWorkspaceGroupsMode([]), null);
+    // A write response (create, rename) is a plain group with no mode.
+    assert.equal("groupsMode" in (readWorkspaceGroup({ ...wire, groupsMode: "groups" }) ?? {}), false);
+  });
+
+  it("reads the mode from the groups responses, never from the SCIM token list", () => {
+    for (const file of [
+      "src/components/groups/WorkspaceGroupsList.tsx",
+      "src/components/groups/WorkspaceGroupDetail.tsx",
+      "src/components/groups/useWorkspaceGroups.ts",
+      "src/lib/workspace-groups-client.ts",
+    ]) {
+      const text = source(file);
+      assert.doesNotMatch(text, /scim-tokens-client|listScimTokens|useScimGroupsMode|quietMfa/, file);
+    }
+    assert.match(source("src/components/groups/WorkspaceGroupsList.tsx"), /groupsMode: list\.groupsMode/);
+    assert.match(
+      source("src/components/groups/WorkspaceGroupDetail.tsx"),
+      /groupsMode: group\?\.groupsMode \?\? refusedMode/,
     );
   });
 

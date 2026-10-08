@@ -6,11 +6,7 @@ import { fileURLToPath } from "node:url";
 import { paletteCommands } from "./command-palette.ts";
 import { resolveIdentityProxyTarget } from "./identity-proxy.ts";
 import type { ProblemDetails } from "./problem.ts";
-import {
-  queryKeyHasSecret,
-  scimGroupsModeQueryKey,
-  scimTokensListQueryKey,
-} from "./query-cache.ts";
+import { queryKeyHasSecret, scimTokensListQueryKey } from "./query-cache.ts";
 import {
   SCIM_GROUPS_MODE_GROUPS_LINE,
   SCIM_GROUPS_MODE_WORKSPACES_LINE,
@@ -601,11 +597,5 @@ describe("SCIM Groups mode", () => {
     const page = source("src/components/scim-tokens/ScimTokensPage.tsx");
     const row = page.slice(page.indexOf("function ScimTokenRow"));
     assert.equal(row.includes("groupsMode"), false);
-  });
-
-  it("keeps the groups-mode cache key free of secrets and apart from the token list", () => {
-    const key = scimGroupsModeQueryKey("acme/ops");
-    assert.deepEqual(key, ["flowforge", "acme/ops", "scim-tokens", "groups-mode"]);
-    assert.notDeepEqual(key, scimTokensListQueryKey("acme/ops"));
   });
 });

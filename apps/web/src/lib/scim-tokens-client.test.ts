@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import type { DevIdentity } from "./identity-headers.ts";
-import { subscribeMfaRequired } from "./oidc-mfa.ts";
 import { PROBLEM_JSON } from "./problem.ts";
 import { CSRF_HEADER } from "./session-contract.ts";
 import { clearSession, setActiveSession } from "./session-store.ts";
@@ -181,29 +180,5 @@ describe("SCIM tokens client", () => {
     const older = await listScimTokens(identity);
     assert.equal(older.ok, true);
     assert.equal(older.ok && older.list.groupsMode, null);
-  });
-
-  it("a quiet read returns mfa-required without opening the step-up dialog", async () => {
-    withSession();
-    const notices: string[] = [];
-    const stop = subscribeMfaRequired((notice) => notices.push(notice.kind));
-    try {
-      const mfa = () =>
-        problemResponse(403, {
-          code: "mfa-required",
-          detail: "Verify MFA before using this permission.",
-        });
-      capture(mfa);
-      const quiet = await listScimTokens(identity, { quietMfa: true });
-      assert.equal(!quiet.ok && quiet.problem.code, "mfa-required");
-      assert.deepEqual(notices, []);
-      // The tokens page's own read still asks for step-up.
-      capture(mfa);
-      const loud = await listScimTokens(identity);
-      assert.equal(!loud.ok && loud.problem.code, "mfa-required");
-      assert.equal(notices.length, 1);
-    } finally {
-      stop();
-    }
   });
 });

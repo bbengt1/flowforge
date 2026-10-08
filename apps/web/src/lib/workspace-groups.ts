@@ -14,15 +14,17 @@
  *
  * A group with `managedBy: "scim"` was created by a workspace SCIM
  * token. It is read-only here only while the instance runs SCIM Groups
- * mode `groups` (the SCIM token list's `groupsMode`); the server then
- * refuses local edits with 409 `group_managed_by_scim`.
+ * mode `groups`. The group list reports the mode once at the top level
+ * and the group detail on the group object (`groupsMode`); the server
+ * refuses local edits of a managed group in that mode with 409
+ * `group_managed_by_scim`.
  */
 
 import { sanitizeDestructiveImpact, type DestructiveImpactItem } from "./confirm-destructive.ts";
 import { isResourceId } from "./identity-proxy-ids.ts";
 import type { Member } from "./identity-types.ts";
 import type { ProblemDetails } from "./problem.ts";
-import type { ScimGroupsMode } from "./scim-tokens.ts";
+import { readScimGroupsMode, type ScimGroupsMode } from "./scim-tokens.ts";
 import { WORKSPACE_ADMIN_PERMISSION } from "./workspace-nav.ts";
 
 export const WORKSPACE_GROUPS_API_PATH = "/workspace/groups";
@@ -54,6 +56,11 @@ export type WorkspaceGroupMember = {
 
 export type WorkspaceGroupDetail = WorkspaceGroup & {
   members: WorkspaceGroupMember[];
+  /**
+   * The instance's SCIM Groups mode, from the detail response. Null when
+   * the server sent no value this web knows (an older server).
+   */
+  groupsMode: ScimGroupsMode | null;
 };
 
 export type WorkspaceGroupField = "displayName" | "userId";
@@ -255,7 +262,15 @@ export function readWorkspaceGroupDetail(value: unknown): WorkspaceGroupDetail |
       members.push(member);
     }
   }
-  return { ...group, members };
+  return { ...group, members, groupsMode: readScimGroupsMode(value.groupsMode) };
+}
+
+/**
+ * The list's one top-level `groupsMode`. Items never carry it, so it is
+ * read from the response body only. Null when missing or unknown.
+ */
+export function readWorkspaceGroupsMode(value: unknown): ScimGroupsMode | null {
+  return readScimGroupsMode(isRecord(value) ? value.groupsMode : undefined);
 }
 
 export function readWorkspaceGroups(value: unknown): WorkspaceGroup[] {
@@ -375,8 +390,8 @@ export function workspaceGroupProblemTreatment(
  * - `scim-locked`: marker and the instance is in `groups` mode. Read-only.
  * - `scim-unenforced`: marker kept from an earlier `groups` mode, but the
  *   instance is in `workspaces` mode now. Editable.
- * - `scim-mode-unknown`: marker, but this page can't read the mode (the
- *   SCIM token list needs MFA step-up, or an older server sent none).
+ * - `scim-mode-unknown`: marker, but the response carried no mode this
+ *   web knows (an older server sent none, or an unknown value).
  *   Editable; the server's 409 is the fallback.
  */
 export type WorkspaceGroupManagement =
@@ -446,7 +461,7 @@ export function isGroupManagedByScimProblem(
 
 /**
  * The server only sends that 409 in `groups` mode, so a refusal tells a
- * page that couldn't read the mode which one is on. Null otherwise.
+ * page whose response carried no mode which one is on. Null otherwise.
  */
 export function scimGroupsModeFromProblem(
   problem: Pick<ProblemDetails, "status" | "code"> | null | undefined,

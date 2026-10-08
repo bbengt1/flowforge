@@ -62,20 +62,10 @@ function failed(result: {
   };
 }
 
-/**
- * `quietMfa` is for background reads from other pages (the groups screen
- * reads `groupsMode` here): a 403 `mfa-required` is returned without
- * opening the step-up dialog.
- */
 export async function listScimTokens(
   identity: DevIdentity,
-  options: { quietMfa?: boolean } = {},
 ): Promise<ScimTokenListResult | ScimTokensFailure> {
-  const result = await callIdentityProxy<unknown>(
-    SCIM_TOKENS_API_PATH,
-    identity,
-    options.quietMfa ? { quietMfa: true } : {},
-  );
+  const result = await callIdentityProxy<unknown>(SCIM_TOKENS_API_PATH, identity);
   if (!result.ok) {
     return failed(result);
   }
