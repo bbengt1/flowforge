@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -46,6 +47,20 @@ func (p *WorkspacePostgres) scoped(ctx context.Context, workspaceID string, fn f
 		return err
 	}
 	return mapWorkspaceErr(tx.Commit(ctx))
+}
+
+// scopedMembership is scoped plus the workspace-row lock taken first, for
+// every transaction that can change role bindings (and so can lower the
+// admin count). Lock order: workspace row, then the SCIM link row, then
+// bindings, then group rows, matching identity.RemoveMember and
+// identity.SetMemberRoles.
+func (p *WorkspacePostgres) scopedMembership(ctx context.Context, workspaceID string, fn func(pgx.Tx) error) error {
+	return p.scoped(ctx, workspaceID, func(tx pgx.Tx) error {
+		if err := identity.LockWorkspaceMembership(ctx, tx, workspaceID); err != nil {
+			return mapIdentityErr(err)
+		}
+		return fn(tx)
+	})
 }
 
 // ---- tokens ----
@@ -335,7 +350,7 @@ func (p *WorkspacePostgres) ProvisionUser(ctx context.Context, scope TokenScope,
 		return WorkspaceUser{}, ErrInvalid
 	}
 	var out WorkspaceUser
-	err := p.scoped(ctx, scope.WorkspaceID, func(tx pgx.Tx) error {
+	err := p.scopedMembership(ctx, scope.WorkspaceID, func(tx pgx.Tx) error {
 		// Find or create the account. An existing account keeps its
 		// display name and status: a workspace token never renames,
 		// enables, or disables anyone.
@@ -397,7 +412,7 @@ func (p *WorkspacePostgres) UpdateUser(ctx context.Context, scope TokenScope, us
 		return WorkspaceUser{}, ErrNotFound
 	}
 	var out WorkspaceUser
-	err := p.scoped(ctx, scope.WorkspaceID, func(tx pgx.Tx) error {
+	err := p.scopedMembership(ctx, scope.WorkspaceID, func(tx pgx.Tx) error {
 		cur, err := getLinked(ctx, tx, scope.WorkspaceID, userID, true)
 		if err != nil {
 			return err
@@ -468,7 +483,7 @@ func (p *WorkspacePostgres) RemoveUser(ctx context.Context, scope TokenScope, us
 	if !authz.ValidUUID(userID) {
 		return ErrNotFound
 	}
-	return p.scoped(ctx, scope.WorkspaceID, func(tx pgx.Tx) error {
+	return p.scopedMembership(ctx, scope.WorkspaceID, func(tx pgx.Tx) error {
 		if _, err := getLinked(ctx, tx, scope.WorkspaceID, userID, true); err != nil {
 			return err
 		}
@@ -526,7 +541,7 @@ func loadGroup(ctx context.Context, tx pgx.Tx, workspaceID string) (WorkspaceGro
 
 func (p *WorkspacePostgres) PatchGroup(ctx context.Context, scope TokenScope, ch GroupChange, defaultRole string, actor Actor, now time.Time) (WorkspaceGroup, error) {
 	var out WorkspaceGroup
-	err := p.scoped(ctx, scope.WorkspaceID, func(tx pgx.Tx) error {
+	err := p.scopedMembership(ctx, scope.WorkspaceID, func(tx pgx.Tx) error {
 		for _, id := range ch.Add {
 			if !authz.ValidUUID(id) {
 				return ErrInvalid
@@ -615,8 +630,9 @@ func addDefaultRoleIfNone(ctx context.Context, tx pgx.Tx, workspaceID, userID, r
 }
 
 // removeMembership deletes the user's role bindings and group rows in
-// this workspace inside the caller's scoped transaction. Lock order is
-// bindings first, then group rows, the same as identity.RemoveMember.
+// this workspace inside the caller's scopedMembership transaction. Lock order is
+// the workspace row (taken by scopedMembership), then bindings, then
+// group rows, the same as identity.RemoveMember.
 // Removing the last administrator is ErrLastAdmin and the caller's
 // transaction rolls back.
 func removeMembership(ctx context.Context, tx pgx.Tx, workspaceID, userID string) error {
@@ -627,18 +643,11 @@ func removeMembership(ctx context.Context, tx pgx.Tx, workspaceID, userID string
 		return mapWorkspaceErr(err)
 	}
 	if tag.RowsAffected() > 0 {
-		var n int
-		if err := tx.QueryRow(ctx, `
-			SELECT COUNT(DISTINCT b.user_id)
-			  FROM workspace_role_bindings b
-			  JOIN role_permissions rp ON rp.role_id = b.role_id
-			  JOIN permissions p ON p.id = rp.permission_id
-			 WHERE b.workspace_id = $1::uuid AND p.key = $2`,
-			workspaceID, authz.PermWorkspaceAdminister).Scan(&n); err != nil {
-			return mapWorkspaceErr(err)
-		}
-		if n < 1 {
-			return ErrLastAdmin
+		// Same guard as identity.RemoveMember. The caller already holds
+		// the workspace-row lock (scopedMembership), so concurrent
+		// removals cannot both pass the count.
+		if err := identity.GuardLastAdmin(ctx, tx, workspaceID); err != nil {
+			return mapIdentityErr(err)
 		}
 	}
 	_, err = tx.Exec(ctx, `
@@ -687,6 +696,19 @@ func insertAudit(ctx context.Context, tx pgx.Tx, workspaceID string, actor Actor
 			resource_id, outcome, correlation_id, details_redacted
 		) VALUES ($1::uuid, $2::uuid, $3::jsonb, $4, $5, $6::uuid, 'success', NULLIF($7, ''), $8::jsonb)`,
 		workspaceID, actorID, hostRaw, action, resourceType, resourceID, rid, raw)
+	return mapWorkspaceErr(err)
+}
+
+// mapIdentityErr maps the identity package's lock and guard errors.
+func mapIdentityErr(err error) error {
+	switch {
+	case errors.Is(err, identity.ErrLastAdmin):
+		return ErrLastAdmin
+	case errors.Is(err, identity.ErrNotFound):
+		return ErrNotFound
+	case errors.Is(err, identity.ErrInvalid):
+		return ErrInvalid
+	}
 	return mapWorkspaceErr(err)
 }
 

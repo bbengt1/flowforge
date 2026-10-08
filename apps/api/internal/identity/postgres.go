@@ -634,7 +634,9 @@ func (p *Postgres) SetMemberRoles(ctx context.Context, workspaceID, userID strin
 	}
 	defer tx.Rollback(ctx)
 
-	if err := mustExist(ctx, tx, `SELECT 1 FROM workspaces WHERE id = $1::uuid`, workspaceID); err != nil {
+	// Replacing roles can demote an admin: lock the workspace row before
+	// touching any binding (see LockWorkspaceMembership).
+	if err := LockWorkspaceMembership(ctx, tx, workspaceID); err != nil {
 		return err
 	}
 	if err := mustExist(ctx, tx, `SELECT 1 FROM users WHERE id = $1::uuid`, userID); err != nil {
@@ -660,11 +662,12 @@ func (p *Postgres) SetMemberRoles(ctx context.Context, workspaceID, userID strin
 // RemoveMember deletes the user's role bindings and their workspace group
 // rows in one transaction scoped to workspaceID, so FORCE RLS on the group
 // tables applies. SCIM deprovision calls this once per workspace and gets
-// the same cleanup. Lock order is bindings first, then group rows, the
-// same order as AddGroupMember, so the two cannot deadlock: a concurrent
-// add holds FOR SHARE on the binding rows, this waits for it, and the
-// group-row delete that follows sees the new row. ErrLastAdmin rolls back
-// both deletes.
+// the same cleanup. Lock order is the workspace row first
+// (LockWorkspaceMembership), then bindings, then group rows. Bindings
+// before group rows is the same order as AddGroupMember, so the two
+// cannot deadlock: a concurrent add holds FOR SHARE on the binding rows,
+// this waits for it, and the group-row delete that follows sees the new
+// row. ErrLastAdmin rolls back both deletes.
 func (p *Postgres) RemoveMember(ctx context.Context, workspaceID, userID string) error {
 	if !authz.ValidUUID(workspaceID) || !authz.ValidUUID(userID) {
 		return ErrInvalid
@@ -675,6 +678,9 @@ func (p *Postgres) RemoveMember(ctx context.Context, workspaceID, userID string)
 	}
 	defer tx.Rollback(ctx)
 
+	if err := LockWorkspaceMembership(ctx, tx, workspaceID); err != nil {
+		return err
+	}
 	tag, err := tx.Exec(ctx, `
 		DELETE FROM workspace_role_bindings WHERE workspace_id = $1::uuid AND user_id = $2::uuid
 	`, workspaceID, userID)
@@ -711,6 +717,54 @@ func mustExist(ctx context.Context, tx pgx.Tx, sql, id string) error {
 }
 
 func ensureAdmin(ctx context.Context, tx pgx.Tx, workspaceID string) error {
+	return GuardLastAdmin(ctx, tx, workspaceID)
+}
+
+// LockWorkspaceMembership locks the workspace row (FOR NO KEY UPDATE) in
+// tx. Every transaction that can lower a workspace's administrator count
+// (role-binding removal, role replacement, SCIM deactivate/delete/group
+// remove) takes this lock FIRST, before it reads, deletes, or replaces
+// any role binding, so all of them serialize on one row and lock in the
+// same order: workspace row, then link or binding rows, then group rows.
+//
+// The second of two concurrent transactions waits here until the first
+// commits; under READ COMMITTED its later statements then see the
+// first's changes, so its last-admin count is correct. Without the lock,
+// two removals of the only two admins could each count the other and
+// both commit.
+//
+// FOR NO KEY UPDATE conflicts with itself (and with FOR UPDATE), so the
+// serialization is the same as FOR UPDATE, but it does not conflict with
+// the FOR KEY SHARE that foreign-key checks take. Inserts elsewhere that
+// reference the workspace (runs, audit rows) are therefore not blocked,
+// and a transaction that already holds such a key-share lock cannot
+// deadlock against this one. workspaces has no RLS, so the lock works
+// the same inside a workspace-scoped transaction.
+//
+// ErrNotFound means the workspace does not exist.
+func LockWorkspaceMembership(ctx context.Context, tx pgx.Tx, workspaceID string) error {
+	if !authz.ValidUUID(workspaceID) {
+		return ErrInvalid
+	}
+	var locked int
+	if err := tx.QueryRow(ctx, `
+		SELECT 1 FROM workspaces WHERE id = $1::uuid FOR NO KEY UPDATE
+	`, workspaceID).Scan(&locked); err != nil {
+		return mapDBErr(err)
+	}
+	return nil
+}
+
+// GuardLastAdmin counts distinct users who still hold
+// workspace.administer in tx and returns ErrLastAdmin when none remain;
+// the caller must roll back. The caller must already hold
+// LockWorkspaceMembership from the start of the transaction. The guard
+// takes it again (a no-op for the holder) so a caller that forgot cannot
+// count unlocked.
+func GuardLastAdmin(ctx context.Context, tx pgx.Tx, workspaceID string) error {
+	if err := LockWorkspaceMembership(ctx, tx, workspaceID); err != nil {
+		return err
+	}
 	var n int
 	err := tx.QueryRow(ctx, `
 		SELECT COUNT(DISTINCT b.user_id)
