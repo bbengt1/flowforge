@@ -40,6 +40,11 @@ var settler Settler
 // RegisterSettler installs the step settler. wfstore calls it at init.
 func RegisterSettler(fn Settler) { settler = fn }
 
+// Registered reports whether a settler is installed. cmd/api refuses to
+// start without one: every removal that must close a gate would
+// otherwise roll back with ErrNoSettler.
+func Registered() bool { return settler != nil }
+
 // ErrNoSettler means a gate had to be closed but no settler is
 // registered. The caller's transaction must roll back.
 var ErrNoSettler = errors.New("approvalgate: no gate settler registered")
@@ -61,9 +66,34 @@ type Gate struct {
 // then the approval rows, each in id order. Untargeted gates are never
 // returned. Malformed ids are dropped, so they match nothing.
 func Lock(ctx context.Context, tx pgx.Tx, workspaceID string, groupIDs, userIDs []string) ([]Gate, error) {
-	groupIDs = validIDs(groupIDs)
-	userIDs = validIDs(userIDs)
-	if !authz.ValidUUID(workspaceID) || (len(groupIDs) == 0 && len(userIDs) == 0) {
+	return LockSelected(ctx, tx, workspaceID, Selection{Groups: groupIDs, Users: userIDs})
+}
+
+// Selection picks the waiting targeted gates LockSelected locks. A gate
+// matches when any set field matches it.
+type Selection struct {
+	// Groups matches gates whose snapshot names one of these groups.
+	Groups []string
+	// Users matches gates whose snapshot names one of these users, or
+	// names a group one of them is a member of right now.
+	Users []string
+	// RequestedBy matches gates one of these users requested. A gate's
+	// requester can never decide it, so when the only other active admin
+	// left in a workspace is X, the admin fallback is gone exactly for
+	// the gates X requested.
+	RequestedBy []string
+	// All matches every waiting targeted gate in the workspace (no
+	// active admin is left to decide any gate by override).
+	All bool
+}
+
+// LockSelected is Lock with requester and whole-workspace selection.
+// Lock order and re-read rules are the same as Lock.
+func LockSelected(ctx context.Context, tx pgx.Tx, workspaceID string, sel Selection) ([]Gate, error) {
+	groupIDs := validIDs(sel.Groups)
+	userIDs := validIDs(sel.Users)
+	requesters := validIDs(sel.RequestedBy)
+	if !authz.ValidUUID(workspaceID) || (!sel.All && len(groupIDs) == 0 && len(userIDs) == 0 && len(requesters) == 0) {
 		return nil, nil
 	}
 	rows, err := tx.Query(ctx, `
@@ -73,7 +103,9 @@ func Lock(ctx context.Context, tx pgx.Tx, workspaceID string, groupIDs, userIDs 
 		   AND a.status = 'pending'
 		   AND a.approvers_digest <> ''
 		   AND (
-		        EXISTS (
+		        $5::bool
+		        OR a.requested_by = ANY($4::uuid[])
+		        OR EXISTS (
 		            SELECT 1 FROM approval_approver_groups g
 		             WHERE g.workspace_id = a.workspace_id AND g.approval_id = a.id
 		               AND (g.group_id = ANY($2::uuid[])
@@ -87,7 +119,7 @@ func Lock(ctx context.Context, tx pgx.Tx, workspaceID string, groupIDs, userIDs 
 		        )
 		   )
 		 ORDER BY a.id
-	`, workspaceID, groupIDs, userIDs)
+	`, workspaceID, groupIDs, userIDs, requesters, sel.All)
 	if err != nil {
 		return nil, err
 	}

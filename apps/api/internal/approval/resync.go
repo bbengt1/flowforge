@@ -161,6 +161,13 @@ func resyncWorkspace(ctx context.Context, db DB, versions VersionSource, ops Pin
 		}
 		return stats, nil
 	}
+	// Resync can retarget a pending gate (resyncTargets resolves a new
+	// approver snapshot), so it takes the same workspace-row share lock as
+	// a park, before any workflow or execution lock: a membership change
+	// in flight commits first and the snapshot reads the new membership.
+	if err := parkedapproval.LockWorkspaceForPark(ctx, tx, workspaceID); err != nil {
+		return stats, err
+	}
 	if err := lockResyncParents(ctx, tx, pending); err != nil {
 		return stats, err
 	}

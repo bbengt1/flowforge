@@ -626,11 +626,23 @@ func (p *Postgres) ListMembersPage(ctx context.Context, workspaceID string, q pa
 	})
 }
 
+// SetMemberRoles replaces a member's roles in one workspace-scoped
+// transaction (FORCE RLS on the approval tables applies, so the gate
+// re-check sees this workspace's gates). Lock order is the same as a
+// membership loss: the workspace row first (LockWorkspaceMembership),
+// then waiting gates (gatesForRoleLoss), then the binding rows. A change
+// that removes any role re-checks those gates after the new bindings are
+// written: a gate left with no eligible decider is closed with
+// requirement_unresolvable / no_eligible_decider, exactly like a removal.
+// A promotion or an unchanged role set locks and re-checks nothing.
 func (p *Postgres) SetMemberRoles(ctx context.Context, workspaceID, userID string, roleKeys []string) error {
 	if err := validateRoleKeys(roleKeys); err != nil {
 		return err
 	}
-	tx, err := p.db.Begin(ctx)
+	if !authz.ValidUUID(workspaceID) {
+		return ErrInvalid
+	}
+	tx, err := postgres.BeginScoped(ctx, p.db, workspaceID)
 	if err != nil {
 		return mapDBErr(err)
 	}
@@ -644,6 +656,18 @@ func (p *Postgres) SetMemberRoles(ctx context.Context, workspaceID, userID strin
 	if err := mustExist(ctx, tx, `SELECT 1 FROM users WHERE id = $1::uuid`, userID); err != nil {
 		return err
 	}
+	next := uniqueSorted(roleKeys)
+	current, err := memberRoleKeysTx(ctx, tx, workspaceID, userID)
+	if err != nil {
+		return err
+	}
+	var gates []approvalgate.Gate
+	if lostAnyRole(current, next) {
+		gates, err = gatesForRoleLoss(ctx, tx, workspaceID, userID, current, next)
+		if err != nil {
+			return err
+		}
+	}
 	if _, err := tx.Exec(ctx, `
 		DELETE FROM workspace_role_bindings WHERE workspace_id = $1::uuid AND user_id = $2::uuid
 	`, workspaceID, userID); err != nil {
@@ -652,13 +676,128 @@ func (p *Postgres) SetMemberRoles(ctx context.Context, workspaceID, userID strin
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO workspace_role_bindings (workspace_id, user_id, role_id)
 		SELECT $1::uuid, $2::uuid, r.id FROM roles r WHERE r.key = ANY($3::text[])
-	`, workspaceID, userID, uniqueSorted(roleKeys)); err != nil {
+	`, workspaceID, userID, next); err != nil {
 		return mapDBErr(err)
 	}
 	if err := ensureAdmin(ctx, tx, workspaceID); err != nil {
 		return err
 	}
+	if _, err := approvalgate.Recheck(ctx, tx, workspaceID, gates, time.Now()); err != nil {
+		return mapDBErr(err)
+	}
 	return tx.Commit(ctx)
+}
+
+// memberRoleKeysTx reads the user's role keys in the workspace. The
+// caller holds the workspace-row lock, so no other binding writer can
+// change them before this transaction ends.
+func memberRoleKeysTx(ctx context.Context, tx pgx.Tx, workspaceID, userID string) ([]string, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT DISTINCT r.key
+		  FROM workspace_role_bindings b
+		  JOIN roles r ON r.id = b.role_id
+		 WHERE b.workspace_id = $1::uuid AND b.user_id = $2::uuid
+		 ORDER BY r.key
+	`, workspaceID, userID)
+	if err != nil {
+		return nil, mapDBErr(err)
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			return nil, mapDBErr(err)
+		}
+		out = append(out, k)
+	}
+	return out, mapDBErr(rows.Err())
+}
+
+func lostAnyRole(current, next []string) bool {
+	for _, k := range current {
+		if !containsKey(next, k) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsKey(keys []string, k string) bool {
+	for _, x := range keys {
+		if x == k {
+			return true
+		}
+	}
+	return false
+}
+
+// gatesForRoleLoss locks the waiting targeted gates whose decider set can
+// shrink when userID goes from the current role keys to next (nil for a
+// removal). The caller holds the workspace-row lock; this runs before any
+// binding is touched, keeping the order workspace -> link -> gates ->
+// bindings -> group rows.
+//
+//   - Always: gates that name the user, or a group the user is in.
+//   - The user loses admin: an active admin other than the requester can
+//     decide any gate by override (parkedapproval.OtherActiveAdmin), so
+//     count the OTHER active admins left (same rule: role admin, user
+//     active, live binding). Two or more: every gate keeps a non-requester
+//     admin, nothing more is locked. Exactly one (X): the fallback is gone
+//     only for gates X requested, so those are locked too. None: every
+//     waiting targeted gate is locked. If no workspace.administer binding
+//     is left at all, GuardLastAdmin then refuses and the transaction
+//     rolls back, so nothing is closed.
+func gatesForRoleLoss(ctx context.Context, tx pgx.Tx, workspaceID, userID string, current, next []string) ([]approvalgate.Gate, error) {
+	sel := approvalgate.Selection{Users: []string{userID}}
+	if containsKey(current, authz.RoleAdmin) && !containsKey(next, authz.RoleAdmin) {
+		others, err := otherActiveAdminsTx(ctx, tx, workspaceID, userID)
+		if err != nil {
+			return nil, err
+		}
+		switch len(others) {
+		case 0:
+			sel.All = true
+		case 1:
+			sel.RequestedBy = others
+		}
+	}
+	gates, err := approvalgate.LockSelected(ctx, tx, workspaceID, sel)
+	if err != nil {
+		return nil, mapDBErr(err)
+	}
+	return gates, nil
+}
+
+// otherActiveAdminsTx returns up to two active admins in the workspace
+// other than userID, with the eligibility rule of
+// parkedapproval.OtherActiveAdmin (role admin, user active, live binding).
+func otherActiveAdminsTx(ctx context.Context, tx pgx.Tx, workspaceID, userID string) ([]string, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT DISTINCT b.user_id::text
+		  FROM workspace_role_bindings b
+		  JOIN roles r ON r.id = b.role_id
+		  JOIN users u ON u.id = b.user_id
+		 WHERE b.workspace_id = $1::uuid
+		   AND r.key = 'admin'
+		   AND u.status = 'active'
+		   AND b.user_id <> $2::uuid
+		 ORDER BY 1
+		 LIMIT 2
+	`, workspaceID, userID)
+	if err != nil {
+		return nil, mapDBErr(err)
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, mapDBErr(err)
+		}
+		out = append(out, id)
+	}
+	return out, mapDBErr(rows.Err())
 }
 
 // RemoveMember deletes the user's role bindings and their workspace group
@@ -706,15 +845,35 @@ func (p *Postgres) RemoveMember(ctx context.Context, workspaceID, userID string)
 // left with no eligible decider is closed with requirement_unresolvable /
 // no_eligible_decider, and one that still has a decider keeps waiting.
 //
+// Losing an admin also re-checks the gates whose admin fallback goes
+// with it (gatesForRoleLoss), bounded by how many other active admins
+// are left.
+//
+// Bindings MUST be deleted before group rows. A concurrent local
+// AddGroupMember takes no workspace lock: it reads the user's binding
+// FOR SHARE, then inserts the group row. If the add holds that share
+// lock first, the binding DELETE here waits for the add to commit, and
+// the group-row DELETE that follows (a new statement under READ
+// COMMITTED) sees the committed row and removes it. If this DELETE runs
+// first, the add waits on it and then finds no binding and is refused.
+// Either way no group row survives for a removed member. Deleting group
+// rows first would let an add commit a row after that DELETE and leave
+// it behind. A gate that parks while this runs waits on the workspace
+// row (parkedapproval.LockWorkspaceForPark) and resolves after commit.
+//
 // removed reports whether any role binding was deleted. Group rows are
 // deleted either way, so a link left without a role never keeps them.
 func RemoveMembershipTx(ctx context.Context, tx pgx.Tx, workspaceID, userID string, now time.Time) (bool, error) {
 	if !authz.ValidUUID(workspaceID) || !authz.ValidUUID(userID) {
 		return false, ErrInvalid
 	}
-	gates, err := approvalgate.Lock(ctx, tx, workspaceID, nil, []string{userID})
+	current, err := memberRoleKeysTx(ctx, tx, workspaceID, userID)
 	if err != nil {
-		return false, mapDBErr(err)
+		return false, err
+	}
+	gates, err := gatesForRoleLoss(ctx, tx, workspaceID, userID, current, nil)
+	if err != nil {
+		return false, err
 	}
 	tag, err := tx.Exec(ctx, `
 		DELETE FROM workspace_role_bindings WHERE workspace_id = $1::uuid AND user_id = $2::uuid

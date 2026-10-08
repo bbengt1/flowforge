@@ -697,6 +697,16 @@ func (p *Postgres) WaitJob(ctx context.Context, scope isolation.Scope, now time.
 		return DispatchResult{}, mapDBErr(err)
 	}
 	defer tx.Rollback(ctx)
+	// A targeted gate parks (or re-parks a waiting job after lease
+	// recovery) under the workspace row FOR SHARE, taken BEFORE the
+	// execution lock: membership changes lock the workspace row and then
+	// executions, so this keeps one order. parkedapproval.Insert takes the
+	// same lock again (a no-op here) before it reads the approver snapshot.
+	if in.Approval != nil && strings.TrimSpace(in.Approval.ApproversDigest) != "" {
+		if err := parkedapproval.LockWorkspaceForPark(ctx, tx, scope.WorkspaceID()); err != nil {
+			return DispatchResult{}, mapParkErr(err)
+		}
+	}
 	executionID, _, _, err := peekJobTx(ctx, tx, in.JobID)
 	if err != nil {
 		return DispatchResult{}, err
@@ -830,6 +840,10 @@ func ensureParkedApprovalTx(ctx context.Context, tx pgx.Tx, scope isolation.Scop
 		ApproverUsers:     seed.ApproverUsers,
 		ApproverGroups:    seed.ApproverGroups,
 	})
+	return mapParkErr(err)
+}
+
+func mapParkErr(err error) error {
 	if errors.Is(err, parkedapproval.ErrInvalid) {
 		return ErrInvalid
 	}
