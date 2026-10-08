@@ -156,6 +156,7 @@ export function AlertDetail({ alertId }: AlertDetailProps) {
               <AlertSeverityBadge
                 severity={alert.severity}
                 kind={alert.kind}
+                tipAlign="start"
               />
               <p className="text-sm font-medium">
                 {alertStatusLabel(alert.status)}

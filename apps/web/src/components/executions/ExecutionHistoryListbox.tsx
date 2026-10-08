@@ -161,7 +161,7 @@ export function ExecutionHistoryListbox({
                         {row.id}
                       </p>
                     </div>
-                    <ExecutionStatusBadge status={row.status} />
+                    <ExecutionStatusBadge status={row.status} nested />
                   </div>
                   {peakEndOverlayRowShowsEnding(ending, {
                     focused,
@@ -190,7 +190,7 @@ export function ExecutionHistoryListbox({
                 <>
                 <div className={INBOX_GRID}>
                   <div>
-                    <ExecutionStatusBadge status={row.status} />
+                    <ExecutionStatusBadge status={row.status} nested />
                   </div>
                   <div className="min-w-0">
                     <p className={`truncate text-sm ${FF_INBOX_TITLE_CLASS}`}>
@@ -237,7 +237,7 @@ export function ExecutionHistoryListbox({
                       </h3>
                       <p className={`mt-1 ${FF_VAULT_UUID_CLASS}`}>{row.id}</p>
                     </div>
-                    <ExecutionStatusBadge status={row.status} />
+                    <ExecutionStatusBadge status={row.status} nested />
                   </div>
                   <dl className={`mt-3 grid gap-2 text-sm ${compact ? "" : "sm:grid-cols-2"}`}>
                     <div>

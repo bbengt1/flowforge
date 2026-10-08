@@ -1009,7 +1009,8 @@ export function approvalStatusLabelForRun(
 }
 
 const APPROVAL_CLOSE_REASON_SENTENCES: Record<ApprovalCloseReason, string> = {
-  requirement_unresolvable: "Closed because no one eligible could decide it.",
+  requirement_unresolvable:
+    "Closed because its approval requirement could no longer be met.",
   workflow_deleted: "Closed because the workflow was deleted.",
   run_canceled: "Closed because the run was canceled.",
 };

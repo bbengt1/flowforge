@@ -319,6 +319,7 @@ export function ExecutionReplay({
                   </span>
                 </span>
                 <ExecutionStatusBadge
+                  nested
                   status={item.status}
                   runStatus={detail.status}
                   siblingJobStatuses={detail.jobs

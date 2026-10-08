@@ -312,6 +312,20 @@ describe("no_eligible_decider", () => {
     );
     const noCause = approvalClosedExplanation({ status: "canceled", closeReason: "requirement_unresolvable" });
     assert.notEqual(noCause, NO_ELIGIBLE_DECIDER_CLOSE_SENTENCE);
+    // Any requirement that couldn't be rebuilt (a disabled policy too),
+    // not only "no one eligible".
+    assert.equal(
+      noCause,
+      "Closed because its approval requirement could no longer be met.",
+    );
+    assert.equal(
+      NO_ELIGIBLE_DECIDER_CLOSE_SENTENCE,
+      "Closed because no one other than the requester could approve it.",
+    );
+    assert.equal(
+      NO_ELIGIBLE_DECIDER_RUN_SENTENCE,
+      "No one other than the requester can approve this step, so it failed right away.",
+    );
     assert.equal(/no_eligible_decider|requirement_unresolvable/.test(noCause ?? ""), false);
     const bare = approvalClosedExplanation({ status: "canceled" });
     assert.equal(/no_eligible_decider|requirement_unresolvable/.test(bare ?? ""), false);
