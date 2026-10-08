@@ -43,6 +43,8 @@ const CREDENTIAL_VAULT_HELP =
   "Search finds credentials by display name. Filter by type, tag, or status, then open one to manage it. FlowForge shows only each credential's name and id. Secret values never appear in workflows, search, or analytics.";
 const START_BAD_INPUT =
   "The run wasn't started. Only published versions can run, and the input has to be valid and no larger than 16 KiB.";
+const START_CONFLICT =
+  "The run wasn't started. This idempotency key was already used with different input, or this start needs approval first.";
 
 const alert = {
   id: ALERT_ID,
@@ -241,7 +243,8 @@ test.describe("credentials", () => {
   });
 });
 
-test("the Start panel's bad-input message replaces the API's words", async ({ page }) => {
+/** Open the Start panel, make Start fail with `status` and `code`, and press Start. */
+async function startAndFail(page: Page, status: number, code: string): Promise<Locator> {
   await installOperatorApi(page, { permissions: PERMISSIONS });
   await page.route(
     (url) => controlPlanePath(url.toString()) === "/policy/evaluate",
@@ -276,8 +279,8 @@ test("the Start panel's bad-input message replaces the API's words", async ({ pa
     page,
     "POST",
     (path) => path === `/workflows/${OPERATOR_WORKFLOW_ID}/executions`,
-    400,
-    "invalid-request",
+    status,
+    code,
   );
   await page.goto(`/workflows?start=${OPERATOR_WORKFLOW_ID}`);
   const panel = page.locator("section[aria-labelledby='manual-start-heading']");
@@ -289,12 +292,41 @@ test("the Start panel's bad-input message replaces the API's words", async ({ pa
   const start = panel.getByRole("button", { name: "Start", exact: true });
   await expect(start).toBeEnabled();
   await start.click();
+  return panel;
+}
+
+test("the Start panel's bad-input message replaces the API's words", async ({ page }) => {
+  const panel = await startAndFail(page, 400, "invalid-request");
   const banner = panel.getByRole("alert").filter({ hasText: START_BAD_INPUT });
   await expect(banner).toBeVisible();
   await expect(banner).toContainText("Reference: req-e2e-623");
   await expect(banner).not.toContainText("(400)");
   await expect(banner).not.toContainText("The request was refused.");
   await expectNoDeveloperText(panel);
+  await expectNoBlockingAxeViolations(page);
+});
+
+test("the Start panel's conflict sentence still shows on a 409", async ({ page }) => {
+  const panel = await startAndFail(page, 409, "conflict");
+  // A 409 is the key-conflict path: the panel's own status line, and no
+  // API problem banner (its "Reference:" line) next to it.
+  await expect(panel.getByRole("status").filter({ hasText: START_CONFLICT })).toBeVisible();
+  await expect(panel.getByRole("alert").filter({ hasText: "Reference:" })).toHaveCount(0);
+  await expect(panel).not.toContainText("(409)");
+  await expect(panel).not.toContainText("The request was refused.");
+  await expectNoDeveloperText(panel);
+});
+
+test("a 401 on Start goes to sign-in with no Start sentence", async ({ page }) => {
+  await startAndFail(page, 401, "unauthenticated");
+  // The stale session takes over the page with sign-in. None of the Start
+  // panel's bad-input or conflict sentences may ride along.
+  const signIn = page.getByRole("region", { name: "Sign in" });
+  await expect(signIn.getByRole("heading", { name: "Sign in", level: 1 })).toBeVisible();
+  const body = page.locator("body");
+  await expect(body).not.toContainText(START_BAD_INPUT);
+  await expect(body).not.toContainText(START_CONFLICT);
+  await expect(body).not.toContainText("The request was refused.");
   await expectNoBlockingAxeViolations(page);
 });
 

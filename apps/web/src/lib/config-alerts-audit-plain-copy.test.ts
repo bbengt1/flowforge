@@ -73,7 +73,13 @@ import {
   EMBED_TENANCY_MISMATCH_MESSAGE,
 } from "./embed-tenancy-contract.ts";
 import { kubernetesPolicyGaps, kubernetesPolicyPublishGap } from "./kubernetes.ts";
-import { MANUAL_START_BAD_INPUT_MESSAGE, startFailureMessage } from "./manual-start-contract.ts";
+import {
+  MANUAL_START_BAD_INPUT_MESSAGE,
+  MANUAL_START_CONFLICT_MESSAGE,
+  startBannerMessage,
+} from "./manual-start-contract.ts";
+import { isStaleSessionProblem } from "./session.ts";
+import { SESSION_PROBLEM_CODES } from "./session-contract.ts";
 import {
   OPS_CONFIG_SELECT_EMPTY,
   OPS_CONFIG_SELECT_FAILED,
@@ -334,16 +340,62 @@ describe("config, alerts, audit, credentials, and the problem banner use plain c
       code: "invalid-request",
       request_id: "req-623",
     };
-    assert.equal(startFailureMessage(problem), MANUAL_START_BAD_INPUT_MESSAGE);
+    assert.equal(startBannerMessage(problem), MANUAL_START_BAD_INPUT_MESSAGE);
     const panel = source("components/workflows/ManualStartPanel.tsx");
     assert.match(
       panel,
-      /<ProblemBanner\s+problem=\{problem\}\s+message=\{problemFromStart \? startFailureMessage\(problem\) : null\}/,
+      /<ProblemBanner\s+problem=\{problem\}\s+message=\{problemFromStart \? startBannerMessage\(problem\) : null\}/,
     );
+    assert.doesNotMatch(panel, /startFailureMessage/);
     const banner = source("components/ProblemBanner.tsx");
     assert.match(banner, /\{message \?/);
     assert.doesNotMatch(banner, /CSRF fail-closed|>\s*request_id|problem\.code|problem\.status|<dl\b/);
     assert.match(banner, /<RequestReference id=\{problem\.request_id\}/);
+  });
+
+  it("gives the banner a Start sentence only for 400 and 409, by status and code", () => {
+    const base = {
+      type: "urn:flowforge:problem:x",
+      title: "t",
+      detail: "d",
+      instance: "/workflows/w/executions",
+      request_id: "req-623",
+    };
+    assert.equal(
+      startBannerMessage({ ...base, status: 400, code: "invalid-request" }),
+      MANUAL_START_BAD_INPUT_MESSAGE,
+    );
+    assert.equal(
+      startBannerMessage({ ...base, status: 409, code: "conflict" }),
+      MANUAL_START_CONFLICT_MESSAGE,
+    );
+    // Session, CSRF and permission failures keep the banner's own treatment.
+    const stale = { ...base, status: 401, code: SESSION_PROBLEM_CODES.unauthenticated };
+    assert.equal(startBannerMessage(stale), null);
+    assert.ok(isStaleSessionProblem(stale), "a 401 Start failure still gets the sign-in link");
+    assert.equal(startBannerMessage({ ...base, status: 401, code: SESSION_PROBLEM_CODES.staleSession }), null);
+    assert.equal(startBannerMessage({ ...base, status: 403, code: "forbidden" }), null);
+    assert.equal(startBannerMessage({ ...base, status: 403, code: SESSION_PROBLEM_CODES.csrfRequired }), null);
+    assert.equal(startBannerMessage({ ...base, status: 400, code: SESSION_PROBLEM_CODES.csrfInvalid }), null);
+    assert.equal(startBannerMessage({ ...base, status: 500, code: "internal" }), null);
+    assert.equal(startBannerMessage(null), null);
+    // Wording never decides: the same status and code give the same answer
+    // whatever the title or detail say.
+    assert.equal(
+      startBannerMessage({
+        ...base,
+        status: 400,
+        code: "invalid-request",
+        title: "Unauthorized",
+        detail: "session expired",
+      }),
+      MANUAL_START_BAD_INPUT_MESSAGE,
+    );
+    const fn = source("lib/manual-start-contract.ts").match(
+      /export function startBannerMessage[\s\S]*?\n}\n/,
+    )?.[0];
+    assert.ok(fn, "startBannerMessage is defined");
+    assert.doesNotMatch(fn, /\.(title|detail)\b/);
   });
 
   it("keeps every user-facing constant on these surfaces free of developer wording", () => {

@@ -27,7 +27,7 @@ import {
   generateManualStartIdempotencyKey,
   isManualStartAuthFailure,
   manualStartAuthFailureMessage,
-  startFailureMessage,
+  startBannerMessage,
   startOutcomeMessage,
 } from "@/lib/manual-start-contract";
 import { executionHistoryHref } from "@/lib/execution-contract";
@@ -302,7 +302,7 @@ export function ManualStartPanel({
         <div className="mt-4">
           <ProblemBanner
             problem={problem}
-            message={problemFromStart ? startFailureMessage(problem) : null}
+            message={problemFromStart ? startBannerMessage(problem) : null}
           />
         </div>
       ) : null}
