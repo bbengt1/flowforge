@@ -109,6 +109,7 @@ describe("G.0.4 route boundaries", () => {
       "membership",
       "isolation",
       "groups",
+      "scim-tokens",
     ]);
     assert.equal(PRIMARY_SEGMENT_LOADING_FILES.length, PRIMARY_APP_SEGMENTS.length);
     assert.equal(PRIMARY_SEGMENT_NOT_FOUND_FILES.length, PRIMARY_APP_SEGMENTS.length);

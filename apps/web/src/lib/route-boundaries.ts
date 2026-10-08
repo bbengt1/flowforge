@@ -114,6 +114,7 @@ export const PRIMARY_APP_SEGMENTS = [
   "membership",
   "isolation",
   "groups",
+  "scim-tokens",
 ] as const;
 
 export type PrimaryAppSegment = (typeof PRIMARY_APP_SEGMENTS)[number];

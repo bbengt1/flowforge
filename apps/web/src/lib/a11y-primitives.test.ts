@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   dialogChildShouldBeInert,
   dialogEscapeCloses,
+  dialogEscapeSwallowed,
   dialogStackIsTop,
   dialogStackPop,
   dialogStackPush,
@@ -50,6 +51,7 @@ const DIALOG_SURFACES = [
   "src/components/groups/GroupNameDialog.tsx",
   "src/components/groups/AddGroupMemberDialog.tsx",
   "src/components/approvals/AdminOverrideConfirm.tsx",
+  "src/components/scim-tokens/CreateScimTokenDialog.tsx",
 ] as const;
 
 const FIELD_SURFACES = [
@@ -73,6 +75,7 @@ const FIELD_SURFACES = [
   "src/components/groups/GroupNameDialog.tsx",
   "src/components/groups/AddGroupMemberDialog.tsx",
   "src/components/workflows/ApproverPicker.tsx",
+  "src/components/scim-tokens/CreateScimTokenDialog.tsx",
 ] as const;
 
 describe("G.3.1 Field primitive", () => {
@@ -336,5 +339,43 @@ describe("Status tooltip primitive", () => {
     assert.match(block, /inset-inline-start/);
     assert.match(block, /var\(--ff-surface\)/);
     assert.match(block, /var\(--ff-text\)/);
+  });
+});
+
+describe("Dialog dismissible opt-out", () => {
+  const top = { key: "Escape", defaultPrevented: false, isTop: true };
+
+  it("closes on Escape by default, so existing dialogs are unchanged", () => {
+    assert.equal(dialogEscapeCloses(top), true);
+    assert.equal(dialogEscapeCloses({ ...top, dismissible: true }), true);
+    assert.equal(dialogEscapeSwallowed(top), false);
+  });
+
+  it("swallows Escape without closing when dismissible is false", () => {
+    assert.equal(dialogEscapeCloses({ ...top, dismissible: false }), false);
+    assert.equal(dialogEscapeSwallowed({ ...top, dismissible: false }), true);
+  });
+
+  it("leaves other keys, lower dialogs and handled events alone", () => {
+    for (const input of [
+      { ...top, key: "Enter", dismissible: false },
+      { ...top, isTop: false, dismissible: false },
+      { ...top, defaultPrevented: true, dismissible: false },
+    ]) {
+      assert.equal(dialogEscapeCloses(input), false);
+      assert.equal(dialogEscapeSwallowed(input), false);
+    }
+  });
+
+  it("the shared Dialog defaults dismissible to true and keeps the focus trap", () => {
+    const dialog = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../components/a11y/Dialog.tsx"),
+      "utf8",
+    );
+    assert.match(dialog, /dismissible = true,/);
+    assert.match(dialog, /dialogEscapeSwallowed\(escape\)/);
+    // The Tab trap and focus-in guard do not depend on dismissible.
+    const trap = dialog.slice(dialog.indexOf('event.key !== "Tab"'));
+    assert.equal(trap.slice(0, trap.indexOf("function onFocusIn")).includes("dismissible"), false);
   });
 });

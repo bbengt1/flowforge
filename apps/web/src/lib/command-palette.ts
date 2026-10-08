@@ -12,6 +12,7 @@ import {
   WORKSPACE_GROUPS_HREF,
   canManageWorkspaceGroups,
 } from "./workspace-groups.ts";
+import { SCIM_TOKENS_HREF, canManageScimTokens } from "./scim-tokens.ts";
 import { scheduleTriggersHref } from "./schedule-trigger-contract.ts";
 import {
   canCreateWorkflows,
@@ -278,6 +279,15 @@ export function paletteCommands(
       hint: "Who approvals can be sent to",
       keywords: ["groups", "approvers", "members", "admin"],
       action: { type: "navigate", href: WORKSPACE_GROUPS_HREF },
+    });
+  }
+  if (canManageScimTokens(permissions, { embed: context.embed === true })) {
+    commands.push({
+      id: "nav-scim-tokens",
+      label: "SCIM tokens",
+      hint: "Connect an identity provider",
+      keywords: ["scim", "identity provider", "idp", "provisioning", "sso", "admin"],
+      action: { type: "navigate", href: SCIM_TOKENS_HREF },
     });
   }
   commands.push({
