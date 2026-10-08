@@ -13,7 +13,9 @@ type Store interface {
 	GetUser(ctx context.Context, id string) (User, error)
 	// SetUserStatus sets users.status to active or disabled. Revoked
 	// machine principals are disabled so existing sessions fail closed.
-	SetUserStatus(ctx context.Context, userID, status string) error
+	// actor (required) is who disabled or re-enabled the account; it is
+	// recorded on any audit row a disable writes.
+	SetUserStatus(ctx context.Context, userID, status string, actor MemberActor) error
 	// FindUser returns an existing principal. It does not upsert.
 	FindUser(ctx context.Context, issuer, subject string) (User, error)
 	// SetLocalPassword stores a bcrypt hash for local login. identifier
@@ -62,8 +64,11 @@ type Store interface {
 	EffectiveAccess(ctx context.Context, workspaceID, userID string) (roles, perms []string, err error)
 	ListMembers(ctx context.Context, workspaceID string) ([]Member, error)
 	ListMembersPage(ctx context.Context, workspaceID string, q page.Query) ([]Member, string, error)
-	SetMemberRoles(ctx context.Context, workspaceID, userID string, roleKeys []string) error
-	RemoveMember(ctx context.Context, workspaceID, userID string) error
+	// SetMemberRoles and RemoveMember write one workspace_member.* audit
+	// row per actual change, in the same transaction, attributed to actor
+	// (ErrInvalid when actor is not exactly one kind).
+	SetMemberRoles(ctx context.Context, workspaceID, userID string, roleKeys []string, actor MemberActor) error
+	RemoveMember(ctx context.Context, workspaceID, userID string, actor MemberActor) error
 	ResolveUserRef(ctx context.Context, userID, issuer, subject, displayName string) (User, error)
 }
 

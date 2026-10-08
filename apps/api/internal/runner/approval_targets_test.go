@@ -88,7 +88,7 @@ func TestRunnerTargetedGatePark(t *testing.T) {
 	})
 
 	t.Run("second admin parks with the snapshot", func(t *testing.T) {
-		if err := ids.SetMemberRoles(ctx, ws.ID, other.ID, []string{"admin"}); err != nil {
+		if err := ids.SetMemberRoles(ctx, ws.ID, other.ID, []string{"admin"}, identity.MemberActor{Via: identity.MemberViaSystem}); err != nil {
 			t.Fatal(err)
 		}
 		exec := startTargetedGate(t, ctx, store, scope, suffix+1, group.ID)

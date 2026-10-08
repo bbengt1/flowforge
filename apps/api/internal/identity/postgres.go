@@ -2,13 +2,16 @@ package identity
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/approvalgate"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/page"
+	"github.com/bbengt1/flowforge/apps/api/internal/parkedapproval"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -71,14 +74,30 @@ func (p *Postgres) GetUser(ctx context.Context, id string) (User, error) {
 	return u, nil
 }
 
-func (p *Postgres) SetUserStatus(ctx context.Context, userID, status string) error {
+// SetUserStatus sets users.status. updated_at moves only when the status
+// actually changes, so it marks the last transition.
+//
+// Disabling is instance-wide: the person stops being an eligible decider
+// in every workspace at once. After the status commits, every waiting
+// targeted gate they could affect is re-checked (RecheckDisabledUser),
+// workspace by workspace. This runs on EVERY disable, including one for a
+// user who is already disabled, so a retry after a partial failure
+// finishes the job. Re-enabling restores nothing: closed gates stay
+// closed, and the person is a decider again only for gates parked later.
+func (p *Postgres) SetUserStatus(ctx context.Context, userID, status string, actor MemberActor) error {
+	if !actor.Valid() {
+		return ErrInvalid
+	}
 	userID = strings.TrimSpace(userID)
 	status = strings.TrimSpace(status)
 	if userID == "" || (status != "active" && status != "disabled") {
 		return ErrInvalid
 	}
 	tag, err := p.db.Exec(ctx, `
-		UPDATE users SET status = $2, updated_at = now() WHERE id = $1::uuid
+		UPDATE users
+		   SET status = $2,
+		       updated_at = CASE WHEN status IS DISTINCT FROM $2 THEN now() ELSE updated_at END
+		 WHERE id = $1::uuid
 	`, userID, status)
 	if err != nil {
 		return mapDBErr(err)
@@ -86,7 +105,196 @@ func (p *Postgres) SetUserStatus(ctx context.Context, userID, status string) err
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
+	if status == "disabled" {
+		if err := p.RecheckDisabledUser(ctx, userID, actor); err != nil {
+			return errors.Join(ErrDisableRecheckIncomplete, err)
+		}
+	}
 	return nil
+}
+
+// ErrDisableRecheckIncomplete means SetUserStatus committed "disabled" but
+// the gate re-check did not finish. The account IS disabled: callers must
+// still revoke sessions and drop memberships, then report the error so the
+// caller retries (a repeat disable finishes the re-check).
+var ErrDisableRecheckIncomplete = errors.New("user disabled; approval gate re-check incomplete")
+
+// AuditNoEnabledAdmin is written once per workspace when an instance-wide
+// disable leaves it with no enabled admin. The disable is never refused
+// for that: the identity provider and the instance operator are the
+// authority on who is enabled.
+const AuditNoEnabledAdmin = "workspace.no_enabled_admin"
+
+// disableRecheckHook is nil in production. Tests install one
+// (SetDisableRecheckHookForTest) to fail or skip the re-check of a
+// workspace and prove that a retry, or boot resync, finishes it.
+var disableRecheckHook atomic.Pointer[func(workspaceID string) error]
+
+// SetDisableRecheckHookForTest installs fn, called before each
+// workspace's re-check after a disable; a non-nil error stops the run
+// there and is returned. It returns a func that removes the hook. Tests
+// only: production never sets it.
+func SetDisableRecheckHookForTest(fn func(workspaceID string) error) (restore func()) {
+	disableRecheckHook.Store(&fn)
+	return func() { disableRecheckHook.Store(nil) }
+}
+
+// RecheckDisabledUser re-checks waiting targeted gates after userID was
+// disabled instance-wide. It visits every workspace where the user still
+// holds a role, sorted by workspace id, one short workspace-scoped
+// transaction each (FORCE RLS on the approval tables applies):
+//
+//	workspace row (LockWorkspaceMembership) -> gates (gatesForRoleLoss:
+//	executions, then approvals) -> Recheck -> commit.
+//
+// It deletes no role and runs no last-admin guard: the status change is
+// already committed. It never takes the park share lock. Gates selected
+// are the ones naming the user or a group they are in, plus, when they
+// held admin, the bounded override fallback (gatesForRoleLoss). A gate
+// left with no eligible decider is closed with requirement_unresolvable /
+// no_eligible_decider. When the user held admin and no enabled admin is
+// left, one AuditNoEnabledAdmin row is written for the workspace.
+//
+// A park that read the user as active before the status committed holds
+// the workspace row FOR SHARE until it commits, so the re-check's lock
+// waits for it and then sees its gate; a later park reads the user as
+// disabled (see parkedapproval.LockWorkspaceForPark).
+//
+// Workspaces are independent, so a failure part-way returns the error
+// with the earlier workspaces done; calling it again (any repeat disable)
+// redoes the rest. Boot resync (approval.ResyncOpenApprovals) closes any
+// gate a crash left behind.
+func (p *Postgres) RecheckDisabledUser(ctx context.Context, userID string, actor MemberActor) error {
+	if !authz.ValidUUID(userID) || !actor.Valid() {
+		return ErrInvalid
+	}
+	rows, err := p.db.Query(ctx, `
+		SELECT DISTINCT workspace_id::text FROM workspace_role_bindings
+		 WHERE user_id = $1::uuid
+		 ORDER BY 1
+	`, userID)
+	if err != nil {
+		return mapDBErr(err)
+	}
+	var workspaces []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return mapDBErr(err)
+		}
+		workspaces = append(workspaces, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return mapDBErr(err)
+	}
+	for _, ws := range workspaces {
+		if hook := disableRecheckHook.Load(); hook != nil && *hook != nil {
+			if err := (*hook)(ws); err != nil {
+				return err
+			}
+		}
+		if err := p.recheckDisabledUserIn(ctx, ws, userID, actor); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Postgres) recheckDisabledUserIn(ctx context.Context, workspaceID, userID string, actor MemberActor) error {
+	tx, err := postgres.BeginScoped(ctx, p.db, workspaceID)
+	if err != nil {
+		return mapDBErr(err)
+	}
+	defer tx.Rollback(ctx)
+	if err := LockWorkspaceMembership(ctx, tx, workspaceID); err != nil {
+		return err
+	}
+	var status, display string
+	if err := tx.QueryRow(ctx, `SELECT status, display_name FROM users WHERE id = $1::uuid`, userID).Scan(&status, &display); err != nil {
+		return mapDBErr(err)
+	}
+	if status != "disabled" {
+		// Re-enabled since: still an eligible decider, nothing to close.
+		return nil
+	}
+	current, err := memberRoleKeysTx(ctx, tx, workspaceID, userID)
+	if err != nil {
+		return err
+	}
+	if len(current) == 0 {
+		// Removed since; that removal re-checked its own gates.
+		return nil
+	}
+	gates, err := gatesForRoleLoss(ctx, tx, workspaceID, userID, current, nil)
+	if err != nil {
+		return err
+	}
+	if _, err := approvalgate.Recheck(ctx, tx, workspaceID, gates, time.Now()); err != nil {
+		return mapDBErr(err)
+	}
+	if containsKey(current, authz.RoleAdmin) {
+		left, err := parkedapproval.ActiveAdmins(ctx, tx, workspaceID, "", 1)
+		if err != nil {
+			return mapDBErr(err)
+		}
+		if len(left) == 0 {
+			if err := insertNoEnabledAdminAudit(ctx, tx, workspaceID, userID, display, actor); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+// insertNoEnabledAdminAudit writes the AuditNoEnabledAdmin row. Details
+// hold the disabled user's UUID and display name and the actor of the
+// disable, recorded like a role-change row (addActorDetailsTx): via
+// scim_instance_token for an instance SCIM disable, the session user
+// (actor_id and actorDisplayName) for a machine principal revoke. A
+// display name shaped like an email, URL or credential is left out.
+// A retry of the same disable does not write a second row: a row for
+// this user written since their status last changed is enough.
+func insertNoEnabledAdminAudit(ctx context.Context, tx pgx.Tx, workspaceID, userID, display string, actor MemberActor) error {
+	details := map[string]any{"userId": userID}
+	if name := auditDisplayName(display); name != "" {
+		details["displayName"] = name
+	}
+	actorID, err := addActorDetailsTx(ctx, tx, actor, details)
+	if err != nil {
+		return err
+	}
+	raw, err := json.Marshal(details)
+	if err != nil {
+		return ErrInvalid
+	}
+	hostRaw, rid, err := actorHostContext(actor)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `
+		INSERT INTO audit_events (workspace_id, actor_id, host_context_redacted, action, resource_type, resource_id, outcome, correlation_id, details_redacted)
+		SELECT $1::uuid, $5::uuid, $6::jsonb, $2, 'workspace', $1::uuid, 'warning', NULLIF($7, ''), $3::jsonb
+		 WHERE NOT EXISTS (
+		       SELECT 1 FROM audit_events a
+		        WHERE a.workspace_id = $1::uuid
+		          AND a.action = $2
+		          AND a.details_redacted->>'userId' = $4
+		          AND a.occurred_at >= (SELECT updated_at FROM users WHERE id = $4::uuid)
+		 )
+	`, workspaceID, AuditNoEnabledAdmin, raw, userID, actorID, hostRaw, rid)
+	return mapDBErr(err)
+}
+
+func auditDisplayName(s string) string {
+	s = strings.TrimSpace(s)
+	lower := strings.ToLower(s)
+	if s == "" || len(s) > 200 || strings.Contains(s, "@") || strings.Contains(s, "://") ||
+		strings.HasPrefix(lower, "bearer ") || strings.Contains(lower, "ffscim_") {
+		return ""
+	}
+	return s
 }
 
 // FindUser returns an existing principal. It does not upsert.
@@ -635,9 +843,15 @@ func (p *Postgres) ListMembersPage(ctx context.Context, workspaceID string, q pa
 // written: a gate left with no eligible decider is closed with
 // requirement_unresolvable / no_eligible_decider, exactly like a removal.
 // A promotion or an unchanged role set locks and re-checks nothing.
-func (p *Postgres) SetMemberRoles(ctx context.Context, workspaceID, userID string, roleKeys []string) error {
+// Every actual change writes one AuditMemberRolesChange row in the same
+// transaction (an unchanged role set writes none; a refused change rolls
+// it back with everything else).
+func (p *Postgres) SetMemberRoles(ctx context.Context, workspaceID, userID string, roleKeys []string, actor MemberActor) error {
 	if err := validateRoleKeys(roleKeys); err != nil {
 		return err
+	}
+	if !actor.Valid() {
+		return ErrInvalid
 	}
 	if !authz.ValidUUID(workspaceID) {
 		return ErrInvalid
@@ -661,6 +875,10 @@ func (p *Postgres) SetMemberRoles(ctx context.Context, workspaceID, userID strin
 	if err != nil {
 		return err
 	}
+	wasActiveAdmin, err := wasActiveAdminTx(ctx, tx, userID, current)
+	if err != nil {
+		return err
+	}
 	var gates []approvalgate.Gate
 	if lostAnyRole(current, next) {
 		gates, err = gatesForRoleLoss(ctx, tx, workspaceID, userID, current, next)
@@ -679,11 +897,14 @@ func (p *Postgres) SetMemberRoles(ctx context.Context, workspaceID, userID strin
 	`, workspaceID, userID, next); err != nil {
 		return mapDBErr(err)
 	}
-	if err := ensureAdmin(ctx, tx, workspaceID); err != nil {
+	if err := GuardLastAdmin(ctx, tx, workspaceID, wasActiveAdmin); err != nil {
 		return err
 	}
 	if _, err := approvalgate.Recheck(ctx, tx, workspaceID, gates, time.Now()); err != nil {
 		return mapDBErr(err)
+	}
+	if err := InsertMemberRolesAuditTx(ctx, tx, workspaceID, userID, current, next, actor); err != nil {
+		return err
 	}
 	return tx.Commit(ctx)
 }
@@ -770,34 +991,23 @@ func gatesForRoleLoss(ctx context.Context, tx pgx.Tx, workspaceID, userID string
 }
 
 // otherActiveAdminsTx returns up to two active admins in the workspace
-// other than userID, with the eligibility rule of
-// parkedapproval.OtherActiveAdmin (role admin, user active, live binding).
+// other than userID (parkedapproval.ActiveAdmins, the shared rule).
 func otherActiveAdminsTx(ctx context.Context, tx pgx.Tx, workspaceID, userID string) ([]string, error) {
-	rows, err := tx.Query(ctx, `
-		SELECT DISTINCT b.user_id::text
-		  FROM workspace_role_bindings b
-		  JOIN roles r ON r.id = b.role_id
-		  JOIN users u ON u.id = b.user_id
-		 WHERE b.workspace_id = $1::uuid
-		   AND r.key = 'admin'
-		   AND u.status = 'active'
-		   AND b.user_id <> $2::uuid
-		 ORDER BY 1
-		 LIMIT 2
-	`, workspaceID, userID)
-	if err != nil {
-		return nil, mapDBErr(err)
+	out, err := parkedapproval.ActiveAdmins(ctx, tx, workspaceID, userID, 2)
+	return out, mapDBErr(err)
+}
+
+// wasActiveAdminTx reports whether userID, holding current role keys, is
+// an enabled admin right now (before the caller changes anything).
+func wasActiveAdminTx(ctx context.Context, tx pgx.Tx, userID string, current []string) (bool, error) {
+	if !containsKey(current, authz.RoleAdmin) {
+		return false, nil
 	}
-	defer rows.Close()
-	out := []string{}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, mapDBErr(err)
-		}
-		out = append(out, id)
+	var status string
+	if err := tx.QueryRow(ctx, `SELECT status FROM users WHERE id = $1::uuid`, userID).Scan(&status); err != nil {
+		return false, mapDBErr(err)
 	}
-	return out, mapDBErr(rows.Err())
+	return status == "active", nil
 }
 
 // RemoveMember deletes the user's role bindings and their workspace group
@@ -809,8 +1019,8 @@ func otherActiveAdminsTx(ctx context.Context, tx pgx.Tx, workspaceID, userID str
 // cannot deadlock: a concurrent add holds FOR SHARE on the binding rows,
 // this waits for it, and the group-row delete that follows sees the new
 // row. ErrLastAdmin rolls back both deletes.
-func (p *Postgres) RemoveMember(ctx context.Context, workspaceID, userID string) error {
-	if !authz.ValidUUID(workspaceID) || !authz.ValidUUID(userID) {
+func (p *Postgres) RemoveMember(ctx context.Context, workspaceID, userID string, actor MemberActor) error {
+	if !authz.ValidUUID(workspaceID) || !authz.ValidUUID(userID) || !actor.Valid() {
 		return ErrInvalid
 	}
 	tx, err := postgres.BeginScoped(ctx, p.db, workspaceID)
@@ -822,7 +1032,7 @@ func (p *Postgres) RemoveMember(ctx context.Context, workspaceID, userID string)
 	if err := LockWorkspaceMembership(ctx, tx, workspaceID); err != nil {
 		return err
 	}
-	removed, err := RemoveMembershipTx(ctx, tx, workspaceID, userID, time.Now())
+	removed, err := RemoveMembershipTx(ctx, tx, workspaceID, userID, time.Now(), actor)
 	if err != nil {
 		return err
 	}
@@ -863,11 +1073,17 @@ func (p *Postgres) RemoveMember(ctx context.Context, workspaceID, userID string)
 //
 // removed reports whether any role binding was deleted. Group rows are
 // deleted either way, so a link left without a role never keeps them.
-func RemoveMembershipTx(ctx context.Context, tx pgx.Tx, workspaceID, userID string, now time.Time) (bool, error) {
-	if !authz.ValidUUID(workspaceID) || !authz.ValidUUID(userID) {
+// A removal that deleted a binding writes one AuditMemberRemove row (roles
+// before, none after) in the same transaction, attributed to actor.
+func RemoveMembershipTx(ctx context.Context, tx pgx.Tx, workspaceID, userID string, now time.Time, actor MemberActor) (bool, error) {
+	if !authz.ValidUUID(workspaceID) || !authz.ValidUUID(userID) || !actor.Valid() {
 		return false, ErrInvalid
 	}
 	current, err := memberRoleKeysTx(ctx, tx, workspaceID, userID)
+	if err != nil {
+		return false, err
+	}
+	wasActiveAdmin, err := wasActiveAdminTx(ctx, tx, userID, current)
 	if err != nil {
 		return false, err
 	}
@@ -883,7 +1099,7 @@ func RemoveMembershipTx(ctx context.Context, tx pgx.Tx, workspaceID, userID stri
 	}
 	removed := tag.RowsAffected() > 0
 	if removed {
-		if err := ensureAdmin(ctx, tx, workspaceID); err != nil {
+		if err := GuardLastAdmin(ctx, tx, workspaceID, wasActiveAdmin); err != nil {
 			return false, err
 		}
 	}
@@ -894,6 +1110,11 @@ func RemoveMembershipTx(ctx context.Context, tx pgx.Tx, workspaceID, userID stri
 	}
 	if _, err := approvalgate.Recheck(ctx, tx, workspaceID, gates, now); err != nil {
 		return false, mapDBErr(err)
+	}
+	if removed {
+		if err := InsertMemberRolesAuditTx(ctx, tx, workspaceID, userID, current, nil, actor); err != nil {
+			return false, err
+		}
 	}
 	return removed, nil
 }
@@ -911,10 +1132,6 @@ func mustExist(ctx context.Context, tx pgx.Tx, sql, id string) error {
 		return mapDBErr(err)
 	}
 	return nil
-}
-
-func ensureAdmin(ctx context.Context, tx pgx.Tx, workspaceID string) error {
-	return GuardLastAdmin(ctx, tx, workspaceID)
 }
 
 // LockWorkspaceMembership locks the workspace row (FOR NO KEY UPDATE) in
@@ -961,13 +1178,26 @@ func LockWorkspaceMembership(ctx context.Context, tx pgx.Tx, workspaceID string)
 	return nil
 }
 
-// GuardLastAdmin counts distinct users who still hold
-// workspace.administer in tx and returns ErrLastAdmin when none remain;
-// the caller must roll back. The caller must already hold
-// LockWorkspaceMembership from the start of the transaction. The guard
-// takes it again (a no-op for the holder) so a caller that forgot cannot
-// count unlocked.
-func GuardLastAdmin(ctx context.Context, tx pgx.Tx, workspaceID string) error {
+// GuardLastAdmin runs after the caller changed one person's roles in tx
+// and returns ErrLastAdmin (the caller must roll back) when either:
+//
+//   - no user holds workspace.administer any more, whatever their status
+//     (the original rule); or
+//   - changedWasActiveAdmin is true (the person changed was an enabled
+//     admin before the change) and no enabled admin is left
+//     (parkedapproval.ActiveAdmins: admin role, users.status 'active').
+//
+// The second rule is relative on purpose: a workspace that already has
+// only disabled admins can still remove or change other members; only a
+// change that takes away its last enabled admin is refused. An
+// instance-wide disable never goes through this guard (see
+// RecheckDisabledUser and AuditNoEnabledAdmin).
+//
+// The caller must already hold LockWorkspaceMembership from the start of
+// the transaction, so two concurrent removals count one after the other.
+// The guard takes it again (a no-op for the holder) so a caller that
+// forgot cannot count unlocked.
+func GuardLastAdmin(ctx context.Context, tx pgx.Tx, workspaceID string, changedWasActiveAdmin bool) error {
 	if err := LockWorkspaceMembership(ctx, tx, workspaceID); err != nil {
 		return err
 	}
@@ -984,6 +1214,15 @@ func GuardLastAdmin(ctx context.Context, tx pgx.Tx, workspaceID string) error {
 	}
 	if n < 1 {
 		return ErrLastAdmin
+	}
+	if changedWasActiveAdmin {
+		left, err := parkedapproval.ActiveAdmins(ctx, tx, workspaceID, "", 1)
+		if err != nil {
+			return mapDBErr(err)
+		}
+		if len(left) == 0 {
+			return ErrLastAdmin
+		}
 	}
 	return nil
 }

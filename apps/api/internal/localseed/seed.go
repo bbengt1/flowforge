@@ -340,7 +340,7 @@ func ensureAdminMember(ctx context.Context, store identity.Store, workspaceID st
 	if !already {
 		next = append(next, authz.RoleAdmin)
 	}
-	if err := store.SetMemberRoles(ctx, workspaceID, user.ID, next); err != nil {
+	if err := store.SetMemberRoles(ctx, workspaceID, user.ID, next, identity.MemberActor{Via: identity.MemberViaSystem}); err != nil {
 		return false, err
 	}
 	_, perms, err = store.EffectiveAccess(ctx, workspaceID, user.ID)
