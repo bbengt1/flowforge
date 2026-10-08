@@ -105,6 +105,7 @@ func listScimTokens(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		"items":      items,
 		"maxActive":  scim.MaxActiveTokens,
 		"configured": s.SCIMSettings.WorkspaceReady(),
+		"groupsMode": s.SCIMSettings.Mode(),
 	})
 }
 

@@ -26,6 +26,7 @@ const (
 	groupNameInvalidDetail = "displayName must be 1-128 characters after trimming and must not contain control characters."
 	groupMemberDetail      = "The user is not an active member of this workspace."
 	groupUserIDDetail      = "userId must be a UUID."
+	groupManagedDetail     = "This group is managed by SCIM. Change it in the identity provider."
 )
 
 // requireGroupAdmin is the shared door for workspace group admin routes.
@@ -78,8 +79,11 @@ func groupPathIDs(w http.ResponseWriter, r *http.Request, names ...string) ([]st
 	return out, true
 }
 
-func groupActor(r *http.Request, user identity.User) identity.GroupActor {
-	return identity.GroupActor{UserID: user.ID, RequestID: RequestIDFromContext(r.Context())}
+// groupActor is a local (non-SCIM) actor. SCIMGroupsMode comes from the
+// server settings, so the managed-group refusal follows the instance's
+// SCIM_GROUPS_MODE on every request.
+func (s *Server) groupActor(r *http.Request, user identity.User) identity.GroupActor {
+	return identity.GroupActor{UserID: user.ID, RequestID: RequestIDFromContext(r.Context()), SCIMGroupsMode: s.SCIMSettings.Groups()}
 }
 
 func (s *Server) listWorkspaceGroups(w http.ResponseWriter, r *http.Request) {
@@ -99,7 +103,28 @@ func (s *Server) listWorkspaceGroups(w http.ResponseWriter, r *http.Request) {
 		writeGroupError(w, r, err)
 		return
 	}
-	WritePage(w, items, q, next)
+	if items == nil {
+		items = []identity.Group{}
+	}
+	WriteJSON(w, http.StatusOK, groupListResponse{
+		PageResponse: PageResponse[identity.Group]{Items: items, Limit: q.Limit, Cursor: q.Cursor, Next: next},
+		GroupsMode:   s.SCIMSettings.Mode(),
+	})
+}
+
+// groupListResponse is the page envelope plus the instance's
+// SCIM_GROUPS_MODE, so the admin UI knows whether a group with managedBy
+// "scim" is locked. Always present: workspaces when SCIM is off.
+type groupListResponse struct {
+	PageResponse[identity.Group]
+	GroupsMode string `json:"groupsMode"`
+}
+
+// groupDetailResponse is the group detail plus the instance's
+// SCIM_GROUPS_MODE, the same value the list reports.
+type groupDetailResponse struct {
+	identity.GroupDetail
+	GroupsMode string `json:"groupsMode"`
 }
 
 func (s *Server) createWorkspaceGroup(w http.ResponseWriter, r *http.Request) {
@@ -111,7 +136,7 @@ func (s *Server) createWorkspaceGroup(w http.ResponseWriter, r *http.Request) {
 	if !DecodeJSON(w, r, &req) {
 		return
 	}
-	g, err := groups.CreateGroup(r.Context(), ws.ID, groupActor(r, user), req.DisplayName)
+	g, err := groups.CreateGroup(r.Context(), ws.ID, s.groupActor(r, user), req.DisplayName)
 	if err != nil {
 		writeGroupError(w, r, err)
 		return
@@ -133,7 +158,7 @@ func (s *Server) getWorkspaceGroup(w http.ResponseWriter, r *http.Request) {
 		writeGroupError(w, r, err)
 		return
 	}
-	WriteJSON(w, http.StatusOK, d)
+	WriteJSON(w, http.StatusOK, groupDetailResponse{GroupDetail: d, GroupsMode: s.SCIMSettings.Mode()})
 }
 
 func (s *Server) renameWorkspaceGroup(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +174,7 @@ func (s *Server) renameWorkspaceGroup(w http.ResponseWriter, r *http.Request) {
 	if !DecodeJSON(w, r, &req) {
 		return
 	}
-	g, err := groups.RenameGroup(r.Context(), ws.ID, groupActor(r, user), ids[0], req.DisplayName)
+	g, err := groups.RenameGroup(r.Context(), ws.ID, s.groupActor(r, user), ids[0], req.DisplayName)
 	if err != nil {
 		writeGroupError(w, r, err)
 		return
@@ -166,7 +191,7 @@ func (s *Server) deleteWorkspaceGroup(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := groups.DeleteGroup(r.Context(), ws.ID, groupActor(r, user), ids[0]); err != nil {
+	if err := groups.DeleteGroup(r.Context(), ws.ID, s.groupActor(r, user), ids[0]); err != nil {
 		writeGroupError(w, r, err)
 		return
 	}
@@ -193,7 +218,7 @@ func (s *Server) addWorkspaceGroupMember(w http.ResponseWriter, r *http.Request)
 		}})
 		return
 	}
-	if err := groups.AddGroupMember(r.Context(), ws.ID, groupActor(r, user), ids[0], userID); err != nil {
+	if err := groups.AddGroupMember(r.Context(), ws.ID, s.groupActor(r, user), ids[0], userID); err != nil {
 		writeGroupError(w, r, err)
 		return
 	}
@@ -209,7 +234,7 @@ func (s *Server) removeWorkspaceGroupMember(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	if err := groups.RemoveGroupMember(r.Context(), ws.ID, groupActor(r, user), ids[0], ids[1]); err != nil {
+	if err := groups.RemoveGroupMember(r.Context(), ws.ID, s.groupActor(r, user), ids[0], ids[1]); err != nil {
 		writeGroupError(w, r, err)
 		return
 	}
@@ -226,6 +251,8 @@ func writeGroupError(w http.ResponseWriter, r *http.Request, err error) {
 		WriteProblemErrors(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", groupNameInvalidDetail, []FieldError{{
 			Path: "displayName", Code: CodeInvalidRequest, Message: groupNameInvalidDetail,
 		}})
+	case errors.Is(err, identity.ErrGroupManagedBySCIM):
+		WriteProblem(w, r, http.StatusConflict, CodeGroupManagedBySCIM, "Conflict", groupManagedDetail)
 	case errors.Is(err, identity.ErrGroupMemberNotInWorkspace):
 		WriteProblemErrors(w, r, http.StatusBadRequest, CodeGroupMemberNotInWorkspace, "Invalid Request", groupMemberDetail, []FieldError{{
 			Path: "userId", Code: CodeGroupMemberNotInWorkspace, Message: groupMemberDetail,

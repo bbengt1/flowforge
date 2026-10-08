@@ -124,6 +124,15 @@ type WorkspaceDirectory interface {
 	RemoveUser(ctx context.Context, scope TokenScope, userID string, actor Actor) error
 	GetGroup(ctx context.Context, scope TokenScope) (WorkspaceGroup, error)
 	PatchGroup(ctx context.Context, scope TokenScope, ch GroupChange, defaultRole string, actor Actor, now time.Time) (WorkspaceGroup, error)
+
+	// SCIM_GROUPS_MODE=groups: managed Flowforge groups in the token's
+	// workspace.
+	ListManagedGroups(ctx context.Context, scope TokenScope, attr, value string, startIndex, count int) ([]ManagedGroup, int, error)
+	GetManagedGroup(ctx context.Context, scope TokenScope, groupID string) (ManagedGroup, error)
+	CreateManagedGroup(ctx context.Context, scope TokenScope, in ManagedGroupWrite, actor Actor, now time.Time) (ManagedGroup, error)
+	ReplaceManagedGroup(ctx context.Context, scope TokenScope, groupID string, in ManagedGroupWrite, actor Actor, now time.Time) (ManagedGroup, error)
+	PatchManagedGroup(ctx context.Context, scope TokenScope, groupID string, ch ManagedGroupPatch, actor Actor, now time.Time) (ManagedGroup, error)
+	DeleteManagedGroup(ctx context.Context, scope TokenScope, groupID string, actor Actor, now time.Time) error
 }
 
 // NormalizeTokenName trims a token display name and validates it: 1-128

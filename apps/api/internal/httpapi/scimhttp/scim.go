@@ -407,6 +407,12 @@ func listSCIMGroups(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if s.SCIMSettings.Groups() {
+		if ws, ok := groupsModeScope(w, scope); ok {
+			gmListGroups(s, w, r, ws)
+		}
+		return
+	}
 	if scope != nil {
 		wsListGroups(s, w, r, *scope)
 		return
@@ -453,21 +459,42 @@ func listSCIMGroups(s *core.Server, w http.ResponseWriter, r *http.Request) {
 }
 
 func postSCIMGroup(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	if _, ok := authorizeSCIM(s, w, r); !ok {
+	scope, ok := authorizeSCIM(s, w, r)
+	if !ok {
+		return
+	}
+	if s.SCIMSettings.Groups() {
+		if ws, ok := groupsModeScope(w, scope); ok {
+			gmPostGroup(s, w, r, ws)
+		}
 		return
 	}
 	writeSCIMError(w, http.StatusBadRequest, "Groups are existing workspaces.")
 }
 
 func putSCIMGroup(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	if _, ok := authorizeSCIM(s, w, r); !ok {
+	scope, ok := authorizeSCIM(s, w, r)
+	if !ok {
+		return
+	}
+	if s.SCIMSettings.Groups() {
+		if ws, ok := groupsModeScope(w, scope); ok {
+			gmPutGroup(s, w, r, ws)
+		}
 		return
 	}
 	writeSCIMError(w, http.StatusBadRequest, "Groups are existing workspaces. Patch members to change membership.")
 }
 
 func deleteSCIMGroup(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	if _, ok := authorizeSCIM(s, w, r); !ok {
+	scope, ok := authorizeSCIM(s, w, r)
+	if !ok {
+		return
+	}
+	if s.SCIMSettings.Groups() {
+		if ws, ok := groupsModeScope(w, scope); ok {
+			gmDeleteGroup(s, w, r, ws)
+		}
 		return
 	}
 	writeSCIMError(w, http.StatusBadRequest, "Groups are existing workspaces and cannot be deleted here.")
@@ -476,6 +503,12 @@ func deleteSCIMGroup(s *core.Server, w http.ResponseWriter, r *http.Request) {
 func getSCIMGroup(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	scope, ok := authorizeSCIM(s, w, r)
 	if !ok {
+		return
+	}
+	if s.SCIMSettings.Groups() {
+		if ws, ok := groupsModeScope(w, scope); ok {
+			gmGetGroup(s, w, r, ws)
+		}
 		return
 	}
 	if scope != nil {
@@ -501,6 +534,12 @@ func getSCIMGroup(s *core.Server, w http.ResponseWriter, r *http.Request) {
 func patchSCIMGroup(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	scope, ok := authorizeSCIM(s, w, r)
 	if !ok {
+		return
+	}
+	if s.SCIMSettings.Groups() {
+		if ws, ok := groupsModeScope(w, scope); ok {
+			gmPatchGroup(s, w, r, ws)
+		}
 		return
 	}
 	if scope != nil {
@@ -805,14 +844,24 @@ func writeSCIM(w http.ResponseWriter, status int, payload any) {
 }
 
 func writeSCIMError(w http.ResponseWriter, status int, detail string) {
+	writeSCIMErrorType(w, status, "", detail)
+}
+
+// writeSCIMErrorType is writeSCIMError with an RFC 7644 scimType (for
+// example uniqueness). An empty scimType is omitted.
+func writeSCIMErrorType(w http.ResponseWriter, status int, scimType, detail string) {
 	if status == http.StatusUnauthorized {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 	}
-	writeSCIM(w, status, map[string]any{
+	body := map[string]any{
 		"schemas": []string{"urn:ietf:params:scim:api:messages:2.0:Error"},
 		"status":  strconv.Itoa(status),
 		"detail":  detail,
-	})
+	}
+	if scimType != "" {
+		body["scimType"] = scimType
+	}
+	writeSCIM(w, status, body)
 }
 
 func writeSCIMStoreError(s *core.Server, w http.ResponseWriter, err error) {
@@ -829,6 +878,10 @@ func writeSCIMStoreError(s *core.Server, w http.ResponseWriter, err error) {
 		writeSCIMError(w, http.StatusConflict, "That resource already exists.")
 	case errors.Is(err, identity.ErrLastAdmin), errors.Is(err, scim.ErrLastAdmin):
 		writeSCIMError(w, http.StatusConflict, "That membership cannot be removed.")
+	case errors.Is(err, scim.ErrUniqueness):
+		writeSCIMErrorType(w, http.StatusConflict, "uniqueness", "A group with this displayName or externalId already exists in the workspace.")
+	case errors.Is(err, scim.ErrMemberNotEligible):
+		writeSCIMErrorType(w, http.StatusBadRequest, "invalidValue", "Group members must be active workspace members linked by this workspace's SCIM token.")
 	default:
 		writeSCIMError(w, http.StatusServiceUnavailable, "The directory is not available.")
 	}

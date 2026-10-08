@@ -23,12 +23,17 @@ const groupCommon = "Requires workspace.administer. An embed session is refused 
 	"Groups only target approvals. They never grant a permission, and membership never grants approval.decide. " +
 	"Another workspace's group is 404, the same as a missing group. A {groupId} path segment that is not a UUID is also 404, after the permission check. No response includes an email address."
 
+const managedNote = "While the instance runs SCIM_GROUPS_MODE=groups, this change on a group with managedBy \"scim\" is 409 group_managed_by_scim and nothing changes; in workspaces mode it is allowed."
+
+const gateRecheckNote = "Waiting targeted approval gates that name the group are re-checked in the same transaction: a gate left with no eligible decider is closed the same way as at park time (execution failed with requirement_unresolvable, cause no_eligible_decider); a gate that still has an eligible decider keeps waiting."
+
 var workspaceGroupOps = map[string]groupOp{
 	"GET /api/v1/workspace/groups": {
 		summary: "List workspace groups",
 		description: []string{
 			"Lists the workspace's groups ordered by display name without regard to case, then id. Paged like other collections (limit, cursor, q over displayName).",
 			"memberCount counts every membership row, including a disabled user who still has rows.",
+			"managedBy is \"scim\" for a group a workspace SCIM token manages and null for a local group.",
 		},
 		params:      []string{"PageLimit", "PageCursor", "PageSearch"},
 		success:     "200",
@@ -67,13 +72,15 @@ var workspaceGroupOps = map[string]groupOp{
 		description: []string{
 			"Sets displayName. Same validation and 409 group_name_taken rules as create, including a rename that loses a race on the unique index. Renaming a group to its own name in another case is allowed.",
 			"Writes audit action workspace_group.rename in the same transaction when the name changes. A rename to the exact current name (after trimming) changes nothing and writes no audit row.",
+			"Only displayName changes: the group id, which workflow approvers.groups reference, never changes.",
+			managedNote,
 		},
 		params:      []string{"WorkspaceGroupID"},
 		requestBody: "UpdateWorkspaceGroupRequest",
 		success:     "200",
 		successDesc: "Renamed group.",
 		successBody: "WorkspaceGroup",
-		extra:       []string{"400:InvalidRequest", "404:NotFound", "409:GroupNameTaken"},
+		extra:       []string{"400:InvalidRequest", "404:NotFound", "409:RenameGroupConflict"},
 	},
 	"DELETE /api/v1/workspace/groups/{groupId}": {
 		summary: "Delete a workspace group",
@@ -81,11 +88,13 @@ var workspaceGroupOps = map[string]groupOp{
 			"Hard-deletes the group and its membership rows. There is no restore.",
 			"Workflow YAML that still names the deleted group id resolves to nobody, so that approval target fails closed.",
 			"Writes audit action workspace_group.delete in the same transaction.",
+			gateRecheckNote,
+			managedNote,
 		},
 		params:      []string{"WorkspaceGroupID"},
 		success:     "204",
 		successDesc: "Deleted. No body.",
-		extra:       []string{"404:NotFound"},
+		extra:       []string{"404:NotFound", "409:GroupManagedBySCIM"},
 	},
 	"POST /api/v1/workspace/groups/{groupId}/members": {
 		summary: "Add a workspace group member",
@@ -93,23 +102,26 @@ var workspaceGroupOps = map[string]groupOp{
 			"Adds userId to the group. Idempotent: adding an existing member is 204 and writes no second row.",
 			"The user must be active and hold a role binding in this workspace; otherwise 400 group_member_not_in_workspace with errors[].path userId. A userId that is not a UUID is 400 invalid-request with errors[].path userId.",
 			"Writes audit action workspace_group.member_add when a row is added.",
+			managedNote,
 		},
 		params:      []string{"WorkspaceGroupID"},
 		requestBody: "AddWorkspaceGroupMemberRequest",
 		success:     "204",
 		successDesc: "Member present. No body.",
-		extra:       []string{"400:AddGroupMemberInvalid", "404:NotFound"},
+		extra:       []string{"400:AddGroupMemberInvalid", "404:NotFound", "409:GroupManagedBySCIM"},
 	},
 	"DELETE /api/v1/workspace/groups/{groupId}/members/{userId}": {
 		summary: "Remove a workspace group member",
 		description: []string{
 			"Removes userId from the group. Idempotent: removing a user who is not a member is 204. A userId path segment that is not a UUID is 400 invalid-request with errors[].path userId, the same status and code as DELETE /api/v1/workspace/members/{userID}.",
 			"Writes audit action workspace_group.member_remove when a row is removed.",
+			gateRecheckNote,
+			managedNote,
 		},
 		params:      []string{"WorkspaceGroupID", "WorkspaceGroupUserID"},
 		success:     "204",
 		successDesc: "Member absent. No body.",
-		extra:       []string{"400:InvalidRequest", "404:NotFound"},
+		extra:       []string{"400:InvalidRequest", "404:NotFound", "409:GroupManagedBySCIM"},
 	},
 }
 

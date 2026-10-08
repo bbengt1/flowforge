@@ -629,31 +629,19 @@ func addDefaultRoleIfNone(ctx context.Context, tx pgx.Tx, workspaceID, userID, r
 	return tag.RowsAffected() > 0, nil
 }
 
-// removeMembership deletes the user's role bindings and group rows in
-// this workspace inside the caller's scopedMembership transaction. Lock order is
-// the workspace row (taken by scopedMembership), then bindings, then
-// group rows, the same as identity.RemoveMember.
+// removeMembership deletes the user's role bindings and group rows (local
+// and SCIM-managed) in this workspace inside the caller's
+// scopedMembership transaction, through identity.RemoveMembershipTx: the
+// same path as an admin removal, including the waiting-gate re-check.
+// Lock order is the workspace row (taken by scopedMembership), the link
+// row (taken by the caller), waiting gates, bindings, then group rows.
 // Removing the last administrator is ErrLastAdmin and the caller's
 // transaction rolls back.
 func removeMembership(ctx context.Context, tx pgx.Tx, workspaceID, userID string) error {
-	tag, err := tx.Exec(ctx, `
-		DELETE FROM workspace_role_bindings WHERE workspace_id = $1::uuid AND user_id = $2::uuid`,
-		workspaceID, userID)
-	if err != nil {
-		return mapWorkspaceErr(err)
+	if _, err := identity.RemoveMembershipTx(ctx, tx, workspaceID, userID, time.Now()); err != nil {
+		return mapIdentityErr(err)
 	}
-	if tag.RowsAffected() > 0 {
-		// Same guard as identity.RemoveMember. The caller already holds
-		// the workspace-row lock (scopedMembership), so concurrent
-		// removals cannot both pass the count.
-		if err := identity.GuardLastAdmin(ctx, tx, workspaceID); err != nil {
-			return mapIdentityErr(err)
-		}
-	}
-	_, err = tx.Exec(ctx, `
-		DELETE FROM workspace_group_members WHERE workspace_id = $1::uuid AND user_id = $2::uuid`,
-		workspaceID, userID)
-	return mapWorkspaceErr(err)
+	return nil
 }
 
 // insertAudit writes one workspace audit row in the caller's scoped

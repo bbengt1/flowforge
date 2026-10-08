@@ -109,6 +109,17 @@ var scimDoor = []string{
 	"A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when SCIM is off on the instance. When no instance token is configured, any other bearer is 401.",
 	"Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token. A workspace token never changes users.status, never revokes a session, and never renames a user.",
 	"Workspace-token writes are audited in the token's workspace with no actor and details.tokenId set to the token UUID: scim_user.workspace_add, scim_user.workspace_deactivate, scim_user.workspace_reactivate, scim_user.workspace_remove, scim_user.change_ignored.",
+	"SCIM_GROUPS_MODE selects what a SCIM Group is, instance-wide. workspaces (the default) is the behaviour described as \"workspaces mode\" below and is unchanged. In groups mode a Group is a Flowforge group inside the workspace token's workspace; the /Users rules are the same in both modes.",
+}
+
+// groupsModeNotes is appended to every /scim/v2/Groups route.
+var groupsModeNotes = []string{
+	"Groups mode (SCIM_GROUPS_MODE=groups): the instance token is 403 on every /Groups call, with a detail telling the client to use the workspace's SCIM token. Its /Users handling is unchanged.",
+	"Groups mode, workspace token: Groups are this workspace's groups that a workspace SCIM token created (managedBy scim on the local API). Local groups and other workspaces' groups are 404. members lists users linked to this workspace only.",
+	"Groups mode: member add and remove write group rows only. They never add or remove roles or workspace membership; that comes only from /Users. Adding a user who is not linked here, whose link is deactivated, or who is not an active workspace member is 400 invalidValue and the whole request changes nothing. Removing an id that is not linked here is ignored.",
+	"Groups mode: POST creates a group (displayName required, externalId optional, members optional). A displayName that another group here holds (without regard to case), local or managed, or an externalId another group here holds, is 409 uniqueness; neither group is renamed. PUT and PATCH (replace displayName, add, remove, or replace members) rename the group to the IdP's name; the group id and externalId never change, so workflows that target the group keep targeting it. DELETE hard-deletes the group and its member rows.",
+	"Groups mode: a delete or member removal goes through the same code as a local one. Waiting approval gates that target the group are re-checked in the same transaction: a gate left with no eligible decider is closed (execution failed with requirement_unresolvable, cause no_eligible_decider); a gate that still has one keeps waiting.",
+	"Groups mode: every change writes the local workspace_group.* audit action with no actor, details.tokenId set to the token UUID, and details.via scim_token. Switching back to workspaces mode keeps the groups and their markers (editable locally again); switching to groups mode again re-attaches them by id and externalId.",
 }
 
 var scimRouteNotes = map[string][]string{
@@ -142,26 +153,26 @@ var scimRouteNotes = map[string][]string{
 		"Removing the last workspace admin is 409 and changes nothing.",
 	},
 	"GET /scim/v2/Groups": {
-		"Instance token: every active workspace is a Group, as before. filter supports displayName, externalId, and id. A Group's externalId is the workspace's workbench key, compared exactly (case-sensitive); it is not the IdP's own group id.",
+		"Workspaces mode. Instance token: every active workspace is a Group, as before. filter supports displayName, externalId, and id. A Group's externalId is the workspace's workbench key, compared exactly (case-sensitive); it is not the IdP's own group id.",
 		"Workspace token: exactly one Group, this workspace. Its members are the users linked here whose link is not deactivated and who hold a role binding here. Filters apply to that one Group; externalId matches the workbench key exactly (case-sensitive), displayName matches case-insensitively.",
 	},
 	"POST /scim/v2/Groups": {
-		"400 for both token kinds: Groups are existing workspaces.",
+		"Workspaces mode: 400 for both token kinds: Groups are existing workspaces.",
 	},
 	"GET /scim/v2/Groups/{id}": {
-		"Workspace token: 404 for any id other than this workspace.",
+		"Workspaces mode. Workspace token: 404 for any id other than this workspace.",
 	},
 	"PUT /scim/v2/Groups/{id}": {
-		"400 for both token kinds. Patch members to change membership.",
+		"Workspaces mode: 400 for both token kinds. Patch members to change membership.",
 	},
 	"PATCH /scim/v2/Groups/{id}": {
-		"Instance token: unchanged.",
+		"Workspaces mode. Instance token: unchanged.",
 		"Workspace token: 404 for any id other than this workspace. The whole patch is one transaction.",
 		"add takes users linked to this workspace only; any other id is 400 and the whole patch changes nothing. add reactivates a deactivated link and adds SCIM_DEFAULT_ROLE only when the user holds no role here.",
 		"remove deactivates the link, the same as user active false, including the last-admin 409 that rolls back the whole patch. A remove for an id that is not linked here (or not a UUID) is ignored, so a member this IdP never linked cannot be removed.",
 	},
 	"DELETE /scim/v2/Groups/{id}": {
-		"400 for both token kinds: workspaces cannot be deleted here.",
+		"Workspaces mode: 400 for both token kinds: workspaces cannot be deleted here.",
 	},
 	"GET /scim/v2/ServiceProviderConfig": {"Same document for both token kinds."},
 	"GET /scim/v2/Schemas":               {"Same document for both token kinds."},
@@ -177,7 +188,12 @@ func scimOperation(rt Route) (*yaml.Node, bool, error) {
 	fmt.Fprintf(&b, "operationId: %s\n", operationID(rt.Method, rt.OpenAPIPath()))
 	fmt.Fprintf(&b, "summary: SCIM %s %s\n", rt.Method, strings.TrimPrefix(rt.Pattern, "/scim/v2"))
 	b.WriteString("description: |\n")
-	for _, line := range append(append([]string{}, scimDoor...), notes...) {
+	lines := append(append([]string{}, scimDoor...), notes...)
+	isGroups := strings.HasPrefix(rt.Pattern, "/scim/v2/Groups")
+	if isGroups {
+		lines = append(lines, groupsModeNotes...)
+	}
+	for _, line := range lines {
 		fmt.Fprintf(&b, "  %s\n", line)
 	}
 	fmt.Fprintf(&b, "  Auth class: %s. Identity proxy: %s.\n", rt.Auth, rt.Proxy)
@@ -187,11 +203,18 @@ func scimOperation(rt Route) (*yaml.Node, bool, error) {
 		b.WriteString("  \"201\":\n    description: Created or linked.\n")
 	case rt.Method == "DELETE" && rt.Pattern == "/scim/v2/Users/{id}":
 		b.WriteString("  \"204\":\n    description: Removed. No body.\n")
+	case rt.Method == "POST" && rt.Pattern == "/scim/v2/Groups":
+		b.WriteString("  \"201\":\n    description: Created (groups mode).\n")
+	case rt.Method == "DELETE" && rt.Pattern == "/scim/v2/Groups/{id}":
+		b.WriteString("  \"204\":\n    description: Deleted (groups mode). No body.\n")
 	default:
 		b.WriteString("  \"200\":\n    description: Success.\n")
 	}
 	b.WriteString("  \"400\":\n    description: SCIM error (invalid request, invalidValue, or unsupported filter).\n")
 	b.WriteString("  \"401\":\n    description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.\n")
+	if isGroups {
+		b.WriteString("  \"403\":\n    description: SCIM error. Groups mode and the instance token was presented; use the workspace's SCIM token.\n")
+	}
 	if strings.Contains(rt.Pattern, "{id}") {
 		b.WriteString("  \"404\":\n    description: SCIM error. Not found, or not visible to this workspace token.\n")
 	}

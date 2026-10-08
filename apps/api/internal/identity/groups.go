@@ -13,7 +13,12 @@ import (
 
 // Workspace groups exist only to target approvals. A group never grants
 // a permission, and membership never grants approval.decide. Groups are
-// not nested and carry no roles, email, or SCIM data.
+// not nested and carry no roles or email. A group a workspace SCIM token
+// created (SCIM_GROUPS_MODE=groups) carries managed_by 'scim' and the
+// IdP's externalId; nothing else about it differs.
+
+// ManagedBySCIM is workspace_groups.managed_by for a SCIM-managed group.
+const ManagedBySCIM = "scim"
 
 // MaxGroupNameLen is the display name limit in characters (runes).
 const MaxGroupNameLen = 128
@@ -41,14 +46,29 @@ var (
 	// ErrGroupMemberNotInWorkspace is an add for a user who is unknown,
 	// not active, or has no role binding in the workspace.
 	ErrGroupMemberNotInWorkspace = errors.New("user is not an active workspace member")
+	// ErrGroupManagedBySCIM refuses a local rename, member add or remove,
+	// or delete of a group with managed_by 'scim' while the instance runs
+	// SCIM_GROUPS_MODE=groups. Nothing changes.
+	ErrGroupManagedBySCIM = errors.New("group is managed by SCIM")
+	// ErrGroupExternalIDTaken is a SCIM create whose externalId another
+	// group in the workspace already holds.
+	ErrGroupExternalIDTaken = errors.New("group externalId taken")
 )
 
 // Group is one workspace group. MemberCount counts every membership row,
 // including a disabled user who still has rows.
+//
+// ManagedBy is "scim" for a group a workspace SCIM token created and null
+// for a local group. It is the stored marker: it stays when the instance
+// switches back to SCIM_GROUPS_MODE=workspaces, where it is not enforced.
+// ExternalID is the IdP's externalId; it is never serialized on the
+// local API.
 type Group struct {
 	ID          string    `json:"id"`
 	DisplayName string    `json:"displayName"`
 	MemberCount int       `json:"memberCount"`
+	ManagedBy   *string   `json:"managedBy"`
+	ExternalID  string    `json:"-"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
@@ -72,9 +92,26 @@ type GroupDetail struct {
 
 // GroupActor identifies who made a change, for created_by / added_by and
 // the audit row. RequestID is the correlation id.
+//
+// SCIMTokenID is set (a UUID) only when a workspace SCIM token makes the
+// change. The audit row then records the token id as the actor (details
+// tokenId, via scim_token) and actor_id stays NULL. A SCIM actor can
+// only touch groups with managed_by 'scim'; any other group is not found.
+//
+// SCIMGroupsMode is true while the instance runs SCIM_GROUPS_MODE=groups.
+// A local actor (no SCIMTokenID) is then refused with
+// ErrGroupManagedBySCIM on a managed group. Callers set it from the
+// server settings on every request.
 type GroupActor struct {
-	UserID    string
-	RequestID string
+	UserID         string
+	RequestID      string
+	SCIMTokenID    string
+	SCIMGroupsMode bool
+}
+
+// scim reports whether a workspace SCIM token is the actor.
+func (a GroupActor) scim() bool {
+	return authz.ValidUUID(strings.TrimSpace(a.SCIMTokenID))
 }
 
 // GroupStore manages workspace groups. workspaceID must come from the

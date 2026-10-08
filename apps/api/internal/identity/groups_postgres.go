@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/approvalgate"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
@@ -15,6 +17,9 @@ import (
 
 // groupNameIndex is the case-insensitive unique index from migration 000043.
 const groupNameIndex = "workspace_groups_name_uidx"
+
+// groupExternalIDIndex is the partial unique index from migration 000046.
+const groupExternalIDIndex = "workspace_groups_external_id_uidx"
 
 var _ GroupStore = (*Postgres)(nil)
 
@@ -46,7 +51,7 @@ func (p *Postgres) ListGroupsPage(ctx context.Context, workspaceID string, q pag
 		SELECT g.id::text, g.display_name, lower(g.display_name),
 		       (SELECT count(*) FROM workspace_group_members m
 		         WHERE m.workspace_id = g.workspace_id AND m.group_id = g.id)::int,
-		       g.created_at, g.updated_at
+		       g.created_at, g.updated_at, g.managed_by
 		FROM workspace_groups g
 		WHERE g.workspace_id = $1::uuid`
 	if pred := page.SearchPredicate(&args, q.Q, "g.display_name"); pred != "" {
@@ -74,7 +79,7 @@ func (p *Postgres) ListGroupsPage(ctx context.Context, workspaceID string, q pag
 	var got []row
 	for rows.Next() {
 		var r row
-		if err := rows.Scan(&r.g.ID, &r.g.DisplayName, &r.key, &r.g.MemberCount, &r.g.CreatedAt, &r.g.UpdatedAt); err != nil {
+		if err := rows.Scan(&r.g.ID, &r.g.DisplayName, &r.key, &r.g.MemberCount, &r.g.CreatedAt, &r.g.UpdatedAt, &r.g.ManagedBy); err != nil {
 			rows.Close()
 			return nil, "", mapDBErr(err)
 		}
@@ -104,32 +109,47 @@ func (p *Postgres) ListGroupsPage(ctx context.Context, workspaceID string, q pag
 }
 
 func (p *Postgres) CreateGroup(ctx context.Context, workspaceID string, actor GroupActor, displayName string) (Group, error) {
+	var g Group
+	err := p.groupTx(ctx, workspaceID, func(tx pgx.Tx) error {
+		var err error
+		g, err = CreateGroupTx(ctx, tx, workspaceID, actor, displayName, "")
+		return err
+	})
+	return g, err
+}
+
+// CreateGroupTx inserts a group in the caller's workspace-scoped
+// transaction and writes its audit row. A SCIM actor creates a managed
+// group (managed_by 'scim') and may pass the IdP's externalId; a local
+// actor always creates a local group and externalID must be empty.
+//
+// No pre-check: the unique indexes are the only arbiters, so a create
+// that loses a concurrent race gets the same error as a plain clash.
+func CreateGroupTx(ctx context.Context, tx pgx.Tx, workspaceID string, actor GroupActor, displayName, externalID string) (Group, error) {
 	name, err := NormalizeGroupName(displayName)
 	if err != nil {
 		return Group{}, err
 	}
-	tx, err := p.beginGroupTx(ctx, workspaceID)
-	if err != nil {
-		return Group{}, err
+	externalID = strings.TrimSpace(externalID)
+	var managed any
+	if actor.scim() {
+		managed = ManagedBySCIM
+	} else if externalID != "" {
+		return Group{}, ErrInvalid
 	}
-	defer tx.Rollback(ctx)
-
-	// No pre-check: the unique index is the only arbiter, so a create
-	// that loses a concurrent race gets the same 409 as a plain clash.
-	var g Group
-	err = tx.QueryRow(ctx, `
-		INSERT INTO workspace_groups (workspace_id, display_name, created_by, updated_by)
-		VALUES ($1::uuid, $2, NULLIF($3, '')::uuid, NULLIF($3, '')::uuid)
-		RETURNING id::text, display_name, created_at, updated_at
-	`, workspaceID, name, actorUUID(actor)).Scan(&g.ID, &g.DisplayName, &g.CreatedAt, &g.UpdatedAt)
+	if len([]rune(externalID)) > 256 {
+		return Group{}, ErrInvalid
+	}
+	g, err := scanGroup(tx.QueryRow(ctx, `
+		INSERT INTO workspace_groups (workspace_id, display_name, created_by, updated_by, external_id, managed_by)
+		VALUES ($1::uuid, $2, NULLIF($3, '')::uuid, NULLIF($3, '')::uuid, NULLIF($4, ''), $5::text)
+		RETURNING `+groupColumns,
+		workspaceID, name, actorUUID(actor), externalID, managed))
 	if err != nil {
 		return Group{}, mapGroupErr(err)
 	}
 	if err := insertGroupAudit(ctx, tx, workspaceID, actor, AuditGroupCreate, g.ID, "created", nil); err != nil {
 		return Group{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return Group{}, mapGroupErr(err)
 	}
 	return g, nil
 }
@@ -146,10 +166,10 @@ func (p *Postgres) GetGroup(ctx context.Context, workspaceID, groupID string) (G
 
 	var d GroupDetail
 	err = tx.QueryRow(ctx, `
-		SELECT id::text, display_name, created_at, updated_at
+		SELECT id::text, display_name, created_at, updated_at, managed_by, COALESCE(external_id, '')
 		FROM workspace_groups
 		WHERE workspace_id = $1::uuid AND id = $2::uuid
-	`, workspaceID, groupID).Scan(&d.ID, &d.DisplayName, &d.CreatedAt, &d.UpdatedAt)
+	`, workspaceID, groupID).Scan(&d.ID, &d.DisplayName, &d.CreatedAt, &d.UpdatedAt, &d.ManagedBy, &d.ExternalID)
 	if err != nil {
 		return GroupDetail{}, mapDBErr(err)
 	}
@@ -193,6 +213,26 @@ func (p *Postgres) GetGroup(ctx context.Context, workspaceID, groupID string) (G
 }
 
 func (p *Postgres) RenameGroup(ctx context.Context, workspaceID string, actor GroupActor, groupID, displayName string) (Group, error) {
+	if _, err := NormalizeGroupName(displayName); err != nil {
+		return Group{}, err
+	}
+	if !authz.ValidUUID(groupID) {
+		return Group{}, ErrNotFound
+	}
+	var g Group
+	err := p.groupTx(ctx, workspaceID, func(tx pgx.Tx) error {
+		var err error
+		g, err = RenameGroupTx(ctx, tx, workspaceID, actor, groupID, displayName)
+		return err
+	})
+	return g, err
+}
+
+// RenameGroupTx sets the display name in the caller's transaction. Only
+// the display name changes: the group id (what workflows target) and the
+// externalId are never rewritten. A rename to the exact current name
+// writes no update and no audit row.
+func RenameGroupTx(ctx context.Context, tx pgx.Tx, workspaceID string, actor GroupActor, groupID, displayName string) (Group, error) {
 	name, err := NormalizeGroupName(displayName)
 	if err != nil {
 		return Group{}, err
@@ -200,49 +240,32 @@ func (p *Postgres) RenameGroup(ctx context.Context, workspaceID string, actor Gr
 	if !authz.ValidUUID(groupID) {
 		return Group{}, ErrNotFound
 	}
-	tx, err := p.beginGroupTx(ctx, workspaceID)
-	if err != nil {
-		return Group{}, err
-	}
-	defer tx.Rollback(ctx)
-
-	// Lock the row and read the current name. A rename to the exact
-	// current name changes nothing, so it writes no update and no audit
-	// row, the same as an add or remove that finds nothing to do.
-	var g Group
-	err = tx.QueryRow(ctx, `
-		SELECT id::text, display_name, created_at, updated_at,
-		       (SELECT count(*) FROM workspace_group_members m
-		         WHERE m.workspace_id = $1::uuid AND m.group_id = $2::uuid)::int
+	g, err := scanGroup(tx.QueryRow(ctx, `
+		SELECT `+groupColumns+`
 		  FROM workspace_groups
 		 WHERE workspace_id = $1::uuid AND id = $2::uuid
 		   FOR UPDATE
-	`, workspaceID, groupID).Scan(&g.ID, &g.DisplayName, &g.CreatedAt, &g.UpdatedAt, &g.MemberCount)
+	`, workspaceID, groupID))
 	if err != nil {
 		return Group{}, mapGroupErr(err)
 	}
+	if err := checkGroupActor(actor, g.ManagedBy); err != nil {
+		return Group{}, err
+	}
 	if g.DisplayName == name {
-		if err := tx.Commit(ctx); err != nil {
-			return Group{}, mapGroupErr(err)
-		}
 		return g, nil
 	}
-	err = tx.QueryRow(ctx, `
+	g, err = scanGroup(tx.QueryRow(ctx, `
 		UPDATE workspace_groups
 		   SET display_name = $3, updated_by = NULLIF($4, '')::uuid, updated_at = now()
 		 WHERE workspace_id = $1::uuid AND id = $2::uuid
-		RETURNING id::text, display_name, created_at, updated_at,
-		          (SELECT count(*) FROM workspace_group_members m
-		            WHERE m.workspace_id = $1::uuid AND m.group_id = $2::uuid)::int
-	`, workspaceID, groupID, name, actorUUID(actor)).Scan(&g.ID, &g.DisplayName, &g.CreatedAt, &g.UpdatedAt, &g.MemberCount)
+		RETURNING `+groupColumns,
+		workspaceID, groupID, name, actorUUID(actor)))
 	if err != nil {
 		return Group{}, mapGroupErr(err)
 	}
 	if err := insertGroupAudit(ctx, tx, workspaceID, actor, AuditGroupRename, g.ID, "updated", nil); err != nil {
 		return Group{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return Group{}, mapGroupErr(err)
 	}
 	return g, nil
 }
@@ -251,13 +274,33 @@ func (p *Postgres) DeleteGroup(ctx context.Context, workspaceID string, actor Gr
 	if !authz.ValidUUID(groupID) {
 		return ErrNotFound
 	}
-	tx, err := p.beginGroupTx(ctx, workspaceID)
+	return p.groupTx(ctx, workspaceID, func(tx pgx.Tx) error {
+		return DeleteGroupTx(ctx, tx, workspaceID, actor, groupID, time.Now())
+	})
+}
+
+// DeleteGroupTx hard-deletes the group and its member rows in the
+// caller's transaction. It is the one delete path for local and SCIM
+// callers. Waiting targeted gates that name the group are locked first
+// and re-checked after the delete in the same transaction: a gate left
+// with no eligible decider is closed with requirement_unresolvable /
+// no_eligible_decider; one that still has a decider keeps waiting.
+func DeleteGroupTx(ctx context.Context, tx pgx.Tx, workspaceID string, actor GroupActor, groupID string, now time.Time) error {
+	if !authz.ValidUUID(groupID) {
+		return ErrNotFound
+	}
+	managedBy, err := groupManagedByTx(ctx, tx, workspaceID, groupID)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
-
-	// Member rows go with the group (ON DELETE CASCADE).
+	if err := checkGroupActor(actor, managedBy); err != nil {
+		return err
+	}
+	gates, err := approvalgate.Lock(ctx, tx, workspaceID, []string{groupID}, nil)
+	if err != nil {
+		return mapDBErr(err)
+	}
+	// Member rows and snapshot rows go with the group (ON DELETE CASCADE).
 	tag, err := tx.Exec(ctx, `
 		DELETE FROM workspace_groups WHERE workspace_id = $1::uuid AND id = $2::uuid
 	`, workspaceID, groupID)
@@ -267,17 +310,23 @@ func (p *Postgres) DeleteGroup(ctx context.Context, workspaceID string, actor Gr
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	if err := insertGroupAudit(ctx, tx, workspaceID, actor, AuditGroupDelete, groupID, "deleted", nil); err != nil {
-		return err
+	if _, err := approvalgate.Recheck(ctx, tx, workspaceID, gates, now); err != nil {
+		return mapDBErr(err)
 	}
-	return mapDBErr(tx.Commit(ctx))
+	return insertGroupAudit(ctx, tx, workspaceID, actor, AuditGroupDelete, groupID, "deleted", nil)
 }
 
 func (p *Postgres) AddGroupMember(ctx context.Context, workspaceID string, actor GroupActor, groupID, userID string) error {
 	if !authz.ValidUUID(groupID) {
 		return ErrNotFound
 	}
-	err := p.addGroupMemberOnce(ctx, workspaceID, actor, groupID, userID)
+	add := func() error {
+		return p.groupTx(ctx, workspaceID, func(tx pgx.Tx) error {
+			_, err := AddGroupMemberTx(ctx, tx, workspaceID, actor, groupID, userID)
+			return err
+		})
+	}
+	err := add()
 	if errors.Is(err, ErrGroupMemberNotInWorkspace) && authz.ValidUUID(userID) {
 		// Retry once in a fresh transaction. SetMemberRoles replaces a
 		// member's roles by deleting and reinserting their binding rows.
@@ -286,18 +335,20 @@ func (p *Postgres) AddGroupMember(ctx context.Context, workspaceID string, actor
 		// snapshot, so it sees no binding for a valid member. A new
 		// transaction sees the committed bindings. A real removal (or a
 		// user who was never bound) is refused again.
-		err = p.addGroupMemberOnce(ctx, workspaceID, actor, groupID, userID)
+		err = add()
 	}
 	return err
 }
 
-func (p *Postgres) addGroupMemberOnce(ctx context.Context, workspaceID string, actor GroupActor, groupID, userID string) error {
-	tx, err := p.beginGroupTx(ctx, workspaceID)
-	if err != nil {
-		return err
+// AddGroupMemberTx adds one member row in the caller's transaction. It
+// is idempotent: added is false when the row already existed, and no
+// audit row is written then. The user must be active and hold a role
+// binding in the workspace, or the add is ErrGroupMemberNotInWorkspace.
+// Group member rows never change roles or workspace membership.
+func AddGroupMemberTx(ctx context.Context, tx pgx.Tx, workspaceID string, actor GroupActor, groupID, userID string) (bool, error) {
+	if !authz.ValidUUID(groupID) {
+		return false, ErrNotFound
 	}
-	defer tx.Rollback(ctx)
-
 	// Lock order is bindings first, then group rows, the same order as
 	// RemoveMember (delete bindings, then delete group rows), so the two
 	// cannot deadlock. FOR SHARE on the binding rows makes a concurrent
@@ -307,7 +358,7 @@ func (p *Postgres) addGroupMemberOnce(ctx context.Context, workspaceID string, a
 	// is refused. No orphan row for a removed user can survive.
 	bound := false
 	if authz.ValidUUID(userID) {
-		err = tx.QueryRow(ctx, `
+		err := tx.QueryRow(ctx, `
 			SELECT EXISTS (
 			    SELECT 1
 			    FROM workspace_role_bindings b
@@ -317,16 +368,21 @@ func (p *Postgres) addGroupMemberOnce(ctx context.Context, workspaceID string, a
 			)
 		`, workspaceID, userID).Scan(&bound)
 		if err != nil {
-			return mapDBErr(err)
+			return false, mapDBErr(err)
 		}
 	}
 	// Group rows only after the binding lock. A missing group is still
-	// 404 ahead of the member check.
-	if err := requireGroupTx(ctx, tx, workspaceID, groupID); err != nil {
-		return err
+	// 404 ahead of the member check, and a managed group is refused
+	// before it too.
+	managedBy, err := groupManagedByTx(ctx, tx, workspaceID, groupID)
+	if err != nil {
+		return false, err
+	}
+	if err := checkGroupActor(actor, managedBy); err != nil {
+		return false, err
 	}
 	if !bound {
-		return ErrGroupMemberNotInWorkspace
+		return false, ErrGroupMemberNotInWorkspace
 	}
 	tag, err := tx.Exec(ctx, `
 		INSERT INTO workspace_group_members (workspace_id, group_id, user_id, added_by)
@@ -334,14 +390,15 @@ func (p *Postgres) addGroupMemberOnce(ctx context.Context, workspaceID string, a
 		ON CONFLICT (workspace_id, group_id, user_id) DO NOTHING
 	`, workspaceID, groupID, userID, actorUUID(actor))
 	if err != nil {
-		return mapDBErr(err)
+		return false, mapDBErr(err)
 	}
-	if tag.RowsAffected() == 1 {
-		if err := insertGroupAudit(ctx, tx, workspaceID, actor, AuditGroupMemberAdd, groupID, "added", map[string]string{"userId": userID}); err != nil {
-			return err
-		}
+	if tag.RowsAffected() == 0 {
+		return false, nil
 	}
-	return mapDBErr(tx.Commit(ctx))
+	if err := insertGroupAudit(ctx, tx, workspaceID, actor, AuditGroupMemberAdd, groupID, "added", map[string]string{"userId": userID}); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (p *Postgres) RemoveGroupMember(ctx context.Context, workspaceID string, actor GroupActor, groupID, userID string) error {
@@ -353,44 +410,123 @@ func (p *Postgres) RemoveGroupMember(ctx context.Context, workspaceID string, ac
 	if !authz.ValidUUID(userID) {
 		return ErrInvalid
 	}
-	tx, err := p.beginGroupTx(ctx, workspaceID)
-	if err != nil {
+	return p.groupTx(ctx, workspaceID, func(tx pgx.Tx) error {
+		_, err := RemoveGroupMemberTx(ctx, tx, workspaceID, actor, groupID, userID, time.Now())
 		return err
-	}
-	defer tx.Rollback(ctx)
+	})
+}
 
-	if err := requireGroupTx(ctx, tx, workspaceID, groupID); err != nil {
-		return err
+// RemoveGroupMemberTx removes one member row in the caller's
+// transaction. It is the one member-removal path for local and SCIM
+// callers, and it is idempotent: removed is false (and no audit row is
+// written) when there was no row. Waiting targeted gates that name the
+// group are locked before the delete and re-checked after it, the same
+// as DeleteGroupTx. Roles and workspace membership never change here.
+func RemoveGroupMemberTx(ctx context.Context, tx pgx.Tx, workspaceID string, actor GroupActor, groupID, userID string, now time.Time) (bool, error) {
+	if !authz.ValidUUID(groupID) {
+		return false, ErrNotFound
+	}
+	if !authz.ValidUUID(userID) {
+		return false, ErrInvalid
+	}
+	managedBy, err := groupManagedByTx(ctx, tx, workspaceID, groupID)
+	if err != nil {
+		return false, err
+	}
+	if err := checkGroupActor(actor, managedBy); err != nil {
+		return false, err
+	}
+	gates, err := approvalgate.Lock(ctx, tx, workspaceID, []string{groupID}, nil)
+	if err != nil {
+		return false, mapDBErr(err)
 	}
 	tag, err := tx.Exec(ctx, `
 		DELETE FROM workspace_group_members
 		 WHERE workspace_id = $1::uuid AND group_id = $2::uuid AND user_id = $3::uuid
 	`, workspaceID, groupID, userID)
 	if err != nil {
-		return mapDBErr(err)
+		return false, mapDBErr(err)
 	}
-	if tag.RowsAffected() > 0 {
-		if err := insertGroupAudit(ctx, tx, workspaceID, actor, AuditGroupMemberRemove, groupID, "removed", map[string]string{"userId": userID}); err != nil {
-			return err
-		}
+	if tag.RowsAffected() == 0 {
+		return false, nil
 	}
-	return mapDBErr(tx.Commit(ctx))
+	if _, err := approvalgate.Recheck(ctx, tx, workspaceID, gates, now); err != nil {
+		return false, mapDBErr(err)
+	}
+	if err := insertGroupAudit(ctx, tx, workspaceID, actor, AuditGroupMemberRemove, groupID, "removed", map[string]string{"userId": userID}); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
-func requireGroupTx(ctx context.Context, tx pgx.Tx, workspaceID, groupID string) error {
-	var one int
+// groupTx runs fn in a transaction scoped to workspaceID and commits.
+func (p *Postgres) groupTx(ctx context.Context, workspaceID string, fn func(pgx.Tx) error) error {
+	tx, err := p.beginGroupTx(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return mapGroupErr(tx.Commit(ctx))
+}
+
+// groupColumns is the Group projection; scanGroup reads it.
+const groupColumns = `id::text, display_name, created_at, updated_at,
+	(SELECT count(*) FROM workspace_group_members m
+	  WHERE m.workspace_id = workspace_groups.workspace_id AND m.group_id = workspace_groups.id)::int,
+	managed_by, COALESCE(external_id, '')`
+
+func scanGroup(row pgx.Row) (Group, error) {
+	var g Group
+	err := row.Scan(&g.ID, &g.DisplayName, &g.CreatedAt, &g.UpdatedAt, &g.MemberCount, &g.ManagedBy, &g.ExternalID)
+	return g, err
+}
+
+// groupManagedByTx reads managed_by for an existing group. managed_by is
+// set only on create and never changes, so a plain read is enough.
+func groupManagedByTx(ctx context.Context, tx pgx.Tx, workspaceID, groupID string) (*string, error) {
+	var managedBy *string
 	err := tx.QueryRow(ctx, `
-		SELECT 1 FROM workspace_groups WHERE workspace_id = $1::uuid AND id = $2::uuid
-	`, workspaceID, groupID).Scan(&one)
-	return mapDBErr(err)
+		SELECT managed_by FROM workspace_groups WHERE workspace_id = $1::uuid AND id = $2::uuid
+	`, workspaceID, groupID).Scan(&managedBy)
+	if err != nil {
+		return nil, mapDBErr(err)
+	}
+	return managedBy, nil
+}
+
+// checkGroupActor is the managed-group rule. A SCIM actor sees only
+// managed groups: anything else is ErrNotFound. A local actor is refused
+// on a managed group while the instance is in groups mode; in workspaces
+// mode the marker is kept but not enforced.
+func checkGroupActor(actor GroupActor, managedBy *string) error {
+	managed := managedBy != nil && *managedBy == ManagedBySCIM
+	if actor.scim() {
+		if !managed {
+			return ErrNotFound
+		}
+		return nil
+	}
+	if managed && actor.SCIMGroupsMode {
+		return ErrGroupManagedBySCIM
+	}
+	return nil
 }
 
 // insertGroupAudit writes one audit_events row in the caller's scoped
-// transaction. Details are ids only: groupId plus userId for member rows.
+// transaction. Details are ids only: groupId plus userId for member rows,
+// plus tokenId and via=scim_token when a workspace SCIM token acted.
 func insertGroupAudit(ctx context.Context, tx pgx.Tx, workspaceID string, actor GroupActor, action, groupID, outcome string, extra map[string]string) error {
 	details := map[string]string{"groupId": groupID}
 	for k, v := range extra {
 		details[k] = v
+	}
+	if actor.scim() {
+		// The token is the actor: its row id (a UUID), never the token.
+		details["tokenId"] = strings.ToLower(strings.TrimSpace(actor.SCIMTokenID))
+		details["via"] = "scim_token"
 	}
 	detailsRaw, err := json.Marshal(details)
 	if err != nil {
@@ -434,12 +570,18 @@ func auditCorrelation(id string) string {
 	return id
 }
 
-// mapGroupErr maps the display-name unique index to ErrGroupNameTaken.
+// mapGroupErr maps the display-name unique index to ErrGroupNameTaken
+// and the externalId index to ErrGroupExternalIDTaken.
 // Every other error keeps the identity mapping.
 func mapGroupErr(err error) error {
 	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == groupNameIndex {
-		return ErrGroupNameTaken
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		switch pgErr.ConstraintName {
+		case groupNameIndex:
+			return ErrGroupNameTaken
+		case groupExternalIDIndex:
+			return ErrGroupExternalIDTaken
+		}
 	}
 	return mapDBErr(err)
 }

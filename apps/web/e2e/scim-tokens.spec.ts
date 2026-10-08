@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { expectNoBlockingAxeViolations } from "./axe";
 import { expectNoSecretsInBrowserStorage, installOperatorApi } from "./operator-api";
+import { QUERY_MAX_RETRIES } from "../src/lib/query-cache.ts";
 import {
   SCIM_TOKEN_ALREADY_REVOKED,
   SCIM_TOKEN_NAME_CONTROL_MESSAGE,
@@ -44,6 +45,10 @@ const ADA = "88888888-8888-4888-8888-888888888888";
 // Built at runtime so the repository never holds a token-shaped literal
 // (the secret scan matches the prefix plus 43 base64url characters).
 const PLAINTEXT = `${SCIM_TOKEN_PREFIX}${"Zk9-_".repeat(8)}abc`;
+// The list query retries a 503 on its own, so one load or one Retry press
+// reaches the mock 1 + QUERY_MAX_RETRIES times before the banner settles.
+const LIST_ATTEMPTS = 1 + QUERY_MAX_RETRIES;
+const LIST_CALL = "GET /workspace/scim-tokens";
 
 type StoredToken = {
   id: string;
@@ -483,53 +488,85 @@ test.describe("SCIM tokens admin", () => {
     page,
   }) => {
     const api = await installScimTokensApi(page, { seed: [OKTA], mode: "store-down" });
+    const lists = () => api.calls.filter((call) => call === LIST_CALL).length;
     await page.goto("/scim-tokens");
     await expect(page.locator("[data-scim-tokens-count]")).toHaveText(
       "SCIM tokens could not be loaded.",
     );
-    await expect(page.locator("main").getByRole("alert")).toContainText("Service Unavailable");
+    const alert = page.locator("main").getByRole("alert");
+    await expect(alert).toContainText("Service Unavailable");
     await expect(page.getByRole("button", { name: "Create token" })).toBeDisabled();
     const retry = page.getByRole("button", { name: SCIM_TOKENS_RETRY_LABEL, exact: true });
     await expect(retry).toBeVisible();
     await expect(retry).toBeEnabled();
+    // The banner shows only after the automatic retries are spent.
+    expect(lists()).toBe(LIST_ATTEMPTS);
+    await expect(retry).toHaveAttribute("aria-busy", "false");
     await expectNoBlockingAxeViolations(page);
 
     // Retry while the store is still down asks again and stays usable.
-    const before = api.calls.length;
+    // With no list cached, the press hides the banner and its Retry until
+    // the last automatic retry fails, then renders a new Retry. Wait for
+    // that whole cycle: the first new call lands before the old banner
+    // unmounts, so checking the banner then can pass on the stale one.
+    const before = lists();
     await retry.click();
-    await expect.poll(() => api.calls.length).toBeGreaterThan(before);
-    await expect(page.locator("main").getByRole("alert")).toContainText("Service Unavailable");
+    await expect.poll(lists).toBe(before + LIST_ATTEMPTS);
+    await expect(alert).toContainText("Service Unavailable");
+    await expect(retry).toHaveAttribute("aria-busy", "false");
     await expect(retry).toBeEnabled();
     await expect(page.getByRole("button", { name: "Create token" })).toBeDisabled();
 
-    // Once the store is back, Retry loads the list and create comes back.
+    // Bring the store back only now that no automatic retry is pending,
+    // so the click below is what loads the list.
     api.mode = "ok";
+    const listed = page.waitForResponse(
+      (response) =>
+        response.request().method() === "GET" &&
+        apiPath(response.url()) === "/workspace/scim-tokens" &&
+        response.status() === 200,
+    );
     await retry.click();
+    await listed;
     await expect(page.locator(`[data-scim-token-row='${OKTA_ID}']`)).toBeVisible();
     await expect(page.locator("[data-scim-tokens-count]")).toHaveText("1 of 2 active");
     await expect(page.locator("[data-scim-tokens-retry]")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Create token" })).toBeEnabled();
-    expect(api.calls.filter((call) => call === "GET /workspace/scim-tokens").length).toBeGreaterThan(1);
+    expect(lists()).toBe(before + LIST_ATTEMPTS + 1);
   });
 
   test("a store outage on a refresh keeps the list, shows Retry and turns create off", async ({
     page,
   }) => {
     const api = await installScimTokensApi(page, { seed: [OKTA] });
+    const lists = () => api.calls.filter((call) => call === LIST_CALL).length;
     await page.goto("/scim-tokens");
     await expect(page.locator(`[data-scim-token-row='${OKTA_ID}']`)).toBeVisible();
     await expect(page.getByRole("button", { name: "Create token" })).toBeEnabled();
 
     api.mode = "store-down";
+    const before = lists();
     await page.getByRole("button", { name: "Refresh" }).click();
     await expect(page.locator("main").getByRole("alert")).toContainText("Service Unavailable");
     await expect(page.locator(`[data-scim-token-row='${OKTA_ID}']`)).toBeVisible();
     await expect(page.locator("[data-scim-tokens-create-blocked='unavailable']")).toBeVisible();
     await expect(page.getByRole("button", { name: "Create token" })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Revoke Okta production" })).toBeEnabled();
+    // The cached list keeps the banner up, but still flip the store only
+    // after the refresh's automatic retries are spent.
+    expect(lists()).toBe(before + LIST_ATTEMPTS);
 
     api.mode = "ok";
-    await page.getByRole("button", { name: SCIM_TOKENS_RETRY_LABEL, exact: true }).click();
+    const retry = page.getByRole("button", { name: SCIM_TOKENS_RETRY_LABEL, exact: true });
+    await expect(retry).toHaveAttribute("aria-busy", "false");
+    const listed = page.waitForResponse(
+      (response) =>
+        response.request().method() === "GET" &&
+        apiPath(response.url()) === "/workspace/scim-tokens" &&
+        response.status() === 200,
+    );
+    await retry.click();
+    await listed;
     await expect(page.locator("[data-scim-tokens-retry]")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Create token" })).toBeEnabled();
   });

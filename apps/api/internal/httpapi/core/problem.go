@@ -76,6 +76,11 @@ const (
 	// who is not active or has no role binding in the workspace.
 	// errors[].path is userId.
 	CodeGroupMemberNotInWorkspace = "group_member_not_in_workspace"
+	// CodeGroupManagedBySCIM refuses a local rename, member add or
+	// remove, or delete of a group with managedBy "scim" while the
+	// instance runs SCIM_GROUPS_MODE=groups. Nothing changes; change the
+	// group in the identity provider instead.
+	CodeGroupManagedBySCIM = "group_managed_by_scim"
 	// CodeApproverNotTargeted refuses a decision on a targeted gate by a
 	// caller who is not a snapshot approver, not in a snapshot group, and
 	// not a non-requester admin. Nothing is recorded.

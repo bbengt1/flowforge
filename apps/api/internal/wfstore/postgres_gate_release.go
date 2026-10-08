@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/approvalgate"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/parkedapproval"
@@ -27,6 +28,21 @@ import (
 // the approval row the caller already canceled.
 func SettleUnresolvableGate(ctx context.Context, tx pgx.Tx, scope isolation.Scope, workflowID, executionID, nodeID string, now time.Time) error {
 	return settleUnresolvableGate(ctx, tx, scope, workflowID, executionID, nodeID, now, requirementUnresolvableStepError())
+}
+
+// Group and membership changes in identity re-check waiting gates through
+// approvalgate, which cannot import this package (identity would then
+// depend on wfstore). Register the settler here so every binary that
+// links wfstore closes those gates exactly as a park-time
+// no-eligible-decider failure.
+func init() {
+	approvalgate.RegisterSettler(func(ctx context.Context, tx pgx.Tx, workspaceID, workflowID, executionID, nodeID string, now time.Time) error {
+		scope, err := isolation.Authorize(workspaceID, "")
+		if err != nil {
+			return err
+		}
+		return SettleNoEligibleDeciderGate(ctx, tx, scope, workflowID, executionID, nodeID, now)
+	})
 }
 
 // SettleNoEligibleDeciderGate is SettleUnresolvableGate with the step

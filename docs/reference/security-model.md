@@ -64,13 +64,44 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
  `active: false` and `DELETE` disable the user, revoke sessions, and
  drop workspace memberships except the last admin. Dropping a
  membership also deletes that user's workspace group rows in the same
- transaction. `DELETE` also hides the user from SCIM (`404`). SCIM
- Groups are workspaces, not workspace groups: adding a SCIM Group
- member grants `SCIM_DEFAULT_ROLE` (default `viewer`) in that workspace
- without removing other roles. SCIM never creates or edits workspace
+ transaction. `DELETE` also hides the user from SCIM (`404`).
+ `SCIM_GROUPS_MODE` decides what a SCIM Group is, for the whole
+ instance; any value other than `workspaces` or `groups` is a
+ boot-fail. In `workspaces` mode (the default) SCIM Groups are
+ workspaces, not workspace groups: adding a SCIM Group member grants
+ `SCIM_DEFAULT_ROLE` (default `viewer`) in that workspace without
+ removing other roles. SCIM then never creates or edits workspace
  groups. Group create, replace, and delete are rejected. A Group's
  `externalId` is the workspace's workbench key (exact, case-sensitive
  match in a filter), not the IdP's own group id.
+ In `groups` mode a SCIM Group is a workspace group, and only that
+ workspace's own tokens can manage it (`managedBy: "scim"`). The
+ instance token is `403` on every `/Groups` call, so no single bearer
+ can manage groups across workspaces; its `/Users` handling is
+ unchanged. Group member changes write group rows only. They never add
+ or remove a role or workspace membership, which come only from
+ `/Users`, so a Group change cannot grant `approval.decide` or bypass
+ the last-admin guard. A member add is `400` unless the user is linked
+ to that workspace, the link is live, and the user is an active member.
+ A token sees only managed groups in its workspace and only members it
+ linked; local groups and other workspaces' groups are `404`. A name
+ that clashes with a local group is `409` `uniqueness` and neither
+ group is renamed. The group id (what workflows target) and
+ `externalId` never change on rename. While the instance is in `groups`
+ mode the server refuses local rename, member add or remove, and
+ delete of a managed group (`409` `group_managed_by_scim`); in
+ `workspaces` mode the marker stays but is not enforced. Every SCIM
+ group change writes the `workspace_group.*` audit row with no actor,
+ `details.tokenId`, and `via: scim_token`, never a token.
+ Removing a group member or deleting a group (local or SCIM) and every
+ workspace membership loss (administrator removal, SCIM `active:
+ false`, SCIM `DELETE`, in either mode) run one shared path that
+ re-checks waiting approval gates targeting that group or person in the
+ same transaction. A gate left with no eligible decider fails with
+ `requirement_unresolvable` / `no_eligible_decider`, as at park time; a
+ gate that still has one keeps waiting. Membership loss deletes the
+ person's group rows, local and SCIM-managed; `active: true` restores
+ the default role only, never group rows.
  Workspace SCIM tokens are created and revoked under
  `/api/v1/workspace/scim-tokens` by a `workspace.administer` holder
  after MFA step-up; embed sessions are refused. The plaintext is in
