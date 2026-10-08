@@ -90,8 +90,16 @@ func TestRunnerFailsManualAndAPIWithoutRequester(t *testing.T) {
 		if _, err := r.wf.StartExecution(ctx, sys, ver.WorkflowID, wfstore.StartInput{
 			VersionID:   ver.ID,
 			TriggerType: trig,
+		}); !errors.Is(err, wfstore.ErrInvalid) {
+			t.Fatalf("%s start = %v, want ErrInvalid", trig, err)
+		}
+		// Older rows can still exist. Plant one directly so the runner
+		// backstop is what fails the job, not StartExecution.
+		if _, err := r.wf.PlantExecutionForTest(ctx, sys, ver.WorkflowID, wfstore.StartInput{
+			VersionID:   ver.ID,
+			TriggerType: trig,
 		}); err != nil {
-			t.Fatalf("%s start: %v", trig, err)
+			t.Fatalf("%s plant: %v", trig, err)
 		}
 	}
 	if _, err := r.loop.Drain(ctx); err != nil {

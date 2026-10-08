@@ -156,20 +156,10 @@ func StampTenancy(meta map[string]any, scope Scope) map[string]any {
 }
 
 // Zero reports whether the scope was never authorized.
+// Stores refuse a zero Scope{} with this check. A non-system scope with
+// an empty actor cannot be constructed: Authorize refuses it, and
+// AuthorizeSystem sets system.
 func (s Scope) Zero() bool { return s.workspaceID == "" }
-
-// Require refuses a zero Scope{}. That value is the only way around
-// Authorize: it has no workspace, no actor, and is not a system scope.
-// A system scope is accepted. An empty actor that is not system is refused.
-func (s Scope) Require() error {
-	if s.Zero() {
-		return ErrNoScope
-	}
-	if !s.system && strings.TrimSpace(s.actorID) == "" {
-		return ErrNoActor
-	}
-	return nil
-}
 
 // PermissionFor is the deny-by-default action required for a kind.
 func PermissionFor(kind, action string) string {

@@ -35,9 +35,6 @@ func TestAuthorizeRefusesEmptyActorAndSystemHelpers(t *testing.T) {
 	if !sys.System() || sys.ActorID() != "" || sys.WorkspaceID() != ws || sys.Zero() {
 		t.Fatalf("system = %+v actor=%q", sys, sys.ActorID())
 	}
-	if err := sys.Require(); err != nil {
-		t.Fatal(err)
-	}
 	ten, err := AuthorizeSystemTenancy(ws, tenant, "ops")
 	if err != nil {
 		t.Fatal(err)
@@ -54,9 +51,6 @@ func TestZeroScopeIsRefused(t *testing.T) {
 	var zero Scope
 	if !zero.Zero() || zero.System() || zero.ActorID() != "" {
 		t.Fatal("zero value must not look authorized")
-	}
-	if err := zero.Require(); !errors.Is(err, ErrNoScope) {
-		t.Fatalf("zero Require = %v, want ErrNoScope", err)
 	}
 	if _, err := Authorize("", "22222222-2222-4222-8222-222222222222"); !errors.Is(err, ErrNoScope) {
 		t.Fatalf("empty workspace = %v", err)
