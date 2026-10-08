@@ -95,6 +95,7 @@ import {
 } from "./execution.ts";
 import { executionInboxStatuses } from "./execution-inbox.ts";
 import {
+  BLOCKED_STATUS_HELP,
   CANCELABLE_STATUSES,
   EXECUTION_STATUSES,
   JOB_STATUSES,
@@ -103,6 +104,7 @@ import {
   NOT_REACHED_STATUS_LABEL,
   RETRYABLE_STATUSES,
   STEP_STATUSES,
+  WAITING_STATUS_HELP,
   type ExecutionDetail,
   type ExecutionRecord,
 } from "./execution-types.ts";
@@ -410,6 +412,22 @@ describe("execution redaction and list/detail rendering", () => {
     assert.match(text, /applied/);
     assert.equal(text.includes("bearer-secret"), false);
     assert.equal(text.includes("-----BEGIN"), false);
+  });
+
+  it("explains Waiting in plain words, not the decide route", () => {
+    for (const status of ["waiting", "awaiting_approval", "waiting_approval", "approval_required"]) {
+      const waiting = executionStatusPresentation(status as never);
+      assert.equal(waiting.label, "Waiting", status);
+      assert.equal(waiting.description, WAITING_STATUS_HELP, status);
+    }
+    assert.equal(
+      WAITING_STATUS_HELP,
+      "Waiting for someone to approve or reject it, or for a timed delay to end.",
+    );
+    assert.doesNotMatch(WAITING_STATUS_HELP, /POST|CSRF|\/approvals|decide|route/i);
+    // Same plain shape as the other chip help sentences.
+    assert.match(WAITING_STATUS_HELP, /^Waiting for [^.]+\.$/);
+    assert.match(BLOCKED_STATUS_HELP, /^Waiting for [^.]+\.$/);
   });
 
   it("surfaces running/canceled/failed/indeterminate with icon+text, not color alone", () => {

@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   commandHref,
   filterPaletteCommands,
@@ -7,6 +10,7 @@ import {
   PALETTE_INPUT_LABEL,
   PALETTE_SHORTCUT_HELP,
   paletteCommands,
+  paletteEscapeCloses,
   paletteHighlightIndex,
 } from "./command-palette.ts";
 import {
@@ -162,5 +166,44 @@ describe("sanitizeNotification", () => {
     });
     assert.ok(pushed);
     assert.equal(JSON.stringify(pushed).includes("apiVersion: v1"), false);
+  });
+});
+
+describe("paletteEscapeCloses", () => {
+  it("closes an open palette on an Escape nobody else took", () => {
+    assert.equal(
+      paletteEscapeCloses({ key: "Escape", open: true, defaultPrevented: false }),
+      true,
+    );
+  });
+
+  it("ignores an Escape a tooltip inside the palette already used", () => {
+    assert.equal(
+      paletteEscapeCloses({ key: "Escape", open: true, defaultPrevented: true }),
+      false,
+    );
+  });
+
+  it("ignores other keys and a closed palette", () => {
+    assert.equal(
+      paletteEscapeCloses({ key: "Enter", open: true, defaultPrevented: false }),
+      false,
+    );
+    assert.equal(
+      paletteEscapeCloses({ key: "Escape", open: false, defaultPrevented: false }),
+      false,
+    );
+  });
+
+  it("the palette checks defaultPrevented before closing", () => {
+    const palette = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "..", "components", "shell", "CommandPalette.tsx"),
+      "utf8",
+    );
+    assert.match(
+      palette,
+      /paletteEscapeCloses\(\{\s*key: event\.key,\s*open,\s*defaultPrevented: event\.defaultPrevented,\s*\}\)/,
+    );
+    assert.equal(palette.includes('event.key === "Escape" && open'), false);
   });
 });
