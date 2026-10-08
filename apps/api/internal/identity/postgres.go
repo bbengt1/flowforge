@@ -739,7 +739,11 @@ func ensureAdmin(ctx context.Context, tx pgx.Tx, workspaceID string) error {
 // reference the workspace (runs, audit rows) are therefore not blocked,
 // and a transaction that already holds such a key-share lock cannot
 // deadlock against this one. workspaces has no RLS, so the lock works
-// the same inside a workspace-scoped transaction.
+// the same inside a workspace-scoped transaction. A row lock needs UPDATE
+// privilege, which flowforge_app has (approle.go). If RLS is ever added to
+// workspaces, this SELECT ... FOR NO KEY UPDATE also needs an UPDATE policy
+// that admits the row, or the lock silently finds nothing and returns
+// ErrNotFound.
 //
 // ErrNotFound means the workspace does not exist.
 func LockWorkspaceMembership(ctx context.Context, tx pgx.Tx, workspaceID string) error {
