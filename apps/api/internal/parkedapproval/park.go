@@ -92,7 +92,48 @@ func Fingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-// Insert writes a pending approval in the caller's transaction.
+// LockWorkspaceForPark takes the workspace row FOR SHARE in tx. Every
+// pending targeted approval is written by Insert, which takes this lock
+// before it resolves the approver snapshot. A caller that locks an
+// execution first (WaitJob) must call it before that execution lock, so
+// the order is the same as a membership change: workspace row, then
+// executions, then approvals.
+//
+// Every change that can shrink a gate's decider set (removal, demotion,
+// group delete or member removal, SCIM) holds the same row FOR NO KEY
+// UPDATE, which conflicts with FOR SHARE. A park that starts while such
+// a change is in flight waits for it to commit and then reads the new
+// membership, so it can never snapshot a decider the change is about to
+// remove; the change in turn re-checks only the gates that already
+// exist. FOR SHARE does not conflict with itself or with the FOR KEY
+// SHARE that foreign-key checks take, so parks never wait on each other
+// or on run inserts. FOR KEY SHARE would not conflict with FOR NO KEY
+// UPDATE and so would not serialize anything.
+//
+// A transaction that holds this share lock must never go on to take
+// identity.LockWorkspaceMembership (FOR NO KEY UPDATE), directly or
+// through GuardLastAdmin: two parks that each hold the share lock and
+// both try to upgrade wait on each other and deadlock. Membership
+// changes take the stronger lock first and never this one.
+// TestParkLockHoldersNeverTakeMembershipLock enforces this.
+//
+// ErrInvalid: the workspace id is malformed or the row does not exist.
+func LockWorkspaceForPark(ctx context.Context, tx pgx.Tx, workspaceID string) error {
+	if !authz.ValidUUID(workspaceID) {
+		return ErrInvalid
+	}
+	var one int
+	err := tx.QueryRow(ctx, `SELECT 1 FROM workspaces WHERE id = $1::uuid FOR SHARE`, workspaceID).Scan(&one)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrInvalid
+	}
+	return err
+}
+
+// Insert writes a pending approval in the caller's transaction. It is
+// the only writer of pending targeted approvals (a convention test
+// enforces this). A targeted gate takes LockWorkspaceForPark before its
+// snapshot is resolved; it is a no-op when the caller already holds it.
 // An existing pending row for the same fingerprint keeps its binding and
 // takes this deadline. An already-approved row is left alone.
 func Insert(ctx context.Context, tx pgx.Tx, in Pending) error {
@@ -116,6 +157,9 @@ func Insert(ctx context.Context, tx pgx.Tx, in Pending) error {
 	digest := strings.TrimSpace(in.ApproversDigest)
 	var snap Snapshot
 	if digest != "" {
+		if err := LockWorkspaceForPark(ctx, tx, in.WorkspaceID); err != nil {
+			return err
+		}
 		var err error
 		snap, err = ResolveSnapshot(ctx, tx, in.WorkspaceID, in.RequestedBy, role, in.ApproverUsers, in.ApproverGroups)
 		if err != nil {

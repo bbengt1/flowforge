@@ -181,8 +181,8 @@ Workspace identity is resolved only from `X-FlowForge-Tenant-ID` or `X-FlowForge
 | `GET /api/v1/workspace` | Current workspace, roles, and permissions after membership check. | `200` | `400` `401` `403` `404` |
 | `DELETE /api/v1/workspace` | Soft-delete (`status=disabled`) the server-derived workspace. Requires `workspace.administer`. Revokes embed-bound sessions (workspace_id or tenancy pair) first; fail closed if revoke cannot complete. | `204` | `400` `401` `403` `404` `503` |
 | `GET /api/v1/workspace/members` | List members. Requires `workspace.administer`. | `200` `{items}` | `401` `403` |
-| `PUT /api/v1/workspace/members` | Replace a member's roles (`user_id` or issuer+subject). Requires `workspace.administer`. | `200` member | `400` `401` `403` `404` `409` |
-| `DELETE /api/v1/workspace/members/{userID}` | Remove a member. Cannot remove the last administrator. The same transaction deletes the member's workspace group rows. | `204` | `401` `403` `404` `409` |
+| `PUT /api/v1/workspace/members` | Replace a member's roles (`user_id` or issuer+subject). Requires `workspace.administer`. A change that removes any role re-checks waiting targeted approval gates in the same transaction, like a removal: a gate left with no eligible decider fails with `requirement_unresolvable` / `no_eligible_decider`, and so does its run. Taking `admin` away also re-checks gates that only an admin override could decide: with one other active admin left, the gates that admin requested; with none left, every waiting targeted gate. A promotion or an unchanged role set re-checks nothing. | `200` member | `400` `401` `403` `404` `409` |
+| `DELETE /api/v1/workspace/members/{userID}` | Remove a member. Cannot remove the last administrator. The same transaction deletes the member's workspace group rows and re-checks waiting targeted gates that name the member or one of their groups, plus, when the member was an admin, the gates that relied on an admin override (same rule as a role change). | `204` | `401` `403` `404` `409` |
 
 ### Workspace groups
 
