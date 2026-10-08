@@ -32,9 +32,16 @@ type Settings struct {
 	DefaultRole string
 }
 
-// Ready reports whether provision/deprovision can run.
+// Ready reports whether the instance-wide bearer (SCIM_BEARER_TOKEN)
+// can provision and deprovision.
 func (s Settings) Ready() bool {
 	return s.BearerToken != "" && s.Issuer != "" && s.DefaultRole != ""
+}
+
+// WorkspaceReady reports whether per-workspace tokens can be minted and
+// used. It needs an issuer and a default role, not the instance bearer.
+func (s Settings) WorkspaceReady() bool {
+	return s.Issuer != "" && s.DefaultRole != ""
 }
 
 // Match reports whether presented equals the configured bearer.
@@ -48,12 +55,14 @@ func (s Settings) Match(presented string) bool {
 	return subtle.ConstantTimeCompare(sumA[:], sumB[:]) == 1
 }
 
-// Load reads SCIM_* from the environment. All empty leaves the routes
-// fail-closed when called. Any set field without a token and issuer is
-// a boot-fail. When oidcIssuer is set, SCIM_ISSUER must match it (or be
-// omitted, in which case the OIDC issuer is used) so provisioned users
-// are the same principal OIDC sign-in resolves. Errors never include
-// the bearer token.
+// Load reads SCIM_* from the environment. All empty leaves SCIM off:
+// the /scim/v2 routes fail closed and workspace tokens cannot be
+// created. Setting any SCIM_* variable turns SCIM on and needs an
+// issuer: SCIM_ISSUER, or OIDC_ISSUER when SCIM_ISSUER is omitted. The
+// instance bearer is optional; without it only workspace tokens work.
+// When oidcIssuer is set, SCIM_ISSUER must match it so provisioned
+// users are the same principal OIDC sign-in resolves. Errors never
+// include the bearer token.
 func Load(production bool, oidcIssuer string) (Settings, error) {
 	token := strings.TrimSpace(os.Getenv(EnvBearerToken))
 	issuer := strings.TrimSpace(os.Getenv(EnvIssuer))
@@ -61,11 +70,14 @@ func Load(production bool, oidcIssuer string) (Settings, error) {
 	if token == "" && issuer == "" && role == "" {
 		return Settings{}, nil
 	}
-	if token == "" || (issuer == "" && strings.TrimSpace(oidcIssuer) == "") {
-		return Settings{}, fmt.Errorf("%s and %s must be set together", EnvBearerToken, EnvIssuer)
+	if issuer == "" && strings.TrimSpace(oidcIssuer) == "" {
+		return Settings{}, fmt.Errorf("%s (or OIDC_ISSUER) must be set when SCIM is configured", EnvIssuer)
 	}
-	if len(token) < minTokenLen || len(token) > maxTokenLen || hasControl(token) || strings.Contains(token, " ") {
+	if token != "" && (len(token) < minTokenLen || len(token) > maxTokenLen || hasControl(token) || strings.Contains(token, " ")) {
 		return Settings{}, fmt.Errorf("%s is malformed", EnvBearerToken)
+	}
+	if IsWorkspaceToken(token) {
+		return Settings{}, fmt.Errorf("%s must not use the workspace token prefix", EnvBearerToken)
 	}
 	if issuer == "" {
 		issuer = oidcIssuer

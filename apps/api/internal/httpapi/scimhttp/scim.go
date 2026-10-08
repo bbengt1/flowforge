@@ -26,21 +26,46 @@ const scimMediaType = "application/scim+json"
 // existing identity row (issuer + external subject). Groups are
 // workspaces; member changes use workspace role bindings.
 
-func authorizeSCIM(s *core.Server, w http.ResponseWriter, r *http.Request) bool {
-	if !s.SCIMSettings.Ready() || s.SCIMDir == nil {
+// authorizeSCIM runs the /scim/v2 door. A nil scope means the
+// instance bearer (SCIM_BEARER_TOKEN) was presented; a non-nil scope is
+// an accepted workspace token. A bearer with the workspace token prefix
+// is only ever checked against the token store, never against the
+// instance bearer.
+func authorizeSCIM(s *core.Server, w http.ResponseWriter, r *http.Request) (*scim.TokenScope, bool) {
+	if !s.SCIMSettings.WorkspaceReady() || s.SCIMDir == nil {
 		writeSCIMError(w, http.StatusServiceUnavailable, "SCIM is not configured.")
-		return false
+		return nil, false
 	}
 	if !scimQueryAllowed(r) {
 		writeSCIMError(w, http.StatusUnauthorized, "Authentication is required.")
-		return false
+		return nil, false
 	}
 	token, ok := presentedBearer(r)
-	if !ok || !s.SCIMSettings.Match(token) {
+	if !ok {
 		writeSCIMError(w, http.StatusUnauthorized, "Authentication is required.")
-		return false
+		return nil, false
 	}
-	return true
+	if scim.IsWorkspaceToken(token) {
+		if s.ScimTokens == nil {
+			writeSCIMError(w, http.StatusServiceUnavailable, "The directory is not available.")
+			return nil, false
+		}
+		scope, err := s.ScimTokens.Authenticate(r.Context(), token, s.ClockNow())
+		switch {
+		case err == nil:
+			return &scope, true
+		case errors.Is(err, scim.ErrUnauthorized):
+			writeSCIMError(w, http.StatusUnauthorized, "Authentication is required.")
+		default:
+			writeSCIMError(w, http.StatusServiceUnavailable, "The directory is not available.")
+		}
+		return nil, false
+	}
+	if !s.SCIMSettings.Match(token) {
+		writeSCIMError(w, http.StatusUnauthorized, "Authentication is required.")
+		return nil, false
+	}
+	return nil, true
 }
 
 func scimReady(s *core.Server, w http.ResponseWriter) bool {
@@ -52,7 +77,7 @@ func scimReady(s *core.Server, w http.ResponseWriter) bool {
 }
 
 func getSCIMServiceProviderConfig(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	if !authorizeSCIM(s, w, r) {
+	if _, ok := authorizeSCIM(s, w, r); !ok {
 		return
 	}
 	writeSCIM(w, http.StatusOK, map[string]any{
@@ -74,7 +99,7 @@ func getSCIMServiceProviderConfig(s *core.Server, w http.ResponseWriter, r *http
 }
 
 func getSCIMResourceTypes(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	if !authorizeSCIM(s, w, r) {
+	if _, ok := authorizeSCIM(s, w, r); !ok {
 		return
 	}
 	writeSCIM(w, http.StatusOK, scimList([]any{
@@ -98,7 +123,7 @@ func getSCIMResourceTypes(s *core.Server, w http.ResponseWriter, r *http.Request
 }
 
 func getSCIMSchemas(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	if !authorizeSCIM(s, w, r) {
+	if _, ok := authorizeSCIM(s, w, r); !ok {
 		return
 	}
 	writeSCIM(w, http.StatusOK, scimList([]any{
@@ -116,7 +141,15 @@ func getSCIMSchemas(s *core.Server, w http.ResponseWriter, r *http.Request) {
 }
 
 func listSCIMUsers(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	if !authorizeSCIM(s, w, r) || !scimReady(s, w) {
+	scope, ok := authorizeSCIM(s, w, r)
+	if !ok {
+		return
+	}
+	if scope != nil {
+		wsListUsers(s, w, r, *scope)
+		return
+	}
+	if !scimReady(s, w) {
 		return
 	}
 	attr, value, start, count, err := scimPage(r)
@@ -142,7 +175,15 @@ func listSCIMUsers(s *core.Server, w http.ResponseWriter, r *http.Request) {
 }
 
 func postSCIMUser(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	if !authorizeSCIM(s, w, r) || !scimReady(s, w) {
+	scope, ok := authorizeSCIM(s, w, r)
+	if !ok {
+		return
+	}
+	if scope != nil {
+		wsPostUser(s, w, r, *scope)
+		return
+	}
+	if !scimReady(s, w) {
 		return
 	}
 	raw, ok := decodeSCIM(w, r)
@@ -241,7 +282,15 @@ func postSCIMUser(s *core.Server, w http.ResponseWriter, r *http.Request) {
 }
 
 func getSCIMUser(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	if !authorizeSCIM(s, w, r) || !scimReady(s, w) {
+	scope, ok := authorizeSCIM(s, w, r)
+	if !ok {
+		return
+	}
+	if scope != nil {
+		wsGetUser(s, w, r, *scope)
+		return
+	}
+	if !scimReady(s, w) {
 		return
 	}
 	user, rec, err := loadActiveSCIMUser(s, r.Context(), r.PathValue("id"))
@@ -253,7 +302,15 @@ func getSCIMUser(s *core.Server, w http.ResponseWriter, r *http.Request) {
 }
 
 func putSCIMUser(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	if !authorizeSCIM(s, w, r) || !scimReady(s, w) {
+	scope, ok := authorizeSCIM(s, w, r)
+	if !ok {
+		return
+	}
+	if scope != nil {
+		wsPutUser(s, w, r, *scope)
+		return
+	}
+	if !scimReady(s, w) {
 		return
 	}
 	raw, ok := decodeSCIM(w, r)
@@ -277,7 +334,15 @@ func putSCIMUser(s *core.Server, w http.ResponseWriter, r *http.Request) {
 }
 
 func patchSCIMUser(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	if !authorizeSCIM(s, w, r) || !scimReady(s, w) {
+	scope, ok := authorizeSCIM(s, w, r)
+	if !ok {
+		return
+	}
+	if scope != nil {
+		wsPatchUser(s, w, r, *scope)
+		return
+	}
+	if !scimReady(s, w) {
 		return
 	}
 	raw, ok := decodeSCIM(w, r)
@@ -307,7 +372,15 @@ func writeMutatedUser(s *core.Server, w http.ResponseWriter, r *http.Request, ch
 }
 
 func deleteSCIMUser(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	if !authorizeSCIM(s, w, r) || !scimReady(s, w) {
+	scope, ok := authorizeSCIM(s, w, r)
+	if !ok {
+		return
+	}
+	if scope != nil {
+		wsDeleteUser(s, w, r, *scope)
+		return
+	}
+	if !scimReady(s, w) {
 		return
 	}
 	_, rec, err := loadActiveSCIMUser(s, r.Context(), r.PathValue("id"))
@@ -330,7 +403,15 @@ func deleteSCIMUser(s *core.Server, w http.ResponseWriter, r *http.Request) {
 }
 
 func listSCIMGroups(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	if !authorizeSCIM(s, w, r) || !scimReady(s, w) {
+	scope, ok := authorizeSCIM(s, w, r)
+	if !ok {
+		return
+	}
+	if scope != nil {
+		wsListGroups(s, w, r, *scope)
+		return
+	}
+	if !scimReady(s, w) {
 		return
 	}
 	attr, value, start, count, err := scimPage(r)
@@ -372,28 +453,36 @@ func listSCIMGroups(s *core.Server, w http.ResponseWriter, r *http.Request) {
 }
 
 func postSCIMGroup(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	if !authorizeSCIM(s, w, r) {
+	if _, ok := authorizeSCIM(s, w, r); !ok {
 		return
 	}
 	writeSCIMError(w, http.StatusBadRequest, "Groups are existing workspaces.")
 }
 
 func putSCIMGroup(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	if !authorizeSCIM(s, w, r) {
+	if _, ok := authorizeSCIM(s, w, r); !ok {
 		return
 	}
 	writeSCIMError(w, http.StatusBadRequest, "Groups are existing workspaces. Patch members to change membership.")
 }
 
 func deleteSCIMGroup(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	if !authorizeSCIM(s, w, r) {
+	if _, ok := authorizeSCIM(s, w, r); !ok {
 		return
 	}
 	writeSCIMError(w, http.StatusBadRequest, "Groups are existing workspaces and cannot be deleted here.")
 }
 
 func getSCIMGroup(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	if !authorizeSCIM(s, w, r) || !scimReady(s, w) {
+	scope, ok := authorizeSCIM(s, w, r)
+	if !ok {
+		return
+	}
+	if scope != nil {
+		wsGetGroup(s, w, r, *scope)
+		return
+	}
+	if !scimReady(s, w) {
 		return
 	}
 	ws, err := loadSCIMGroup(s, r.Context(), r.PathValue("id"))
@@ -410,7 +499,15 @@ func getSCIMGroup(s *core.Server, w http.ResponseWriter, r *http.Request) {
 }
 
 func patchSCIMGroup(s *core.Server, w http.ResponseWriter, r *http.Request) {
-	if !authorizeSCIM(s, w, r) || !scimReady(s, w) {
+	scope, ok := authorizeSCIM(s, w, r)
+	if !ok {
+		return
+	}
+	if scope != nil {
+		wsPatchGroup(s, w, r, *scope)
+		return
+	}
+	if !scimReady(s, w) {
 		return
 	}
 	raw, ok := decodeSCIM(w, r)
@@ -724,11 +821,13 @@ func writeSCIMStoreError(s *core.Server, w http.ResponseWriter, err error) {
 		writeSCIMError(w, http.StatusBadRequest, "Passwords and secrets are not accepted.")
 	case errors.Is(err, scim.ErrInvalid), errors.Is(err, identity.ErrInvalid):
 		writeSCIMError(w, http.StatusBadRequest, "The SCIM request is invalid.")
+	case errors.Is(err, scim.ErrUnauthorized):
+		writeSCIMError(w, http.StatusUnauthorized, "Authentication is required.")
 	case errors.Is(err, scim.ErrNotFound), errors.Is(err, identity.ErrNotFound):
 		writeSCIMError(w, http.StatusNotFound, "Resource not found.")
 	case errors.Is(err, scim.ErrConflict), errors.Is(err, identity.ErrConflict):
 		writeSCIMError(w, http.StatusConflict, "That resource already exists.")
-	case errors.Is(err, identity.ErrLastAdmin):
+	case errors.Is(err, identity.ErrLastAdmin), errors.Is(err, scim.ErrLastAdmin):
 		writeSCIMError(w, http.StatusConflict, "That membership cannot be removed.")
 	default:
 		writeSCIMError(w, http.StatusServiceUnavailable, "The directory is not available.")

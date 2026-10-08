@@ -19,7 +19,7 @@ var scimTokenAdminOps = map[string]groupOp{
 		description: []string{
 			"Lists the workspace's active (not revoked) SCIM tokens, newest first. Not paged: a workspace has at most maxActive (2) active tokens. Revoked tokens are never listed.",
 			"Each item is display name, UUID, prefix, createdBy (display name and UUID; null when the creator no longer exists), createdAt, and lastUsedAt. The token itself and its hash are never returned after creation.",
-			"configured is false when the instance has no SCIM issuer (SCIM_ISSUER, else OIDC_ISSUER); creating a token is then 503 scim_not_configured.",
+			"configured is false when SCIM is off on the instance (no SCIM_* variable set); creating a token is then 503 scim_not_configured. SCIM_ISSUER alone (or SCIM_DEFAULT_ROLE with OIDC_ISSUER) turns workspace tokens on without an instance token.",
 		},
 		success:     "200",
 		successDesc: "Active tokens.",
@@ -29,10 +29,10 @@ var scimTokenAdminOps = map[string]groupOp{
 		summary: "Create a SCIM workspace token",
 		description: []string{
 			"Mints a bearer for this workspace's IdP. The response is the only place the plaintext token appears: token is ffscim_ followed by 43 base64url characters (32 random bytes). The server stores only the SHA-256 of the whole token and sets Cache-Control no-store. The token is never logged or audited.",
-			"displayName is trimmed and must be 1-128 characters; otherwise 400 invalid-request with errors[].path displayName. Names need not be unique.",
+			"displayName is trimmed and must be 1-128 characters with no control characters; otherwise 400 invalid-request with errors[].path displayName. Names need not be unique. Other body fields are ignored.",
 			"At most two tokens per workspace are active so an IdP can rotate: create the second, switch the IdP, revoke the first. A third create is 409 scim_token_limit, including a create that loses a race for the last slot.",
-			"503 scim_not_configured when the instance has no SCIM issuer. Nothing is stored.",
-			"Writes audit action scim_token.create (resource scim_token, details displayName) in the same transaction.",
+			"503 scim_not_configured when SCIM is off on the instance; 503 dependency-unavailable when the token store is unavailable. Nothing is stored in either case.",
+			"Writes audit action scim_token.create (resource scim_token, actor the administrator, details displayName) in the same transaction.",
 		},
 		requestBody: "CreateScimTokenRequest",
 		success:     "201",
@@ -106,43 +106,44 @@ func scimTokenAdminOperation(rt Route, op groupOp) (*yaml.Node, error) {
 var scimDoor = []string{
 	"SCIM 2.0 bearer door (RFC 7644). Errors are application/scim+json SCIM Error documents, not problem+json. The bearer is never logged, audited, or echoed.",
 	"Two bearers are accepted. The instance token (SCIM_BEARER_TOKEN) is instance-wide and behaves as before. A workspace token (ffscim_ prefix, created under /api/v1/workspace/scim-tokens) resolves to its one workspace, and every read and write for it runs in that workspace's scoped transaction (FORCE RLS).",
-	"A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when the instance has no SCIM issuer.",
-	"Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token.",
+	"A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when SCIM is off on the instance. When no instance token is configured, any other bearer is 401.",
+	"Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token. A workspace token never changes users.status, never revokes a session, and never renames a user.",
+	"Workspace-token writes are audited in the token's workspace with no actor and details.tokenId set to the token UUID: scim_user.workspace_add, scim_user.workspace_deactivate, scim_user.workspace_reactivate, scim_user.workspace_remove, scim_user.change_ignored.",
 }
 
 var scimRouteNotes = map[string][]string{
 	"GET /scim/v2/Users": {
 		"Instance token: every active directory user, as before.",
 		"Workspace token: only users linked to this workspace (scim_workspace_users), with this workspace's userName and externalId. filter supports userName, externalId, and id, all against this workspace's links.",
-		"active is true only when the account is active and the user holds a role binding in this workspace.",
+		"active is true only when the account is globally active and this workspace's link is not deactivated.",
 	},
 	"POST /scim/v2/Users": {
 		"Instance token: unchanged.",
-		"Workspace token: find or create the user by SCIM issuer plus subject (externalId, else userName), link it to this workspace with the posted userName and externalId, and add SCIM_DEFAULT_ROLE here (existing roles here are kept). 201 with the resource.",
-		"A user who already exists and is globally disabled is linked and added but stays disabled: 201 with active false. active false in the body adds nothing beyond the link. The account is never enabled by a workspace token.",
+		"Workspace token: find or create the user by SCIM issuer plus subject (externalId, else userName) and link it to this workspace with the posted userName and externalId. An existing account keeps its display name and status.",
+		"Membership: SCIM_DEFAULT_ROLE is added here only when the user holds no role here. Existing roles here are never changed, so an existing member with a custom role keeps it and gets no default. From then on this workspace's IdP owns the user's membership here; the last-admin guard still applies.",
+		"A user who is globally disabled is linked and added but stays disabled: 201 with active false. active false in the body links the user deactivated: any membership here is removed (last-admin guard applies) and the response is active false.",
 		"409 uniqueness when this user is already linked here, or when the userName or externalId is already linked here to a different user. Uniqueness is per workspace.",
-		"Writes audit action scim_user.workspace_add in this workspace.",
 	},
 	"GET /scim/v2/Users/{id}": {
-		"Workspace token: 404 unless the user is linked to this workspace, including any user in another workspace.",
+		"Workspace token: 404 unless the user is linked to this workspace, including any user in another workspace and any member this workspace's IdP never linked.",
 	},
 	"PUT /scim/v2/Users/{id}": {
 		"Instance token: unchanged, including global disable and session revoke on active false.",
-		"Workspace token: 404 unless linked here. active false removes the user from this workspace only (see DELETE) but keeps the link, so the resource stays visible with active false. active true is ignored: it never enables the account and never restores the membership.",
-		"userName, externalId, displayName, and name changes are ignored. The response shows the current values, and the ignored change writes audit action scim_user.change_ignored with the attribute names only.",
+		"Workspace token: 404 unless linked here. active false deactivates the link: in one transaction it removes the user's role bindings and group rows in this workspace and sets the link's deactivated_at. The link stays, so the resource stays visible with active false. Removing the last workspace admin is 409 and changes nothing.",
+		"active true on a deactivated link re-adds the user here with SCIM_DEFAULT_ROLE (only if they hold no role here) and clears deactivated_at. Group rows are not restored. If the account is globally disabled it stays disabled and the response is active false. A PUT without active is treated as active true.",
+		"userName, externalId, displayName, and name changes are ignored, as is the global part of active true. The response shows the current values, and each ignored change writes audit action scim_user.change_ignored with the attribute names only.",
 	},
 	"PATCH /scim/v2/Users/{id}": {
-		"Same rules as PUT for each token kind.",
+		"Same rules as PUT for each token kind. A PATCH that does not touch active leaves the link as it is.",
 	},
 	"DELETE /scim/v2/Users/{id}": {
 		"Instance token: unchanged (global disable, session revoke, removal from every workspace).",
-		"Workspace token: 404 unless linked here. In one transaction, deletes the user's role bindings and group rows in this workspace and the link. Never disables the account, revokes sessions, or touches another workspace.",
+		"Workspace token: 404 unless linked here. In one transaction, deletes the user's role bindings and group rows in this workspace and the link. Never disables the account, revokes sessions, or touches another workspace. A later POST links the user again.",
 		"Removing the last workspace admin is 409 and changes nothing.",
-		"Writes audit action scim_user.workspace_remove in this workspace.",
 	},
 	"GET /scim/v2/Groups": {
-		"Instance token: every active workspace is a Group, as before. filter supports displayName, externalId (the workbench key), and id.",
-		"Workspace token: exactly one Group, this workspace. Its members are the users linked here who hold a role binding here. Filters apply to that one Group.",
+		"Instance token: every active workspace is a Group, as before. filter supports displayName, externalId, and id. A Group's externalId is the workspace's workbench key, compared exactly (case-sensitive); it is not the IdP's own group id.",
+		"Workspace token: exactly one Group, this workspace. Its members are the users linked here whose link is not deactivated and who hold a role binding here. Filters apply to that one Group; externalId matches the workbench key exactly (case-sensitive), displayName matches case-insensitively.",
 	},
 	"POST /scim/v2/Groups": {
 		"400 for both token kinds: Groups are existing workspaces.",
@@ -155,7 +156,9 @@ var scimRouteNotes = map[string][]string{
 	},
 	"PATCH /scim/v2/Groups/{id}": {
 		"Instance token: unchanged.",
-		"Workspace token: 404 for any id other than this workspace. add takes users linked to this workspace only; any other id is 400 invalidValue and the whole patch changes nothing. add grants SCIM_DEFAULT_ROLE here. remove is the same as the workspace-token user DELETE without deleting the link, including the last-admin 409.",
+		"Workspace token: 404 for any id other than this workspace. The whole patch is one transaction.",
+		"add takes users linked to this workspace only; any other id is 400 and the whole patch changes nothing. add reactivates a deactivated link and adds SCIM_DEFAULT_ROLE only when the user holds no role here.",
+		"remove deactivates the link, the same as user active false, including the last-admin 409 that rolls back the whole patch. A remove for an id that is not linked here (or not a UUID) is ignored, so a member this IdP never linked cannot be removed.",
 	},
 	"DELETE /scim/v2/Groups/{id}": {
 		"400 for both token kinds: workspaces cannot be deleted here.",

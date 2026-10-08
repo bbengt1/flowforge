@@ -194,10 +194,14 @@ PLATFORM_ADMINS=https://idp.example|admin-1
 # QUOTA_DOWNLOAD_PER_MINUTE=60
 # QUOTA_EXECUTE_PER_MINUTE=30
 # QUOTA_EXECUTE_CONCURRENCY=20
-# SCIM 2.0 (/scim/v2). Leave unset to fail closed (503).
-# Bearer is 32-256 chars, no spaces. Never log it. Not an ff_session.
-# SCIM_ISSUER must match OIDC_ISSUER when both are set. Omit SCIM_ISSUER
-# to reuse OIDC_ISSUER. Set the IdP externalId to the OIDC sub.
+# SCIM 2.0 (/scim/v2). Leave all unset to fail closed (503).
+# Setting any SCIM_* turns SCIM on and needs an issuer (SCIM_ISSUER, or
+# OIDC_ISSUER when SCIM_ISSUER is omitted). Workspace administrators can
+# then create per-workspace tokens in the app.
+# SCIM_BEARER_TOKEN is the optional instance-wide bearer: 32-256 chars,
+# no spaces, not starting with ffscim_. Never log it. Not an ff_session.
+# SCIM_ISSUER must match OIDC_ISSUER when both are set. Set the IdP
+# externalId to the OIDC sub.
 # SCIM_DEFAULT_ROLE defaults to viewer (workspace role only).
 # SCIM_BEARER_TOKEN=
 # SCIM_ISSUER=
