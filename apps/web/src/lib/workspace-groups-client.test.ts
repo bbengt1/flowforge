@@ -242,4 +242,67 @@ describe("workspace groups client", () => {
       assert.equal(page.next, "n1");
     }
   });
+
+  it("reads groupsMode from the list top level and the detail object", async () => {
+    withSession();
+    capture(() =>
+      json(200, {
+        items: [{ ...group, managedBy: "scim" }],
+        limit: 50,
+        cursor: "",
+        next: "",
+        groupsMode: "groups",
+      }),
+    );
+    const list = await listWorkspaceGroups(identity);
+    assert.equal(list.ok && list.groupsMode, "groups");
+    capture(() => json(200, { ...group, managedBy: "scim", members: [], groupsMode: "workspaces" }));
+    const detail = await getWorkspaceGroup(identity, GROUP_ID);
+    assert.equal(detail.ok && detail.group.groupsMode, "workspaces");
+    // An older server sends no mode: unknown, never a guess.
+    capture(() => json(200, { items: [], limit: 50, cursor: "", next: "" }));
+    const older = await listWorkspaceGroups(identity);
+    assert.equal(older.ok, true);
+    assert.equal(older.ok && older.groupsMode, null);
+    capture(() => json(200, { ...group, members: [] }));
+    const olderDetail = await getWorkspaceGroup(identity, GROUP_ID);
+    assert.equal(olderDetail.ok && olderDetail.group.groupsMode, null);
+  });
+
+  it("reads managedBy on list, detail, and writes", async () => {
+    withSession();
+    capture(() => json(200, { items: [{ ...group, managedBy: "scim" }], limit: 50, cursor: "", next: "" }));
+    const list = await listWorkspaceGroups(identity);
+    assert.equal(list.ok && list.items[0]?.managedBy, "scim");
+    capture(() => json(200, { ...group, managedBy: "scim", members: [] }));
+    const detail = await getWorkspaceGroup(identity, GROUP_ID);
+    assert.equal(detail.ok && detail.group.managedBy, "scim");
+    capture(() => json(201, { ...group, managedBy: null }));
+    const created = await createWorkspaceGroup(identity, "Local");
+    assert.equal(created.ok && created.group?.managedBy, null);
+  });
+
+  it("returns 409 group_managed_by_scim from every local edit as a problem", async () => {
+    withSession();
+    const refused = () =>
+      problemResponse(409, {
+        title: "Conflict",
+        code: "group_managed_by_scim",
+        detail: "This group is managed by SCIM. Change it in the identity provider.",
+      });
+    for (const call of [
+      () => renameWorkspaceGroup(identity, GROUP_ID, "Ops"),
+      () => deleteWorkspaceGroup(identity, GROUP_ID),
+      () => addWorkspaceGroupMember(identity, GROUP_ID, USER_ID),
+      () => removeWorkspaceGroupMember(identity, GROUP_ID, USER_ID),
+    ]) {
+      capture(refused);
+      const result = await call();
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.equal(result.statusCode, 409);
+        assert.equal(result.problem.code, "group_managed_by_scim");
+      }
+    }
+  });
 });

@@ -168,4 +168,17 @@ describe("SCIM tokens client", () => {
     assert.equal(result.ok, false);
     assert.equal(!result.ok && result.problem.code, "mfa-required");
   });
+
+  it("reads groupsMode from the list, and null when an older server omits it", async () => {
+    withSession();
+    capture(() =>
+      json(200, { items: [], maxActive: 2, configured: false, groupsMode: "groups" }),
+    );
+    const groups = await listScimTokens(identity);
+    assert.equal(groups.ok && groups.list.groupsMode, "groups");
+    capture(() => json(200, { items: [], maxActive: 2, configured: true }));
+    const older = await listScimTokens(identity);
+    assert.equal(older.ok, true);
+    assert.equal(older.ok && older.list.groupsMode, null);
+  });
 });

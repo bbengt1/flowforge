@@ -17,6 +17,7 @@ import {
   invalidateWorkspaceGroups,
   useWorkspaceGroupDetail,
 } from "@/components/groups/useWorkspaceGroups";
+import { WorkspaceGroupScimBadge } from "@/components/groups/WorkspaceGroupScimBadge";
 import {
   WorkspaceGroupsAccess,
   WorkspaceGroupsForbidden,
@@ -24,7 +25,9 @@ import {
 import type { DevIdentity } from "@/lib/identity-headers";
 import type { ProblemDetails } from "@/lib/problem";
 import { QueryCacheError } from "@/lib/query-cache";
+import type { ScimGroupsMode } from "@/lib/scim-tokens";
 import {
+  FF_SETTINGS_DANGER_CLASS,
   FF_SETTINGS_EYEBROW_CLASS,
   FF_SETTINGS_GHOST_CLASS,
   FF_SETTINGS_HELP_CLASS,
@@ -40,16 +43,22 @@ import { FF_LOUD_DANGER_CLASS } from "@/lib/vault-executions-visual";
 import {
   GROUP_DELETE_DESCRIPTION,
   GROUP_MEMBER_REMOVE_DESCRIPTION,
+  GROUP_SCIM_LOCKED_MESSAGE,
+  GROUP_SCIM_REFUSED_MESSAGE,
   WORKSPACE_GROUP_MEMBERS_EMPTY,
   WORKSPACE_GROUPS_HREF,
   WORKSPACE_GROUPS_TITLE,
+  isGroupManagedByScimProblem,
   isWorkspaceGroupId,
+  scimGroupsModeFromProblem,
   workspaceGroupApprovalNote,
   workspaceGroupDeleteImpact,
+  workspaceGroupManagement,
   workspaceGroupMemberCountLabel,
   workspaceGroupMemberLabel,
   workspaceGroupMemberRemoveImpact,
   workspaceGroupProblemTreatment,
+  workspaceGroupRefusalStands,
   type WorkspaceGroupMember,
 } from "@/lib/workspace-groups";
 import {
@@ -80,7 +89,18 @@ function problemOf(error: unknown): ProblemDetails | null {
   return error instanceof QueryCacheError ? error.problem : null;
 }
 
-function GroupHeader({ title, children }: { title: string; children?: ReactNode }) {
+/** The locked sentence. Disabled controls point at it with aria-describedby. */
+const GROUP_LOCKED_NOTE_ID = "group-scim-locked-note";
+
+function GroupHeader({
+  title,
+  badge,
+  children,
+}: {
+  title: string;
+  badge?: ReactNode;
+  children?: ReactNode;
+}) {
   return (
     <header className="space-y-3">
       <p className={FF_SETTINGS_EYEBROW_CLASS}>
@@ -89,6 +109,7 @@ function GroupHeader({ title, children }: { title: string; children?: ReactNode 
         </Link>
       </p>
       <h1 className={`text-3xl tracking-tight ${FF_SETTINGS_TITLE_CLASS}`}>{title}</h1>
+      {badge}
       {children}
     </header>
   );
@@ -108,9 +129,56 @@ function GroupDetailBody({
   const [dialog, setDialog] = useState<"rename" | "delete" | "add" | null>(null);
   const [removeId, setRemoveId] = useState<string | null>(null);
   const [actionProblem, setActionProblem] = useState<ProblemDetails | null>(null);
+  // Set when the server refused a local edit with 409 group_managed_by_scim:
+  // when the detail shown at that moment was read.
+  const [refusedAt, setRefusedAt] = useState<number | null>(null);
+  // The mode the 409 proved. Used only while the detail itself carries
+  // no mode (an older server); the server's own value always wins.
+  const [refusedMode, setRefusedMode] = useState<ScimGroupsMode | null>(null);
+  const refused =
+    refusedAt !== null &&
+    workspaceGroupRefusalStands({
+      refusedAt,
+      dataUpdatedAt: detail.dataUpdatedAt,
+      groupsMode: group?.groupsMode,
+    });
+  if (refusedAt !== null && !refused) {
+    // A read after the refusal says the instance isn't in groups mode
+    // now, so the group isn't locked: drop the note and the 409's mode.
+    setRefusedAt(null);
+    setRefusedMode(null);
+  }
+  const management = workspaceGroupManagement({
+    managedBy: group?.managedBy,
+    groupsMode: group?.groupsMode ?? refusedMode,
+  });
+  const locked = management === "scim-locked";
+  const lockedDescribedBy = locked ? GROUP_LOCKED_NOTE_ID : undefined;
 
   async function refreshAll() {
     await invalidateWorkspaceGroups(queryClient, identity);
+  }
+
+  /**
+   * A stale page offered an edit the server refused because SCIM manages
+   * the group. Close whatever was open, show the plain sentence, note
+   * that the instance is in groups mode, and refetch so the page switches
+   * to the read-only view from the server's own `groupsMode`. If that
+   * newer read says the instance isn't in groups mode, the note clears.
+   * Status plus code only, never the title.
+   */
+  function handleScimRefusal(error: unknown): boolean {
+    const problem = problemOf(error);
+    if (!isGroupManagedByScimProblem(problem)) {
+      return false;
+    }
+    setDialog(null);
+    setRemoveId(null);
+    setActionProblem(null);
+    setRefusedAt(detail.dataUpdatedAt);
+    setRefusedMode(scimGroupsModeFromProblem(problem));
+    void refreshAll();
+    return true;
   }
 
   const rename = useMutation({
@@ -123,6 +191,9 @@ function GroupDetailBody({
     onSuccess: async () => {
       setDialog(null);
       await refreshAll();
+    },
+    onError: (error) => {
+      handleScimRefusal(error);
     },
   });
 
@@ -139,6 +210,9 @@ function GroupDetailBody({
       await afterWorkspaceGroupDeleted(queryClient, identity, groupId);
     },
     onError: (error) => {
+      if (handleScimRefusal(error)) {
+        return;
+      }
       setDialog(null);
       setActionProblem(problemOf(error));
     },
@@ -155,6 +229,9 @@ function GroupDetailBody({
       setDialog(null);
       await refreshAll();
     },
+    onError: (error) => {
+      handleScimRefusal(error);
+    },
   });
 
   const removeMember = useMutation({
@@ -168,6 +245,9 @@ function GroupDetailBody({
       await refreshAll();
     },
     onError: (error) => {
+      if (handleScimRefusal(error)) {
+        return;
+      }
       setActionProblem(problemOf(error));
     },
   });
@@ -213,16 +293,37 @@ function GroupDetailBody({
 
   return (
     <>
-      <GroupHeader title={group.displayName}>
+      <GroupHeader
+        title={group.displayName}
+        badge={
+          management === "local" ? null : (
+            <div>
+              <WorkspaceGroupScimBadge management={management} tipAlign="start" />
+            </div>
+          )
+        }
+      >
         <p className={FF_SETTINGS_HELP_CLASS}>
           {workspaceGroupMemberCountLabel(group.memberCount)}. Approvals sent
           to this group reach the members below who are allowed to decide
           them. Being in this group doesn&apos;t grant any permission.
         </p>
+        {locked || refused ? (
+          <p
+            id={GROUP_LOCKED_NOTE_ID}
+            role={refused ? "alert" : undefined}
+            data-group-scim-locked={refused ? "refused" : "locked"}
+            className={`text-sm ${refused ? FF_SETTINGS_DANGER_CLASS : FF_SETTINGS_MUTED_CLASS}`}
+          >
+            {refused ? GROUP_SCIM_REFUSED_MESSAGE : GROUP_SCIM_LOCKED_MESSAGE}
+          </p>
+        ) : null}
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
             data-group-rename=""
+            disabled={locked}
+            aria-describedby={lockedDescribedBy}
             onClick={() => {
               rename.reset();
               setDialog("rename");
@@ -234,11 +335,13 @@ function GroupDetailBody({
           <button
             type="button"
             data-group-delete=""
+            disabled={locked}
+            aria-describedby={lockedDescribedBy}
             onClick={() => {
               setActionProblem(null);
               setDialog("delete");
             }}
-            className={`${FF_LOUD_DANGER_CLASS} rounded-lg px-3 py-1.5 text-sm`}
+            className={`${FF_LOUD_DANGER_CLASS} rounded-lg px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-60`}
           >
             Delete group
           </button>
@@ -256,6 +359,8 @@ function GroupDetailBody({
           <button
             type="button"
             data-group-add-member=""
+            disabled={locked}
+            aria-describedby={lockedDescribedBy}
             onClick={() => {
               addMember.reset();
               setDialog("add");
@@ -276,6 +381,7 @@ function GroupDetailBody({
                 key={member.userId}
                 member={member}
                 removalPending={pendingRemovalId === member.userId}
+                lockedNoteId={lockedDescribedBy}
                 onRemove={() => {
                   setActionProblem(null);
                   setRemoveId(member.userId);
@@ -302,7 +408,7 @@ function GroupDetailBody({
         />
       </section>
 
-      {dialog === "rename" ? (
+      {dialog === "rename" && !locked ? (
         <GroupNameDialog
           mode="rename"
           initialName={group.displayName}
@@ -313,7 +419,7 @@ function GroupDetailBody({
         />
       ) : null}
 
-      {dialog === "add" ? (
+      {dialog === "add" && !locked ? (
         <AddGroupMemberDialog
           identity={identity}
           groupName={group.displayName}
@@ -326,7 +432,7 @@ function GroupDetailBody({
       ) : null}
 
       <ConfirmDestructive
-        open={dialog === "delete"}
+        open={dialog === "delete" && !locked}
         title="Delete this group?"
         description={GROUP_DELETE_DESCRIPTION}
         reversibility="irreversible"
@@ -338,7 +444,7 @@ function GroupDetailBody({
         onConfirm={() => remove.mutate()}
       />
 
-      {removing ? (
+      {removing && !locked ? (
         <ConfirmDestructive
           open
           title="Remove from this group?"
@@ -364,15 +470,19 @@ function GroupDetailBody({
 function GroupMemberRow({
   member,
   removalPending,
+  lockedNoteId,
   onRemove,
 }: {
   member: WorkspaceGroupMember;
   removalPending: boolean;
+  /** Set while the group is read-only: Remove is off and points here. */
+  lockedNoteId?: string;
   onRemove: () => void;
 }) {
   const note = workspaceGroupApprovalNote(member);
   const noteId = `group-member-note-${member.userId}`;
   const label = workspaceGroupMemberLabel(member);
+  const describedBy = [lockedNoteId, note ? noteId : undefined].filter(Boolean).join(" ");
   return (
     <li
       data-group-member={member.userId}
@@ -396,9 +506,9 @@ function GroupMemberRow({
       <button
         type="button"
         onClick={onRemove}
-        disabled={removalPending}
+        disabled={removalPending || Boolean(lockedNoteId)}
         aria-label={`Remove ${label} from this group`}
-        aria-describedby={note ? noteId : undefined}
+        aria-describedby={describedBy || undefined}
         className={FF_SETTINGS_GHOST_CLASS}
       >
         Remove
