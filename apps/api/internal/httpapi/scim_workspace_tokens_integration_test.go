@@ -887,3 +887,115 @@ func TestScimTokenPlaintextNeverLoggedOrAudited(t *testing.T) {
 		t.Fatal("stored token is not the hash")
 	}
 }
+
+// Membership drift: the instance token disables and then re-enables a
+// user. Their workspace link is still live but they hold no role there,
+// so the workspace token reports active:false, and active:true restores
+// membership with the default role without touching global status.
+func TestScimWorkspaceTokenDriftAfterInstanceDisableReenable(t *testing.T) {
+	th := newScimWSHarness(t)
+	a := th.workspace()
+	_, tok := th.mint(a, "IdP")
+	ext := th.uniq("drift-env")
+	rec := th.scim(scimTestToken, http.MethodPost, "/scim/v2/Users", scimUserJSON(th.uniq("drift-env-u"), ext, "Drift"))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("env post: %d %s", rec.Code, rec.Body.String())
+	}
+	u := decodeScimUser(t, rec)
+	if linked := th.postUser(tok, scimUserJSON(th.uniq("drift-a"), ext, "Drift")); linked.ID != u.ID || !linked.Active {
+		t.Fatalf("workspace link: %+v", linked)
+	}
+
+	th.setActive(scimTestToken, u.ID, false, http.StatusOK)
+	if got := th.setActive(scimTestToken, u.ID, true, http.StatusOK); !got.Active {
+		t.Fatal("env re-enable reported inactive")
+	}
+	if th.status(u.ID) != "active" || th.roles(a, u.ID) != "" {
+		t.Fatalf("after env disable/re-enable: status %q roles %q", th.status(u.ID), th.roles(a, u.ID))
+	}
+	if exists, deact := th.link(a, u.ID); !exists || deact {
+		t.Fatal("link should be live and not deactivated")
+	}
+	rec = th.scim(tok, http.MethodGet, "/scim/v2/Users/"+u.ID, "")
+	if rec.Code != http.StatusOK || decodeScimUser(t, rec).Active {
+		t.Fatalf("roleless linked user reported active: %s", rec.Body.String())
+	}
+
+	if got := th.setActive(tok, u.ID, true, http.StatusOK); !got.Active {
+		t.Fatal("active:true did not restore membership")
+	}
+	if th.roles(a, u.ID) != authz.RoleViewer || th.status(u.ID) != "active" {
+		t.Fatalf("after workspace active:true: roles %q status %q", th.roles(a, u.ID), th.status(u.ID))
+	}
+	if th.auditCount(a, scim.AuditUserReactivate, u.ID) != 1 {
+		t.Fatal("restore not audited")
+	}
+}
+
+// Membership drift: an admin removes a linked member through the
+// members API. The workspace token then reports active:false, and
+// active:true (here a PUT without active) restores the default role.
+func TestScimWorkspaceTokenDriftAfterAdminRemoval(t *testing.T) {
+	th := newScimWSHarness(t)
+	a := th.workspace()
+	_, tok := th.mint(a, "IdP")
+	userName := th.uniq("drift-adm")
+	u := th.postUser(tok, scimUserJSON(userName, "", "Removed"))
+	if rec := th.adminDo(a, http.MethodDelete, "/api/v1/workspace/members/"+u.ID, ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("admin remove: %d %s", rec.Code, rec.Body.String())
+	}
+	if th.roles(a, u.ID) != "" {
+		t.Fatal("admin removal left roles")
+	}
+	rec := th.scim(tok, http.MethodGet, "/scim/v2/Users/"+u.ID, "")
+	if rec.Code != http.StatusOK || decodeScimUser(t, rec).Active {
+		t.Fatalf("removed member reported active: %s", rec.Body.String())
+	}
+	if rec := th.scim(tok, http.MethodGet, "/scim/v2/Groups/"+a.ws.ID, ""); strings.Contains(rec.Body.String(), u.ID) {
+		t.Fatal("removed member still in the Group")
+	}
+
+	put := fmt.Sprintf(`{"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":%q,"displayName":"Removed"}`, userName)
+	rec = th.scim(tok, http.MethodPut, "/scim/v2/Users/"+u.ID, put)
+	if rec.Code != http.StatusOK || !decodeScimUser(t, rec).Active {
+		t.Fatalf("PUT without active did not restore: %d %s", rec.Code, rec.Body.String())
+	}
+	if th.roles(a, u.ID) != authz.RoleViewer {
+		t.Fatalf("restored roles = %q", th.roles(a, u.ID))
+	}
+
+	// PATCH active:true path as well, after a second admin removal.
+	if rec := th.adminDo(a, http.MethodDelete, "/api/v1/workspace/members/"+u.ID, ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("second admin remove: %d", rec.Code)
+	}
+	if got := th.setActive(tok, u.ID, true, http.StatusOK); !got.Active || th.roles(a, u.ID) != authz.RoleViewer {
+		t.Fatalf("PATCH active:true did not restore: %+v roles %q", got, th.roles(a, u.ID))
+	}
+}
+
+// Control: active:true to a linked member who already holds a custom
+// role adds nothing and writes no reactivate audit row.
+func TestScimWorkspaceTokenActiveTrueKeepsCustomRole(t *testing.T) {
+	th := newScimWSHarness(t)
+	a := th.workspace()
+	_, tok := th.mint(a, "IdP")
+	subject := th.uniq("custom")
+	u := th.postUser(tok, scimUserJSON(subject, "", "Custom"))
+	putMember(t, th.h, th.owner, a.tenant, a.ws, fmt.Sprintf(`{"issuer":%q,"external_subject":%q,"display_name":"Custom","role_keys":["approver"]}`, scimIssuer, subject))
+	if th.roles(a, u.ID) != authz.RoleApprover {
+		t.Fatalf("setup roles = %q", th.roles(a, u.ID))
+	}
+	if got := th.setActive(tok, u.ID, true, http.StatusOK); !got.Active {
+		t.Fatal("custom-role member reported inactive")
+	}
+	put := fmt.Sprintf(`{"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":%q,"displayName":"Custom","active":true}`, subject)
+	if rec := th.scim(tok, http.MethodPut, "/scim/v2/Users/"+u.ID, put); rec.Code != http.StatusOK {
+		t.Fatalf("put: %d", rec.Code)
+	}
+	if got := th.roles(a, u.ID); got != authz.RoleApprover {
+		t.Fatalf("active:true changed roles: %q", got)
+	}
+	if th.auditCount(a, scim.AuditUserReactivate, u.ID) != 0 {
+		t.Fatal("no-op active:true wrote a reactivate row")
+	}
+}

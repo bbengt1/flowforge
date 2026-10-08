@@ -115,7 +115,7 @@ var scimRouteNotes = map[string][]string{
 	"GET /scim/v2/Users": {
 		"Instance token: every active directory user, as before.",
 		"Workspace token: only users linked to this workspace (scim_workspace_users), with this workspace's userName and externalId. filter supports userName, externalId, and id, all against this workspace's links.",
-		"active is true only when the account is globally active and this workspace's link is not deactivated.",
+		"active is true only when the account is globally active, this workspace's link is not deactivated, and the user holds at least one role here. A link whose member was removed by an administrator, or by an instance-token disable, reads active false.",
 	},
 	"POST /scim/v2/Users": {
 		"Instance token: unchanged.",
@@ -125,12 +125,12 @@ var scimRouteNotes = map[string][]string{
 		"409 uniqueness when this user is already linked here, or when the userName or externalId is already linked here to a different user. Uniqueness is per workspace.",
 	},
 	"GET /scim/v2/Users/{id}": {
-		"Workspace token: 404 unless the user is linked to this workspace, including any user in another workspace and any member this workspace's IdP never linked.",
+		"Workspace token: 404 unless the user is linked to this workspace, including any user in another workspace and any member this workspace's IdP never linked, until the IdP POSTs their subject, which links them and is audited.",
 	},
 	"PUT /scim/v2/Users/{id}": {
 		"Instance token: unchanged, including global disable and session revoke on active false.",
 		"Workspace token: 404 unless linked here. active false deactivates the link: in one transaction it removes the user's role bindings and group rows in this workspace and sets the link's deactivated_at. The link stays, so the resource stays visible with active false. Removing the last workspace admin is 409 and changes nothing.",
-		"active true on a deactivated link re-adds the user here with SCIM_DEFAULT_ROLE (only if they hold no role here) and clears deactivated_at. Group rows are not restored. If the account is globally disabled it stays disabled and the response is active false. A PUT without active is treated as active true.",
+		"active true always reconciles membership here: it adds SCIM_DEFAULT_ROLE when the user holds no role here (a user with any role is left as is) and clears deactivated_at when set. This also restores a member an administrator or an instance-token disable removed while the link stayed live. Group rows are not restored. If the account is globally disabled it stays disabled and the response is active false. A PUT without active is treated as active true.",
 		"userName, externalId, displayName, and name changes are ignored, as is the global part of active true. The response shows the current values, and each ignored change writes audit action scim_user.change_ignored with the attribute names only.",
 	},
 	"PATCH /scim/v2/Users/{id}": {

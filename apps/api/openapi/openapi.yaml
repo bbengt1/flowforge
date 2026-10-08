@@ -2608,7 +2608,7 @@ paths:
         Workspace-token writes are audited in the token's workspace with no actor and details.tokenId set to the token UUID: scim_user.workspace_add, scim_user.workspace_deactivate, scim_user.workspace_reactivate, scim_user.workspace_remove, scim_user.change_ignored.
         Instance token: every active directory user, as before.
         Workspace token: only users linked to this workspace (scim_workspace_users), with this workspace's userName and externalId. filter supports userName, externalId, and id, all against this workspace's links.
-        active is true only when the account is globally active and this workspace's link is not deactivated.
+        active is true only when the account is globally active, this workspace's link is not deactivated, and the user holds at least one role here. A link whose member was removed by an administrator, or by an instance-token disable, reads active false.
         Auth class: authenticated. Identity proxy: none.
       responses:
         "200":
@@ -2658,7 +2658,7 @@ paths:
         A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when SCIM is off on the instance. When no instance token is configured, any other bearer is 401.
         Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token. A workspace token never changes users.status, never revokes a session, and never renames a user.
         Workspace-token writes are audited in the token's workspace with no actor and details.tokenId set to the token UUID: scim_user.workspace_add, scim_user.workspace_deactivate, scim_user.workspace_reactivate, scim_user.workspace_remove, scim_user.change_ignored.
-        Workspace token: 404 unless the user is linked to this workspace, including any user in another workspace and any member this workspace's IdP never linked.
+        Workspace token: 404 unless the user is linked to this workspace, including any user in another workspace and any member this workspace's IdP never linked, until the IdP POSTs their subject, which links them and is audited.
         Auth class: authenticated. Identity proxy: none.
       responses:
         "200":
@@ -2682,7 +2682,7 @@ paths:
         Workspace-token writes are audited in the token's workspace with no actor and details.tokenId set to the token UUID: scim_user.workspace_add, scim_user.workspace_deactivate, scim_user.workspace_reactivate, scim_user.workspace_remove, scim_user.change_ignored.
         Instance token: unchanged, including global disable and session revoke on active false.
         Workspace token: 404 unless linked here. active false deactivates the link: in one transaction it removes the user's role bindings and group rows in this workspace and sets the link's deactivated_at. The link stays, so the resource stays visible with active false. Removing the last workspace admin is 409 and changes nothing.
-        active true on a deactivated link re-adds the user here with SCIM_DEFAULT_ROLE (only if they hold no role here) and clears deactivated_at. Group rows are not restored. If the account is globally disabled it stays disabled and the response is active false. A PUT without active is treated as active true.
+        active true always reconciles membership here: it adds SCIM_DEFAULT_ROLE when the user holds no role here (a user with any role is left as is) and clears deactivated_at when set. This also restores a member an administrator or an instance-token disable removed while the link stayed live. Group rows are not restored. If the account is globally disabled it stays disabled and the response is active false. A PUT without active is treated as active true.
         userName, externalId, displayName, and name changes are ignored, as is the global part of active true. The response shows the current values, and each ignored change writes audit action scim_user.change_ignored with the attribute names only.
         Auth class: authenticated. Identity proxy: none.
       responses:

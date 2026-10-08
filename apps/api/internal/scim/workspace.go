@@ -68,14 +68,19 @@ type WorkspaceUser struct {
 	DisplayName   string
 	Status        string
 	DeactivatedAt *time.Time
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// HasRole is whether the user holds any role binding in the
+	// workspace right now.
+	HasRole   bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // Active is the SCIM active flag for a workspace token: the account is
-// active and the link is not deactivated.
+// globally active, the link is not deactivated, and the user holds at
+// least one role in the workspace. A link left behind after an admin
+// removed the member, or after an instance-token disable, reads false.
 func (u WorkspaceUser) Active() bool {
-	return u.Status == "active" && u.DeactivatedAt == nil
+	return u.Status == "active" && u.DeactivatedAt == nil && u.HasRole
 }
 
 // ProvisionInput is a workspace-token POST /Users.

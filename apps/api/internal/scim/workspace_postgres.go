@@ -224,11 +224,15 @@ func (p *WorkspacePostgres) Authenticate(ctx context.Context, presented string, 
 
 // ---- users ----
 
-const wsUserColumns = `l.user_id::text, l.user_name, l.external_id, u.display_name, u.status, l.deactivated_at, l.created_at, l.updated_at`
+// wsUserColumns reads a link, its account, and whether the user holds
+// any role binding in the link's workspace.
+const wsUserColumns = `l.user_id::text, l.user_name, l.external_id, u.display_name, u.status, l.deactivated_at,
+	EXISTS (SELECT 1 FROM workspace_role_bindings b WHERE b.workspace_id = l.workspace_id AND b.user_id = l.user_id),
+	l.created_at, l.updated_at`
 
 func scanWorkspaceUser(row pgx.Row) (WorkspaceUser, error) {
 	var u WorkspaceUser
-	err := row.Scan(&u.UserID, &u.UserName, &u.ExternalID, &u.DisplayName, &u.Status, &u.DeactivatedAt, &u.CreatedAt, &u.UpdatedAt)
+	err := row.Scan(&u.UserID, &u.UserName, &u.ExternalID, &u.DisplayName, &u.Status, &u.DeactivatedAt, &u.HasRole, &u.CreatedAt, &u.UpdatedAt)
 	return u, err
 }
 
@@ -420,16 +424,27 @@ func (p *WorkspacePostgres) UpdateUser(ctx context.Context, scope TokenScope, us
 				if err := insertAudit(ctx, tx, scope.WorkspaceID, actor, AuditUserDeactivate, AuditResourceUser, userID, map[string]any{}); err != nil {
 					return err
 				}
-			case *ch.Active && cur.DeactivatedAt != nil:
+			case *ch.Active:
+				// Always reconcile membership, not only when the link is
+				// deactivated: an admin may have removed the member, or the
+				// instance token may have disabled and re-enabled the
+				// account, leaving a live link with no role here. The role
+				// is added only when the user holds none; existing roles are
+				// never changed.
 				added, err := addDefaultRoleIfNone(ctx, tx, scope.WorkspaceID, userID, defaultRole)
 				if err != nil {
 					return err
 				}
-				if err := setDeactivated(ctx, tx, scope.WorkspaceID, userID, nil); err != nil {
-					return err
+				wasDeactivated := cur.DeactivatedAt != nil
+				if wasDeactivated {
+					if err := setDeactivated(ctx, tx, scope.WorkspaceID, userID, nil); err != nil {
+						return err
+					}
 				}
-				if err := insertAudit(ctx, tx, scope.WorkspaceID, actor, AuditUserReactivate, AuditResourceUser, userID, map[string]any{"roleAdded": added}); err != nil {
-					return err
+				if added || wasDeactivated {
+					if err := insertAudit(ctx, tx, scope.WorkspaceID, actor, AuditUserReactivate, AuditResourceUser, userID, map[string]any{"roleAdded": added}); err != nil {
+						return err
+					}
 				}
 			}
 			// The global part of active:true is never applied.

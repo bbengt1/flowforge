@@ -83,11 +83,20 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
  bearer is never compared to the instance token. It sees only users
  its workspace's IdP linked (`scim_workspace_users`); any other user,
  including another workspace's or an administrator the IdP never
- linked, is `404`. POST of an existing member links them and adds
+ linked, is `404` until the IdP POSTs their subject, which links them
+ and is audited. Because POST finds an existing account by issuer and
+ subject, a workspace token can learn any user's display name and
+ whether their account is active by POSTing their subject; this is
+ acceptable on a single-issuer instance, where the IdP already knows
+ its own users. POST of an existing member links them and adds
  `SCIM_DEFAULT_ROLE` only if they hold no role there; existing roles
  are never changed. `active: false` removes the user's role bindings
  and group rows in that workspace and keeps the link as deactivated;
- `active: true` restores membership with `SCIM_DEFAULT_ROLE`. `DELETE`
+ `active: true` restores membership with `SCIM_DEFAULT_ROLE` whenever
+ the user holds no role there, including after an administrator or an
+ instance-token disable removed them. SCIM `active` is true only when
+ the account is active, the link is not deactivated, and the user
+ holds a role in that workspace. `DELETE`
  removes the link and the membership. A workspace token never
  disables or re-enables an account, never revokes a session, and never
  renames a user: those changes are ignored, the response shows the
