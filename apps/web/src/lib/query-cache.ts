@@ -402,6 +402,20 @@ export function scimTokensListQueryKey(
   return key;
 }
 
+/**
+ * The instance's SCIM Groups mode as read by the groups screens. Holds
+ * only "workspaces", "groups", or null: never a token record.
+ */
+export function scimGroupsModeQueryKey(
+  scope: string,
+): readonly ["flowforge", string, "scim-tokens", "groups-mode"] | null {
+  const key = ["flowforge", scope, "scim-tokens", "groups-mode"] as const;
+  if (queryKeyHasSecret(key)) {
+    return null;
+  }
+  return key;
+}
+
 /** Roots reserved for the remaining god-component splits. */
 export const REMAINING_GOD_COMPONENT_QUERY_ROOTS = {
   workflowHome: ["flowforge", "workflow-home"] as const,

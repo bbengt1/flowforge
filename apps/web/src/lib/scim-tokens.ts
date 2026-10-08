@@ -49,10 +49,19 @@ export type ScimToken = {
   lastUsedAt: string | null;
 };
 
+/**
+ * The instance's `SCIM_GROUPS_MODE`, as the token list reports it.
+ * `workspaces`: a SCIM Group is a workspace. `groups`: SCIM Groups are
+ * this workspace's groups and only the identity provider changes them.
+ */
+export type ScimGroupsMode = "workspaces" | "groups";
+
 export type ScimTokenList = {
   items: ScimToken[];
   maxActive: number;
   configured: boolean;
+  /** Null when the server didn't report a mode this web knows. */
+  groupsMode: ScimGroupsMode | null;
 };
 
 /* ---------- copy ---------- */
@@ -137,6 +146,23 @@ export const SCIM_TOKEN_ALREADY_REVOKED = "That token was already revoked.";
 
 export const SCIM_TOKEN_REVOKED = "Token revoked.";
 
+export const SCIM_GROUPS_MODE_GROUPS_LINE =
+  "Groups mode: SCIM groups map to FlowForge groups in this workspace. Change their names and members in your identity provider.";
+
+export const SCIM_GROUPS_MODE_WORKSPACES_LINE =
+  "Groups mode: SCIM groups map to workspaces. Adding someone to a SCIM group adds them to that workspace.";
+
+/** The one-line mode note on the tokens page. Null when the mode is unknown. */
+export function scimGroupsModeLine(mode: ScimGroupsMode | null | undefined): string | null {
+  if (mode === "groups") {
+    return SCIM_GROUPS_MODE_GROUPS_LINE;
+  }
+  if (mode === "workspaces") {
+    return SCIM_GROUPS_MODE_WORKSPACES_LINE;
+  }
+  return null;
+}
+
 export function scimTokenLimitMessage(maxActive: number): string {
   const max = normalizeMaxActive(maxActive);
   return `This workspace already has ${max} active SCIM ${
@@ -219,9 +245,15 @@ export function readScimToken(value: unknown): ScimToken | null {
   };
 }
 
+/** Only the two documented values count. Anything else is unknown (null). */
+export function readScimGroupsMode(value: unknown): ScimGroupsMode | null {
+  return value === "groups" || value === "workspaces" ? value : null;
+}
+
 /**
  * `configured` is true only when the server says exactly `true`, so a
- * missing flag never offers a create that would fail.
+ * missing flag never offers a create that would fail. `groupsMode` is
+ * null when missing or unknown, so the web never guesses a mode.
  */
 export function readScimTokenList(value: unknown): ScimTokenList {
   const raw = isRecord(value) && Array.isArray(value.items) ? value.items : [];
@@ -238,6 +270,7 @@ export function readScimTokenList(value: unknown): ScimTokenList {
     items,
     maxActive: normalizeMaxActive(isRecord(value) ? value.maxActive : undefined),
     configured: isRecord(value) && value.configured === true,
+    groupsMode: readScimGroupsMode(isRecord(value) ? value.groupsMode : undefined),
   };
 }
 

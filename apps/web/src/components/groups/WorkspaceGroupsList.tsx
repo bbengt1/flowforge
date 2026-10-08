@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { GroupNameDialog } from "@/components/groups/GroupNameDialog";
+import { WorkspaceGroupScimBadge } from "@/components/groups/WorkspaceGroupScimBadge";
 import {
   invalidateWorkspaceGroups,
   useWorkspaceGroupsList,
@@ -14,6 +15,7 @@ import {
   WorkspaceGroupsAccess,
   WorkspaceGroupsForbidden,
 } from "@/components/groups/WorkspaceGroupsAccess";
+import { useScimGroupsMode } from "@/components/groups/useScimGroupsMode";
 import type { DevIdentity } from "@/lib/identity-headers";
 import { QueryCacheError } from "@/lib/query-cache";
 import {
@@ -34,6 +36,7 @@ import {
   WORKSPACE_GROUPS_HELP,
   WORKSPACE_GROUPS_TITLE,
   workspaceGroupHref,
+  workspaceGroupManagement,
   workspaceGroupMemberCountLabel,
   workspaceGroupProblemTreatment,
 } from "@/lib/workspace-groups";
@@ -64,6 +67,11 @@ function GroupsListBody({ identity }: { identity: DevIdentity }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const list = useWorkspaceGroupsList(identity, true);
+  // The mode is read only when a managed group is on the page.
+  const scim = useScimGroupsMode(
+    identity,
+    list.groups.some((group) => group.managedBy === "scim"),
+  );
   const [createOpen, setCreateOpen] = useState(false);
   const create = useMutation({
     mutationFn: async (displayName: string) => {
@@ -162,12 +170,21 @@ function GroupsListBody({ identity }: { identity: DevIdentity }) {
               data-group-row={group.id}
               className="flex flex-wrap items-center justify-between gap-3 py-3"
             >
-              <Link
-                href={workspaceGroupHref(group.id)}
-                className={`font-medium ${FF_SETTINGS_LINK_CLASS}`}
-              >
-                {group.displayName}
-              </Link>
+              <span className="flex min-w-0 flex-wrap items-center gap-2">
+                <Link
+                  href={workspaceGroupHref(group.id)}
+                  className={`font-medium ${FF_SETTINGS_LINK_CLASS}`}
+                >
+                  {group.displayName}
+                </Link>
+                <WorkspaceGroupScimBadge
+                  tipAlign="start"
+                  management={workspaceGroupManagement({
+                    managedBy: group.managedBy,
+                    groupsMode: scim.mode,
+                  })}
+                />
+              </span>
               <span className={`text-sm ${FF_SETTINGS_MUTED_CLASS}`}>
                 {workspaceGroupMemberCountLabel(group.memberCount)}
               </span>

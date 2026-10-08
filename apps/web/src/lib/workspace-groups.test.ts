@@ -15,27 +15,42 @@ import {
   GROUP_NAME_REQUIRED_MESSAGE,
   GROUP_NAME_TAKEN_MESSAGE,
   GROUP_NAME_TOO_LONG_MESSAGE,
+  GROUP_SCIM_LOCKED_MESSAGE,
+  GROUP_SCIM_MANAGED_DESCRIPTION,
+  GROUP_SCIM_MANAGED_LABEL,
+  GROUP_SCIM_MODE_UNKNOWN_DESCRIPTION,
+  GROUP_SCIM_REFUSED_MESSAGE,
+  GROUP_SCIM_SYNCED_BEFORE_DESCRIPTION,
+  GROUP_SCIM_SYNCED_BEFORE_LABEL,
   WORKSPACE_GROUPS_HREF,
   canManageWorkspaceGroups,
   groupDisplayNameClientError,
   groupDisplayNameLength,
   groupRenameIsNoOp,
+  isGroupManagedByScimProblem,
   isWorkspaceGroupId,
   normalizeGroupDisplayName,
+  readWorkspaceGroup,
   readWorkspaceGroupDetail,
+  readWorkspaceGroupManagedBy,
   readWorkspaceGroups,
+  scimGroupsModeFromProblem,
   workspaceGroupApiPath,
   workspaceGroupApprovalNote,
   workspaceGroupCandidates,
   workspaceGroupDeleteImpact,
   workspaceGroupFieldError,
   workspaceGroupHref,
+  workspaceGroupIsLocked,
+  workspaceGroupManagement,
   workspaceGroupMemberApiPath,
   workspaceGroupMemberCountLabel,
   workspaceGroupMemberLabel,
   workspaceGroupMemberRemoveImpact,
   workspaceGroupMembersApiPath,
   workspaceGroupProblemTreatment,
+  workspaceGroupScimBadge,
+  type WorkspaceGroupManagement,
 } from "./workspace-groups.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -386,5 +401,135 @@ describe("workspace group destructive impact", () => {
         { id: "group", label: "Group", detail: "Ops" },
       ],
     );
+  });
+});
+
+describe("SCIM-managed groups", () => {
+  const wire = {
+    id: GROUP_ID,
+    displayName: "Okta admins",
+    memberCount: 1,
+    createdAt: "2026-10-01T00:00:00Z",
+    updatedAt: "2026-10-01T00:00:00Z",
+  };
+
+  it("reads managedBy: only the exact string scim marks a managed group", () => {
+    assert.equal(readWorkspaceGroup({ ...wire, managedBy: "scim" })?.managedBy, "scim");
+    assert.equal(readWorkspaceGroup({ ...wire, managedBy: null })?.managedBy, null);
+    assert.equal(readWorkspaceGroup(wire)?.managedBy, null);
+    for (const odd of ["SCIM", " scim", "idp", true, 1, {}]) {
+      assert.equal(readWorkspaceGroupManagedBy(odd), null);
+    }
+    const detail = readWorkspaceGroupDetail({ ...wire, managedBy: "scim", members: [] });
+    assert.equal(detail?.managedBy, "scim");
+    const list = readWorkspaceGroups({
+      items: [
+        { ...wire, managedBy: "scim" },
+        { ...wire, id: CAL, managedBy: null },
+      ],
+    });
+    assert.deepEqual(
+      list.map((item) => item.managedBy),
+      ["scim", null],
+    );
+  });
+
+  it("decides the locked state from managedBy and the mode, for every combination", () => {
+    const cases: [
+      "scim" | null | undefined,
+      "groups" | "workspaces" | null | undefined,
+      WorkspaceGroupManagement,
+      boolean,
+    ][] = [
+      ["scim", "groups", "scim-locked", true],
+      ["scim", "workspaces", "scim-unenforced", false],
+      ["scim", null, "scim-mode-unknown", false],
+      ["scim", undefined, "scim-mode-unknown", false],
+      [null, "groups", "local", false],
+      [null, "workspaces", "local", false],
+      [null, null, "local", false],
+      [null, undefined, "local", false],
+      [undefined, "groups", "local", false],
+      [undefined, "workspaces", "local", false],
+      [undefined, null, "local", false],
+      [undefined, undefined, "local", false],
+    ];
+    for (const [managedBy, groupsMode, management, locked] of cases) {
+      const input = { managedBy, groupsMode };
+      assert.equal(workspaceGroupManagement(input), management, JSON.stringify(input));
+      assert.equal(workspaceGroupIsLocked(input), locked, JSON.stringify(input));
+    }
+  });
+
+  it("badges managed groups only, with plain tooltips", () => {
+    assert.equal(workspaceGroupScimBadge("local"), null);
+    assert.deepEqual(workspaceGroupScimBadge("scim-locked"), {
+      label: GROUP_SCIM_MANAGED_LABEL,
+      description: GROUP_SCIM_MANAGED_DESCRIPTION,
+    });
+    assert.deepEqual(workspaceGroupScimBadge("scim-mode-unknown"), {
+      label: GROUP_SCIM_MANAGED_LABEL,
+      description: GROUP_SCIM_MODE_UNKNOWN_DESCRIPTION,
+    });
+    assert.deepEqual(workspaceGroupScimBadge("scim-unenforced"), {
+      label: GROUP_SCIM_SYNCED_BEFORE_LABEL,
+      description: GROUP_SCIM_SYNCED_BEFORE_DESCRIPTION,
+    });
+    assert.equal(GROUP_SCIM_MANAGED_LABEL, "Managed by SCIM");
+    assert.equal(
+      GROUP_SCIM_LOCKED_MESSAGE,
+      "This group is managed by your identity provider through SCIM. Change its name and members there.",
+    );
+    assert.ok(GROUP_SCIM_REFUSED_MESSAGE.endsWith(GROUP_SCIM_LOCKED_MESSAGE));
+    for (const text of [
+      GROUP_SCIM_MANAGED_DESCRIPTION,
+      GROUP_SCIM_MODE_UNKNOWN_DESCRIPTION,
+      GROUP_SCIM_SYNCED_BEFORE_DESCRIPTION,
+      GROUP_SCIM_LOCKED_MESSAGE,
+      GROUP_SCIM_REFUSED_MESSAGE,
+    ]) {
+      assert.doesNotMatch(text, /#\d|managedBy|groupsMode|SCIM_GROUPS_MODE|group_managed_by_scim|409/);
+    }
+  });
+
+  it("recognizes the 409 refusal by status and code only", () => {
+    const refused = problem(409, "group_managed_by_scim");
+    assert.equal(isGroupManagedByScimProblem(refused), true);
+    assert.equal(scimGroupsModeFromProblem(refused), "groups");
+    // Same code on another status, or another 409, is not this refusal.
+    assert.equal(isGroupManagedByScimProblem(problem(400, "group_managed_by_scim")), false);
+    assert.equal(isGroupManagedByScimProblem(problem(403, "group_managed_by_scim")), false);
+    assert.equal(isGroupManagedByScimProblem(problem(409, "group_name_taken")), false);
+    assert.equal(scimGroupsModeFromProblem(problem(409, "group_name_taken")), null);
+    assert.equal(isGroupManagedByScimProblem(null), false);
+    assert.equal(isGroupManagedByScimProblem(undefined), false);
+    // The title and detail never decide it.
+    const titled = {
+      ...problem(409, "conflict"),
+      title: "This group is managed by SCIM",
+      detail: "This group is managed by SCIM. Change it in the identity provider.",
+    };
+    assert.equal(isGroupManagedByScimProblem(titled), false);
+    // The refusal carries no field path, so it never lands on the name field.
+    assert.equal(workspaceGroupFieldError(refused, "displayName"), null);
+    assert.equal(workspaceGroupFieldError(refused, "userId"), null);
+  });
+
+  it("wires every local edit on the detail page to the refusal and the lock", () => {
+    const detail = source("src/components/groups/WorkspaceGroupDetail.tsx");
+    // Four mutations (rename, delete, add, remove) each route the refusal.
+    assert.equal(detail.match(/handleScimRefusal\(error\)/g)?.length, 4);
+    // Rename, Delete group, Add member, and each Remove are disabled with a reason.
+    assert.equal(detail.match(/disabled=\{locked\}/g)?.length, 3);
+    assert.equal(detail.match(/aria-describedby=\{lockedDescribedBy\}/g)?.length, 3);
+    assert.match(detail, /disabled=\{removalPending \|\| Boolean\(lockedNoteId\)\}/);
+    // The page keys off the helper, never a title or detail string.
+    assert.doesNotMatch(detail, /problem\??\.title/);
+    assert.doesNotMatch(detail, /problem\??\.detail/);
+  });
+
+  it("leaves the approver picker untouched: managed groups stay selectable", () => {
+    const picker = source("src/components/workflows/ApproverPicker.tsx");
+    assert.doesNotMatch(picker, /managedBy|scim/i);
   });
 });

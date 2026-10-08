@@ -28,6 +28,7 @@ import {
   SCIM_TOKENS_TITLE,
   canManageScimTokens,
   formatScimTokenTime,
+  scimGroupsModeLine,
   scimTokenActiveCountLabel,
   scimTokenCreateAvailability,
   scimTokenCreatorLabel,
@@ -179,6 +180,7 @@ function ScimTokensPanel({
   const availability = list ? scimTokenCreateAvailability(list, problem) : null;
   const listRetryable = scimTokenListProblemIsRetryable(problem);
   const target = list?.items.find((item) => item.id === revokeId) ?? null;
+  const modeLine = scimGroupsModeLine(list?.groupsMode);
 
   async function revoke(token: ScimToken) {
     setRevoking(true);
@@ -246,6 +248,15 @@ function ScimTokensPanel({
           </button>
         </div>
       </div>
+
+      {list && modeLine ? (
+        <p
+          data-scim-groups-mode={list.groupsMode ?? undefined}
+          className={`mt-3 text-sm ${FF_SETTINGS_MUTED_CLASS}`}
+        >
+          {modeLine}
+        </p>
+      ) : null}
 
       {availability && !availability.allowed ? (
         <p

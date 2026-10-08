@@ -3,6 +3,8 @@ import { expectNoBlockingAxeViolations } from "./axe";
 import { expectNoSecretsInBrowserStorage, installOperatorApi } from "./operator-api";
 import { QUERY_MAX_RETRIES } from "../src/lib/query-cache.ts";
 import {
+  SCIM_GROUPS_MODE_GROUPS_LINE,
+  SCIM_GROUPS_MODE_WORKSPACES_LINE,
   SCIM_TOKEN_ALREADY_REVOKED,
   SCIM_TOKEN_NAME_CONTROL_MESSAGE,
   SCIM_TOKEN_NAME_INVALID_MESSAGE,
@@ -143,6 +145,7 @@ async function installScimTokensApi(
     embed?: boolean;
     configured?: boolean;
     mode?: Mode;
+    groupsMode?: "workspaces" | "groups";
   } = {},
 ): Promise<TokensApi> {
   await installOperatorApi(page, {
@@ -180,6 +183,7 @@ async function installScimTokensApi(
         items: api.tokens.map(record),
         maxActive: 2,
         configured,
+        groupsMode: options.groupsMode ?? "workspaces",
       });
       return;
     }
@@ -646,5 +650,24 @@ test.describe("SCIM tokens admin", () => {
     await page.goto("/embed/v1/settings");
     await expect(page.getByRole("link", { name: "SCIM tokens" })).toHaveCount(0);
     expect(api.calls).toEqual([]);
+  });
+
+  test("shows one plain line for the SCIM Groups mode", async ({ page }) => {
+    await installScimTokensApi(page, { seed: [OKTA], groupsMode: "groups" });
+    await page.goto("/scim-tokens");
+    await expect(page.locator("[data-scim-groups-mode='groups']")).toHaveText(
+      SCIM_GROUPS_MODE_GROUPS_LINE,
+    );
+    await expect(page.locator("[data-scim-groups-mode]")).toHaveCount(1);
+    await expectNoBlockingAxeViolations(page);
+
+    const second = await page.context().newPage();
+    await installScimTokensApi(second, { seed: [OKTA], groupsMode: "workspaces" });
+    await second.goto("/scim-tokens");
+    await expect(second.locator("[data-scim-groups-mode='workspaces']")).toHaveText(
+      SCIM_GROUPS_MODE_WORKSPACES_LINE,
+    );
+    await expect(second.getByRole("button", { name: "Create token" })).toBeEnabled();
+    await second.close();
   });
 });

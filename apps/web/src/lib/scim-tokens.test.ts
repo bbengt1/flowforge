@@ -6,8 +6,14 @@ import { fileURLToPath } from "node:url";
 import { paletteCommands } from "./command-palette.ts";
 import { resolveIdentityProxyTarget } from "./identity-proxy.ts";
 import type { ProblemDetails } from "./problem.ts";
-import { queryKeyHasSecret, scimTokensListQueryKey } from "./query-cache.ts";
 import {
+  queryKeyHasSecret,
+  scimGroupsModeQueryKey,
+  scimTokensListQueryKey,
+} from "./query-cache.ts";
+import {
+  SCIM_GROUPS_MODE_GROUPS_LINE,
+  SCIM_GROUPS_MODE_WORKSPACES_LINE,
   SCIM_TOKEN_ALREADY_REVOKED,
   SCIM_TOKEN_NAME_CONTROL_MESSAGE,
   SCIM_TOKEN_NAME_INVALID_MESSAGE,
@@ -28,9 +34,11 @@ import {
   canManageScimTokens,
   formatScimTokenTime,
   normalizeScimTokenName,
+  readScimGroupsMode,
   readScimToken,
   readScimTokenCreated,
   readScimTokenList,
+  scimGroupsModeLine,
   scimTokenActiveCountLabel,
   scimTokenApiPath,
   scimTokenCreateAvailability,
@@ -91,6 +99,7 @@ function list(overrides: Partial<ScimTokenList> = {}): ScimTokenList {
     items: [readScimToken(wire)!],
     maxActive: 2,
     configured: true,
+    groupsMode: "workspaces",
     ...overrides,
   };
 }
@@ -550,3 +559,53 @@ describe("SCIM token plaintext is never persisted", () => {
 
 const SCIM_TOKEN_REVEAL_WARNING_RE = /SCIM_TOKEN_REVEAL_WARNING/;
 assert.match(SCIM_TOKEN_REVEAL_WARNING, /won't be shown again/);
+
+describe("SCIM Groups mode", () => {
+  it("reads groupsMode: only the two documented values, else unknown", () => {
+    assert.equal(readScimGroupsMode("groups"), "groups");
+    assert.equal(readScimGroupsMode("workspaces"), "workspaces");
+    for (const odd of [undefined, null, "", "GROUPS", "workspace", "mixed", 1, true, {}]) {
+      assert.equal(readScimGroupsMode(odd), null);
+    }
+    assert.equal(
+      readScimTokenList({ items: [], maxActive: 2, configured: true, groupsMode: "groups" })
+        .groupsMode,
+      "groups",
+    );
+    // Reported even when SCIM is off.
+    assert.equal(
+      readScimTokenList({ items: [], maxActive: 2, configured: false, groupsMode: "workspaces" })
+        .groupsMode,
+      "workspaces",
+    );
+    // An older server that sends no mode leaves it unknown.
+    assert.equal(readScimTokenList({ items: [], maxActive: 2, configured: true }).groupsMode, null);
+    assert.equal(readScimTokenList(null).groupsMode, null);
+  });
+
+  it("shows one plain mode line, and none when the mode is unknown", () => {
+    assert.equal(scimGroupsModeLine("groups"), SCIM_GROUPS_MODE_GROUPS_LINE);
+    assert.equal(scimGroupsModeLine("workspaces"), SCIM_GROUPS_MODE_WORKSPACES_LINE);
+    assert.equal(scimGroupsModeLine(null), null);
+    assert.equal(scimGroupsModeLine(undefined), null);
+    for (const line of [SCIM_GROUPS_MODE_GROUPS_LINE, SCIM_GROUPS_MODE_WORKSPACES_LINE]) {
+      assert.ok(line.startsWith("Groups mode: "));
+      assert.doesNotMatch(line, /#\d|SCIM_GROUPS_MODE|groupsMode|managedBy/);
+    }
+  });
+
+  it("never gates Create or Revoke on the mode", () => {
+    for (const groupsMode of ["groups", "workspaces", null] as const) {
+      assert.equal(scimTokenCreateAvailability(list({ groupsMode })).allowed, true);
+    }
+    const page = source("src/components/scim-tokens/ScimTokensPage.tsx");
+    const row = page.slice(page.indexOf("function ScimTokenRow"));
+    assert.equal(row.includes("groupsMode"), false);
+  });
+
+  it("keeps the groups-mode cache key free of secrets and apart from the token list", () => {
+    const key = scimGroupsModeQueryKey("acme/ops");
+    assert.deepEqual(key, ["flowforge", "acme/ops", "scim-tokens", "groups-mode"]);
+    assert.notDeepEqual(key, scimTokensListQueryKey("acme/ops"));
+  });
+});
