@@ -93,13 +93,20 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
  `workspaces` mode the marker stays but is not enforced. Every SCIM
  group change writes the `workspace_group.*` audit row with no actor,
  `details.tokenId`, and `via: scim_token`, never a token.
- Removing a group member or deleting a group (local or SCIM) and every
+ Removing a group member or deleting a group (local or SCIM), every
  workspace membership loss (administrator removal, SCIM `active:
- false`, SCIM `DELETE`, in either mode) run one shared path that
- re-checks waiting approval gates targeting that group or person in the
- same transaction. A gate left with no eligible decider fails with
- `requirement_unresolvable` / `no_eligible_decider`, as at park time; a
- gate that still has one keeps waiting. Membership loss deletes the
+ false`, SCIM `DELETE`, in either mode), and every role change that
+ removes a role run one shared path that re-checks waiting approval
+ gates targeting that group or person in the same transaction. A gate
+ left with no eligible decider fails with `requirement_unresolvable` /
+ `no_eligible_decider`, as at park time; a gate that still has one keeps
+ waiting. Losing an administrator (demotion or removal) also re-checks
+ the gates only an admin override could decide: with one other active
+ administrator left, the gates that administrator requested; with none
+ left, every waiting targeted gate. All of these changes lock the
+ workspace row first. A targeted gate that parks, or is retargeted at
+ boot, while one is in flight waits for it to commit and then reads the
+ new membership, so it never keeps a decider who was just removed. Membership loss deletes the
  person's group rows, local and SCIM-managed; `active: true` restores
  the default role only, never group rows.
  Workspace SCIM tokens are created and revoked under

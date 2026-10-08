@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/approval"
+	"github.com/bbengt1/flowforge/apps/api/internal/approvalgate"
 	"github.com/bbengt1/flowforge/apps/api/internal/artifact"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/bootstrap"
@@ -51,6 +52,10 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Error("load config", "error", err)
+		os.Exit(1)
+	}
+	if err := checkGateSettler(); err != nil {
+		log.Error("approval gates", "error", err)
 		os.Exit(1)
 	}
 	ident := buildinfo.Resolve()
@@ -290,6 +295,21 @@ func main() {
 		log.Error("shutdown", "error", err)
 		os.Exit(1)
 	}
+}
+
+// errNoGateSettler is the boot refusal when no approval-gate settler is
+// linked in. Without one, every removal, demotion, or group change that
+// must close a waiting gate would roll back with approvalgate.ErrNoSettler.
+var errNoGateSettler = errors.New("no approval gate settler is registered (wfstore must be linked into the API binary)")
+
+// checkGateSettler fails boot when approvalgate has no settler.
+// wfstore registers it at init, so this only trips in a binary that
+// stops linking wfstore.
+func checkGateSettler() error {
+	if !approvalgate.Registered() {
+		return errNoGateSettler
+	}
+	return nil
 }
 
 func loadTLSMaterials(certPath, keyPath string) (tlsmaterial.Store, error) {

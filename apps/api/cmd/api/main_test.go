@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/approvalgate"
 )
 
 func TestShouldListenTLSRequiresExistingPair(t *testing.T) {
@@ -31,5 +33,16 @@ func TestShouldListenTLSRequiresExistingPair(t *testing.T) {
 	}
 	if !shouldListenTLS(cert, key) {
 		t.Fatal("existing pair should enable ListenAndServeTLS")
+	}
+}
+
+// The API binary links wfstore, which registers the approval-gate
+// settler at init, so the boot check passes.
+func TestGateSettlerRegisteredAtBoot(t *testing.T) {
+	if err := checkGateSettler(); err != nil {
+		t.Fatalf("checkGateSettler() = %v", err)
+	}
+	if !approvalgate.Registered() {
+		t.Fatal("approvalgate.Registered() = false")
 	}
 }

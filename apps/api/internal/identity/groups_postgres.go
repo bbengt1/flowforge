@@ -281,13 +281,19 @@ func (p *Postgres) DeleteGroup(ctx context.Context, workspaceID string, actor Gr
 
 // DeleteGroupTx hard-deletes the group and its member rows in the
 // caller's transaction. It is the one delete path for local and SCIM
-// callers. Waiting targeted gates that name the group are locked first
-// and re-checked after the delete in the same transaction: a gate left
+// callers. Lock order: the workspace row (LockWorkspaceMembership), then
+// waiting targeted gates that name the group, then the group rows. The
+// gates are re-checked after the delete in the same transaction: a gate left
 // with no eligible decider is closed with requirement_unresolvable /
 // no_eligible_decider; one that still has a decider keeps waiting.
 func DeleteGroupTx(ctx context.Context, tx pgx.Tx, workspaceID string, actor GroupActor, groupID string, now time.Time) error {
 	if !authz.ValidUUID(groupID) {
 		return ErrNotFound
+	}
+	// Workspace row first (a no-op when a SCIM caller already holds it), so
+	// a targeted gate parking now waits and resolves after this commits.
+	if err := LockWorkspaceMembership(ctx, tx, workspaceID); err != nil {
+		return err
 	}
 	managedBy, err := groupManagedByTx(ctx, tx, workspaceID, groupID)
 	if err != nil {
@@ -428,6 +434,10 @@ func RemoveGroupMemberTx(ctx context.Context, tx pgx.Tx, workspaceID string, act
 	}
 	if !authz.ValidUUID(userID) {
 		return false, ErrInvalid
+	}
+	// Workspace row first, as in DeleteGroupTx.
+	if err := LockWorkspaceMembership(ctx, tx, workspaceID); err != nil {
+		return false, err
 	}
 	managedBy, err := groupManagedByTx(ctx, tx, workspaceID, groupID)
 	if err != nil {
