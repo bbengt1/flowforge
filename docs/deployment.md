@@ -148,7 +148,7 @@ API TLS/proxy environment (local defaults are HTTP; production ConfigMap require
 | `API_URL` | `http://127.0.0.1:8080` (compose: `http://api:8080`) | Origin the local worker calls. The production runner does not use it. |
 | `WORKER_ID` | `compose-local` (runner default `production-runner`) | Worker id sent on claim/heartbeat/complete. `deploy/k8s` sets this to the pod name so replicas are distinct fence holders. Do not pin every replica to one literal. |
 | `WORKER_DRAIN_TIMEOUT` | `30s` | Production runner only. After SIGTERM, finish the in-flight claim for this long and do not start another. `deploy/k8s` sets `30s` inside `terminationGracePeriodSeconds: 40`. A claim that outlives the budget is left for lease recovery. A stale HMAC token still cannot complete. |
-| `WORKER_ISSUER` / `WORKER_SUBJECT` | first `PLATFORM_ADMINS` pair | Trusted-dev identity the **compose** worker presents. Must have `workflow.execute`. |
+| `WORKER_ISSUER` / `WORKER_SUBJECT` | `https://idp.example` / `compose-worker` | Trusted-dev identity the **compose** worker presents. Set the same values on `api` and `worker`. In local/dev the API binds this principal as role `operator` in `local` / `default` at startup (see [Local compose worker](#local-compose-worker)). Never a `PLATFORM_ADMINS` principal. |
 | `SCRIPT_SIGNING_KEY` | **required** (boot-fail) | 32-byte HMAC (base64 or 64 hex) for script artifact signatures. Missing or malformed **refuses to start** — no per-process random default. Compose sets a documented local-only value so restarts stay stable. Generate with `openssl rand -base64 32`. **Do not copy the compose default to k8s.** |
 | `INTEGRATION_ACTIONS_ENABLED` | `true` | Set `false` to disable `http.request`, `notification.webhook`, and `notification.email` at validate/publish/execute. |
 | `BACKUP_ENCRYPTION_KEY` | (scripts / CronJob only) | Passphrase for `scripts/backup/*` (AES-256-GCM AEAD + PBKDF2, format FFB1). Wrap with KMS before production. Not an API process env. Kubernetes: `flowforge-backup` Secret. |
@@ -250,6 +250,7 @@ self-asserted headers or let an embed session create tenants.
 | Tenant slug / name | `local` / `Local demo` |
 | Workbench key / name | `default` / `Local workbench` |
 | Workspace admin | Each `PLATFORM_ADMINS` principal (compose default `https://idp.example\|admin-1`), granted through the same membership path other members use |
+| Compose worker | `https://idp.example\|compose-worker` as `operator` only (bound by the API at startup; see [Local compose worker](#local-compose-worker)) |
 | Public URL | `PUBLIC_BASE_URL` or `http://localhost:3000`; stored server-side; first-run wizard **skipped** |
 | Demo credentials | `Local demo token`, `Local demo webhook`, `Local demo provider` (tag `local-demo`) |
 
@@ -453,9 +454,43 @@ does not start an in-process runner.
 | `flow.delay` | Fail-closed (`local-worker-unsupported`). Durable wait is not an in-worker sleep. |
 | Provider (`k8s.*`, `ssh.run`, `script.*`, `http.request`, …) | Fail-closed (`local-worker-unsupported`). Use the [production runner](#production-runner). |
 
-Identity is the compose trusted-dev principal (`PLATFORM_ADMINS`,
-default `https://idp.example|admin-1`). The worker lists
-`GET /workspaces` and claims each membership. A workspace that returns
+Identity is a dedicated trusted-dev principal, `WORKER_ISSUER` /
+`WORKER_SUBJECT` (default `https://idp.example|compose-worker`). It is
+not a human admin and is not a `PLATFORM_ADMINS` entry. The worker
+lists `GET /workspaces` and claims each membership.
+
+#### Worker role binding
+
+On every start in local/dev, the API binds the worker principal in
+tenant `local` / workbench `default` with exactly one role, `operator`.
+That is the smallest built-in role with `workflow.execute`, which claim,
+heartbeat, complete, and fail require. `operator` has no
+`approval.decide` and no `workspace.administer`, so the worker:
+
+- never counts as another admin or an eligible decider for an approval
+  gate (a gate whose only admin is the requester still fails with
+  `no_eligible_decider`);
+- is never listed in approver candidates;
+- can never decide a gate (`capabilities.decide` is `missing_permission`).
+
+The binding is idempotent and works on a fresh volume and on an existing
+one. If the worker principal was given other roles, the next API start
+resets it to `operator` only. The API does not create the `local`
+tenant or `default` workbench for the worker; on a fresh volume they
+come from the local seed or the first-run Login provisioning, which run
+first. It skips (with a warning) a worker principal that matches a
+`PLATFORM_ADMINS` entry or the Login `admin` user, and leaves that
+principal's roles alone.
+
+| Setting | Binding |
+| --- | --- |
+| `APP_ENV=development\|dev\|local\|test`, `REQUIRE_TLS` false, `TRUSTED_DEV_IDENTITY_HEADERS=true` (compose default) | Bound at API start. |
+| `LOCAL_WORKER=0` / `false` / `off` on `api` | Not bound. |
+| Production-locked `APP_ENV` or `REQUIRE_TLS=true` | Never bound. |
+
+To let the worker claim in another workspace, add the worker principal
+there as a member with role `operator`. Do not give it `admin` or
+`approver`. A workspace that returns
 403 on claim is skipped; later memberships in that pass are still
 polled. Any other claim error stops the pass. Host-supplied workspace
 ids are not sent (400).
