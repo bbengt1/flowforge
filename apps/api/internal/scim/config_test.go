@@ -99,3 +99,34 @@ func TestLoadIssuerOnlyEnablesWorkspaceTokens(t *testing.T) {
 		t.Fatalf("workspace-shaped instance bearer: %v", err)
 	}
 }
+
+func TestLoadGroupsMode(t *testing.T) {
+	t.Setenv(EnvBearerToken, "")
+	t.Setenv(EnvIssuer, "https://idp.example")
+	t.Setenv(EnvDefaultRole, "")
+	for _, c := range []struct {
+		raw, want string
+	}{{"", GroupsModeWorkspaces}, {"workspaces", GroupsModeWorkspaces}, {" groups ", GroupsModeGroups}} {
+		t.Setenv(EnvGroupsMode, c.raw)
+		got, err := Load(true, "")
+		if err != nil || got.Mode() != c.want || got.Groups() != (c.want == GroupsModeGroups) {
+			t.Fatalf("%q: %+v %v", c.raw, got.GroupsMode, err)
+		}
+	}
+	// Any other value fails boot, with SCIM on or off.
+	for _, bad := range []string{"group", "Groups", "WORKSPACES", "both", "1"} {
+		t.Setenv(EnvGroupsMode, bad)
+		t.Setenv(EnvIssuer, "https://idp.example")
+		if _, err := Load(true, ""); err == nil || !strings.Contains(err.Error(), EnvGroupsMode) {
+			t.Fatalf("%q with SCIM on: %v", bad, err)
+		}
+		t.Setenv(EnvIssuer, "")
+		if _, err := Load(true, ""); err == nil {
+			t.Fatalf("%q with SCIM off must fail", bad)
+		}
+	}
+	// The zero value is workspaces mode.
+	if (Settings{}).Groups() || (Settings{}).Mode() != GroupsModeWorkspaces {
+		t.Fatal("zero Settings must be workspaces mode")
+	}
+}

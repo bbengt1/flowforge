@@ -206,9 +206,14 @@ PLATFORM_ADMINS=https://idp.example|admin-1
 # SCIM_ISSUER must match OIDC_ISSUER when both are set. Set the IdP
 # externalId to the OIDC sub.
 # SCIM_DEFAULT_ROLE defaults to viewer (workspace role only).
+# SCIM_GROUPS_MODE is workspaces (default: a SCIM Group is a workspace)
+# or groups (a SCIM Group is a workspace group managed by that
+# workspace's SCIM token; the instance token is refused on /Groups).
+# Any other value is a boot-fail.
 # SCIM_BEARER_TOKEN=
 # SCIM_ISSUER=
 # SCIM_DEFAULT_ROLE=viewer
+# SCIM_GROUPS_MODE=workspaces
 # MFA_SECRET_KEY encrypts stored TOTP secrets. 32 bytes as base64
 # (std or URL, padded or raw) or 64 hex. Leave unset to keep MFA enroll
 # at 503. Malformed is a boot-fail and the error never prints the key.

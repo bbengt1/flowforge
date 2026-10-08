@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/approvalgate"
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
@@ -681,24 +683,60 @@ func (p *Postgres) RemoveMember(ctx context.Context, workspaceID, userID string)
 	if err := LockWorkspaceMembership(ctx, tx, workspaceID); err != nil {
 		return err
 	}
+	removed, err := RemoveMembershipTx(ctx, tx, workspaceID, userID, time.Now())
+	if err != nil {
+		return err
+	}
+	if !removed {
+		return ErrNotFound
+	}
+	return tx.Commit(ctx)
+}
+
+// RemoveMembershipTx is the one membership-loss path: admin removal
+// (RemoveMember), SCIM active:false, and SCIM DELETE all call it, in
+// either SCIM_GROUPS_MODE. The caller must already hold the workspace-row
+// lock (LockWorkspaceMembership) and, for SCIM, the link row.
+//
+// Lock order after that: waiting targeted gates that name the user or a
+// group the user is in (executions, then approvals), then the user's
+// role bindings, then group rows (local and SCIM-managed alike). The last-
+// admin guard runs after the binding delete. After the group rows are
+// gone the locked gates are re-checked in the same transaction; a gate
+// left with no eligible decider is closed with requirement_unresolvable /
+// no_eligible_decider, and one that still has a decider keeps waiting.
+//
+// removed reports whether any role binding was deleted. Group rows are
+// deleted either way, so a link left without a role never keeps them.
+func RemoveMembershipTx(ctx context.Context, tx pgx.Tx, workspaceID, userID string, now time.Time) (bool, error) {
+	if !authz.ValidUUID(workspaceID) || !authz.ValidUUID(userID) {
+		return false, ErrInvalid
+	}
+	gates, err := approvalgate.Lock(ctx, tx, workspaceID, nil, []string{userID})
+	if err != nil {
+		return false, mapDBErr(err)
+	}
 	tag, err := tx.Exec(ctx, `
 		DELETE FROM workspace_role_bindings WHERE workspace_id = $1::uuid AND user_id = $2::uuid
 	`, workspaceID, userID)
 	if err != nil {
-		return mapDBErr(err)
+		return false, mapDBErr(err)
 	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	if err := ensureAdmin(ctx, tx, workspaceID); err != nil {
-		return err
+	removed := tag.RowsAffected() > 0
+	if removed {
+		if err := ensureAdmin(ctx, tx, workspaceID); err != nil {
+			return false, err
+		}
 	}
 	if _, err := tx.Exec(ctx, `
 		DELETE FROM workspace_group_members WHERE workspace_id = $1::uuid AND user_id = $2::uuid
 	`, workspaceID, userID); err != nil {
-		return mapDBErr(err)
+		return false, mapDBErr(err)
 	}
-	return tx.Commit(ctx)
+	if _, err := approvalgate.Recheck(ctx, tx, workspaceID, gates, now); err != nil {
+		return false, mapDBErr(err)
+	}
+	return removed, nil
 }
 
 func (p *Postgres) ResolveUserRef(ctx context.Context, userID, issuer, subject, displayName string) (User, error) {

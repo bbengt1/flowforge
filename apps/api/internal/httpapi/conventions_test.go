@@ -266,6 +266,7 @@ func TestOpenAPIDocumentsImplementedRoutesAndProblems(t *testing.T) {
 		CodeApprovalClosed: true, CodeApprovalRequirementUnavailable: true,
 		CodePasswordChangeRequired: true,
 		CodeGroupNameTaken:         true, CodeGroupMemberNotInWorkspace: true,
+		CodeGroupManagedBySCIM:  true,
 		CodeApproverNotTargeted: true,
 		CodeScimTokenLimit:      true, CodeScimNotConfigured: true,
 	}
