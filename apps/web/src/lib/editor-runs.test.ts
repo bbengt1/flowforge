@@ -241,7 +241,7 @@ describe("R4.2 editor runs overlay operate density", () => {
     assert.equal(R4_GUARDRAILS.overlayStaysEditorOnly, true);
     assert.match(R4_LATER_STORY_NOTES.r42, /#255/);
     assert.match(EDITOR_RUNS_OPERATE_HELP, /without leaving the graph/);
-    assert.match(EDITOR_RUNS_OPERATE_HELP, /\/executions\/\{id\}/);
+    assert.match(EDITOR_RUNS_OPERATE_HELP, /Open execution opens the full run page/);
     assert.match(EDITOR_RUN_OVERLAY_KEYBOARD_HELP, /highlights matching steps/);
   });
 

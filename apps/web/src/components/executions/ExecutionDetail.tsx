@@ -25,6 +25,9 @@ import {
   CANCEL_FORBIDDEN_MESSAGE,
   EXECUTION_AUDIT_EVENTS_HELP,
   EXECUTION_CANCEL_DENIED_NOTE,
+  EXECUTION_JOBS_HELP,
+  EXECUTION_NO_CONFIG_PINS,
+  EXECUTIONS_VIEW_DENIED,
   IDEMPOTENCY_KEY_HELP,
   INDETERMINATE_STATUS_HELP,
   REDACTED_HELP,
@@ -424,10 +427,7 @@ export function ExecutionDetail({
       ) : null}
 
       {denied ? (
-        <p className={`text-sm ${FF_INBOX_MUTED_CLASS}`}>
-          This role cannot view executions (
-          <code className="font-mono text-xs">execution.view</code> missing).
-        </p>
+        <p className={`text-sm ${FF_INBOX_MUTED_CLASS}`}>{EXECUTIONS_VIEW_DENIED}</p>
       ) : null}
 
       <nav aria-label="Execution errors" className="text-sm">
@@ -704,7 +704,7 @@ export function ExecutionDetail({
               <p className={`text-xs font-medium ${FF_INBOX_MUTED_CLASS}`}>Config pins</p>
               <ConfigPinList
                 pins={view.pins}
-                empty="No ops-config pins on this execution."
+                empty={EXECUTION_NO_CONFIG_PINS}
               />
             </div>
             <div className="mt-4">
@@ -773,8 +773,7 @@ export function ExecutionDetail({
           <section className={FF_INBOX_PANEL_CLASS}>
             <h2 className={`text-lg ${FF_INBOX_TITLE_CLASS}`}>Compare another run</h2>
             <p className={`mt-1 text-sm ${FF_INBOX_MUTED_CLASS}`}>
-              Client-side diff of redacted summaries. Secrets stay{" "}
-              <code className="font-mono text-xs">[redacted]</code>.
+              Compare this run with another one. Secrets stay [redacted].
             </p>
             <form
               className="mt-3 flex flex-wrap items-end gap-3"
@@ -842,11 +841,8 @@ export function ExecutionDetail({
           <section className={FF_INBOX_PANEL_CLASS}>
             <h2 className={`text-lg ${FF_INBOX_TITLE_CLASS}`}>Steps</h2>
             <p className={`mt-1 text-sm ${FF_INBOX_MUTED_CLASS}`}>
-              Redacted step state with bounded logs and output. Secret
-              values show as{" "}
-              <code className="font-mono text-xs">[redacted]</code>. Graph
-              replay above uses the pinned published version when YAML is
-              available.
+              Each step&apos;s state, logs, and output, with secrets shown as
+              [redacted]. The graph above shows the published version that ran.
             </p>
             <p className={`mt-1 text-xs ${FF_INBOX_MUTED_CLASS}`}>{BOUNDED_LOG_HELP}</p>
             {view.steps.length === 0 ? (
@@ -1053,11 +1049,7 @@ export function ExecutionDetail({
 
           <section className={FF_INBOX_PANEL_CLASS}>
             <h2 className={`text-lg ${FF_INBOX_TITLE_CLASS}`}>Jobs</h2>
-            <p className={`mt-1 text-sm ${FF_INBOX_MUTED_CLASS}`}>
-              Dispatch records with safe lease/claim/heartbeat metadata when
-              the API returns them. Worker secrets are never shown. This UI
-              does not claim jobs.
-            </p>
+            <p className={`mt-1 text-sm ${FF_INBOX_MUTED_CLASS}`}>{EXECUTION_JOBS_HELP}</p>
             {view.jobViews.length === 0 ? (
               <p className={`mt-3 text-sm ${FF_INBOX_MUTED_CLASS}`}>No jobs returned.</p>
             ) : (

@@ -3756,7 +3756,7 @@ function WorkflowActions({
             Start published
           </button>
         ) : (
-          <span className={`text-sm ${FF_OVERVIEW_MUTED_CLASS}`} title="workflow.execute required">
+          <span className={`text-sm ${FF_OVERVIEW_MUTED_CLASS}`}>
             Start locked
           </span>
         )

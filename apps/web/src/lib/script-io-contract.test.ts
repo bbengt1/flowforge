@@ -192,10 +192,10 @@ describe("script I/O contract adapter", () => {
     );
     assert.match(
       scriptRetryBlockedMessage({ status: "indeterminate", nodeType: "script.python" }),
-      /Do not assume the script did not run/,
+      /Don't assume the script didn't run/,
     );
-    assert.match(scriptIndeterminateCopy(), /lease lost/i);
-    assert.match(SCRIPT_IO_NO_BLIND_RETRY_HELP, /result\.retry\.allowed/);
+    assert.match(scriptIndeterminateCopy(), /lease was lost/i);
+    assert.match(SCRIPT_IO_NO_BLIND_RETRY_HELP, /safe to retry/);
     assert.match(SCRIPT_IO_INDETERMINATE_HELP, /never blindly re-run/);
   });
 

@@ -83,20 +83,20 @@ export const IDEMPOTENCY_CREATED_MESSAGE = "Started a new run.";
 export const IDEMPOTENCY_CONFLICT_MESSAGE =
   "This idempotency key was already used with different input, so no run was started. Use a new key only if you mean to start a new run.";
 
+/** Next to the run's idempotency key on the run page. */
 export const IDEMPOTENCY_KEY_HELP =
-  "Optional. Unique per workspace and workflow version. Same key + same input returns the original run (200). Same key + different input is 409.";
+  "Starting this version again with the same key and the same input opens this run instead of starting a second one. The same key with different input starts nothing.";
 
 export const REDACTED_HELP =
   "Secret values from the API appear as [redacted]. Unexpected secret field names are stripped.";
 
-export const CANCEL_APPLIED_MESSAGE =
-  "Cancellation recorded. The API accepted the request (HTTP 200).";
+export const CANCEL_APPLIED_MESSAGE = "Cancel recorded for this run.";
 
 export const CANCEL_IDEMPOTENT_MESSAGE =
-  "Already canceled. A second cancel is idempotent — the API did not start new work.";
+  "This run was already canceled. Nothing else changed.";
 
 export const CANCEL_FORBIDDEN_MESSAGE =
-  "Cancel is separately authorized (execution.cancel). HTTP 403 is fail-closed; this UI does not treat the run as canceled.";
+  "Your role can't cancel runs. The run wasn't canceled.";
 
 /** Contract note. Not UI copy: never render it. */
 export const CANCEL_CSRF_HELP =
@@ -106,16 +106,16 @@ export const INDETERMINATE_STATUS_HELP =
   "Indeterminate means a remote side effect may have occurred and was not verified. Do not assume the action did not run.";
 
 export const RETRY_UNAVAILABLE_MESSAGE =
-  "Retry is only offered for failed or canceled core data.* / flow.* steps. Provider nodes and other terminals are not retried from this UI.";
+  "Only failed or canceled built-in data and flow steps can be retried here. Steps that act on other systems aren't retried from this page.";
 
 export const RETRY_INDETERMINATE_MESSAGE =
   "Retry is not offered for indeterminate outcomes. A remote side effect may have occurred and was not verified. Do not assume the action did not run.";
 
 export const RETRY_APPLIED_MESSAGE =
-  "Retry queued a new attempt (HTTP 201). The API did not silently re-run an indeterminate step.";
+  "Retry queued a new attempt. Steps marked Indeterminate weren't re-run.";
 
 export const RETRY_FORBIDDEN_MESSAGE =
-  "Retry requires workflow.execute. HTTP 403 is fail-closed; this UI does not start another attempt.";
+  "Your role can't retry runs. No new attempt was started.";
 
 export const RETRY_CONFLICT_MESSAGE =
   "This execution can't be retried.";
@@ -134,6 +134,21 @@ export const EXECUTION_DETAIL_PAGE_HELP =
 
 /** On the run page when the role can't cancel. */
 export const EXECUTION_CANCEL_DENIED_NOTE = "Your role can't cancel runs.";
+
+/** Shown when the role can't view runs: inbox, run page, and the editor's Runs drawer. */
+export const EXECUTIONS_VIEW_DENIED = "Your role can't view runs.";
+
+/** Shown when the API response had secret-looking fields that FlowForge hid. */
+export function strippedSecretFieldsMessage(keys: readonly string[]): string {
+  return `FlowForge hid fields that looked like secrets: ${keys.join(", ")}. Tell your FlowForge admin.`;
+}
+
+/** Empty config pins list on the run page. Matches the Start dialog. */
+export const EXECUTION_NO_CONFIG_PINS = "No config pins on this run.";
+
+/** Above the run's jobs list. */
+export const EXECUTION_JOBS_HELP =
+  "Worker jobs for this run, with their lease and heartbeat details when available. Worker secrets are never shown.";
 
 /** Above the run's audit events. */
 export const EXECUTION_AUDIT_EVENTS_HELP =
@@ -171,7 +186,7 @@ export const COMPARE_REDACTION_HELP =
   "Compare shows redacted summaries only. Secret field names are stripped; values never appear as plaintext.";
 
 export const GRAPH_REPLAY_HELP =
-  "Replay overlays step status on the E6.2 canvas projection of the pinned published version YAML. Invalid YAML is never guessed.";
+  "Replay shows each step's status on the graph of the published version that ran. If that version can't be read, FlowForge shows an error instead of guessing.";
 
 export const KEYBOARD_HISTORY_HELP =
   "Arrow keys move through the history list. Enter or Space opens the focused execution. Error links jump to the failed or indeterminate step.";
@@ -179,32 +194,38 @@ export const KEYBOARD_HISTORY_HELP =
 export const ARTIFACT_METADATA_HELP =
   "Artifact cards show encrypted metadata only: name, digest, size, classification, and retention. Bucket credentials and durable public URLs are never displayed or stored.";
 
-export const DOWNLOAD_GRANT_HELP =
+/** Contract note for the artifact download flow. Not UI copy: never render it. */
+export const DOWNLOAD_GRANT_CONTRACT_NOTE =
   "Each download POSTs /artifacts/{id}/downloads (CSRF, 60s TTL) then streams GET /artifact-downloads/{grantId} with cookies. Authorization is re-evaluated per request. The grant href is used once and discarded — it is never persisted in UI state.";
 
+/** Above the artifact list on the run page. */
+export const DOWNLOAD_GRANT_HELP =
+  "Each download uses a short-lived link that works once. FlowForge checks your access on every download and never saves the link.";
+
 export const DOWNLOAD_FORBIDDEN_MESSAGE =
-  "Download authorization failed (HTTP 403). Auth is re-evaluated per grant. This UI fails closed and does not retry with a cached URL.";
+  "You don't have access to download this artifact. Nothing was downloaded.";
 
 export const DOWNLOAD_EXPIRED_MESSAGE =
-  "The download grant expired (HTTP 404). This UI remints once and does not reuse an expired href.";
+  "The download link expired before the download finished. Try the download again.";
 
 export const DOWNLOAD_APPLIED_MESSAGE =
-  "Download streamed through the short-lived grant. The href was discarded and is not stored.";
+  "Download finished. The one-time link was discarded.";
 
+/** Contract note. Not UI copy: never render it. */
 export const DOWNLOAD_CSRF_HELP =
   "Download grant sends X-CSRF-Token with the session cookie. Missing CSRF fails closed before the Go API is called. Grant tokens are never logged.";
 
 export const DOWNLOAD_UNAVAILABLE_MESSAGE =
-  "This artifact cannot be downloaded. Retention may have removed metadata and payload, or a legal hold / missing grant blocked access.";
+  "This artifact can't be downloaded. It may have passed its retention period, or a legal hold or access rule is blocking it.";
 
 export const BOUNDED_LOG_HELP =
   "Step logs and outputs are bounded and already-redacted. Secret values appear as [redacted]. Unexpected secret field names are stripped.";
 
 export const RETENTION_HELP =
-  "After retention expires, both artifact metadata and object payload are removed. This UI never keeps a durable download URL past that point.";
+  "When retention ends, the artifact and its details are deleted. FlowForge never keeps a download link past that point.";
 
 export const LEGAL_HOLD_HELP =
-  "Legal hold preserves evidence. Retention deletion is deferred and download/access events belong on the audit trail. Operator copy stays secret-free.";
+  "A legal hold keeps this evidence. Retention deletion waits until the hold is lifted, and downloads are recorded in the audit log.";
 
 export const ARTIFACT_ISOLATION_HOOK_HELP =
   "GET /workspace/artifacts/{id} is the E2.2 isolation hook, not the product artifact API.";

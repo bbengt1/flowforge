@@ -432,7 +432,16 @@ export const EXECUTION_STATUS_REASON_SENTENCES: Record<
     "Failed because an approval requirement could no longer be met.",
   workflow_deleted: "Failed because the workflow was deleted.",
   "no-worker": "No worker is claiming jobs.",
+  missing_actor:
+    "This run didn't start because FlowForge couldn't tell who started it. Start it again.",
 };
+
+/**
+ * Reasons whose API message is never shown, even when one is sent: the
+ * plain sentence always wins. missing_actor's API detail names the
+ * internal "actor" field.
+ */
+const SENTENCE_ONLY_STATUS_REASONS: ReadonlySet<string> = new Set(["missing_actor"]);
 
 /** Sentence for a known statusReason. Unknown and missing values return null. */
 export function executionStatusReasonSentence(reason: unknown): string | null {
@@ -487,6 +496,9 @@ function knownStatusReasonErrorText(code: string, message: string): string | nul
   const sentence = executionStatusReasonSentence(code);
   if (!sentence) {
     return null;
+  }
+  if (SENTENCE_ONLY_STATUS_REASONS.has(code)) {
+    return sentence;
   }
   let rest = message.trim();
   const prefixed = `${code}:`;
@@ -578,7 +590,10 @@ export function executionFailureReasonText(input: {
     if (normalizeExecutionStatus(step.status) !== "failed") {
       continue;
     }
-    const message = readPlainErrorParts(step.error).message;
+    const { code, message } = readPlainErrorParts(step.error);
+    if (SENTENCE_ONLY_STATUS_REASONS.has(code)) {
+      return executionStatusReasonSentence(code);
+    }
     if (!message || message === raw) {
       continue;
     }

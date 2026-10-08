@@ -3,7 +3,6 @@
 import { ExecutionStatusBadge } from "@/components/executions/ExecutionStatusBadge";
 import {
   ARTIFACT_METADATA_HELP,
-  DOWNLOAD_CSRF_HELP,
   DOWNLOAD_GRANT_HELP,
   LEGAL_HOLD_HELP,
   RETENTION_HELP,
@@ -47,7 +46,6 @@ export function ExecutionArtifacts({
       <h2 className={`text-lg ${FF_INBOX_TITLE_CLASS}`}>Artifacts</h2>
       <p className={`mt-1 text-sm ${FF_INBOX_MUTED_CLASS}`}>{ARTIFACT_METADATA_HELP}</p>
       <p className={`mt-1 text-xs ${FF_INBOX_MUTED_CLASS}`}>{DOWNLOAD_GRANT_HELP}</p>
-      <p className={`mt-1 text-xs ${FF_INBOX_MUTED_CLASS}`}>{DOWNLOAD_CSRF_HELP}</p>
       <p className="mt-3 text-sm">
         {retentionStatusMessage({
           retentionUntil,

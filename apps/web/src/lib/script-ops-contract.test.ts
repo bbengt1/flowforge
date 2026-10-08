@@ -257,8 +257,8 @@ describe("script ops contract adapter", () => {
       emergencyStopExpectedOutcome({ status: "running", uncertain: true }),
       "indeterminate",
     );
-    assert.match(scriptEmergencyStopCopy({ outcome: "indeterminate" }), /indeterminate/);
-    assert.match(SCRIPT_EMERGENCY_STOP_INDETERMINATE_HELP, /Do not assume the script did not run/);
+    assert.match(scriptEmergencyStopCopy({ outcome: "indeterminate" }), /indeterminate/i);
+    assert.match(SCRIPT_EMERGENCY_STOP_INDETERMINATE_HELP, /don't assume the script didn't run/);
     assert.equal(canBlindRetryAfterEmergencyStop(), false);
     assert.deepEqual(buildScriptRevokeBody({ reason: " leaked key " }), { reason: "leaked key" });
     assert.deepEqual(buildScriptRevokeBody({}), {});

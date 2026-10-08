@@ -539,7 +539,7 @@ describe("execution client", () => {
     assert.equal(second.ok, true);
     if (second.ok) {
       assert.equal(second.idempotent, true);
-      assert.match(second.message, /idempotent/);
+      assert.match(second.message, /already canceled/);
     }
   });
 
@@ -657,7 +657,7 @@ describe("execution client", () => {
     if (created.ok) {
       assert.equal(created.statusCode, 201);
       assert.equal(created.execution?.status, "queued");
-      assert.match(created.message, /201/);
+      assert.match(created.message, /queued a new attempt/);
     }
     assert.equal(seen[0]?.url, `/api/v1/executions/${EXECUTION_ID}/retry`);
     assert.equal(seen[0]?.method, "POST");

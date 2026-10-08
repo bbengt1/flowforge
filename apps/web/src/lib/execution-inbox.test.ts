@@ -84,8 +84,8 @@ describe("R4.1 execution inbox", () => {
     assert.equal(R41_KEEP_STORY_OPEN, true);
     assert.equal(EXECUTION_INBOX.migrateInPlace, true);
     assert.equal(EXECUTION_INBOX.operateDensity, true);
-    assert.match(EXECUTION_INBOX_HELP, /status, workflowId, and limit/);
-    assert.match(EXECUTION_INBOX_HELP, /\/executions\/\{id\}/);
+    assert.match(EXECUTION_INBOX_HELP, /Filter runs by status or workflow/);
+    assert.match(EXECUTION_INBOX_HELP, /Drafts never run/);
     assert.match(EXECUTION_INBOX_KEYBOARD_HELP, /opens the focused run/);
     assert.equal(R4_GUARDRAILS.oneOperatePath, true);
     assert.equal(R4_GUARDRAILS.loudIndeterminate, true);
