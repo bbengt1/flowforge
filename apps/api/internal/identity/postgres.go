@@ -942,6 +942,11 @@ func ensureAdmin(ctx context.Context, tx pgx.Tx, workspaceID string) error {
 // that admits the row, or the lock silently finds nothing and returns
 // ErrNotFound.
 //
+// Never call this in a transaction that already holds the row FOR SHARE
+// (parkedapproval.LockWorkspaceForPark): upgrading from a share lock
+// while another transaction holds one too deadlocks. Take this lock
+// first, or not at all.
+//
 // ErrNotFound means the workspace does not exist.
 func LockWorkspaceMembership(ctx context.Context, tx pgx.Tx, workspaceID string) error {
 	if !authz.ValidUUID(workspaceID) {

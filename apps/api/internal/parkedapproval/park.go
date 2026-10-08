@@ -110,6 +110,13 @@ func Fingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID
 // or on run inserts. FOR KEY SHARE would not conflict with FOR NO KEY
 // UPDATE and so would not serialize anything.
 //
+// A transaction that holds this share lock must never go on to take
+// identity.LockWorkspaceMembership (FOR NO KEY UPDATE), directly or
+// through GuardLastAdmin: two parks that each hold the share lock and
+// both try to upgrade wait on each other and deadlock. Membership
+// changes take the stronger lock first and never this one.
+// TestParkLockHoldersNeverTakeMembershipLock enforces this.
+//
 // ErrInvalid: the workspace id is malformed or the row does not exist.
 func LockWorkspaceForPark(ctx context.Context, tx pgx.Tx, workspaceID string) error {
 	if !authz.ValidUUID(workspaceID) {
