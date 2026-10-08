@@ -11,12 +11,20 @@
  * the web hides the surface on `/embed/v1` and never calls it there.
  * Field errors are placed by `errors[].path` only, never by message
  * text; the code only picks the sentence.
+ *
+ * A group with `managedBy: "scim"` was created by a workspace SCIM
+ * token. It is read-only here only while the instance runs SCIM Groups
+ * mode `groups`. The group list reports the mode once at the top level
+ * and the group detail on the group object (`groupsMode`); the server
+ * refuses local edits of a managed group in that mode with 409
+ * `group_managed_by_scim`.
  */
 
 import { sanitizeDestructiveImpact, type DestructiveImpactItem } from "./confirm-destructive.ts";
 import { isResourceId } from "./identity-proxy-ids.ts";
 import type { Member } from "./identity-types.ts";
 import type { ProblemDetails } from "./problem.ts";
+import { readScimGroupsMode, type ScimGroupsMode } from "./scim-tokens.ts";
 import { WORKSPACE_ADMIN_PERMISSION } from "./workspace-nav.ts";
 
 export const WORKSPACE_GROUPS_API_PATH = "/workspace/groups";
@@ -26,11 +34,16 @@ export const GROUP_NAME_MAX_CHARS = 128;
 
 export const GROUP_NAME_TAKEN_CODE = "group_name_taken";
 export const GROUP_MEMBER_NOT_IN_WORKSPACE_CODE = "group_member_not_in_workspace";
+export const GROUP_MANAGED_BY_SCIM_CODE = "group_managed_by_scim";
+
+/** "scim" when a workspace SCIM token created the group; null for a local group. */
+export type WorkspaceGroupManagedBy = "scim" | null;
 
 export type WorkspaceGroup = {
   id: string;
   displayName: string;
   memberCount: number;
+  managedBy: WorkspaceGroupManagedBy;
   createdAt: string;
   updatedAt: string;
 };
@@ -43,6 +56,11 @@ export type WorkspaceGroupMember = {
 
 export type WorkspaceGroupDetail = WorkspaceGroup & {
   members: WorkspaceGroupMember[];
+  /**
+   * The instance's SCIM Groups mode, from the detail response. Null when
+   * the server sent no value this web knows (an older server).
+   */
+  groupsMode: ScimGroupsMode | null;
 };
 
 export type WorkspaceGroupField = "displayName" | "userId";
@@ -113,6 +131,29 @@ export const GROUP_DELETE_DESCRIPTION =
 export const GROUP_MEMBER_REMOVE_DESCRIPTION =
   "This removes the person from this group only. They stay in the workspace with the same roles.";
 
+export const GROUP_SCIM_MANAGED_LABEL = "Managed by SCIM";
+
+export const GROUP_SCIM_SYNCED_BEFORE_LABEL = "Synced from SCIM before";
+
+/** Tooltip on the badge when the group is read-only here. */
+export const GROUP_SCIM_MANAGED_DESCRIPTION =
+  "Your identity provider manages this group through SCIM. Change its name and members there.";
+
+/** Tooltip when this page can't tell whether SCIM manages groups right now. */
+export const GROUP_SCIM_MODE_UNKNOWN_DESCRIPTION =
+  "Your identity provider created this group through SCIM. If a change here is refused, make it in the identity provider.";
+
+/** Tooltip when the instance no longer lets SCIM manage groups. */
+export const GROUP_SCIM_SYNCED_BEFORE_DESCRIPTION =
+  "Your identity provider created this group through SCIM. SCIM doesn't manage groups on this instance now, so you can change it here.";
+
+/** The one plain sentence on a read-only group. Disabled controls point at it. */
+export const GROUP_SCIM_LOCKED_MESSAGE =
+  "This group is managed by your identity provider through SCIM. Change its name and members there.";
+
+/** After a 409 group_managed_by_scim on a page that still offered the edit. */
+export const GROUP_SCIM_REFUSED_MESSAGE = `That change wasn't saved. ${GROUP_SCIM_LOCKED_MESSAGE}`;
+
 /* ---------- gating ---------- */
 
 /**
@@ -159,6 +200,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+/** Only the exact string "scim" marks a managed group. Anything else is local. */
+export function readWorkspaceGroupManagedBy(value: unknown): WorkspaceGroupManagedBy {
+  return value === "scim" ? "scim" : null;
+}
+
 export function readWorkspaceGroup(value: unknown): WorkspaceGroup | null {
   if (!isRecord(value)) {
     return null;
@@ -179,6 +225,7 @@ export function readWorkspaceGroup(value: unknown): WorkspaceGroup | null {
     id: value.id,
     displayName: value.displayName,
     memberCount: count,
+    managedBy: readWorkspaceGroupManagedBy(value.managedBy),
     createdAt: typeof value.createdAt === "string" ? value.createdAt : "",
     updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : "",
   };
@@ -215,7 +262,15 @@ export function readWorkspaceGroupDetail(value: unknown): WorkspaceGroupDetail |
       members.push(member);
     }
   }
-  return { ...group, members };
+  return { ...group, members, groupsMode: readScimGroupsMode(value.groupsMode) };
+}
+
+/**
+ * The list's one top-level `groupsMode`. Items never carry it, so it is
+ * read from the response body only. Null when missing or unknown.
+ */
+export function readWorkspaceGroupsMode(value: unknown): ScimGroupsMode | null {
+  return readScimGroupsMode(isRecord(value) ? value.groupsMode : undefined);
 }
 
 export function readWorkspaceGroups(value: unknown): WorkspaceGroup[] {
@@ -326,6 +381,113 @@ export function workspaceGroupProblemTreatment(
     return "forbidden";
   }
   return "banner";
+}
+
+/* ---------- SCIM-managed groups ---------- */
+
+/**
+ * - `local`: no marker. Editable.
+ * - `scim-locked`: marker and the instance is in `groups` mode. Read-only.
+ * - `scim-unenforced`: marker kept from an earlier `groups` mode, but the
+ *   instance is in `workspaces` mode now. Editable.
+ * - `scim-mode-unknown`: marker, but the response carried no mode this
+ *   web knows (an older server sent none, or an unknown value).
+ *   Editable; the server's 409 is the fallback.
+ */
+export type WorkspaceGroupManagement =
+  | "local"
+  | "scim-locked"
+  | "scim-unenforced"
+  | "scim-mode-unknown";
+
+export function workspaceGroupManagement(input: {
+  managedBy: WorkspaceGroupManagedBy | undefined;
+  groupsMode: ScimGroupsMode | null | undefined;
+}): WorkspaceGroupManagement {
+  if (input.managedBy !== "scim") {
+    return "local";
+  }
+  if (input.groupsMode === "groups") {
+    return "scim-locked";
+  }
+  if (input.groupsMode === "workspaces") {
+    return "scim-unenforced";
+  }
+  return "scim-mode-unknown";
+}
+
+/** Locked only for a SCIM-managed group while the mode is known to be `groups`. */
+export function workspaceGroupIsLocked(input: {
+  managedBy: WorkspaceGroupManagedBy | undefined;
+  groupsMode: ScimGroupsMode | null | undefined;
+}): boolean {
+  return workspaceGroupManagement(input) === "scim-locked";
+}
+
+export type WorkspaceGroupScimBadge = {
+  label: string;
+  description: string;
+};
+
+/** Badge for the list and detail. Null for a local group. */
+export function workspaceGroupScimBadge(
+  management: WorkspaceGroupManagement,
+): WorkspaceGroupScimBadge | null {
+  switch (management) {
+    case "scim-locked":
+      return { label: GROUP_SCIM_MANAGED_LABEL, description: GROUP_SCIM_MANAGED_DESCRIPTION };
+    case "scim-mode-unknown":
+      return { label: GROUP_SCIM_MANAGED_LABEL, description: GROUP_SCIM_MODE_UNKNOWN_DESCRIPTION };
+    case "scim-unenforced":
+      return {
+        label: GROUP_SCIM_SYNCED_BEFORE_LABEL,
+        description: GROUP_SCIM_SYNCED_BEFORE_DESCRIPTION,
+      };
+    default:
+      return null;
+  }
+}
+
+/**
+ * 409 `group_managed_by_scim`: a local rename, member add or remove, or
+ * delete of a managed group while the instance is in `groups` mode.
+ * Status plus code only, never the title or detail.
+ */
+export function isGroupManagedByScimProblem(
+  problem: Pick<ProblemDetails, "status" | "code"> | null | undefined,
+): boolean {
+  return problem?.status === 409 && problem.code === GROUP_MANAGED_BY_SCIM_CODE;
+}
+
+/**
+ * The server only sends that 409 in `groups` mode, so a refusal tells a
+ * page whose response carried no mode which one is on. Null otherwise.
+ */
+export function scimGroupsModeFromProblem(
+  problem: Pick<ProblemDetails, "status" | "code"> | null | undefined,
+): ScimGroupsMode | null {
+  return isGroupManagedByScimProblem(problem) ? "groups" : null;
+}
+
+/**
+ * After a 409 `group_managed_by_scim`, the "wasn't saved" note stands
+ * until a detail read after the refusal reports a mode other than
+ * `groups`. A read from before the refusal proves nothing (that stale
+ * read is why the page offered the edit). While the newer read reports
+ * `groups`, or no mode at all (the refusal still locks the page), the
+ * note stays.
+ */
+export function workspaceGroupRefusalStands(input: {
+  /** `dataUpdatedAt` of the detail shown when the server refused. */
+  refusedAt: number;
+  /** `dataUpdatedAt` of the detail shown now. */
+  dataUpdatedAt: number;
+  groupsMode: ScimGroupsMode | null | undefined;
+}): boolean {
+  if (input.dataUpdatedAt <= input.refusedAt) {
+    return true;
+  }
+  return input.groupsMode !== "workspaces";
 }
 
 /* ---------- members ---------- */

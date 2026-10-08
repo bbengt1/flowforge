@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import { GroupNameDialog } from "@/components/groups/GroupNameDialog";
+import { WorkspaceGroupScimBadge } from "@/components/groups/WorkspaceGroupScimBadge";
 import {
   invalidateWorkspaceGroups,
   useWorkspaceGroupsList,
@@ -34,6 +35,7 @@ import {
   WORKSPACE_GROUPS_HELP,
   WORKSPACE_GROUPS_TITLE,
   workspaceGroupHref,
+  workspaceGroupManagement,
   workspaceGroupMemberCountLabel,
   workspaceGroupProblemTreatment,
 } from "@/lib/workspace-groups";
@@ -162,12 +164,21 @@ function GroupsListBody({ identity }: { identity: DevIdentity }) {
               data-group-row={group.id}
               className="flex flex-wrap items-center justify-between gap-3 py-3"
             >
-              <Link
-                href={workspaceGroupHref(group.id)}
-                className={`font-medium ${FF_SETTINGS_LINK_CLASS}`}
-              >
-                {group.displayName}
-              </Link>
+              <span className="flex min-w-0 flex-wrap items-center gap-2">
+                <Link
+                  href={workspaceGroupHref(group.id)}
+                  className={`font-medium ${FF_SETTINGS_LINK_CLASS}`}
+                >
+                  {group.displayName}
+                </Link>
+                <WorkspaceGroupScimBadge
+                  tipAlign="start"
+                  management={workspaceGroupManagement({
+                    managedBy: group.managedBy,
+                    groupsMode: list.groupsMode,
+                  })}
+                />
+              </span>
               <span className={`text-sm ${FF_SETTINGS_MUTED_CLASS}`}>
                 {workspaceGroupMemberCountLabel(group.memberCount)}
               </span>

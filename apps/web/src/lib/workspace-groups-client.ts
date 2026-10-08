@@ -14,12 +14,14 @@ import { callIdentityProxy } from "./identity-client.ts";
 import type { DevIdentity } from "./identity-headers.ts";
 import type { ItemList, Member } from "./identity-types.ts";
 import type { ProblemDetails } from "./problem.ts";
+import type { ScimGroupsMode } from "./scim-tokens.ts";
 import {
   WORKSPACE_GROUPS_API_PATH,
   normalizeGroupDisplayName,
   readWorkspaceGroup,
   readWorkspaceGroupDetail,
   readWorkspaceGroups,
+  readWorkspaceGroupsMode,
   workspaceGroupApiPath,
   workspaceGroupMemberApiPath,
   workspaceGroupMembersApiPath,
@@ -41,6 +43,8 @@ export type WorkspaceGroupsPage = {
   requestId: string;
   items: WorkspaceGroup[];
   next: string;
+  /** The page's top-level SCIM Groups mode. Null when missing or unknown. */
+  groupsMode: ScimGroupsMode | null;
 };
 
 export type WorkspaceGroupDetailResult = {
@@ -110,6 +114,7 @@ export async function listWorkspaceGroups(
     requestId: result.requestId,
     items: readWorkspaceGroups(result.data),
     next: readCollectionPageFields(result.data).next,
+    groupsMode: readWorkspaceGroupsMode(result.data),
   };
 }
 
