@@ -112,7 +112,7 @@ func TestDeleteWorkspaceViewerForbiddenDoesNotRevoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := env.store.SetMemberRoles(t.Context(), ws.ID, u.ID, []string{authz.RoleViewer}); err != nil {
+	if err := env.store.SetMemberRoles(t.Context(), ws.ID, u.ID, []string{authz.RoleViewer}, identity.MemberActor{Via: identity.MemberViaSystem}); err != nil {
 		t.Fatal(err)
 	}
 

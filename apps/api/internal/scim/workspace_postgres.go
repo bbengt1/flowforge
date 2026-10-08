@@ -377,13 +377,13 @@ func (p *WorkspacePostgres) ProvisionUser(ctx context.Context, scope TokenScope,
 		var deactivated any
 		roleAdded := false
 		if in.Active {
-			added, err := addDefaultRoleIfNone(ctx, tx, scope.WorkspaceID, userID, in.DefaultRole)
+			added, err := addDefaultRoleIfNone(ctx, tx, scope.WorkspaceID, userID, in.DefaultRole, actor)
 			if err != nil {
 				return err
 			}
 			roleAdded = added
 		} else {
-			if err := removeMembership(ctx, tx, scope.WorkspaceID, userID); err != nil {
+			if err := removeMembership(ctx, tx, scope.WorkspaceID, userID, actor); err != nil {
 				return err
 			}
 			deactivated = now.UTC()
@@ -430,7 +430,7 @@ func (p *WorkspacePostgres) UpdateUser(ctx context.Context, scope TokenScope, us
 		if ch.Active != nil {
 			switch {
 			case !*ch.Active && cur.DeactivatedAt == nil:
-				if err := removeMembership(ctx, tx, scope.WorkspaceID, userID); err != nil {
+				if err := removeMembership(ctx, tx, scope.WorkspaceID, userID, actor); err != nil {
 					return err
 				}
 				if err := setDeactivated(ctx, tx, scope.WorkspaceID, userID, now.UTC()); err != nil {
@@ -446,7 +446,7 @@ func (p *WorkspacePostgres) UpdateUser(ctx context.Context, scope TokenScope, us
 				// account, leaving a live link with no role here. The role
 				// is added only when the user holds none; existing roles are
 				// never changed.
-				added, err := addDefaultRoleIfNone(ctx, tx, scope.WorkspaceID, userID, defaultRole)
+				added, err := addDefaultRoleIfNone(ctx, tx, scope.WorkspaceID, userID, defaultRole, actor)
 				if err != nil {
 					return err
 				}
@@ -487,7 +487,7 @@ func (p *WorkspacePostgres) RemoveUser(ctx context.Context, scope TokenScope, us
 		if _, err := getLinked(ctx, tx, scope.WorkspaceID, userID, true); err != nil {
 			return err
 		}
-		if err := removeMembership(ctx, tx, scope.WorkspaceID, userID); err != nil {
+		if err := removeMembership(ctx, tx, scope.WorkspaceID, userID, actor); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `
@@ -554,7 +554,7 @@ func (p *WorkspacePostgres) PatchGroup(ctx context.Context, scope TokenScope, ch
 			if err != nil {
 				return err
 			}
-			added, err := addDefaultRoleIfNone(ctx, tx, scope.WorkspaceID, id, defaultRole)
+			added, err := addDefaultRoleIfNone(ctx, tx, scope.WorkspaceID, id, defaultRole, actor)
 			if err != nil {
 				return err
 			}
@@ -584,7 +584,7 @@ func (p *WorkspacePostgres) PatchGroup(ctx context.Context, scope TokenScope, ch
 			if cur.DeactivatedAt != nil {
 				continue
 			}
-			if err := removeMembership(ctx, tx, scope.WorkspaceID, id); err != nil {
+			if err := removeMembership(ctx, tx, scope.WorkspaceID, id, actor); err != nil {
 				return err
 			}
 			if err := setDeactivated(ctx, tx, scope.WorkspaceID, id, now.UTC()); err != nil {
@@ -612,7 +612,7 @@ func setDeactivated(ctx context.Context, tx pgx.Tx, workspaceID, userID string, 
 
 // addDefaultRoleIfNone grants role only when the user holds no role in
 // the workspace. Existing roles are never changed.
-func addDefaultRoleIfNone(ctx context.Context, tx pgx.Tx, workspaceID, userID, role string) (bool, error) {
+func addDefaultRoleIfNone(ctx context.Context, tx pgx.Tx, workspaceID, userID, role string, actor Actor) (bool, error) {
 	if !authz.WorkspaceAssignableRole(role) {
 		return false, ErrInvalid
 	}
@@ -626,7 +626,23 @@ func addDefaultRoleIfNone(ctx context.Context, tx pgx.Tx, workspaceID, userID, r
 	if err != nil {
 		return false, mapWorkspaceErr(err)
 	}
-	return tag.RowsAffected() > 0, nil
+	if tag.RowsAffected() == 0 {
+		return false, nil
+	}
+	// The user held no role before (NOT EXISTS above).
+	if err := identity.InsertMemberRolesAuditTx(ctx, tx, workspaceID, userID, nil, []string{role}, memberActor(actor)); err != nil {
+		return false, mapIdentityErr(err)
+	}
+	return true, nil
+}
+
+// memberActor maps a SCIM actor to the role-change audit actor: the
+// workspace token's row id when a token acted, else the session user.
+func memberActor(actor Actor) identity.MemberActor {
+	if strings.TrimSpace(actor.TokenID) != "" {
+		return identity.MemberActor{SCIMTokenID: actor.TokenID, RequestID: actor.RequestID}
+	}
+	return identity.MemberActor{UserID: actor.UserID, RequestID: actor.RequestID}
 }
 
 // removeMembership deletes the user's role bindings and group rows (local
@@ -637,8 +653,8 @@ func addDefaultRoleIfNone(ctx context.Context, tx pgx.Tx, workspaceID, userID, r
 // row (taken by the caller), waiting gates, bindings, then group rows.
 // Removing the last administrator is ErrLastAdmin and the caller's
 // transaction rolls back.
-func removeMembership(ctx context.Context, tx pgx.Tx, workspaceID, userID string) error {
-	if _, err := identity.RemoveMembershipTx(ctx, tx, workspaceID, userID, time.Now()); err != nil {
+func removeMembership(ctx context.Context, tx pgx.Tx, workspaceID, userID string, actor Actor) error {
+	if _, err := identity.RemoveMembershipTx(ctx, tx, workspaceID, userID, time.Now(), memberActor(actor)); err != nil {
 		return mapIdentityErr(err)
 	}
 	return nil

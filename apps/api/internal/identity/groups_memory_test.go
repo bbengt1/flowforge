@@ -58,7 +58,7 @@ func TestMemoryGroupsMirrorPostgresRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	approver, _ := m.UpsertUser(ctx, "https://idp.example", "approver", "Approver")
-	if err := m.SetMemberRoles(ctx, ws.ID, approver.ID, []string{authz.RoleApprover}); err != nil {
+	if err := m.SetMemberRoles(ctx, ws.ID, approver.ID, []string{authz.RoleApprover}, MemberActor{Via: MemberViaSystem}); err != nil {
 		t.Fatal(err)
 	}
 	unbound, _ := m.UpsertUser(ctx, "https://idp.example", "unbound", "Unbound")
@@ -98,7 +98,7 @@ func TestMemoryGroupsMirrorPostgresRules(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := m.RemoveMember(ctx, ws.ID, approver.ID); err != nil {
+	if err := m.RemoveMember(ctx, ws.ID, approver.ID, MemberActor{Via: MemberViaSystem}); err != nil {
 		t.Fatal(err)
 	}
 	d, _ = m.GetGroup(ctx, ws.ID, g.ID)

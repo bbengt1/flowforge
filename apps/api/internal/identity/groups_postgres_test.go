@@ -74,7 +74,7 @@ func (f *groupFixture) member(t *testing.T, ws Workspace, name string, roles ...
 		t.Fatal(err)
 	}
 	if len(roles) > 0 {
-		if err := f.store.SetMemberRoles(f.ctx, ws.ID, u.ID, roles); err != nil {
+		if err := f.store.SetMemberRoles(f.ctx, ws.ID, u.ID, roles, MemberActor{Via: MemberViaSystem}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -449,7 +449,7 @@ func TestAddGroupMemberLosesToRemoveMemberWithoutDeadlock(t *testing.T) {
 	}
 
 	removed := make(chan error, 1)
-	go func() { removed <- f.store.RemoveMember(f.ctx, f.ws.ID, u.ID) }()
+	go func() { removed <- f.store.RemoveMember(f.ctx, f.ws.ID, u.ID, MemberActor{Via: MemberViaSystem}) }()
 	// Let RemoveMember delete the bindings and block on g1's member row.
 	time.Sleep(300 * time.Millisecond)
 	added := make(chan error, 1)
@@ -504,7 +504,7 @@ func TestAddGroupMemberVsRemoveMemberNeverDeadlocks(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			removeErr = f.store.RemoveMember(f.ctx, f.ws.ID, u.ID)
+			removeErr = f.store.RemoveMember(f.ctx, f.ws.ID, u.ID, MemberActor{Via: MemberViaSystem})
 		}()
 		close(start)
 		wg.Wait()
@@ -561,7 +561,7 @@ func TestGroupHelpersRemoveMemberDropsOutAndDeletesRows(t *testing.T) {
 	f.add(t, g2.ID, u.ID)
 	f.add(t, g1.ID, keep.ID)
 
-	if err := f.store.RemoveMember(f.ctx, f.ws.ID, u.ID); err != nil {
+	if err := f.store.RemoveMember(f.ctx, f.ws.ID, u.ID, MemberActor{Via: MemberViaSystem}); err != nil {
 		t.Fatal(err)
 	}
 	if n := f.memberRows(t, "workspace_id = $1 AND user_id = $2", f.ws.ID, u.ID); n != 0 {
@@ -581,7 +581,7 @@ func TestGroupHelpersRemoveMemberDropsOutAndDeletesRows(t *testing.T) {
 	if _, ok := findMember(d, u.ID); ok {
 		t.Fatal("removed user still listed in group detail")
 	}
-	if err := f.store.RemoveMember(f.ctx, f.ws.ID, u.ID); !errors.Is(err, ErrNotFound) {
+	if err := f.store.RemoveMember(f.ctx, f.ws.ID, u.ID, MemberActor{Via: MemberViaSystem}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("second RemoveMember = %v", err)
 	}
 }
@@ -591,7 +591,7 @@ func TestPostgresRemoveMemberLastAdminKeepsGroupRows(t *testing.T) {
 	f := newGroupFixture(t)
 	g := f.group(t, "Admins")
 	f.add(t, g.ID, f.owner.ID)
-	if err := f.store.RemoveMember(f.ctx, f.ws.ID, f.owner.ID); !errors.Is(err, ErrLastAdmin) {
+	if err := f.store.RemoveMember(f.ctx, f.ws.ID, f.owner.ID, MemberActor{Via: MemberViaSystem}); !errors.Is(err, ErrLastAdmin) {
 		t.Fatalf("remove last admin = %v", err)
 	}
 	if n := f.memberRows(t, "group_id = $1 AND user_id = $2", g.ID, f.owner.ID); n != 1 {
@@ -608,7 +608,7 @@ func TestInTargetGroupsForShareBlocksConcurrentRemoval(t *testing.T) {
 			return f.store.RemoveGroupMember(f.ctx, f.ws.ID, f.actor(), groupID, userID)
 		},
 		"workspace_remove_member": func(f *groupFixture, _ string, userID string) error {
-			return f.store.RemoveMember(f.ctx, f.ws.ID, userID)
+			return f.store.RemoveMember(f.ctx, f.ws.ID, userID, MemberActor{Via: MemberViaSystem})
 		},
 	}
 	for name, remove := range removals {
@@ -853,7 +853,7 @@ func TestAddGroupMemberSurvivesConcurrentSetMemberRoles(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			setErr = f.store.SetMemberRoles(f.ctx, f.ws.ID, u.ID, roles)
+			setErr = f.store.SetMemberRoles(f.ctx, f.ws.ID, u.ID, roles, MemberActor{Via: MemberViaSystem})
 		}()
 		close(start)
 		wg.Wait()

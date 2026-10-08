@@ -27,6 +27,11 @@ var ErrInvalid = errors.New("invalid parked approval")
 // no_eligible_decider. Nothing is written.
 var ErrNoEligibleDecider = errors.New("approval gate has no eligible decider")
 
+// ErrNotReadCommitted means a park ran in a transaction that is not READ
+// COMMITTED, so its approver read could be stale (see
+// LockWorkspaceForPark). The park fails closed.
+var ErrNotReadCommitted = errors.New("approval park needs a read committed transaction")
+
 // CauseNoEligibleDecider is the details.cause for ErrNoEligibleDecider.
 const CauseNoEligibleDecider = "no_eligible_decider"
 
@@ -117,17 +122,43 @@ func Fingerprint(workspaceID, workflowVersionID, workflowDigest, targetVersionID
 // changes take the stronger lock first and never this one.
 // TestParkLockHoldersNeverTakeMembershipLock enforces this.
 //
+// Isolation: the transaction must be READ COMMITTED (the server default;
+// postgres.BeginScoped does not change it). Every statement after this
+// lock then takes a fresh snapshot, so the approver read that follows
+// (ResolveSnapshot: group rows, role bindings and users.status) sees any
+// membership change or instance-wide disable that committed before the
+// lock was granted. Under REPEATABLE READ or SERIALIZABLE the snapshot
+// is fixed at the transaction's first statement, before this lock, and
+// the park could keep a decider who was just removed or disabled. The
+// lock reads the transaction's level in the same statement and fails
+// closed (ErrNotReadCommitted) on anything else.
+//
+// An instance-wide disable (identity SetUserStatus) commits users.status
+// first and then re-checks each workspace under the FOR NO KEY UPDATE
+// lock. A park that read the user as active before that commit holds
+// this share lock until it commits, so the re-check waits for it and
+// then sees its gate; a park that starts after the commit reads the
+// user as disabled.
+//
 // ErrInvalid: the workspace id is malformed or the row does not exist.
 func LockWorkspaceForPark(ctx context.Context, tx pgx.Tx, workspaceID string) error {
 	if !authz.ValidUUID(workspaceID) {
 		return ErrInvalid
 	}
-	var one int
-	err := tx.QueryRow(ctx, `SELECT 1 FROM workspaces WHERE id = $1::uuid FOR SHARE`, workspaceID).Scan(&one)
+	var level string
+	err := tx.QueryRow(ctx, `
+		SELECT current_setting('transaction_isolation') FROM workspaces WHERE id = $1::uuid FOR SHARE
+	`, workspaceID).Scan(&level)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrInvalid
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	if level != "read committed" {
+		return ErrNotReadCommitted
+	}
+	return nil
 }
 
 // Insert writes a pending approval in the caller's transaction. It is

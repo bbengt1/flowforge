@@ -226,8 +226,12 @@ func (s *Server) revokeMachinePrincipal(w http.ResponseWriter, r *http.Request) 
 		writeMachineError(w, r, err)
 		return
 	}
-	if err := s.Store.SetUserStatus(r.Context(), item.UserID, "disabled"); err != nil {
-		s.logMachine("machine_disable_user", r, err)
+	// A gate re-check failure still leaves the user disabled: revoke the
+	// sessions anyway, then report 503 so the caller retries the revoke
+	// (a repeat finishes the re-check).
+	statusErr := s.Store.SetUserStatus(r.Context(), item.UserID, "disabled")
+	if statusErr != nil && !errors.Is(statusErr, identity.ErrDisableRecheckIncomplete) {
+		s.logMachine("machine_disable_user", r, statusErr)
 		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "Identity store is not available.")
 		return
 	}
@@ -237,6 +241,11 @@ func (s *Server) revokeMachinePrincipal(w http.ResponseWriter, r *http.Request) 
 			WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "Session store is not available.")
 			return
 		}
+	}
+	if statusErr != nil {
+		s.logMachine("machine_disable_user", r, statusErr)
+		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "Identity store is not available.")
+		return
 	}
 	fresh, err := s.Machines.Get(r.Context(), item.ID)
 	if err != nil {

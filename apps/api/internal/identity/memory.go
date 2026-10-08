@@ -521,7 +521,10 @@ func (m *Memory) ListMembersPage(_ context.Context, workspaceID string, q page.Q
 	})
 }
 
-func (m *Memory) SetMemberRoles(_ context.Context, workspaceID, userID string, roleKeys []string) error {
+func (m *Memory) SetMemberRoles(_ context.Context, workspaceID, userID string, roleKeys []string, actor MemberActor) error {
+	if !actor.Valid() {
+		return ErrInvalid
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.workspaces[workspaceID]; !ok {
@@ -535,15 +538,19 @@ func (m *Memory) SetMemberRoles(_ context.Context, workspaceID, userID string, r
 	}
 	next := uniqueSorted(roleKeys)
 	prev := m.bindings[bindKey(workspaceID, userID)]
+	wasActiveAdmin := m.activeAdminLocked(workspaceID, userID)
 	m.bindings[bindKey(workspaceID, userID)] = next
-	if err := m.ensureAdminLocked(workspaceID); err != nil {
+	if err := m.guardLastAdminLocked(workspaceID, wasActiveAdmin); err != nil {
 		m.bindings[bindKey(workspaceID, userID)] = prev
 		return err
 	}
 	return nil
 }
 
-func (m *Memory) RemoveMember(_ context.Context, workspaceID, userID string) error {
+func (m *Memory) RemoveMember(_ context.Context, workspaceID, userID string, actor MemberActor) error {
+	if !actor.Valid() {
+		return ErrInvalid
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.workspaces[workspaceID]; !ok {
@@ -554,8 +561,9 @@ func (m *Memory) RemoveMember(_ context.Context, workspaceID, userID string) err
 		return ErrNotFound
 	}
 	prev := m.bindings[key]
+	wasActiveAdmin := m.activeAdminLocked(workspaceID, userID)
 	delete(m.bindings, key)
-	if err := m.ensureAdminLocked(workspaceID); err != nil {
+	if err := m.guardLastAdminLocked(workspaceID, wasActiveAdmin); err != nil {
 		m.bindings[key] = prev
 		return err
 	}
@@ -568,6 +576,35 @@ func (m *Memory) ResolveUserRef(ctx context.Context, userID, issuer, subject, di
 		return m.GetUser(ctx, strings.TrimSpace(userID))
 	}
 	return m.UpsertUser(ctx, issuer, subject, displayName)
+}
+
+// guardLastAdminLocked mirrors Postgres GuardLastAdmin: at least one
+// workspace.administer holder must remain, and a change to an enabled
+// admin must leave at least one enabled admin.
+func (m *Memory) guardLastAdminLocked(workspaceID string, changedWasActiveAdmin bool) error {
+	if err := m.ensureAdminLocked(workspaceID); err != nil {
+		return err
+	}
+	if !changedWasActiveAdmin {
+		return nil
+	}
+	for key := range m.bindings {
+		wsID, userID := splitBindKey(key)
+		if wsID == workspaceID && m.activeAdminLocked(workspaceID, userID) {
+			return nil
+		}
+	}
+	return ErrLastAdmin
+}
+
+// activeAdminLocked mirrors parkedapproval.ActiveAdmins for one user: the
+// admin role in the workspace and users.status active.
+func (m *Memory) activeAdminLocked(workspaceID, userID string) bool {
+	u, ok := m.users[userID]
+	if !ok || u.Status != "active" {
+		return false
+	}
+	return slices.Contains(m.bindings[bindKey(workspaceID, userID)], authz.RoleAdmin)
 }
 
 func (m *Memory) ensureAdminLocked(workspaceID string) error {

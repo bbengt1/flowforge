@@ -62,8 +62,11 @@ type Store interface {
 	EffectiveAccess(ctx context.Context, workspaceID, userID string) (roles, perms []string, err error)
 	ListMembers(ctx context.Context, workspaceID string) ([]Member, error)
 	ListMembersPage(ctx context.Context, workspaceID string, q page.Query) ([]Member, string, error)
-	SetMemberRoles(ctx context.Context, workspaceID, userID string, roleKeys []string) error
-	RemoveMember(ctx context.Context, workspaceID, userID string) error
+	// SetMemberRoles and RemoveMember write one workspace_member.* audit
+	// row per actual change, in the same transaction, attributed to actor
+	// (ErrInvalid when actor is not exactly one kind).
+	SetMemberRoles(ctx context.Context, workspaceID, userID string, roleKeys []string, actor MemberActor) error
+	RemoveMember(ctx context.Context, workspaceID, userID string, actor MemberActor) error
 	ResolveUserRef(ctx context.Context, userID, issuer, subject, displayName string) (User, error)
 }
 
