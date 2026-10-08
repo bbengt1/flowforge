@@ -20,8 +20,9 @@ import (
 
 const (
 	// Issuer is the users.issuer for machine principals. It is not an
-	// IdP, not PLATFORM_ADMINS, and not an embed issuer.
-	Issuer = "flowforge:machine"
+	// IdP, not PLATFORM_ADMINS, and not an embed issuer. Defined in authz
+	// so the approval rules can use it without importing this package.
+	Issuer = authz.MachineIssuer
 	// Audience is the aud claim on machine assertions. Embed tokens
 	// use aud=flowforge and are rejected here.
 	Audience = "flowforge:machine"

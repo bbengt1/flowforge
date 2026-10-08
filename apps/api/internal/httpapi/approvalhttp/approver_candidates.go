@@ -10,10 +10,13 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/core"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/page"
+	"github.com/bbengt1/flowforge/apps/api/internal/parkedapproval"
 )
 
 // listApproverCandidates serves the builder picker: active members who
-// may decide for role, and every workspace group. Display name and id only.
+// may decide for role, and every workspace group. Machine principals are
+// never candidates; groups are listed as they are (their machine members
+// never count). Display name and id only.
 func listApproverCandidates(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	user, ok := s.RequirePrincipal(w, r)
 	if !ok {
@@ -40,7 +43,7 @@ func listApproverCandidates(s *core.Server, w http.ResponseWriter, r *http.Reque
 	}
 	out := candidateList{Users: []approval.PrincipalRef{}, Groups: []approval.PrincipalRef{}}
 	for _, m := range members {
-		if m.User.Status != "" && m.User.Status != "active" {
+		if (m.User.Status != "" && m.User.Status != "active") || parkedapproval.IsMachine(m.User.Issuer) {
 			continue
 		}
 		if !authz.Allows(authz.ExpandWorkspaceRoles(m.Roles), authz.PermApprovalDecide) || !approval.HasApproverRole(m.Roles, role) {

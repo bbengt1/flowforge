@@ -11,6 +11,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/page"
+	"github.com/bbengt1/flowforge/apps/api/internal/parkedapproval"
 )
 
 // Memory is an in-process Store used by HTTP unit tests.
@@ -601,10 +602,11 @@ func (m *Memory) guardLastAdminLocked(workspaceID string, changedWasActiveAdmin 
 }
 
 // activeAdminLocked mirrors parkedapproval.ActiveAdmins for one user: the
-// admin role in the workspace and users.status active.
+// admin role in the workspace, users.status active, and not a machine
+// principal.
 func (m *Memory) activeAdminLocked(workspaceID, userID string) bool {
 	u, ok := m.users[userID]
-	if !ok || u.Status != "active" {
+	if !ok || u.Status != "active" || parkedapproval.IsMachine(u.Issuer) {
 		return false
 	}
 	return slices.Contains(m.bindings[bindKey(workspaceID, userID)], authz.RoleAdmin)

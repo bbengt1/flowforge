@@ -11,6 +11,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/core"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/parkedapproval"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
@@ -18,6 +19,7 @@ import (
 const (
 	codeApproverGroupNotFound = "approver-group-not-found"
 	codeApproverNotMember     = "approver-not-member"
+	codeApproverNotPerson     = "approver-not-person"
 	codeApproverDisabled      = "approver-disabled"
 	codeApproverCannotDecide  = "approver-cannot-decide"
 	codeApproverRoleMismatch  = "approver-role-mismatch"
@@ -28,7 +30,9 @@ var errApproverLookup = errors.New("approver lookup failed")
 // validatePublishApprovers checks with.approvers on every flow.approval
 // node against this workspace. A group outside the workspace, whether a
 // random UUID or another tenant's id, gets the same error. Users must be
-// active members whose roles grant approval.decide and meet approverRole.
+// active members, people rather than machine principals, whose roles
+// grant approval.decide and meet approverRole. A group that contains
+// machine principals still publishes; those members never count.
 // Live membership is still checked at decide time; this only catches
 // mistakes early.
 func validatePublishApprovers(ctx context.Context, s *core.Server, scope isolation.Scope, src string) (workflow.ErrorList, error) {
@@ -65,6 +69,8 @@ func validatePublishApprovers(ctx context.Context, s *core.Server, scope isolati
 			switch {
 			case !ok:
 				errs = append(errs, workflow.FieldError{Path: path, Code: codeApproverNotMember, Message: "This approver is not a member of the workspace."})
+			case parkedapproval.IsMachine(m.User.Issuer):
+				errs = append(errs, workflow.FieldError{Path: path, Code: codeApproverNotPerson, Message: "This approver is a machine account. Only a person can approve this step."})
 			case m.User.Status != "" && m.User.Status != "active":
 				errs = append(errs, workflow.FieldError{Path: path, Code: codeApproverDisabled, Message: "This approver's account is disabled."})
 			case !authz.Allows(authz.ExpandWorkspaceRoles(m.Roles), authz.PermApprovalDecide):

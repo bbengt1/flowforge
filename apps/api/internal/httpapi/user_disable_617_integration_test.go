@@ -151,8 +151,11 @@ func TestUserDisableRechecksGates(t *testing.T) {
 			return exec, e, d.putActive(v, false), http.StatusOK, closed
 		}},
 		{"revoked machine principal was the only named approver", func(d *d617) (string, identity.User, int, int, outcome) {
+			// Since #620 publish refuses naming a machine; a gate parked
+			// before then can still name one (legacy snapshot).
 			m, id := d.machineApprover("Bot")
-			exec := d.park(d.owner(), ids(m), nil)
+			exec := d.park(d.owner(), ids(d.member("H", "approver")), nil)
+			d.legacyMachineSnapshot(exec, m)
 			return exec, d.owner(), d.do(d.owner(), http.MethodPost, "/api/v1/machine/principals/"+id+"/revoke", "").Code, http.StatusOK, closed
 		}},
 		{"another named decider remains", func(d *d617) (string, identity.User, int, int, outcome) {
@@ -388,7 +391,10 @@ func TestUserDisableRetryAfterPartialFailure(t *testing.T) {
 func TestMachineRevokeRecheckFailureStillRevokesSessions(t *testing.T) {
 	d := newD617(t)
 	m, id := d.machineApprover("Bot")
-	exec := d.park(d.owner(), ids(m), nil)
+	// Since #620 publish refuses naming a machine; a gate parked before
+	// then can still name one (legacy snapshot).
+	exec := d.park(d.owner(), ids(d.member("H", "approver")), nil)
+	d.legacyMachineSnapshot(exec, m)
 	token := d.liveSession(m)
 	restore := installDisableRecheckHook(func(string) error { return errors.New("injected re-check failure") })
 	if restore == nil {

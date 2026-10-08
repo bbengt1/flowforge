@@ -6,6 +6,13 @@ import (
 	"unicode"
 )
 
+// MachineIssuer is the users.issuer of machine principals (machine.Issuer
+// is this constant). It lives here, below both machine and the approval
+// packages, so the one "machine principal, not a person" rule has a
+// single definition without an import cycle. SQL binds it as a
+// parameter, never as a literal.
+const MachineIssuer = "flowforge:machine"
+
 // Errors for workspace identity resolution. Host-supplied workspace IDs are
 // never used as the lookup key.
 var (

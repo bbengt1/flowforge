@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/parkedapproval"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -32,6 +33,9 @@ type Querier interface {
 // 'active' join still excludes a last admin whose RemoveMember was
 // refused and who kept their bindings.
 //
+// A machine principal (users.issuer = parkedapproval.MachineIssuer, bound
+// as a parameter) is never an eligible member.
+//
 // Membership never grants approval.decide. The caller still checks the
 // user's own permission. At the approval decide call site:
 //   - a non-nil error (database, network, timeout) should map to
@@ -53,13 +57,14 @@ func InTargetGroups(ctx context.Context, q Querier, workspaceID, userID string, 
 		  AND m.user_id = $2::uuid
 		  AND m.group_id = ANY($3::uuid[])
 		  AND u.status = 'active'
+		  AND u.issuer <> $4
 		  AND EXISTS (
 		      SELECT 1 FROM workspace_role_bindings b
 		      WHERE b.workspace_id = m.workspace_id AND b.user_id = m.user_id
 		  )
 		LIMIT 1
 		FOR SHARE OF m
-	`, workspaceID, userID, groups)
+	`, workspaceID, userID, groups, parkedapproval.MachineIssuer)
 	if err != nil {
 		return false, err
 	}

@@ -1753,9 +1753,12 @@ components:
             spec.nodes[2].with.approvers.groups[0]. A random UUID and another
             tenant's group id get the same error. A named user at
             with.approvers.users[i] that is not a workspace member
-            (approver-not-member), is disabled (approver-disabled), has no
+            (approver-not-member), is a machine account rather than a person
+            (approver-not-person), is disabled (approver-disabled), has no
             approval.decide (approver-cannot-decide), or lacks the gate's
-            approverRole (approver-role-mismatch) is rejected the same way. Clients place field errors
+            approverRole (approver-role-mismatch) is rejected the same way. A
+            group that contains machine accounts still publishes; those
+            members never count as approvers. Clients place field errors
             by path, never by message text.
           items:
             $ref: "#/components/schemas/WorkflowFieldError"

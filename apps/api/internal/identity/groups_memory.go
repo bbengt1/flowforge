@@ -2,7 +2,6 @@ package identity
 
 import (
 	"context"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -243,7 +242,7 @@ func (m *Memory) InTargetGroups(_ context.Context, workspaceID, userID string, g
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	userID = strings.ToLower(strings.TrimSpace(userID))
-	if !m.activeBoundLocked(workspaceID, userID) {
+	if !m.activeBoundLocked(workspaceID, userID) || parkedapproval.IsMachine(m.users[userID].Issuer) {
 		return false, nil
 	}
 	for _, id := range validGroupIDs(groupIDs) {
@@ -256,6 +255,16 @@ func (m *Memory) InTargetGroups(_ context.Context, workspaceID, userID string, g
 		}
 	}
 	return false, nil
+}
+
+// EnabledPerson is the in-memory twin of the decide-time account check
+// (approval requireEnabledDeciderTx): the user exists, is active, and is
+// not a machine principal. Unknown users are false.
+func (m *Memory) EnabledPerson(_ context.Context, userID string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	u, ok := m.users[strings.ToLower(strings.TrimSpace(userID))]
+	return ok && u.Status == "active" && !parkedapproval.IsMachine(u.Issuer), nil
 }
 
 // ResolveApprovalSnapshot is the in-memory twin of
@@ -298,15 +307,15 @@ func (m *Memory) ResolveApprovalSnapshot(_ context.Context, workspaceID, request
 		if !ok {
 			continue
 		}
-		cands = append(cands, parkedapproval.Candidate{ID: id, Named: named[id], Status: u.Status, Roles: append([]string(nil), m.bindings[bindKey(workspaceID, id)]...)})
+		cands = append(cands, parkedapproval.Candidate{ID: id, Named: named[id], Issuer: u.Issuer, Status: u.Status, Roles: append([]string(nil), m.bindings[bindKey(workspaceID, id)]...)})
 	}
 	return parkedapproval.BuildSnapshot(requester, role, existing, cands, func() (bool, error) {
-		for key, roles := range m.bindings {
+		for key := range m.bindings {
 			ws, userID, ok := strings.Cut(key, "\x00")
-			if !ok || ws != workspaceID || userID == requester || !slices.Contains(roles, "admin") {
+			if !ok || ws != workspaceID || userID == requester {
 				continue
 			}
-			if u, ok := m.users[userID]; ok && u.Status == "active" {
+			if m.activeAdminLocked(workspaceID, userID) {
 				return true, nil
 			}
 		}
