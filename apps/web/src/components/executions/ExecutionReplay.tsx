@@ -251,8 +251,7 @@ export function ExecutionReplay({
             : null}
           {selected.waiting ? (
             <p role="status" className="mt-3 text-sm">
-              Waiting on approval. Decide the bound approval — the wait state
-              survives worker or pod loss. Resume is decide, not a new route.
+              Waiting for someone to approve or reject this step.
             </p>
           ) : null}
           {selected.failureText ? (

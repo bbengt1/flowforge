@@ -32,7 +32,7 @@ const DECIDE_PERMISSIONS = [
 const NOT_TARGETED =
   "You're not one of the named approvers for this step, so you can't decide it.";
 const NO_ELIGIBLE_RUN =
-  "No one other than the requester can approve this step, so it failed right away.";
+  "No one other than the requester could approve this step, so it failed.";
 const NO_ELIGIBLE_CLOSE =
   "Closed because no one other than the requester could approve it.";
 

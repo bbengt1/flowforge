@@ -22,16 +22,15 @@ import {
 } from "@/lib/execution-client";
 import {
   BOUNDED_LOG_HELP,
-  CANCEL_CSRF_HELP,
   CANCEL_FORBIDDEN_MESSAGE,
+  EXECUTION_AUDIT_EVENTS_HELP,
+  EXECUTION_CANCEL_DENIED_NOTE,
   IDEMPOTENCY_KEY_HELP,
   INDETERMINATE_STATUS_HELP,
   REDACTED_HELP,
   RETENTION_HELP,
-  RETRY_CSRF_HELP,
   RETRY_FORBIDDEN_MESSAGE,
   RETRY_INDETERMINATE_MESSAGE,
-  STATUS_POLL_HELP,
 } from "@/lib/execution-contract";
 import { manualStartHref } from "@/lib/manual-start-contract";
 import { useExecutionDetailQuery } from "@/components/executions/useExecutionDetailQuery";
@@ -600,11 +599,7 @@ export function ExecutionDetail({
               ) : permissions != null &&
                 !permissions.includes(EXECUTION_CANCEL_PERMISSION) ? (
                 <p className={`text-sm ${FF_INBOX_MUTED_CLASS}`}>
-                  Cancel requires{" "}
-                  <code className="font-mono text-xs">
-                    {EXECUTION_CANCEL_PERMISSION}
-                  </code>
-                  . This action is separately authorized.
+                  {EXECUTION_CANCEL_DENIED_NOTE}
                 </p>
               ) : null}
               {canEmergencyStop ? (
@@ -649,9 +644,6 @@ export function ExecutionDetail({
                 {KUBERNETES_ROLLOUT_CANCEL_HELP}
               </p>
             ) : null}
-            <p className={`mt-2 text-xs ${FF_INBOX_MUTED_CLASS}`}>{CANCEL_CSRF_HELP}</p>
-            <p className={`mt-1 text-xs ${FF_INBOX_MUTED_CLASS}`}>{RETRY_CSRF_HELP}</p>
-            <p className={`mt-1 text-xs ${FF_INBOX_MUTED_CLASS}`}>{STATUS_POLL_HELP}</p>
             {canEmergencyStop || stoppedUncertain ? (
               <p className={`mt-2 text-xs ${FF_INBOX_DANGER_CLASS}`}>
                 {SCRIPT_EMERGENCY_STOP_HELP} {SCRIPT_EMERGENCY_STOP_CONFIRM_HELP}{" "}
@@ -1135,13 +1127,7 @@ export function ExecutionDetail({
           <section className={FF_INBOX_PANEL_CLASS}>
             <h2 className={`text-lg ${FF_INBOX_TITLE_CLASS}`}>Audit events</h2>
             <p className={`mt-1 text-sm ${FF_INBOX_MUTED_CLASS}`}>
-              From{" "}
-              <code className="font-mono text-xs">
-                GET /executions/{"{id}"}/audit-events
-              </code>{" "}
-              or workspace{" "}
-              <code className="font-mono text-xs">GET /audit-events</code>
-              — not the E2.2 isolation stub. {REDACTED_HELP}
+              {EXECUTION_AUDIT_EVENTS_HELP} {REDACTED_HELP}
             </p>
             {view.auditEvents.length === 0 ? (
               <p className={`mt-3 text-sm ${FF_INBOX_MUTED_CLASS}`}>No audit events returned.</p>

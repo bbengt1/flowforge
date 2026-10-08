@@ -16,7 +16,6 @@ import {
   MANUAL_START_AUDIT_HELP,
   MANUAL_START_CONFIRM_HELP,
   MANUAL_START_CONFLICT_MESSAGE,
-  MANUAL_START_CSRF_HELP,
   MANUAL_START_FORBIDDEN_MESSAGE,
   MANUAL_START_IDEMPOTENCY_HELP,
   MANUAL_START_INPUT_HELP,
@@ -28,7 +27,6 @@ import {
   generateManualStartIdempotencyKey,
   isManualStartAuthFailure,
   manualStartAuthFailureMessage,
-  manualStartHelp,
   startOutcomeMessage,
 } from "@/lib/manual-start-contract";
 import { executionHistoryHref } from "@/lib/execution-contract";
@@ -277,7 +275,7 @@ export function ManualStartPanel({
           </h2>
           <p className="mt-1 text-sm text-fg">
             {workflowName ? `${workflowName}. ` : null}
-            {MANUAL_START_PUBLISHED_ONLY_HELP} {manualStartHelp(catalog)}
+            {MANUAL_START_PUBLISHED_ONLY_HELP}
           </p>
         </div>
         {onClose ? (
@@ -367,7 +365,6 @@ export function ManualStartPanel({
             onJsonText={setJsonText}
           />
           <p className="text-xs text-fg">{MANUAL_START_INPUT_HELP}</p>
-          <p className="text-xs text-fg">{MANUAL_START_CSRF_HELP}</p>
           {preview.confirmation ? (
             <section
               aria-labelledby="manual-start-confirm-heading"
@@ -457,7 +454,7 @@ export function ManualStartPanel({
             {execution.status} · {execution.id}
           </p>
           <p className="font-mono text-xs break-all text-fg">
-            workflowVersionId {execution.workflowVersionId}
+            Version {execution.workflowVersionId}
           </p>
           <Link
             href={executionHistoryHref(execution.id, execution.workflowId)}

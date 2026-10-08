@@ -19,6 +19,7 @@ import {
 } from "./approval.ts";
 import {
   APPROVAL_DECIDE_HELP,
+  APPROVAL_DECIDE_NOTE,
   APPROVAL_RESUME_VIA_DECIDE_HELP,
   APPROVAL_SOD_HELP,
   APPROVAL_WAIT_DURABLE_HELP,
@@ -56,17 +57,25 @@ export const EXECUTION_DECIDE_OPEN_LABEL = "Open approval";
 export const INVENTED_RESUME_ROUTE = "/executions/{id}/resume";
 export const INVENTED_COMPARE_ROUTE = "/executions/compare";
 
+/** Contract note for route checks. Not UI copy: never render it. */
 export const EXECUTION_DECIDE_HELP =
   "Waiting runs resume by deciding the bound approval. Load GET /approvals?executionId= and POST /approvals/{id}/decide with CSRF. The requester cannot self-approve. Do not invent /executions/{id}/resume or /replay. Full detail stays /executions/{id}.";
 
+/** Plain words on inbox and Runs rows. No routes or permission keys. */
 export const EXECUTION_DECIDE_WAITING_COPY =
-  "This run is waiting on a current approval. Resume is decide — not a new route.";
+  "This run is waiting for someone to approve or reject a step.";
 
-export const EXECUTION_DECIDE_SELF_REQUESTED_COPY =
-  "You requested this approval. Another operator with approval.decide must approve or reject it. Self-approval is forbidden.";
+/** The same requester sentence as the approval decide controls. */
+export const EXECUTION_DECIDE_SELF_REQUESTED_COPY = APPROVAL_DECIDE_NOTE;
 
 export const EXECUTION_DECIDE_MISSING_COPY =
-  "Waiting — bound approval is not on this list yet. Open the execution for GET /approvals?executionId= detail. Do not invent a resume route.";
+  "This run is waiting, but its approval isn't listed here yet.";
+
+/** Link under the missing-approval sentence. */
+export const EXECUTION_DECIDE_OPEN_RUN_LABEL = "Open the run to see its approval";
+
+export const EXECUTION_DECIDE_APPROVED_MESSAGE = "Approved.";
+export const EXECUTION_DECIDE_REJECTED_MESSAGE = "Rejected.";
 
 export type ExecutionDecideSurface = "inbox" | "overlay" | "detail";
 
@@ -278,8 +287,8 @@ export function executionDecideDraftsNeverRun(): boolean {
     EXECUTION_DECIDE.publishedWorkflowVersionIdOnly &&
     R4_GUARDRAILS.draftsNeverRun &&
     R4_GUARDRAILS.publishedWorkflowVersionIdOnly &&
-    /drafts? are never/i.test(PRE_RUN_PUBLISHED_ONLY_HELP) &&
-    /workflowVersionId/.test(PRE_RUN_PUBLISHED_ONLY_HELP)
+    /drafts\b.*never run/i.test(PRE_RUN_PUBLISHED_ONLY_HELP) &&
+    /only published versions can run/i.test(PRE_RUN_PUBLISHED_ONLY_HELP)
   );
 }
 
@@ -300,7 +309,9 @@ export function executionDecideBlocksSelfApproval(): boolean {
   return (
     EXECUTION_DECIDE.requesterCannotSelfApprove &&
     /requester cannot/i.test(APPROVAL_SOD_HELP) &&
-    /self-approval/i.test(EXECUTION_DECIDE_SELF_REQUESTED_COPY)
+    /requested this approval can't approve or reject it/.test(
+      EXECUTION_DECIDE_SELF_REQUESTED_COPY,
+    )
   );
 }
 

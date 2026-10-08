@@ -13,10 +13,7 @@ import {
   approvalStatusLabel,
   failClosedProblemTitle,
 } from "@/lib/approval";
-import {
-  APPROVAL_BINDING_HELP,
-  APPROVAL_WAIT_DURABLE_HELP,
-} from "@/lib/approval-contract";
+import { APPROVAL_BINDING_HELP } from "@/lib/approval-contract";
 import { getApproval, getApprovalEvents } from "@/lib/approval-client";
 import type { ApprovalEvent } from "@/lib/approval-types";
 import type { ApprovalRequest } from "@/lib/approval-types";
@@ -124,8 +121,8 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
 
       {strippedKeys.length ? (
         <p role="status" className="text-sm text-fg">
-          Unexpected secret fields were stripped from the API response:{" "}
-          {strippedKeys.join(", ")}. Treat this as a backend contract bug.
+          Some fields were hidden because they looked like secrets:{" "}
+          {strippedKeys.join(", ")}.
         </p>
       ) : null}
 
@@ -156,7 +153,7 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
           {approval.validity.currentBinding ? (
             <ApprovalBindingSnapshot
               binding={approval.validity.currentBinding}
-              caption="Current server binding after recheck. This no longer matches the request snapshot."
+              caption="What's current now, after the recheck. It no longer matches what this request covers."
             />
           ) : null}
 
@@ -195,11 +192,7 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
           >
             Recheck on server
           </button>
-          <p className="text-sm text-fg">
-            {APPROVAL_BINDING_HELP} {APPROVAL_WAIT_DURABLE_HELP} The UI never
-            stores an approval token or treats a previous local approve as
-            sufficient.
-          </p>
+          <p className="text-sm text-fg">{APPROVAL_BINDING_HELP}</p>
           {events.length ? (
             <ol className="space-y-1 text-sm text-fg">
               {events.map((event) => (

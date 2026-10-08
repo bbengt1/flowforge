@@ -84,7 +84,7 @@ export function HomeLastRunStatus({
   const body = (
     <>
       <span aria-hidden="true">{presentation.icon}</span>
-      <span className="truncate">{presentation.label}</span>
+      <span className="truncate group-hover/last-run:underline">{presentation.label}</span>
       <TooltipText
         controls={tip}
         text={presentation.help}
@@ -103,11 +103,14 @@ export function HomeLastRunStatus({
       className="min-w-0"
     >
       {href ? (
+        // Hover underlines the label only. Opacity, filter, or transform
+        // on the link would start a stacking context, and the next row
+        // would paint over the open bubble.
         <Link
           href={href}
           {...tip.focusProps}
           {...tip.hoverProps}
-          className={`${className} hover:opacity-90`}
+          className={`${className} group/last-run`}
         >
           {body}
         </Link>

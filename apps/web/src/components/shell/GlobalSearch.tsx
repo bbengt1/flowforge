@@ -74,7 +74,10 @@ function GlobalSearchSession({ swaggerUrl }: GlobalSearchProps) {
         }
       }
       if (canSeeCredentialsNav(permissions)) {
-        const result = await listCredentials(identity);
+        // Background read on every page: an admin who hasn't stepped up
+        // just gets no credentials results, with no step-up prompt and no
+        // error. Opening the credentials page still asks for step-up.
+        const result = await listCredentials(identity, {}, { quietMfa: true });
         if (!cancelled && result.ok) {
           setCredentials(result.items);
         }

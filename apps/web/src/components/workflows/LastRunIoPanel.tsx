@@ -275,8 +275,7 @@ export function LastRunIoPanel({
           ) : null}
           {io.view?.waiting ? (
             <p role="status" className="text-sm text-fg">
-              Waiting on approval. Decide the bound approval — resume is decide,
-              not a new route.
+              Waiting for someone to approve or reject this step.
             </p>
           ) : null}
           {io.view?.failureText ? (
