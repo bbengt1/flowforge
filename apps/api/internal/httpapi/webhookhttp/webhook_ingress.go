@@ -35,7 +35,7 @@ func deliverWebhook(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		writeWebhookIngressError(w, r, webhook.ErrDisabled)
 		return
 	}
-	scope, err := isolation.Authorize(workspaceID, "")
+	scope, err := isolation.AuthorizeSystem(workspaceID)
 	if err != nil {
 		writeWebhookIngressError(w, r, webhook.ErrNotFound)
 		return
@@ -262,6 +262,7 @@ func writeWebhookIngressAudit(s *core.Server, r *http.Request, scope isolation.S
 		return
 	}
 	details := map[string]any{
+		"via":               webhook.AuditVia,
 		"triggerId":         trig.ID,
 		"workflowId":        trig.WorkflowID,
 		"workflowVersionId": trig.WorkflowVersionID,

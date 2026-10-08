@@ -66,10 +66,7 @@ func TestTombstoneIngressAndSchedulerStayStopped(t *testing.T) {
 		t.Fatalf("workspace: %d %s", rec.Code, rec.Body.String())
 	}
 	ws, tenant := currentWorkspace(t, h, admin)
-	scope, err := isolation.AuthorizeTenancy(ws.ID, admin.ID, tenant.ID, ws.WorkbenchKey)
-	if err != nil {
-		t.Fatal(err)
-	}
+	scope := authorizeTestActor(t, idStore, admin, ws, tenant)
 
 	created := createWorkflow(t, h, admin, tenant, ws, typedWebhookYAML)
 	pub := publishWorkflow(t, h, admin, tenant, ws, created.Workflow.ID, created.Draft.Revision, "tomb")

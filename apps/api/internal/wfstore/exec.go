@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/ssh"
 )
@@ -155,6 +156,14 @@ func startAuditDetails(workflowID string, ver Version, exec Execution, outcome s
 }
 
 func newAudit(scope isolation.Scope, in AuditWrite, now time.Time) AuditEvent {
+	details := redactObject(in.Details)
+	// A system scope has no UUID. Record the fixed system via unless the
+	// caller already named the path (webhook ingress sets via webhook).
+	if scope.System() {
+		if via, _ := details["via"].(string); strings.TrimSpace(via) == "" {
+			details["via"] = identity.MemberViaSystem
+		}
+	}
 	return AuditEvent{
 		ID:             newID(),
 		ActorID:        scope.ActorID(),
@@ -164,7 +173,7 @@ func newAudit(scope isolation.Scope, in AuditWrite, now time.Time) AuditEvent {
 		ResourceID:     strings.TrimSpace(in.ResourceID),
 		Outcome:        strings.TrimSpace(in.Outcome),
 		CorrelationID:  strings.TrimSpace(in.CorrelationID),
-		Details:        redactObject(in.Details),
+		Details:        details,
 		OccurredAt:     now,
 		RetentionUntil: now.Add(DefaultAuditRetention),
 	}

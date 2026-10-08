@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -342,4 +343,17 @@ func contains(items []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func authorizeTestActor(t *testing.T, store identity.Store, user identity.User, ws identity.Workspace, tenant identity.Tenant) isolation.Scope {
+	t.Helper()
+	got, err := store.FindUser(context.Background(), user.Issuer, user.ExternalSubject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope, err := isolation.AuthorizeTenancy(ws.ID, got.ID, tenant.ID, ws.WorkbenchKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return scope
 }

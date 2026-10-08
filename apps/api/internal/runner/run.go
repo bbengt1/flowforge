@@ -212,6 +212,17 @@ func (r *Runner) claimOne(ctx context.Context, ws Workspace) (bool, error) {
 	if job == nil {
 		return false, nil
 	}
+	// A manual or API run with no requester is corrupt. Fail it before
+	// any node runs. Schedule, webhook, and resync runs are system starts.
+	if failure, refuse := missingActorFailure(job.Execution); refuse {
+		if err := r.queue.Fail(ctx, ws, *job, failure); err != nil {
+			return true, err
+		}
+		if r.log != nil {
+			r.log.Info("production runner failed job", "job_id", job.Job.ID, "node_type", job.Step.NodeType, "code", failure["code"])
+		}
+		return true, nil
+	}
 	ctx, span := observability.Continue(ctx, job.Job.TraceParent, job.Job.TraceState, "runner.job")
 	defer span.End()
 	if job.Step.NodeType == "flow.approval" {
@@ -288,7 +299,7 @@ func (r *Runner) claimOne(ctx context.Context, ws Workspace) (bool, error) {
 	if err := r.queue.Heartbeat(ctx, ws, *job); err != nil {
 		return true, err
 	}
-	scope, err := scopeFor(ws)
+	scope, err := scopeForJob(ws, job.Execution)
 	if err != nil {
 		return true, err
 	}
