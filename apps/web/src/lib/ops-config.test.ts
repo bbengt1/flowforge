@@ -301,7 +301,7 @@ describe("select-only pins", () => {
     });
     assert.equal(forbidden.closed, true);
     assert.deepEqual(forbidden.options, []);
-    assert.match(forbidden.reason ?? "", /Forbidden|Cross-workspace/);
+    assert.match(forbidden.reason ?? "", /Your role can't use these/);
     assert.match(
       failClosedReason(
         {
@@ -315,7 +315,7 @@ describe("select-only pins", () => {
         },
         403,
       ),
-      /Forbidden/,
+      /Your role can't use these/,
     );
   });
 
@@ -323,7 +323,7 @@ describe("select-only pins", () => {
     const empty = authorizedSelectorOptions({ items: [], statusCode: 200 });
     assert.equal(empty.closed, true);
     assert.deepEqual(empty.options, []);
-    assert.match(empty.reason ?? "", /No server-authorized/);
+    assert.match(empty.reason ?? "", /Nothing published that you can use/);
   });
 
   it("accepts only pins with resourceId and version id", () => {

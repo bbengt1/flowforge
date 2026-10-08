@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useState, useSyncExternalStore } from "react";
+import { RequestReference } from "@/components/RequestReference";
 import { useEmbedMode } from "@/components/embed/EmbedMode";
 import { CollectionLoadMore } from "@/components/CollectionLoadMore";
 import { ProblemBanner } from "@/components/ProblemBanner";
@@ -322,11 +323,7 @@ export function MembershipOperator() {
           CSRF fail-closed. The mutation was not applied.
         </p>
       ) : null}
-      {lastRequestId && !problem ? (
-        <p className="font-mono text-xs text-fg">
-          last request_id {lastRequestId}
-        </p>
-      ) : null}
+      {!problem ? <RequestReference id={lastRequestId} /> : null}
 
       <details className="rounded-2xl border border-border bg-bg p-6 shadow-sm">
         <summary className="cursor-pointer text-lg font-semibold">

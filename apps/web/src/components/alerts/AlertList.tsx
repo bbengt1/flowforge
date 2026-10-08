@@ -6,6 +6,7 @@ import { CollectionLoadMore } from "@/components/CollectionLoadMore";
 import { AlertSeverityBadge } from "@/components/alerts/AlertSeverityBadge";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
+import { RequestReference } from "@/components/RequestReference";
 import {
   alertKindLabel,
   alertStatusLabel,
@@ -17,12 +18,18 @@ import {
   appendCollectionItems,
 } from "@/lib/collection-page";
 import { listAlerts } from "@/lib/alert-client";
-import { executionCorrelateHref } from "@/lib/alert-contract";
+import {
+  ALERTS_EMPTY_MESSAGE,
+  ALERTS_VIEW_DENIED,
+  ALERT_NO_DETAILS,
+  executionCorrelateHref,
+} from "@/lib/alert-contract";
 import {
   ALERT_KINDS,
   ALERT_STATUSES,
   type OperationalAlert,
 } from "@/lib/alert-types";
+import { strippedSecretFieldsMessage } from "@/lib/execution-contract";
 import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
@@ -152,10 +159,7 @@ export function AlertList() {
       ) : null}
 
       {denied ? (
-        <p className="text-sm text-fg">
-          This role cannot view alerts (
-          <code className="font-mono text-xs">alert.view</code> missing).
-        </p>
+        <p className="text-sm text-fg">{ALERTS_VIEW_DENIED}</p>
       ) : null}
 
       <div className="flex flex-wrap items-end gap-3">
@@ -249,24 +253,21 @@ export function AlertList() {
 
       {strippedKeys.length ? (
         <p role="status" className="text-sm text-fg">
-          Unexpected secret fields were stripped from the API response:{" "}
-          {strippedKeys.join(", ")}. Treat this as a backend contract bug.
+          {strippedSecretFieldsMessage(strippedKeys)}
         </p>
       ) : null}
 
       <p className="text-sm text-fg">
-        {visible.length} alert{visible.length === 1 ? "" : "s"} · identifiers
-        only, never secrets
-        {lastRequestId ? (
-          <span className="font-mono text-xs"> · {lastRequestId}</span>
-        ) : null}
+        {visible.length} alert{visible.length === 1 ? "" : "s"}. Secrets are
+        never shown.
       </p>
+      <RequestReference id={lastRequestId} />
 
       {denied || visible.length === 0 ? (
         <p className="text-sm text-fg">
           {denied
             ? "No alerts are shown for this role."
-            : "No alerts match. Authorization, replay, policy, and redaction failures appear here when the API emits them."}
+            : ALERTS_EMPTY_MESSAGE}
         </p>
       ) : (
         <ul className="grid gap-3">
@@ -293,7 +294,7 @@ export function AlertList() {
                     <p className="mt-1 text-sm text-fg">
                       {[item.action, item.outcome, item.code]
                         .filter(Boolean)
-                        .join(" · ") || "Identifiers only."}
+                        .join(" · ") || ALERT_NO_DETAILS}
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-1">

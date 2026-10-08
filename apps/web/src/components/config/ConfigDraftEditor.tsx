@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { RequestReference } from "@/components/RequestReference";
+import { CONFIG_DRAFT_HELP } from "@/lib/config-plain-copy";
 import { ConfigSpecForm } from "@/components/config/ConfigSpecForm";
 import { ConfigVersionHistory } from "@/components/config/ConfigVersionHistory";
 import { VersionPinBadge } from "@/components/config/VersionPinBadge";
@@ -276,11 +278,7 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
           Re-evaluate policy and request a new approval before dispatch.
         </p>
       ) : null}
-      {lastRequestId && !problem ? (
-        <p className="font-mono text-xs text-fg">
-          last request_id {lastRequestId}
-        </p>
-      ) : null}
+      {!problem ? <RequestReference id={lastRequestId} /> : null}
 
       <section className="rounded-2xl border border-border bg-bg p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -297,10 +295,7 @@ export function ConfigDraftEditor({ kind, resourceId }: ConfigDraftEditorProps) 
               {resourceId ? "Edit draft" : "Create draft"}
             </h2>
             <p className="mt-1 max-w-2xl text-sm text-fg">
-              Save updates the mutable draft with body{" "}
-              <code className="font-mono text-xs">revision</code> (no If-Match).
-              Publish copies the last saved draft into an immutable revision.
-              Unsaved buffer is not published.
+              {CONFIG_DRAFT_HELP}
             </p>
           </div>
           {resource?.latestVersionNumber ? (

@@ -190,7 +190,7 @@ describe("action wizard selectors", () => {
       statusCode: 403,
     });
     assert.equal(forbidden.closed, true);
-    assert.match(forbidden.reason ?? "", /Forbidden/);
+    assert.match(forbidden.reason ?? "", /Your role can't use these/);
 
     const items: OpsConfigSummary[] = [
       {

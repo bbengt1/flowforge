@@ -318,8 +318,12 @@ export {
   parseCatalogIssuers,
 };
 
+/** Contract note. Not UI copy: never render it. */
+export const PORTAL_FLOW_CONTRACT_NOTE =
+  "Portal entry is not FlowForge authorization. Mint via /portal/adapter/assertions, exchange via /embed/exchange, mount /embed/v1. Relates to #123 / Part of #120 (E11.3, #129 route map).";
+
 export const PORTAL_HELP =
-  "Portal entry is not FlowForge authorization. Mint via /portal/adapter/assertions, exchange via /embed/exchange, mount /embed/v1.";
+  "Portal access is not FlowForge authorization. FlowForge checks your access itself.";
 
 export const PORTAL_CHIPS_HELP =
   "Exchange issues CHIPS ff_session/ff_csrf (SameSite=None; Secure; Partitioned) for the cross-site iframe. Keep credentials:include. Do not request Storage Access or unpartitioned cookies. Cookie not sent is 401/403. Top-level FlowForge sessions stay Lax/Strict.";
@@ -327,13 +331,39 @@ export const PORTAL_CHIPS_HELP =
 export const PORTAL_DIRECT_MINT = EMBED_MINT_PATH;
 
 export const PORTAL_RBAC_HELP =
-  "Portal entry RBAC decides whether this host may mint/mount. It is not FlowForge authorization and is never sent as a capability.";
+  "Portal access decides whether this page can open FlowForge. It isn't FlowForge authorization and is never passed to FlowForge as a permission.";
 
 export const PORTAL_TENANCY_HELP =
-  "Tenant and workbench on this host are display context for the iframe query. After exchange the embed uses FlowForge-verified session.embed headers. Host values are not retried on 403.";
+  "Tenant and workbench here only label the embedded view. Once you're signed in, FlowForge uses the workspace it verified, and if access is refused it doesn't try again with these values.";
+
+/** Contract note. Not UI copy: never render it. */
+export const PORTAL_ASSERTION_CONTRACT_NOTE =
+  "Mint through POST /portal/adapter/assertions {portalRoles}. Subject defaults to the caller; a different subject requires embed.impersonate (PLATFORM_ADMINS). Then postMessage {type:\"flowforge.embed.assertion\",version:1,assertion} into the iframe. The embed shell POSTs /embed/exchange with X-FlowForge-Host-Issuer set to the configured PORTAL_ISSUER (never peeked from the assertion) and X-FlowForge-Host-Context: portal. Never put the JWS in the URL, hash, path, or localStorage.";
 
 export const PORTAL_ASSERTION_HELP =
-  "Mint through POST /portal/adapter/assertions {portalRoles}. Subject defaults to the caller; a different subject requires embed.impersonate (PLATFORM_ADMINS). Then postMessage {type:\"flowforge.embed.assertion\",version:1,assertion} into the iframe. The embed shell POSTs /embed/exchange with X-FlowForge-Host-Issuer set to the configured PORTAL_ISSUER (never peeked from the assertion) and X-FlowForge-Host-Context: portal. Never put the JWS in the URL, hash, path, or localStorage.";
+  "Opening FlowForge creates a short-lived sign-in token for the embedded view. FlowForge passes it to the frame once and then forgets it. It's never put in a link or saved in the browser.";
+
+/** PortalHost status lines. */
+export const PORTAL_SETTINGS_LOADED =
+  "Portal settings loaded. FlowForge maps portal roles itself, and only allowed hosts can show FlowForge in a frame.";
+
+export const PORTAL_SETTINGS_UNAVAILABLE =
+  "FlowForge couldn't load the portal settings, so it's using the default role map. It won't pass a sign-in token to the frame until the list of allowed hosts loads.";
+
+export const PORTAL_TOKEN_CREATED =
+  "Sign-in token created. FlowForge will pass it to the frame when the frame loads.";
+
+export const PORTAL_TOKEN_DELIVERED =
+  "Sign-in token passed to the frame and forgotten. FlowForge checks access with its own session, not the portal's roles.";
+
+export const PORTAL_TOKEN_SKIPPED =
+  "The frame loaded, but the sign-in token wasn't passed to it. The token was still forgotten.";
+
+export const PORTAL_NOT_MOUNTED_HELP =
+  "FlowForge opens here once portal access is granted and a sign-in token is created. The frame never gets the portal's database, workers, or roles.";
+
+export const PORTAL_ADMIN_NOT_MEMBER_HELP =
+  "A portal admin isn't automatically a FlowForge member.";
 
 export const PORTAL_HOST_ISSUER_HELP = EMBED_HOST_ISSUER_HELP;
 
@@ -347,19 +377,19 @@ export const PORTAL_HOST_ISSUER_RULES = {
 } as const;
 
 export const PORTAL_BOUNDARY_HELP =
-  "This host replaces Portal's protected workflow surface by embedding FlowForge. FlowForge keeps its own database, executor, and authorization. Portal RBAC stays on the Portal side of the iframe.";
+  "This page shows FlowForge inside the portal. FlowForge keeps its own database, workers, and access checks. Portal roles stay in the portal.";
 
 export const PORTAL_DENIED_MESSAGE =
-  "Portal entry is denied. FlowForge was not contacted. Granting Portal RBAC later still does not authorize FlowForge — a verified assertion exchange is required.";
+  "Portal access is denied, so FlowForge wasn't opened. Granting portal access later doesn't give you FlowForge access on its own. FlowForge still checks your sign-in.";
 
 export const PORTAL_HOSTILE_ISSUER_MESSAGE =
-  "Hostile or missing Portal issuer (HTTP 403). Empty PORTAL_ISSUER / PORTAL_ISSUER_ALLOWLIST fails closed; unknown issuers are denied. Portal admin is not FlowForge membership.";
+  "FlowForge doesn't recognize this portal as an allowed host, so it wasn't opened. A portal admin isn't automatically a FlowForge member.";
 
 export const PORTAL_NO_BOOTSTRAP_MESSAGE =
   "Embed sessions cannot create tenants or sibling workbenches (HTTP 403). Portal admin does not grant platform.administer or FlowForge membership bootstrap.";
 
 export const PORTAL_REPLAY_MESSAGE =
-  "This assertion was already used (HTTP 409). Exchange is POST /embed/exchange only. Request a new mint.";
+  "This sign-in token was already used. Select Open FlowForge again to get a new one.";
 
 export type PortalEntryRole = "granted" | "denied";
 

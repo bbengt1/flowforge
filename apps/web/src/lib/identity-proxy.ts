@@ -396,7 +396,7 @@ export async function fetchIdentityControlPlane(options: {
             response.status,
             options.instance,
             echoed,
-            "The control plane returned a problem response that could not be parsed.",
+            "FlowForge's server sent a response it couldn't read.",
           );
       return {
         ok: false,
@@ -491,7 +491,7 @@ export async function fetchIdentityControlPlaneStream(options: {
             response.status,
             options.instance,
             echoed,
-            "The control plane returned a problem response that could not be parsed.",
+            "FlowForge's server sent a response it couldn't read.",
           );
       return {
         ok: false,

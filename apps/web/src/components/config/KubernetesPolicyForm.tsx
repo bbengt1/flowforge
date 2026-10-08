@@ -70,7 +70,7 @@ export function KubernetesPolicyForm({
           className={`${inputClass} font-mono`}
         />
         <span className="mt-1 block text-xs text-fg">
-          One namespace per line. Empty allowlist fails closed.
+          One namespace per line. With none listed, every operation is denied.
         </span>
       </label>
 
@@ -202,7 +202,7 @@ export function KubernetesPolicyForm({
           disabled={readOnly}
           onChange={(event) => patch({ ...policy, deny: event.target.checked })}
         />
-        Deny all matching operations (fail closed)
+        Deny all matching operations
       </label>
 
       {gaps.length > 0 ? (

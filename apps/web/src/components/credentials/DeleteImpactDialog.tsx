@@ -4,6 +4,7 @@ import { ConfirmDestructive } from "@/components/a11y/ConfirmDestructive";
 import { Field } from "@/components/a11y/Field";
 import { credentialDeleteImpactItems } from "@/lib/confirm-destructive";
 import { deletionConfirmationState, formatRef } from "@/lib/credential";
+import { CREDENTIAL_DELETE_HELP } from "@/lib/credential-detail";
 import type { CredentialDeletionImpact } from "@/lib/credential-types";
 import {
   FF_VAULT_CONTROL_CLASS,
@@ -59,13 +60,7 @@ export function DeleteImpactDialog({
       confirmClassName={`${FF_VAULT_DANGER_CLASS} rounded-lg border px-3 py-2 text-sm font-medium disabled:opacity-60`}
       cancelClassName={FF_VAULT_GHOST_CLASS}
       description={
-        <>
-          Deletion-impact is already on the detail page from{" "}
-          <code className="font-mono text-xs">GET .../deletion-impact</code>.
-          Delete sends{" "}
-          <code className="font-mono text-xs">{`{confirm:true}`}</code>. Active
-          executions block delete. Secret values are never shown.
-        </>
+        CREDENTIAL_DELETE_HELP
       }
       impact={
         impact

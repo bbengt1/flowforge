@@ -177,12 +177,12 @@ export function RuntimeProfileForm({
           <legend className="px-1 text-sm font-medium">Egress allowlist</legend>
           <p className="text-xs text-fg">{SCRIPT_RUNTIME_EGRESS_HELP}</p>
           <p className="text-xs text-fg">
-            dnsConstrained is required and always true. There is no toggle for
-            package install, Docker socket, metadata, or unconstrained DNS.
+            There is no setting for package installs, the Docker socket, cloud
+            metadata, or unrestricted DNS.
           </p>
           {destinations.length === 0 ? (
             <p className="text-sm text-fg">
-              No destinations — default-deny egress.
+              No destinations, so scripts can&apos;t reach the network.
             </p>
           ) : null}
           {destinations.map((row, index) => (

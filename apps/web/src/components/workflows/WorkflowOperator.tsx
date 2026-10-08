@@ -3,6 +3,7 @@
 import { notFound, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { RequestReference } from "@/components/RequestReference";
 import { IsolationIdentityPanel } from "@/components/isolation/IsolationIdentityPanel";
 import { ProblemBanner } from "@/components/ProblemBanner";
 import {
@@ -2553,11 +2554,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
               }
             />
           ) : null}
-          {lastRequestId && !problem ? (
-            <p className="font-mono text-[11px] text-fg">
-              last request_id {lastRequestId}
-            </p>
-          ) : null}
+          {!problem ? <RequestReference id={lastRequestId} /> : null}
         </div>
       }
       runs={

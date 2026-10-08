@@ -69,7 +69,7 @@ describe("script ops client", () => {
     assert.equal(result.ok, true);
     if (result.ok) {
       assert.equal(result.artifact.revokedAt, "2026-09-09T15:04:00Z");
-      assert.match(result.message, /artifact-revoked/);
+      assert.match(result.message, /New runs that use it can't start/);
     }
     assert.equal(seen.url, `/api/v1/scripts/${ARTIFACT_ID}/revoke`);
     const headers = new Headers(seen.init?.headers);

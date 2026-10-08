@@ -156,7 +156,7 @@ export function kubernetesPolicyPublishGap(
     return null;
   }
   if (policy.allowedNamespaces.length === 0) {
-    return "Publish requires a non-empty allowedNamespaces list unless deny=true.";
+    return "Publish requires at least one entry in Allowed namespaces unless Deny all is on.";
   }
   return null;
 }
@@ -540,13 +540,13 @@ export function kubernetesPolicyGaps(body: KubernetesPolicyBody): string[] {
   if (publishGap) {
     gaps.push(publishGap);
   } else if (body.allowedNamespaces.length === 0) {
-    gaps.push("No namespaces allowlisted — evaluation fails closed.");
+    gaps.push("No namespaces listed, so every operation is denied.");
   }
   if (body.allowedKinds.length === 0) {
-    gaps.push("No resource kinds allowlisted — evaluation fails closed.");
+    gaps.push("No resource kinds listed, so every operation is denied.");
   }
   if (body.allowedVerbs.length === 0) {
-    gaps.push("No verbs allowlisted — evaluation fails closed.");
+    gaps.push("No verbs listed, so every operation is denied.");
   }
   if (body.requireApproval && body.operations.length === 0) {
     gaps.push("Approval is required but no operations are listed.");

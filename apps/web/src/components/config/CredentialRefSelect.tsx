@@ -8,6 +8,12 @@ import {
   CREDENTIAL_VAULT_STRIP_STOP_HELP,
   credentialVaultMustStopAfterStrip,
 } from "@/lib/credential-vault";
+import {
+  CREDENTIAL_PICKER_HELP,
+  CREDENTIAL_PICKER_KUBERNETES_HELP,
+  CREDENTIAL_PICKER_PROBLEM,
+  CREDENTIAL_PICKER_SSH_HELP,
+} from "@/lib/config-plain-copy";
 import { useEffect, useState } from "react";
 
 type CredentialRefSelectProps = {
@@ -126,14 +132,14 @@ export function CredentialRefSelect({
       )}
       <span className="mt-1 block text-xs text-fg">
         {allowedTypes?.includes("kubernetes")
-          ? "Workspace type=kubernetes vault credentials only. Kubeconfig is never listed or pasted."
+          ? CREDENTIAL_PICKER_KUBERNETES_HELP
           : allowedTypes?.includes("ssh_private_key")
-            ? "Workspace SSH vault credentials only (type=ssh_private_key). Keys, passwords, and host private material are never listed or pasted."
-            : "E4.1 vault metadata only — display name and id. Kubeconfig and plaintext are never listed or stored here."}
+            ? CREDENTIAL_PICKER_SSH_HELP
+            : CREDENTIAL_PICKER_HELP}
       </span>
       {problem ? (
         <span className="mt-1 block text-sm text-fg">
-          {problem.title}: credential list failed closed.
+          {CREDENTIAL_PICKER_PROBLEM}
         </span>
       ) : null}
     </label>

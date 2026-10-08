@@ -185,7 +185,7 @@ export async function revokeScriptArtifact(
     statusCode: result.statusCode,
     requestId: result.requestId,
     artifact,
-    message: `Artifact revoked at ${artifact.revokedAt}. New starts fail closed with 409 artifact-revoked.`,
+    message: `Script revoked at ${artifact.revokedAt}. New runs that use it can't start.`,
   };
 }
 

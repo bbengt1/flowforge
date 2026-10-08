@@ -129,13 +129,17 @@ export const EMBED_VERIFIED_HELP =
   "Chrome and deep links use GET /session session.embed (ADV-021). Host query, route, peeked assertion, and postMessage values never authorize.";
 
 export const EMBED_LOCKED_MESSAGE =
-  "This embed is locked to the FlowForge-verified tenant/workbench. Workspace switching is disabled.";
+  "This view is locked to the workspace FlowForge verified for you. You can't switch workspaces here.";
 
 export const EMBED_HOST_MISMATCH_MESSAGE =
-  "Host-supplied tenant/workbench do not match the FlowForge-verified workspace. Host values are display-only and were not used for lookup.";
+  "The app around this view named a different tenant or workbench than the one FlowForge verified. FlowForge uses the verified one; the other names are only shown.";
+
+/** Contract note. Not UI copy: never render it. */
+export const EMBED_TENANCY_MISMATCH_CONTRACT_NOTE =
+  "GET /workspace did not match the FlowForge-verified (tenant_id, workbench_key). The embed surface is closed. Host values are not authorization. Exchange a fresh assertion.";
 
 export const EMBED_TENANCY_MISMATCH_MESSAGE =
-  "GET /workspace did not match the FlowForge-verified (tenant_id, workbench_key). The embed surface is closed. Host values are not authorization. Exchange a fresh assertion.";
+  "This view no longer matches the workspace FlowForge verified, so it's closed. Open it again from the app it's part of.";
 
 export const EMBED_MISSING_VERIFIED_MESSAGE =
   "No FlowForge-verified workspace is bound. Host identity is not authorization. Exchange a host assertion.";

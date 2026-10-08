@@ -1,6 +1,7 @@
 "use client";
 
 import { Dialog } from "@/components/a11y/Dialog";
+import { CREDENTIAL_TEST_HELP } from "@/lib/credential-detail";
 import type { CredentialTestResult } from "@/lib/credential-types";
 import {
   FF_VAULT_GHOST_CLASS,
@@ -41,13 +42,7 @@ export function CredentialTestDialog({
           Test connection
         </h2>
         <p className={`mt-1 text-sm ${FF_VAULT_HELP_CLASS}`}>
-          <code className="font-mono text-xs">POST .../test</code> checks the
-          stored encrypted payload. This page never sends or displays
-          plaintext. The API returns{" "}
-          <code className="font-mono text-xs">
-            {"{result:{status,reason,checkedAt},credential}"}
-          </code>
-          .
+          {CREDENTIAL_TEST_HELP}
         </p>
         {result ? (
           <dl className="mt-4 grid gap-1 text-sm">

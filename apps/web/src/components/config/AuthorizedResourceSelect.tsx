@@ -1,6 +1,7 @@
 "use client";
 
 import { ProblemBanner } from "@/components/ProblemBanner";
+import { CONFIG_PICKER_EMPTY_OPTION, CONFIG_PICKER_HELP } from "@/lib/config-plain-copy";
 import { authorizedSelectorOptions, selectorOptionLabel } from "@/lib/ops-config";
 import type { OpsConfigKind, OpsConfigPin } from "@/lib/ops-config-types";
 import type { ProblemDetails } from "@/lib/problem";
@@ -18,7 +19,6 @@ type AuthorizedResourceSelectProps = {
 };
 
 export function AuthorizedResourceSelect({
-  kind,
   label,
   value,
   pins,
@@ -52,7 +52,7 @@ export function AuthorizedResourceSelect({
           className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm disabled:bg-bg"
         >
           <option value="">
-            {selected.closed ? "No authorized resources" : "Select a published version"}
+            {selected.closed ? CONFIG_PICKER_EMPTY_OPTION : "Select a published version"}
           </option>
           {selected.options.map((pin) => (
             <option
@@ -64,10 +64,7 @@ export function AuthorizedResourceSelect({
           ))}
         </select>
       </label>
-      <p className="text-xs text-fg">
-        Published {kind.replaceAll("_", " ")} pins from list + POST select.
-        Display name + version — never secrets.
-      </p>
+      <p className="text-xs text-fg">{CONFIG_PICKER_HELP}</p>
       {problem ? <ProblemBanner problem={problem} /> : null}
       {selected.closed && !problem ? (
         <p role="status" className="text-sm text-fg">

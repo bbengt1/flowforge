@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { RequestReference } from "@/components/RequestReference";
 import { ConfigSpecForm } from "@/components/config/ConfigSpecForm";
 import { VersionPinBadge } from "@/components/config/VersionPinBadge";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
@@ -82,11 +83,7 @@ export function ConfigPublishedDetail({
         <SessionSetupHint purpose="before reading published config." />
       ) : null}
       {problem ? <ProblemBanner problem={problem} /> : null}
-      {lastRequestId && !problem ? (
-        <p className="font-mono text-xs text-fg">
-          last request_id {lastRequestId}
-        </p>
-      ) : null}
+      {!problem ? <RequestReference id={lastRequestId} /> : null}
 
       <section className="rounded-2xl border border-border bg-bg p-6 shadow-sm">
         <p className="text-sm text-fg">

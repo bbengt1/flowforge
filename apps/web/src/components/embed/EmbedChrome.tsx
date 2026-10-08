@@ -28,14 +28,11 @@ import {
   TYPE_CAPTION_CLASS,
 } from "@/lib/aesthetic-usability-density";
 import {
-  REWRITE_EMBED_MOUNT_HELP,
   rewriteEmbedMountState,
   rewriteEmbedShellToolsVisible,
 } from "@/lib/rewrite-embed-mount";
 import {
   EMBED_CHROME_MISSING_SESSION_MESSAGE,
-  SESSION_EMBED_CHROME_HELP,
-  SESSION_EMBED_ROUTE_MAP_SOURCE,
   SESSION_EMBED_WAITING_HELP,
   isSessionEmbedMode,
   sessionEmbedAsVerifiedWorkspace,
@@ -51,6 +48,9 @@ import {
 import { editorWorkspaceNav } from "@/lib/workspace-nav";
 
 /**
+ * Copy here is wording only: no new props, calls, or routes on embed. The
+ * session, mount, and route-map contract notes never render.
+ *
  * ADV-021: retarget this chrome from GET /session via
  * `parseEmbedChromeFromSession` / `EMBED_CHROME_FROM_SESSION`. Host query,
  * assertion leftovers, and catalog guesses are not chrome authority.
@@ -121,10 +121,7 @@ export function EmbedChrome({
           FlowForge embed
         </Link>
         {chrome ? (
-          <p
-            className="ff-shell-chip-accent rounded-full px-2.5 py-0.5 font-mono text-xs font-medium"
-            title={SESSION_EMBED_CHROME_HELP}
-          >
+          <p className="ff-shell-chip-accent rounded-full px-2.5 py-0.5 font-mono text-xs font-medium">
             {embedChromeChipLabel(chrome)}
           </p>
         ) : missingEmbed ? (
@@ -132,7 +129,6 @@ export function EmbedChrome({
             role="alert"
             data-doherty-wait="session-embed"
             className={`${TYPE_CAPTION_CLASS} font-semibold text-[var(--ff-danger)]`}
-            title={SESSION_EMBED_CHROME_HELP}
           >
             {EMBED_CHROME_MISSING_SESSION_MESSAGE}
           </p>
@@ -141,7 +137,6 @@ export function EmbedChrome({
             data-doherty-wait="session-embed"
             className={`${TYPE_CAPTION_CLASS} ff-shell-muted`}
           >
-            {EMBED_MOUNT_PREFIX} · {SESSION_EMBED_ROUTE_MAP_SOURCE} ·{" "}
             {SESSION_EMBED_WAITING_HELP}
           </p>
         )}
@@ -160,8 +155,7 @@ export function EmbedChrome({
       </div>
       {chrome ? (
         <p className={`px-4 pb-2 ${TYPE_CAPTION_CLASS} ff-shell-muted`}>
-          {EMBED_LOCKED_MESSAGE} {SESSION_EMBED_CHROME_HELP}{" "}
-          {REWRITE_EMBED_MOUNT_HELP}
+          {EMBED_LOCKED_MESSAGE}
         </p>
       ) : missingEmbed ? (
         <p
@@ -220,10 +214,10 @@ export function EmbedChrome({
           role="status"
           className={`border-t px-4 py-3 text-sm ${LOUD_WARNING_CLASS}`}
         >
-          {EMBED_HOST_MISMATCH_MESSAGE} GET /session verified{" "}
+          {EMBED_HOST_MISMATCH_MESSAGE} FlowForge verified{" "}
           {verified ? embedVerifiedLabel(verified) : ""}.
           {current?.workspace.workbench_key
-            ? ` GET /workspace is ${current.tenant.slug || current.workspace.tenant_id} / ${current.workspace.workbench_key}.`
+            ? ` This workspace is ${current.tenant.slug || current.workspace.tenant_id} / ${current.workspace.workbench_key}.`
             : ""}
         </div>
       ) : null}
@@ -232,14 +226,14 @@ export function EmbedChrome({
           data-doherty-wait="host-query"
           className="ff-shell-muted px-4 pb-3 text-xs"
         >
-          {EMBED_HOST_DISPLAY_HELP} Host shows{" "}
+          {EMBED_HOST_DISPLAY_HELP} The app around this view shows{" "}
           {[
             hostDisplay.tenant || hostDisplay.tenantId,
             hostDisplay.workbench,
           ]
             .filter(Boolean)
             .join(" / ") || hostDisplay.host}{" "}
-          until GET /session.
+          until FlowForge confirms your sign-in.
         </p>
       ) : null}
       {!sessionActive && !hostPreview ? (

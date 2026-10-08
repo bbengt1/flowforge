@@ -27,6 +27,7 @@ import {
   generateManualStartIdempotencyKey,
   isManualStartAuthFailure,
   manualStartAuthFailureMessage,
+  startFailureMessage,
   startOutcomeMessage,
 } from "@/lib/manual-start-contract";
 import { executionHistoryHref } from "@/lib/execution-contract";
@@ -86,6 +87,9 @@ export function ManualStartPanel({
   const [pending, setPending] = useState(false);
   const [doherty, setDoherty] = useState<DohertyChrome>(DOHERTY_IDLE);
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
+  // True when `problem` came from pressing Start, so the panel's own
+  // bad-input and conflict sentences apply. Load failures keep the API's words.
+  const [problemFromStart, setProblemFromStart] = useState(false);
   const [evaluation, setEvaluation] = useState<PolicyEvaluation | null>(null);
   const [evaluationProblem, setEvaluationProblem] =
     useState<ProblemDetails | null>(null);
@@ -130,6 +134,7 @@ export function ManualStartPanel({
         setSelectedVersion(version.version);
       } else {
         setSelectedVersion(null);
+        setProblemFromStart(false);
         setProblem(version.problem);
       }
       setPins(pinList.ok ? pinList.items : []);
@@ -155,6 +160,7 @@ export function ManualStartPanel({
       }
       setCatalog(catalogResult.ok ? catalogResult.catalog : null);
       if (!result.ok) {
+        setProblemFromStart(false);
         setProblem(result.problem);
         return;
       }
@@ -173,6 +179,7 @@ export function ManualStartPanel({
 
   async function onStart() {
     if (!canExecute) {
+      setProblemFromStart(true);
       setProblem({
         type: "urn:flowforge:problem:forbidden",
         title: "Start forbidden",
@@ -195,6 +202,7 @@ export function ManualStartPanel({
       catalog,
     });
     if (!prepared.ok || !prepared.body) {
+      setProblemFromStart(true);
       setProblem({
         type: "urn:flowforge:problem:invalid-request",
         title: "Cannot start",
@@ -237,6 +245,7 @@ export function ManualStartPanel({
       ),
     );
     if (!result.ok) {
+      setProblemFromStart(true);
       setProblem(result.problem);
       return;
     }
@@ -291,7 +300,10 @@ export function ManualStartPanel({
 
       {problem && !isManualStartAuthFailure(problem) && !keyConflict ? (
         <div className="mt-4">
-          <ProblemBanner problem={problem} />
+          <ProblemBanner
+            problem={problem}
+            message={problemFromStart ? startFailureMessage(problem) : null}
+          />
         </div>
       ) : null}
 

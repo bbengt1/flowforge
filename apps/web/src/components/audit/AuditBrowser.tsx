@@ -4,13 +4,19 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { CollectionLoadMore } from "@/components/CollectionLoadMore";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
+import { RequestReference } from "@/components/RequestReference";
 import { auditRowAffordances, canSeeAuditNav } from "@/lib/alert";
 import { listWorkspaceAuditEvents } from "@/lib/alert-client";
 import {
   COLLECTION_PAGE_DEFAULT_LIMIT,
   appendCollectionItems,
 } from "@/lib/collection-page";
-import { AUDIT_APPEND_ONLY_HELP, AUDIT_NOT_ISOLATION_HELP } from "@/lib/alert-contract";
+import {
+  AUDIT_APPEND_ONLY_HELP,
+  AUDIT_EMPTY_MESSAGE,
+  AUDIT_VIEW_DENIED,
+} from "@/lib/alert-contract";
+import { strippedSecretFieldsMessage } from "@/lib/execution-contract";
 import type { WorkspaceAuditEvent } from "@/lib/alert-types";
 import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { redactedJson } from "@/lib/execution";
@@ -126,15 +132,11 @@ export function AuditBrowser() {
       ) : null}
 
       {denied ? (
-        <p className="text-sm text-fg">
-          This role cannot view workspace audit (
-          <code className="font-mono text-xs">audit.view</code> /{" "}
-          <code className="font-mono text-xs">execution.view</code> missing).
-        </p>
+        <p className="text-sm text-fg">{AUDIT_VIEW_DENIED}</p>
       ) : null}
 
       <p className="rounded-xl border border-border bg-bg px-4 py-3 text-sm text-fg">
-        {AUDIT_APPEND_ONLY_HELP} {AUDIT_NOT_ISOLATION_HELP}
+        {AUDIT_APPEND_ONLY_HELP}
       </p>
 
       <div className="flex flex-wrap items-end gap-3">
@@ -191,24 +193,21 @@ export function AuditBrowser() {
 
       {strippedKeys.length ? (
         <p role="status" className="text-sm text-fg">
-          Unexpected secret fields were stripped from the API response:{" "}
-          {strippedKeys.join(", ")}. Treat this as a backend contract bug.
+          {strippedSecretFieldsMessage(strippedKeys)}
         </p>
       ) : null}
 
       <p className="text-sm text-fg">
         {items.length} event{items.length === 1 ? "" : "s"} · read-only
-        {affordances.canMutate ? " · mutable" : ""}
-        {lastRequestId ? (
-          <span className="font-mono text-xs"> · {lastRequestId}</span>
-        ) : null}
+        {affordances.canMutate ? " · editable" : ""}
       </p>
+      <RequestReference id={lastRequestId} />
 
       {denied || items.length === 0 ? (
         <p className="text-sm text-fg">
           {denied
             ? "No audit rows are shown for this role."
-            : "No audit events match. Product audit is GET /audit-events, not the E2.2 isolation stub."}
+            : AUDIT_EMPTY_MESSAGE}
         </p>
       ) : (
         <ul className="grid gap-3">
@@ -221,7 +220,7 @@ export function AuditBrowser() {
                 <div>
                   <h2 className="text-base font-semibold">{event.action}</h2>
                   <p className="mt-1 text-sm text-fg">
-                    {event.outcome || "outcome unreported"}
+                    {event.outcome || "Outcome not recorded"}
                   </p>
                 </div>
                 <p className="font-mono text-xs text-fg">

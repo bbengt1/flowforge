@@ -86,17 +86,37 @@ export const CREDENTIAL_VAULT_LIST_MUST_OMIT_KEYS = [
 ] as const;
 
 export const CREDENTIAL_VAULT_KEYBOARD_HELP =
-  "Arrow keys move the vault. Enter or Space opens the focused credential on existing /credentials/{id} detail. Display-name search stays on this page.";
+  "Use the arrow keys to move through the list. Enter or Space opens the focused credential. Search stays on this page.";
 
+/** Contract note. Not UI copy: never render it. */
+export const CREDENTIAL_VAULT_CONTRACT_NOTE =
+  "GET /credentials q matches the display name only; type, tag, and status filter in the browser. Rows open existing /credentials/{id} detail. Display-name + UUID only. Unexpected plaintext is a contract bug (strip + stop).";
+
+/** Above the vault list. */
 export const CREDENTIAL_VAULT_HELP =
-  "Find credentials by display name. GET /credentials q matches the display name only. Filter type, tag, or status in the browser. Open a row into existing /credentials/{id} detail. Display-name + UUID only. Secrets never enter YAML, search, or analytics. Unexpected plaintext is a contract bug (strip + stop).";
+  "Search finds credentials by display name. Filter by type, tag, or status, then open one to manage it. FlowForge shows only each credential's name and id. Secret values never appear in workflows, search, or analytics.";
+
+/** Under the Credential vault heading. */
+export const CREDENTIAL_VAULT_PAGE_HELP =
+  "Credentials your workflows use in this workspace. FlowForge keeps the secrets encrypted and only ever shows each credential's name and id.";
+
+/** Under the New credential heading. */
+export const CREDENTIAL_NEW_PAGE_HELP =
+  "Pick a type, give the credential a display name, and enter the secret in the masked fields. Once it's created, the secret fields are cleared and only the name, type, and safe metadata are kept.";
+
+/** Shown when the role can't view credentials. */
+export const CREDENTIAL_VIEW_DENIED = "Your role can't view credentials.";
 
 /** Contract only — never render in operator chrome (UXL.8). */
 export const CREDENTIAL_KEK_CONTRACT =
   "The UI never reads CREDENTIAL_KEK. Server-only. Not operator chrome.";
 
+/** Shown when the API response had secret-looking fields that FlowForge hid. */
 export const CREDENTIAL_VAULT_STRIP_STOP_HELP =
-  "Unexpected secret fields were stripped from the API response. This is a backend contract bug. Stop — do not paste the leaked material into chrome, tickets, or screenshots.";
+  "FlowForge hid fields that looked like secrets. Stop here and tell your FlowForge admin. Don't paste anything from this page into tickets or screenshots.";
+
+/** Before the list of hidden field names. */
+export const CREDENTIAL_HIDDEN_FIELDS_LABEL = "Hidden fields:";
 
 export const CREDENTIAL_VAULT_IDENTITY_KEYS = ["displayName", "id"] as const;
 

@@ -16,7 +16,7 @@ const GROUPS: Array<{ id: OpsConfigGroup; title: string; blurb: string }> = [
     id: "targets",
     title: "Targets",
     blurb:
-      "Kubernetes clusters and SSH hosts. Cluster targets bind a workspace kubernetes vault credential. SSH targets bind a workspace ssh_private_key credential plus a known-host fingerprint. Keys and kubeconfigs stay in the vault.",
+      "Kubernetes clusters and SSH hosts. Cluster targets use a Kubernetes credential from the vault. SSH targets use an SSH key from the vault and the host's known fingerprint. Keys and kubeconfigs stay in the vault.",
   },
   {
     id: "profiles",
@@ -28,7 +28,7 @@ const GROUPS: Array<{ id: OpsConfigGroup; title: string; blurb: string }> = [
     id: "config",
     title: "Config",
     blurb:
-      "Connections, recipient lists, templates, response schemas, and policies. Kubernetes policies use namespace/kind/verb allowlists.",
+      "Connections, recipient lists, templates, response schemas, and policies. Kubernetes policies list the namespaces, kinds, and actions allowed.",
   },
 ];
 
@@ -138,9 +138,8 @@ export function ConfigHub({ group }: ConfigHubProps) {
                     >
                       <h3 className="font-semibold">{title}</h3>
                       <p className="mt-1 text-sm text-fg">{kind.summary}</p>
-                      <p className="mt-3 font-mono text-xs text-fg">
-                        YAML {yamlRef} · /{collection}
-                        {remote?.usePermission ? ` · ${remote.usePermission}` : ""}
+                      <p className="mt-3 text-xs text-fg">
+                        Workflow field <span className="font-mono">{yamlRef}</span>
                       </p>
                     </Link>
                   </li>

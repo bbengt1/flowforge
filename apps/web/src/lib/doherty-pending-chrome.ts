@@ -30,7 +30,7 @@ import { ENGINE_CATALOG_UNAVAILABLE_HELP } from "./catalog-fail-closed.ts";
 import { EDITOR_WORKING_MEMORY } from "./editor-working-memory.ts";
 import { EDITOR_TOPBAR_CHUNKING } from "./editor-topbar-chunking.ts";
 import { R7_HARD_LINE } from "./rewrite-embed-mount.ts";
-import { CREDENTIAL_DETAIL_HELP } from "./credential-detail.ts";
+import { CREDENTIAL_DETAIL_CONTRACT_NOTE } from "./credential-detail.ts";
 
 export const UXL3_STORY = 290;
 export const UXL3_EPIC = 287;
@@ -342,7 +342,7 @@ export function dohertyInheritsPriorStories(): boolean {
     EDITOR_TOPBAR_CHUNKING.threeGroupsNotTwelvePeers &&
     EDITOR_WORKING_MEMORY.editingADraftInWords &&
     EDITOR_WORKING_MEMORY.testRunCopyNamesPublishThenStart &&
-    CREDENTIAL_DETAIL_HELP.includes("display-name + UUID")
+    CREDENTIAL_DETAIL_CONTRACT_NOTE.includes("display-name + UUID")
   );
 }
 

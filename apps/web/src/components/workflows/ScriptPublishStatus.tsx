@@ -14,6 +14,7 @@ import {
   SCRIPT_OPS_AUDIT_SECRET_FREE_HELP,
   SCRIPT_REVOKE_CONFIRM_HELP,
   SCRIPT_REVOKE_FORBIDDEN_MESSAGE,
+  SCRIPT_REVOKE_NOT_LOADED_MESSAGE,
   SCRIPT_REVOKE_HELP,
   SCRIPT_REVOKED_STATUS_HELP,
   canRevokeScriptArtifact,
@@ -75,14 +76,14 @@ export function ScriptPublishStatus({
         {status.digest ? (
           <>
             {" "}
-            <code className="break-all font-mono text-xs">{status.digest}</code>
+            <span className="break-all font-mono text-xs">{status.digest}</span>
           </>
         ) : null}
         {status.scanStatus ? (
-          <span className="ml-1 text-xs">scan={status.scanStatus}</span>
+          <span className="ml-1 text-xs">Scan: {status.scanStatus}</span>
         ) : null}
         {status.revokedAt ? (
-          <span className="ml-1 text-xs">revokedAt={status.revokedAt}</span>
+          <span className="ml-1 text-xs">Revoked {status.revokedAt}</span>
         ) : null}
       </p>
       <p className={revoked ? "mt-1 text-xs text-rose-950" : "mt-1 text-xs text-teal-950"}>
@@ -104,10 +105,10 @@ export function ScriptPublishStatus({
                   {pin.nodeId}
                   {pin.nodeType ? ` · ${pin.nodeType}` : ""}
                   {" · "}
-                  <code className="break-all">{pin.digest}</code>
-                  {" · scan="}
+                  <span className="break-all">{pin.digest}</span>
+                  {" · Scan: "}
                   {pin.scanStatus || "—"}
-                  {" · signature="}
+                  {" · Signature: "}
                   {pin.signature ? "present" : "missing"}
                   {isArtifactRevoked(artifact) || pin.revokedAt ? (
                     <>
@@ -179,14 +180,14 @@ function ScriptRevokeAction({
   if (!artifact) {
     return (
       <p className="mt-1 font-sans text-xs text-teal-900">
-        Inspect GET /scripts/{"{id}"} to revoke this pin.
+        {SCRIPT_REVOKE_NOT_LOADED_MESSAGE}
       </p>
     );
   }
   if (isArtifactRevoked(artifact)) {
     return (
       <p className="mt-1 font-sans text-xs font-medium text-rose-950">
-        Revoked. Start and publish-as-run are blocked for this digest.
+        Revoked. This script can&apos;t start.
       </p>
     );
   }

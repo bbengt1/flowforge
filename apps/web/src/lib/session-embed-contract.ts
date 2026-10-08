@@ -74,10 +74,11 @@ export const SESSION_EMBED_CHROME_RULES = {
   exchangeSetsCookiesNotChrome: true,
 } as const;
 
+/** Contract note. Not UI copy: never render it. */
 export const SESSION_EMBED_CHROME_HELP = EMBED_CHROME_FROM_SESSION_HELP;
 
 export const SESSION_EMBED_WAITING_HELP =
-  "Host identity is display-only until GET /session verifies session.embed.";
+  "Checking your FlowForge sign-in. Until then, names from the app around this view are only shown.";
 
 export const SESSION_EMBED_EXISTING_PATHS = [
   SESSION_PATH,

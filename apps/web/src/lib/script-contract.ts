@@ -88,7 +88,7 @@ export const SCRIPT_TIMEOUT_REQUIRED_MESSAGE =
   "timeoutSeconds is required (1–3600).";
 
 export const SCRIPT_BLOB_FORBIDDEN_MESSAGE =
-  "Package blobs and storageRef are never shown. Artifact metadata is digest, scan, and signature only.";
+  "Script packages are never shown here, only their digest, scan result, and signature.";
 
 export const SCRIPT_PROFILE_REQUIRED_MESSAGE =
   "runtimeProfileId is required. Choose a published approved runtime/dependency profile.";
@@ -106,6 +106,10 @@ export const SCRIPT_HOST_SUPPLIED_IDENTITY_DETAIL =
   "Do not send id or workspaceId on writes. Workspace scope comes from the session and tenant + workbench headers.";
 
 export const SCRIPT_EXECUTE_FAIL_CLOSED_HELP =
+  "Only published, scanned, and signed scripts can run. Drafts, unscanned or unsigned scripts, scripts that failed their scan, and revoked scripts never start. Running one needs permission to run scripts and to use its runtime profile, and scripts always run in isolated runners.";
+
+/** Contract note. Not UI copy: never render it. */
+export const SCRIPT_EXECUTE_CONTRACT_NOTE =
   "Execute fails closed: drafts, mutable, unscanned, unsigned, scan-failed, or revoked artifacts cannot start. Revoked pins return 409 artifact-revoked at start, claim, and heartbeat. Dispatch needs script.run plus runtimeProfile.use. Isolated runners are server-enforced (E9.2 / #98).";
 
 export const SCRIPT_RUNTIME_PROFILE_ENGINE = "script" as const;
@@ -932,7 +936,7 @@ export function scriptArtifactStatus(input: {
     return {
       kind: "revoked",
       label: "Revoked — cannot start",
-      help: "This pinned digest is revoked. New starts fail closed with 409 artifact-revoked. Dispatch rechecks signature, scan, and revokedAt. Already-running executions use emergency stop.",
+      help: "This pinned script is revoked, so new runs that use it can't start. Use emergency stop for runs already in progress.",
       digest: revokedPin?.digest ?? revokedArtifact?.digest,
       scanStatus: revokedPin?.scanStatus ?? revokedArtifact?.scanStatus,
       revokedAt: revokedPin?.revokedAt ?? revokedArtifact?.revokedAt,

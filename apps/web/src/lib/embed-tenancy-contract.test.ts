@@ -137,7 +137,7 @@ describe("embed-tenancy-contract", () => {
       ),
       false,
     );
-    assert.match(EMBED_HOST_MISMATCH_MESSAGE, /display-only/);
+    assert.match(EMBED_HOST_MISMATCH_MESSAGE, /only shown/);
   });
 
   it("locks GET /workspace to the verified pair and fail-closes mismatches", () => {

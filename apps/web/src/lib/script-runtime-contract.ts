@@ -59,17 +59,17 @@ export const SCRIPT_RUNTIME_ISOLATION_HELP =
   "Runners are non-root UID/GID 65532, read-only root filesystem, ephemeral /workspace, drop ALL capabilities, and no_new_privs. Egress is default-deny with constrained DNS. There is no Docker socket, cloud-instance metadata, Kubernetes SA mount, or arbitrary base image. CI uses HarnessRuntime (no live containers); production manifests are deploy/kubernetes/script-runner-*.yaml.";
 
 export const SCRIPT_RUNTIME_DIGEST_HELP =
-  "imageDigest and dependencyLockDigest must be sha256:<64 hex>. Mutable tags and unpinned names are rejected.";
+  "The image digest and dependency lock digest must each be a sha256 digest. Image tags and names without a digest aren't accepted.";
 
 export const SCRIPT_RUNTIME_NO_INSTALL_HELP = SCRIPT_PACKAGE_INSTALL_MESSAGE;
 
 export const SCRIPT_RUNTIME_NO_IMAGE_HELP = SCRIPT_ARBITRARY_IMAGE_MESSAGE;
 
 export const SCRIPT_RUNTIME_EGRESS_HELP =
-  "Egress is default-deny when omitted. Destinations are {host,port,protocol}. Metadata, loopback, Docker socket, and * are rejected. dnsConstrained is always true — there is no unconstrained-DNS toggle.";
+  "Scripts can't reach the network unless you list a destination here. Each destination is a host, port, and protocol. Cloud metadata, loopback, the Docker socket, and wildcards aren't allowed. DNS lookups are always restricted.";
 
 export const SCRIPT_RUNTIME_PROFILE_REQUIRED_HELP =
-  "Publish requires language (python or go), digest-pinned imageDigest and dependencyLockDigest, and limits.cpuMillis / memoryMib / timeoutSeconds / processes.";
+  "To publish, choose Python or Go, add both digests, and set the CPU, memory, timeout, and process limits.";
 
 export const SCRIPT_RUNTIME_LANGUAGE_FILTER_HELP =
   "Script nodes only list published runtime profiles whose language matches the node (script.python → python, script.go → go).";

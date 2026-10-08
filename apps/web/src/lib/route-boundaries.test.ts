@@ -134,7 +134,7 @@ describe("G.0.4 route boundaries", () => {
     assert.equal(routeBoundariesHoldHardLines(), true);
     assert.equal(rewriteEmbedAdv021Unchanged(), true);
     assert.equal(rewriteEmbedAdv024Unchanged(), true);
-    assert.match(EMBED_CHROME_MISSING_SESSION_MESSAGE, /session\.embed/);
+    assert.match(EMBED_CHROME_MISSING_SESSION_MESSAGE, /isn't signed in to FlowForge/);
     const shell = source("src/components/shell/WorkspaceShell.tsx");
     const embedChrome = source("src/components/embed/EmbedChrome.tsx");
     const embedGate = source("src/components/embed/EmbedExchangeGate.tsx");

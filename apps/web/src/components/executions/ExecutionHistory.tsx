@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { RequestReference } from "@/components/RequestReference";
 import { CollectionLoadMore } from "@/components/CollectionLoadMore";
 import { ExecutionCompare } from "@/components/executions/ExecutionCompare";
 import { ExecutionDecideActions } from "@/components/executions/ExecutionDecideActions";
@@ -284,10 +285,8 @@ export function ExecutionHistory() {
       ) : null}
 
       {problem ? <ProblemBanner problem={problem} /> : null}
-      {lastRequestId && !problem ? (
-        <p className={`font-mono text-xs ${FF_INBOX_MUTED_CLASS}`}>
-          last request_id {lastRequestId}
-        </p>
+      {!problem ? (
+        <RequestReference id={lastRequestId} className={`text-xs ${FF_INBOX_MUTED_CLASS}`} />
       ) : null}
       {strippedKeys.length ? (
         <p role="status" className={`text-sm ${FF_INBOX_DANGER_CLASS}`}>

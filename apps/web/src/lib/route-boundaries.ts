@@ -13,7 +13,7 @@
  * system · drafts never run · vault metadata-only.
  */
 
-import { EMBED_CHROME_MISSING_SESSION_MESSAGE, EMBED_MOUNT_PREFIX } from "./embed-contract.ts";
+import { EMBED_CHROME_MISSING_SESSION_CONTRACT_NOTE, EMBED_MOUNT_PREFIX } from "./embed-contract.ts";
 import {
   R7_HARD_LINE,
   rewriteEmbedAdv021Unchanged,
@@ -247,7 +247,7 @@ export function routeBoundariesHoldHardLines(): boolean {
     rewriteEmbedAdv021Unchanged() &&
     rewriteEmbedAdv024Unchanged() &&
     EMBED_MOUNT_PREFIX === "/embed/v1" &&
-    EMBED_CHROME_MISSING_SESSION_MESSAGE.includes("session.embed") &&
+    EMBED_CHROME_MISSING_SESSION_CONTRACT_NOTE.includes("session.embed") &&
     ROUTE_BOUNDARY_SHELL_CLASS.includes("max-w-6xl") &&
     ROUTE_BOUNDARY_HEADING_CLASS.includes("text-3xl") &&
     ROUTE_BOUNDARY_HELP_CLASS.includes("ff-shell-muted") &&
