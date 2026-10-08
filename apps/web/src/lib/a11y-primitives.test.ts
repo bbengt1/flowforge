@@ -18,6 +18,19 @@ import {
   fieldDescriptionIds,
   fieldMarksInvalid,
 } from "./a11y-field.ts";
+import {
+  FF_STATUS_TIP_CLASS,
+  FF_STATUS_TIP_END_CLASS,
+  TOOLTIP_CLOSED,
+  tooltipEscapeDismisses,
+  tooltipFocusOpens,
+  tooltipIsOpen,
+  tooltipReduce,
+  tooltipTextClass,
+  tooltipTriggerAria,
+  type TooltipEvent,
+  type TooltipState,
+} from "./a11y-tooltip.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const webRoot = join(here, "..", "..");
@@ -209,5 +222,119 @@ describe("G.3.1 Dialog primitive", () => {
       assert.match(text, /from "@\/components\/a11y\/Dialog"/, relative);
       assert.equal(text.includes('role="dialog"'), false, relative);
     }
+  });
+});
+
+function runTooltip(events: readonly TooltipEvent[]): TooltipState {
+  return events.reduce(tooltipReduce, TOOLTIP_CLOSED);
+}
+
+const STATUS_TOOLTIP_SURFACES = [
+  "src/components/chrome/StatusMark.tsx",
+  "src/components/home/HomeLastRunStatus.tsx",
+  "src/components/workflows/WorkflowCanvas.tsx",
+] as const;
+
+describe("Status tooltip primitive", () => {
+  it("opens on focus and on hover, and closes when both end", () => {
+    assert.equal(tooltipIsOpen(TOOLTIP_CLOSED), false);
+    assert.equal(tooltipIsOpen(runTooltip(["focus"])), true);
+    assert.equal(tooltipIsOpen(runTooltip(["focus", "blur"])), false);
+    assert.equal(tooltipIsOpen(runTooltip(["pointerenter"])), true);
+    assert.equal(tooltipIsOpen(runTooltip(["pointerenter", "pointerleave"])), false);
+    // Hovering the bubble keeps it open while focus moves on.
+    assert.equal(tooltipIsOpen(runTooltip(["focus", "pointerenter", "blur"])), true);
+    assert.equal(tooltipIsOpen(runTooltip(["pointerenter", "focus", "pointerleave"])), true);
+  });
+
+  it("Escape dismisses without moving focus, and a new focus or hover reopens", () => {
+    const dismissed = runTooltip(["focus", "escape"]);
+    assert.equal(dismissed.focused, true);
+    assert.equal(tooltipIsOpen(dismissed), false);
+    assert.equal(tooltipIsOpen(runTooltip(["focus", "escape", "pointerenter"])), true);
+    assert.equal(tooltipIsOpen(runTooltip(["focus", "escape", "blur", "focus"])), true);
+    assert.equal(tooltipIsOpen(runTooltip(["pointerenter", "escape"])), false);
+    assert.equal(
+      tooltipIsOpen(runTooltip(["pointerenter", "escape", "pointerleave", "pointerenter"])),
+      true,
+    );
+    // Escape on a closed tooltip changes nothing.
+    assert.deepEqual(runTooltip(["escape"]), TOOLTIP_CLOSED);
+    assert.equal(
+      tooltipEscapeDismisses({ key: "Escape", open: true, defaultPrevented: false }),
+      true,
+    );
+    assert.equal(
+      tooltipEscapeDismisses({ key: "Escape", open: false, defaultPrevented: false }),
+      false,
+    );
+    assert.equal(
+      tooltipEscapeDismisses({ key: "Escape", open: true, defaultPrevented: true }),
+      false,
+    );
+    assert.equal(
+      tooltipEscapeDismisses({ key: "Enter", open: true, defaultPrevented: false }),
+      false,
+    );
+  });
+
+  it("opens on keyboard focus of the trigger only", () => {
+    assert.equal(tooltipFocusOpens({ targetIsTrigger: true, focusVisible: true }), true);
+    assert.equal(tooltipFocusOpens({ targetIsTrigger: true, focusVisible: false }), false);
+    assert.equal(tooltipFocusOpens({ targetIsTrigger: false, focusVisible: true }), false);
+  });
+
+  it("describes the trigger and keeps the text readable when closed", () => {
+    assert.deepEqual(
+      tooltipTriggerAria({ tipId: "chip-tip", text: "Waiting for upstream steps to finish." }),
+      { "aria-describedby": "chip-tip" },
+    );
+    assert.deepEqual(tooltipTriggerAria({ tipId: "chip-tip", text: "" }), {});
+    assert.deepEqual(tooltipTriggerAria({ tipId: "chip-tip", text: undefined }), {});
+    assert.equal(tooltipTextClass({ open: false }), "sr-only");
+    assert.equal(tooltipTextClass({ open: false, align: "end" }), "sr-only");
+    assert.equal(tooltipTextClass({ open: true }), FF_STATUS_TIP_CLASS);
+    assert.equal(
+      tooltipTextClass({ open: true, align: "end" }),
+      `${FF_STATUS_TIP_CLASS} ${FF_STATUS_TIP_END_CLASS}`,
+    );
+  });
+
+  it("status chips use the shared tooltip instead of a native title", () => {
+    for (const relative of STATUS_TOOLTIP_SURFACES) {
+      const text = source(relative);
+      assert.match(text, /from "@\/components\/a11y\/Tooltip"/, relative);
+    }
+    const mark = source("src/components/chrome/StatusMark.tsx");
+    assert.equal(mark.includes("title="), false);
+    assert.match(mark, /tabIndex=\{focusable \? 0 : undefined\}/);
+    assert.match(mark, /aria-label=\{focusable \? label : undefined\}/);
+    assert.match(mark, /tip\.describedBy/);
+    const lastRun = source("src/components/home/HomeLastRunStatus.tsx");
+    assert.equal(lastRun.includes("title="), false);
+    const canvas = source("src/components/workflows/WorkflowCanvas.tsx");
+    assert.equal(canvas.includes("title={stateHelp"), false);
+    assert.match(canvas, /stateTip\.focusProps/);
+  });
+
+  it("chips inside an interactive row take no tab stop of their own", () => {
+    const listbox = source("src/components/executions/ExecutionHistoryListbox.tsx");
+    assert.equal(listbox.includes("<ExecutionStatusBadge status={row.status} />"), false);
+    assert.equal((listbox.match(/<ExecutionStatusBadge status=\{row\.status\} nested \/>/g) ?? []).length, 3);
+    const replay = source("src/components/executions/ExecutionReplay.tsx");
+    assert.match(replay, /<ExecutionStatusBadge\s+nested\s+status=\{item\.status\}/);
+  });
+
+  it("tooltip css uses V.1 tokens and logical sides only", () => {
+    const globals = source("src/app/globals.css");
+    const start = globals.indexOf(".ff-status-tip-trigger {");
+    const end = globals.indexOf(".ff-status-tip-end {");
+    assert.ok(start > 0 && end > start);
+    const block = globals.slice(start, globals.indexOf("}", end) + 1);
+    assert.doesNotMatch(block, /#[0-9a-f]{3,8}\b/i);
+    assert.doesNotMatch(block, /(^|[^-])\b(left|right)\s*:/m);
+    assert.match(block, /inset-inline-start/);
+    assert.match(block, /var\(--ff-surface\)/);
+    assert.match(block, /var\(--ff-text\)/);
   });
 });

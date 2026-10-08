@@ -213,21 +213,19 @@ test.describe("RTL primary surfaces", () => {
     const rollback = page.locator("[data-canvas-node='rollback']");
     await expect(rollback).toContainText("Skipped");
     await expect(rollback).not.toContainText("Valid");
-    const blocked = page.getByRole("status", {
-      name: "Waiting for upstream steps to finish.",
-    });
+    const blocked = page.getByRole("status", { name: "Blocked", exact: true });
     await expect(blocked).toBeVisible();
-    await expect(blocked).toContainText("Blocked");
+    await expect(blocked).toHaveAccessibleDescription(
+      "Waiting for upstream steps to finish.",
+    );
     await expect(
-      page.getByRole("status", { name: "Not started yet. Waiting on inputs." }).first(),
-    ).toBeVisible();
+      page.getByRole("status", { name: "Pending", exact: true }).first(),
+    ).toHaveAccessibleDescription("Not started yet. Waiting on inputs.");
     await expect(
-      page
-        .getByRole("status", {
-          name: "Didn't run because an upstream approval was rejected or expired, or its branch wasn't taken. Not a failure.",
-        })
-        .first(),
-    ).toBeVisible();
+      page.getByRole("status", { name: "Skipped", exact: true }).first(),
+    ).toHaveAccessibleDescription(
+      "Didn't run because an upstream approval was rejected or expired, or its branch wasn't taken. Not a failure.",
+    );
     const blockedEdges = await blocked.evaluate((element) => {
       const style = getComputedStyle(element);
       return {
@@ -237,6 +235,20 @@ test.describe("RTL primary surfaces", () => {
     });
     expect(blockedEdges.inlineStart).toBe("3px");
     expect(blockedEdges.inlineEnd).toBe("1px");
+    // The open tooltip lines up with the chip's inline-end edge, which
+    // is the physical left under rtl.
+    await page.keyboard.press("Shift");
+    await blocked.focus();
+    const tip = blocked.locator("[role='tooltip']");
+    await expect(tip).toHaveAttribute("data-ff-tooltip", "open");
+    const [chipBox, tipBox] = await Promise.all([
+      blocked.boundingBox(),
+      tip.boundingBox(),
+    ]);
+    expect(Math.abs((tipBox?.x ?? 0) - (chipBox?.x ?? 99))).toBeLessThan(2);
+    expect(await tip.evaluate((element) => getComputedStyle(element).textAlign)).toBe("start");
+    await page.keyboard.press("Escape");
+    await expect(tip).toHaveAttribute("data-ff-tooltip", "closed");
     await expectHugsInlineStart(page.getByRole("heading", { level: 1 }));
     await expectRtlShell(page);
     await expectNoBlockingAxeViolations(page);
@@ -255,10 +267,11 @@ test.describe("RTL primary surfaces", () => {
     await expect(notify).toContainText("Not reached");
     await expect(notify).not.toContainText("Valid");
     await expect(notify).not.toContainText("Pending");
-    const notReached = page.getByRole("status", {
-      name: "The run failed before this step's inputs were ready. Retrying the failed upstream step can still release it.",
-    });
+    const notReached = page.getByRole("status", { name: "Not reached", exact: true });
     await expect(notReached.first()).toBeVisible();
+    await expect(notReached.first()).toHaveAccessibleDescription(
+      "The run failed before this step's inputs were ready. Retrying the failed upstream step can still release it.",
+    );
     const edges = await notReached.first().evaluate((element) => {
       const style = getComputedStyle(element);
       return {

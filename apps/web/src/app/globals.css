@@ -1231,6 +1231,46 @@ html[dir="rtl"] .ff-explorer-row.ff-explorer-row-selected {
   color: var(--ff-muted);
 }
 
+/*
+ * Status tooltips — keyboard and hover. Consume V.1 tokens only and
+ * logical properties only, so the bubble follows dir=rtl. The text is
+ * sr-only while closed; these classes apply only while it is open.
+ */
+.ff-status-tip-trigger {
+  position: relative;
+}
+
+.ff-status-tip-trigger[tabindex="0"] {
+  cursor: help;
+}
+
+.ff-status-tip {
+  position: absolute;
+  inset-block-start: calc(100% + var(--ff-space));
+  inset-inline-start: 0;
+  z-index: 40;
+  display: block;
+  inline-size: max-content;
+  max-inline-size: min(20rem, 80vw);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-sm);
+  background: var(--ff-surface);
+  color: var(--ff-text);
+  padding: var(--ff-space) var(--ff-space-2);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--ff-canvas) 70%, transparent);
+}
+
+.ff-status-tip-end {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+}
+
 .ff-theme-option[aria-pressed="true"] {
   background: var(--ff-accent);
   color: var(--ff-accent-foreground);

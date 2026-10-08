@@ -13,12 +13,15 @@ type ExecutionStatusBadgeProps = {
   runStatus?: ExecutionStatus;
   /** Jobs for this step. A blocked job on a failed run displays as Not reached. */
   siblingJobStatuses?: readonly string[];
+  /** Inside an interactive row: no tab stop of its own. See StatusMark. */
+  nested?: boolean;
 };
 
 export function ExecutionStatusBadge({
   status,
   runStatus,
   siblingJobStatuses,
+  nested = false,
 }: ExecutionStatusBadgeProps) {
   const presentation = executionStatusPresentationInRun(
     status,
@@ -37,6 +40,7 @@ export function ExecutionStatusBadge({
       icon={presentation.icon}
       label={presentation.label}
       description={presentation.description}
+      nested={nested}
       className={`rounded-full px-2.5 py-0.5 text-xs ${toneClass}`}
     />
   );

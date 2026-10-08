@@ -180,6 +180,9 @@ PLATFORM_ADMINS=https://idp.example|admin-1
 # and do not start another. deploy/k8s sets 30s and uses the pod name
 # as WORKER_ID. Compose keeps the literal above.
 # WORKER_DRAIN_TIMEOUT=30s
+# Compose worker principal (default https://idp.example|compose-worker).
+# Set the same values on api and worker. In local/dev the API binds it
+# as operator only in local/default at startup; never admin or approver.
 # WORKER_ISSUER=
 # WORKER_SUBJECT=
 # Durable account lockout (Postgres auth_lockouts). Unset uses 5.

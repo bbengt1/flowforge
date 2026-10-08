@@ -67,6 +67,14 @@ func main() {
 			Log:            log,
 		})
 	}
+	var localWorker func(context.Context, *pgxpool.Pool) error
+	if cfg.BindLocalWorker {
+		localWorker = localseed.WorkerHook(localseed.WorkerInput{
+			Worker: cfg.LocalWorker,
+			Humans: cfg.PlatformAdmins,
+			Log:    log,
+		})
+	}
 	pool.SetAfterReady(func(ctx context.Context, db *pgxpool.Pool) error {
 		if localDefaults != nil {
 			if err := localDefaults(ctx, db); err != nil {
@@ -75,6 +83,13 @@ func main() {
 		}
 		if err := bootstrapLogin(ctx, db); err != nil {
 			return err
+		}
+		// After the seed and first-run login so the local workbench
+		// exists on a fresh database. Dev only.
+		if localWorker != nil {
+			if err := localWorker(ctx, db); err != nil {
+				return err
+			}
 		}
 		if err := localseed.PrepareAdminPassword(ctx, identity.NewPostgres(db), bootstrap.NewPostgres(db), log, os.Getenv(bootstrap.EnvSetupToken)); err != nil {
 			return err

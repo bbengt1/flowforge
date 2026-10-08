@@ -188,7 +188,8 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `PORTAL_FRAME_ANCESTORS` | empty | Shared host allowlist (merged with `WEB_PORTAL_FRAME_ANCESTORS` and `WEB_EMBED_FRAME_ANCESTORS`). Published on `GET /api/v1/embed/catalog` and `GET /api/v1/portal/adapter` as `frameAncestors`. Empty fails closed. |
 | `SEED_LOCAL_DEFAULTS` | unset (on in local/dev/test) | Seeds tenant `local`, workbench `default`, `PLATFORM_ADMINS` as workspace admin, demo vault credentials, and marks first-run bootstrap complete (wizard skip). Off / boot-fail in production-locked `APP_ENV` or `REQUIRE_TLS=true`. Set `0` to opt out. Do not set in `deploy/k8s`. |
 | `PUBLIC_BASE_URL` | empty | Operator-facing origin (`http`/`https`) persisted by localseed skip. Never returned by `GET /api/v1/bootstrap`. Compose defaults `http://localhost:3000`. |
-| `LOCAL_WORKER` | unset (on in local/dev/test) | Compose `worker` (`/usr/local/bin/worker`) claims `/api/v1/jobs/claim`. Off / boot-fail in production-locked `APP_ENV` or `REQUIRE_TLS=true`. Set `0` to opt out. Do not set in `deploy/k8s`. |
+| `LOCAL_WORKER` | unset (on in local/dev/test) | Compose `worker` (`/usr/local/bin/worker`) claims `/api/v1/jobs/claim`. Off / boot-fail in production-locked `APP_ENV` or `REQUIRE_TLS=true`. Set `0` to opt out (on `api` this also skips the worker role binding). Do not set in `deploy/k8s`. |
+| `WORKER_ISSUER` / `WORKER_SUBJECT` | `https://idp.example` / `compose-worker` | Compose worker principal. In local/dev with trusted-dev headers, the API binds it as `operator` only in `local` / `default` at startup. It never gets `admin` or `approval.decide`. |
 | `SCHEDULER_ENABLED` | on | In-process leader ticks schedule dispatch, lease recovery, and retention purge. `0`/`false`/`no`/`off` opts out. Any other non-empty value is a boot-fail. Multi-replica safe (advisory lock `881726402`). Losing the lock stops the tick immediately. SIGTERM unlocks on a live context before HTTP drain. |
 | `SCHEDULER_INTERVAL` | `30s` | Go duration `1s`–`24h` for all three ticks. Invalid is a boot-fail. |
 | `RUNNER` | unset (on when production-locked) | `cmd/runner` (`/usr/local/bin/runner`). Refuses local/dev. `0`/`false`/`off`/`no` exits 0. Do not run it from compose. |
@@ -289,6 +290,9 @@ Do not overwrite a root `docker-compose` / `env-template.txt` owned by the UI ag
       TRUSTED_DEV_IDENTITY_HEADERS: ${TRUSTED_DEV_IDENTITY_HEADERS:-1}
       PLATFORM_ADMINS: ${PLATFORM_ADMINS:-https://idp.example|admin-1}
       SEED_LOCAL_DEFAULTS: ${SEED_LOCAL_DEFAULTS:-}
+      LOCAL_WORKER: ${LOCAL_WORKER:-}
+      WORKER_ISSUER: ${WORKER_ISSUER:-}
+      WORKER_SUBJECT: ${WORKER_SUBJECT:-}
       TLS_CERT_FILE: ${TLS_CERT_FILE:-/tmp/flowforge-tls/cert.pem}
       TLS_KEY_FILE: ${TLS_KEY_FILE:-/tmp/flowforge-tls/key.pem}
     depends_on:
@@ -309,7 +313,8 @@ Do not overwrite a root `docker-compose` / `env-template.txt` owned by the UI ag
       API_URL: http://api:8080
       APP_ENV: ${APP_ENV:-development}
       LOCAL_WORKER: ${LOCAL_WORKER:-}
-      PLATFORM_ADMINS: ${PLATFORM_ADMINS:-https://idp.example|admin-1}
+      WORKER_ISSUER: ${WORKER_ISSUER:-}
+      WORKER_SUBJECT: ${WORKER_SUBJECT:-}
     depends_on:
       - api
 ```

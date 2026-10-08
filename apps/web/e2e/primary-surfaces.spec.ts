@@ -38,6 +38,15 @@ const SKIPPED_HELP =
 const NOT_REACHED_HELP =
   "The run failed before this step's inputs were ready. Retrying the failed upstream step can still release it.";
 
+/**
+ * A status chip with an explanation is a tab stop named by its label.
+ * The explanation is its accessible description (aria-describedby on
+ * the tooltip), not hover-only title text.
+ */
+function statusChip(page: Page, label: string) {
+  return page.getByRole("status", { name: label, exact: true });
+}
+
 async function expectDispatchStatusChips(page: Page): Promise<void> {
   await expect(page.locator("#graph-replay-heading")).toBeVisible();
   const rollback = page.locator("[data-canvas-node='rollback']");
@@ -47,20 +56,62 @@ async function expectDispatchStatusChips(page: Page): Promise<void> {
   const downstream = page.locator("[data-canvas-node='downstream']");
   await expect(downstream).toContainText("Pending");
   await expect(downstream).not.toContainText("Valid");
-  // status is name-from-author, so the accessible name is the title tooltip.
-  const blocked = page.getByRole("status", { name: BLOCKED_HELP });
+  const blocked = statusChip(page, "Blocked");
   await expect(blocked).toHaveCount(1);
   await expect(blocked).toContainText("Blocked");
+  await expect(blocked).toHaveAccessibleDescription(BLOCKED_HELP);
+  await expect(blocked).toHaveAttribute("tabindex", "0");
+  await expect(blocked).not.toHaveAttribute("title", /.*/);
   await expect(blocked).toHaveClass(/ff-status-blocked/);
-  const pending = page.getByRole("status", { name: PENDING_HELP });
+  const pending = statusChip(page, "Pending");
   await expect(pending.first()).toBeVisible();
-  await expect(pending.first()).toContainText("Pending");
+  await expect(pending.first()).toHaveAccessibleDescription(PENDING_HELP);
   await expect(pending.first()).toHaveClass(/ff-status-pending/);
-  const skipped = page.getByRole("status", { name: SKIPPED_HELP });
+  const skipped = statusChip(page, "Skipped");
   await expect(skipped.first()).toBeVisible();
-  await expect(skipped.first()).toContainText("Skipped");
+  await expect(skipped.first()).toHaveAccessibleDescription(SKIPPED_HELP);
   await expect(skipped.first()).toHaveClass(/ff-status-skipped/);
   await expect(skipped.first()).not.toHaveClass(/ff-status-running|ff-loud/);
+}
+
+async function expectStatusTooltipOnKeyboardFocus(page: Page): Promise<void> {
+  const blocked = statusChip(page, "Blocked");
+  const tipId = await blocked.getAttribute("aria-describedby");
+  expect(tipId).toBeTruthy();
+  const tip = page.locator(`[id="${tipId}"]`);
+  await expect(tip).toHaveAttribute("role", "tooltip");
+  await expect(tip).toHaveAttribute("data-ff-tooltip", "closed");
+  await expect(tip).toHaveText(BLOCKED_HELP);
+  // Keyboard modality, then focus the chip: the tooltip opens on focus.
+  await page.keyboard.press("Shift");
+  await blocked.focus();
+  await expect(blocked).toBeFocused();
+  await expect(tip).toHaveAttribute("data-ff-tooltip", "open");
+  await expect(tip).toHaveClass(/ff-status-tip/);
+  const box = await tip.boundingBox();
+  expect(box?.width ?? 0).toBeGreaterThan(40);
+  await expectNoBlockingAxeViolations(page);
+  // Escape dismisses it and focus stays on the chip.
+  await page.keyboard.press("Escape");
+  await expect(tip).toHaveAttribute("data-ff-tooltip", "closed");
+  await expect(blocked).toBeFocused();
+  // Moving focus on and back reopens it.
+  await page.keyboard.press("Tab");
+  await expect(blocked).not.toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(blocked).toBeFocused();
+  await expect(tip).toHaveAttribute("data-ff-tooltip", "open");
+  await page.keyboard.press("Escape");
+
+  // Graph nodes are already tab stops: focus shows the state help too.
+  const downstream = page.locator("[data-canvas-node='downstream']");
+  const nodeTip = downstream.locator("[data-ff-tooltip]");
+  await expect(nodeTip).toHaveAttribute("data-ff-tooltip", "closed");
+  await downstream.focus();
+  await expect(nodeTip).toHaveAttribute("data-ff-tooltip", "open");
+  await expect(nodeTip).toHaveText(PENDING_HELP);
+  await page.keyboard.press("Escape");
+  await expect(nodeTip).toHaveAttribute("data-ff-tooltip", "closed");
 }
 
 async function expectSkipLink(page: Page): Promise<void> {
@@ -165,6 +216,7 @@ test.describe("primary surfaces", () => {
       page.getByRole("heading", { level: 1, name: "Execution" }),
     ).toBeVisible();
     await expectDispatchStatusChips(page);
+    await expectStatusTooltipOnKeyboardFocus(page);
     await expectOneMain(page);
     await expectNoBlockingAxeViolations(page);
     await expectNoSecretsInBrowserStorage(page);
@@ -199,14 +251,15 @@ test.describe("primary surfaces", () => {
     await expect(downstream).not.toContainText("Blocked");
     await expect(rollback).toContainText("Skipped");
     await expect(rollback).not.toContainText("Valid");
-    const notReached = page.getByRole("status", { name: NOT_REACHED_HELP });
+    const notReached = statusChip(page, "Not reached");
     await expect(notReached.first()).toBeVisible();
-    await expect(notReached.first()).toContainText("Not reached");
+    await expect(notReached.first()).toHaveAccessibleDescription(NOT_REACHED_HELP);
     await expect(notReached.first()).toHaveClass(/ff-status-not-reached/);
     await expect(notReached.first()).not.toHaveClass(/ff-loud|ff-status-running|ff-status-pending|ff-status-blocked/);
-    await expect(page.getByRole("status", { name: PENDING_HELP })).toHaveCount(0);
-    await expect(page.getByRole("status", { name: BLOCKED_HELP })).toHaveCount(0);
-    await expect(page.getByRole("status", { name: SKIPPED_HELP }).first()).toBeVisible();
+    await expect(statusChip(page, "Pending")).toHaveCount(0);
+    await expect(statusChip(page, "Blocked")).toHaveCount(0);
+    await expect(statusChip(page, "Skipped").first()).toBeVisible();
+    await expect(statusChip(page, "Skipped").first()).toHaveAccessibleDescription(SKIPPED_HELP);
     await expect(page.getByRole("button", { name: "Retry execution" })).toBeVisible();
     await expectOneMain(page);
     await expectNoBlockingAxeViolations(page);
