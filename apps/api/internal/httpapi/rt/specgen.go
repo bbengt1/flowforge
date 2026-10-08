@@ -275,6 +275,12 @@ func stubOperation(rt Route) (*yaml.Node, error) {
 	if op, ok := workspaceGroupOps[rt.Method+" "+rt.Pattern]; ok {
 		return workspaceGroupOperation(rt, op)
 	}
+	if op, ok := scimTokenAdminOps[rt.Method+" "+rt.Pattern]; ok {
+		return scimTokenAdminOperation(rt, op)
+	}
+	if op, ok, err := scimOperation(rt); ok {
+		return op, err
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "operationId: %s\n", operationID(rt.Method, rt.OpenAPIPath()))
 	fmt.Fprintf(&b, "summary: %s %s\n", rt.Method, rt.OpenAPIPath())

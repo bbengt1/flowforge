@@ -53,6 +53,8 @@ const (
 	CodeGroupNameTaken                 = core.CodeGroupNameTaken
 	CodeGroupMemberNotInWorkspace      = core.CodeGroupMemberNotInWorkspace
 	CodeApproverNotTargeted            = core.CodeApproverNotTargeted
+	CodeScimTokenLimit                 = core.CodeScimTokenLimit
+	CodeScimNotConfigured              = core.CodeScimNotConfigured
 	MaxRequestBody                     = core.MaxRequestBody
 	RequestIDHeader                    = core.RequestIDHeader
 	AuthPublic                         = rt.AuthPublic

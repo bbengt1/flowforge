@@ -503,6 +503,14 @@ components:
       schema:
         type: string
         format: uuid
+    ScimTokenID:
+      name: tokenId
+      in: path
+      required: true
+      description: SCIM workspace token id. Unknown ids, ids from another workspace, and values that are not a UUID are 404.
+      schema:
+        type: string
+        format: uuid
     WorkspaceGroupUserID:
       name: userId
       in: path
@@ -1721,6 +1729,8 @@ components:
             - group_name_taken
             - group_member_not_in_workspace
             - approver_not_targeted
+            - scim_token_limit
+            - scim_not_configured
         request_id:
           type: string
         reason:
@@ -3987,6 +3997,90 @@ components:
           type: string
           format: uuid
           description: Must be an active user with a role binding in this workspace.
+    ScimTokenCreator:
+      type: object
+      required: [id, displayName]
+      description: Display name and UUID only. No email.
+      properties:
+        id: {type: string, format: uuid}
+        displayName: {type: string}
+    ScimToken:
+      type: object
+      description: >
+        One active SCIM workspace token. Never includes the token or its
+        hash. Revoked tokens are not returned.
+      required: [id, displayName, prefix, createdBy, createdAt, lastUsedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 128
+        prefix:
+          type: string
+          enum: [ffscim_]
+          description: >
+            The fixed, non-secret token prefix. Every workspace token starts
+            with it. Tell tokens apart by displayName and createdAt.
+        createdBy:
+          description: The administrator who created the token. null when that user no longer exists.
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ScimTokenCreator"
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            Last successful SCIM request with this token. null until first
+            use. Updated at most once a minute per token, so it can lag by
+            up to 60 seconds.
+    ScimTokenList:
+      type: object
+      required: [items, maxActive, configured]
+      properties:
+        items:
+          type: array
+          description: Active tokens, newest first. At most maxActive items.
+          maxItems: 2
+          items:
+            $ref: "#/components/schemas/ScimToken"
+        maxActive:
+          type: integer
+          enum: [2]
+          description: Active tokens a workspace may hold. Create is 409 scim_token_limit at this count.
+        configured:
+          type: boolean
+          description: >
+            false when SCIM is off on the instance (no SCIM_* variable
+            set). Create is then 503 scim_not_configured. Existing tokens
+            still list but cannot authenticate until SCIM is on again.
+    ScimTokenCreated:
+      allOf:
+        - $ref: "#/components/schemas/ScimToken"
+        - type: object
+          required: [token]
+          properties:
+            token:
+              type: string
+              pattern: "^ffscim_[A-Za-z0-9_-]{43}$"
+              description: >
+                The plaintext bearer. Returned only here, once. The server
+                keeps only its SHA-256 and cannot show it again; a lost
+                token is revoked and replaced. Use it as
+                Authorization: Bearer for /scim/v2.
+    CreateScimTokenRequest:
+      type: object
+      required: [displayName]
+      properties:
+        displayName:
+          type: string
+          description: Trimmed before validation. Empty, longer than 128 characters, or containing a control character is 400 invalid-request with errors[].path displayName. Other fields are ignored.
     MembershipList:
       type: object
       required: [items]
@@ -4544,6 +4638,59 @@ components:
                 instance: /api/v1/approvals/00000000-0000-4000-8000-000000000001/decide
                 code: approver_not_targeted
                 request_id: 0123456789abcdef0123456789abcdef
+    ScimTokenAdminForbidden:
+      description: >
+        forbidden: the caller lacks workspace.administer in this workspace,
+        or is an embed session. mfa-required: a local-login or OIDC session
+        has not enrolled or not verified TOTP in this session.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            forbidden:
+              summary: Not a workspace administrator, or an embed session
+              value:
+                type: urn:flowforge:problem:forbidden
+                title: Forbidden
+                status: 403
+                detail: You are not authorized to perform this action.
+                instance: /api/v1/workspace/scim-tokens
+                code: forbidden
+                request_id: 0123456789abcdef0123456789abcdef
+            mfaRequired:
+              summary: TOTP step-up required
+              value:
+                type: urn:flowforge:problem:mfa-required
+                title: MFA Required
+                status: 403
+                detail: Verify MFA before using this permission.
+                instance: /api/v1/workspace/scim-tokens
+                code: mfa-required
+                request_id: 0123456789abcdef0123456789abcdef
+    ScimTokenLimit:
+      description: >
+        The workspace already has two active SCIM tokens. Revoke one first.
+        A create that loses a race for the last slot gets the same answer.
+        Nothing is stored.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:scim_token_limit
+            title: Conflict
+            status: 409
+            detail: This workspace already has 2 active SCIM tokens. Revoke one before creating another.
+            instance: /api/v1/workspace/scim-tokens
+            code: scim_token_limit
+            request_id: 0123456789abcdef0123456789abcdef
     GroupNameTaken:
       description: >
         Another group in this workspace already has this display name,
@@ -4833,3 +4980,37 @@ components:
             instance: /api/v1/credentials
             code: dependency-unavailable
             request_id: 0123456789abcdef0123456789abcdef
+    ScimTokenCreateUnavailable:
+      description: >
+        scim_not_configured: SCIM is off on the instance (no SCIM_*
+        variable set), so a token could not provision anyone. A platform
+        operator must turn it on (SCIM_ISSUER is enough). dependency-unavailable: the store is not
+        reachable. Nothing is stored in either case.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            notConfigured:
+              summary: SCIM is off on this instance
+              value:
+                type: urn:flowforge:problem:scim_not_configured
+                title: Service Unavailable
+                status: 503
+                detail: SCIM is not configured on this instance.
+                instance: /api/v1/workspace/scim-tokens
+                code: scim_not_configured
+                request_id: 0123456789abcdef0123456789abcdef
+            unavailable:
+              summary: Store not reachable
+              value:
+                type: urn:flowforge:problem:dependency-unavailable
+                title: Dependency Unavailable
+                status: 503
+                detail: SCIM token store is not available.
+                instance: /api/v1/workspace/scim-tokens
+                code: dependency-unavailable
+                request_id: 0123456789abcdef0123456789abcdef

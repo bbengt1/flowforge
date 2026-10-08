@@ -80,6 +80,13 @@ const (
 	// caller who is not a snapshot approver, not in a snapshot group, and
 	// not a non-requester admin. Nothing is recorded.
 	CodeApproverNotTargeted = "approver_not_targeted"
+	// CodeScimTokenLimit refuses creating a SCIM workspace token while
+	// the workspace already has the maximum number of active tokens.
+	CodeScimTokenLimit = "scim_token_limit"
+	// CodeScimNotConfigured refuses creating a SCIM workspace token when
+	// SCIM is off on the instance (no SCIM_* variable set, so no issuer
+	// and default role), so a token could not provision anyone.
+	CodeScimNotConfigured = "scim_not_configured"
 )
 
 // FieldError is a YAML-path validation failure returned on invalid-workflow.

@@ -152,6 +152,15 @@ func (s *Server) allowMFAGrant(w http.ResponseWriter, r *http.Request, action st
 	if !authz.MFARequired(action) {
 		return true
 	}
+	return s.RequireMFAStepUp(w, r)
+}
+
+// RequireMFAStepUp applies the same TOTP step-up gate as the privileged
+// permissions to one route, whatever permission it checks. Routes that
+// mint or revoke a bearer (SCIM workspace tokens) call it after their
+// permission check. Machine, trusted-dev, embed, and header identity are
+// not subjects of this gate, the same as allowMFAGrant.
+func (s *Server) RequireMFAStepUp(w http.ResponseWriter, r *http.Request) bool {
 	pc := PrincipalFromRequest(r)
 	if pc == nil || pc.Session == nil || pc.Session.Binding.Bound() || !session.RequiresMFA(pc.Session.AuthMethod) {
 		return true
