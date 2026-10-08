@@ -20,16 +20,26 @@ import {
   fieldMarksInvalid,
 } from "./a11y-field.ts";
 import {
+  FF_STATUS_TIP_ABOVE_CLASS,
   FF_STATUS_TIP_CLASS,
   FF_STATUS_TIP_END_CLASS,
+  FF_STATUS_TIP_SHIFT_VAR,
   TOOLTIP_CLOSED,
+  createTooltipEscapeRegistry,
+  nestedTipActive,
+  tooltipDefaultPlacement,
   tooltipEscapeDismisses,
+  tooltipIntersectRects,
+  tooltipOverflowClips,
+  tooltipPlacement,
+  tooltipShiftStyle,
   tooltipFocusOpens,
   tooltipIsOpen,
   tooltipReduce,
   tooltipTextClass,
   tooltipTriggerAria,
   type TooltipEvent,
+  type TooltipPlacementInput,
   type TooltipState,
 } from "./a11y-tooltip.ts";
 
@@ -323,7 +333,13 @@ describe("Status tooltip primitive", () => {
   it("chips inside an interactive row take no tab stop of their own", () => {
     const listbox = source("src/components/executions/ExecutionHistoryListbox.tsx");
     assert.equal(listbox.includes("<ExecutionStatusBadge status={row.status} />"), false);
-    assert.equal((listbox.match(/<ExecutionStatusBadge status=\{row\.status\} nested \/>/g) ?? []).length, 3);
+    const badges = listbox.match(/<ExecutionStatusBadge\b[^>]*\/>/g) ?? [];
+    assert.equal(badges.length, 3);
+    for (const badge of badges) {
+      assert.match(badge, /status=\{row\.status\}\s+nested\b/);
+      assert.match(badge, /help=\{rowHelp\}/);
+      assert.match(badge, /tipActive=\{rowTipActive\}/);
+    }
     const replay = source("src/components/executions/ExecutionReplay.tsx");
     assert.match(replay, /<ExecutionStatusBadge\s+nested\s+status=\{item\.status\}/);
   });
@@ -339,6 +355,406 @@ describe("Status tooltip primitive", () => {
     assert.match(block, /inset-inline-start/);
     assert.match(block, /var\(--ff-surface\)/);
     assert.match(block, /var\(--ff-text\)/);
+  });
+});
+
+function placementInput(
+  overrides: Partial<TooltipPlacementInput> = {},
+): TooltipPlacementInput {
+  return {
+    // A 100x20 chip in a 1280x800 viewport with room on every side.
+    trigger: { left: 500, top: 300, right: 600, bottom: 320 },
+    bubble: { width: 280, height: 60 },
+    boundary: { left: 0, top: 0, right: 1280, bottom: 800 },
+    direction: "ltr",
+    align: "start",
+    gap: 4,
+    ...overrides,
+  };
+}
+
+describe("Status tooltip edge placement", () => {
+  it("keeps the requested edge and opens below when everything fits", () => {
+    assert.deepEqual(tooltipPlacement(placementInput()), {
+      side: "below",
+      align: "start",
+      shift: 0,
+    });
+    assert.deepEqual(tooltipPlacement(placementInput({ align: "end" })), {
+      side: "below",
+      align: "end",
+      shift: 0,
+    });
+    assert.deepEqual(
+      tooltipPlacement(placementInput({ direction: "rtl" })),
+      tooltipDefaultPlacement("start"),
+    );
+  });
+
+  it("flips to the end edge near the inline-end edge of its container (last-run cell at 1280)", () => {
+    // The last-run chip sits near the right edge of a 1280 wide list.
+    // A 280 px bubble lined up with its left edge would cross it.
+    const lastRun = placementInput({
+      trigger: { left: 1110, top: 300, right: 1200, bottom: 320 },
+      boundary: { left: 240, top: 0, right: 1240, bottom: 800 },
+    });
+    assert.deepEqual(tooltipPlacement(lastRun), {
+      side: "below",
+      align: "end",
+      shift: 0,
+    });
+    // Same cell at 1440: still crosses, still flips.
+    assert.equal(
+      tooltipPlacement({
+        ...lastRun,
+        trigger: { left: 1270, top: 300, right: 1360, bottom: 320 },
+        boundary: { left: 240, top: 0, right: 1400, bottom: 800 },
+      }).align,
+      "end",
+    );
+  });
+
+  it("flips to the start edge near the inline-start edge", () => {
+    const placement = tooltipPlacement(
+      placementInput({
+        align: "end",
+        trigger: { left: 20, top: 300, right: 80, bottom: 320 },
+      }),
+    );
+    assert.equal(placement.align, "start");
+    assert.equal(placement.shift, 0);
+  });
+
+  it("mirrors under rtl: start is the right edge, so the left edge flips it", () => {
+    // In rtl, start alignment lines the bubble up with the chip's right
+    // edge and it grows leftward. Near the left edge it must flip.
+    const nearLeft = placementInput({
+      direction: "rtl",
+      trigger: { left: 60, top: 300, right: 150, bottom: 320 },
+    });
+    assert.deepEqual(tooltipPlacement(nearLeft), {
+      side: "below",
+      align: "end",
+      shift: 0,
+    });
+    // Near the right edge, rtl start already fits.
+    assert.equal(
+      tooltipPlacement(
+        placementInput({
+          direction: "rtl",
+          trigger: { left: 1150, top: 300, right: 1250, bottom: 320 },
+        }),
+      ).align,
+      "start",
+    );
+    // The ltr twin of the rtl case flips the other way.
+    assert.equal(
+      tooltipPlacement(
+        placementInput({
+          direction: "ltr",
+          align: "end",
+          trigger: { left: 60, top: 300, right: 150, bottom: 320 },
+        }),
+      ).align,
+      "start",
+    );
+  });
+
+  it("opens above a node panned to the bottom edge of the canvas", () => {
+    // The canvas clips at 600. Below would show only ~10 px.
+    const bottom = placementInput({
+      trigger: { left: 500, top: 566, right: 600, bottom: 586 },
+      boundary: { left: 0, top: 160, right: 1280, bottom: 600 },
+    });
+    assert.deepEqual(tooltipPlacement(bottom), {
+      side: "above",
+      align: "start",
+      shift: 0,
+    });
+  });
+
+  it("stays below near the top edge and picks the roomier side when neither fits", () => {
+    assert.equal(
+      tooltipPlacement(
+        placementInput({ trigger: { left: 500, top: 4, right: 600, bottom: 24 } }),
+      ).side,
+      "below",
+    );
+    // 70 px tall bubble in a 100 px boundary: 50 px above, 26 below.
+    assert.equal(
+      tooltipPlacement(
+        placementInput({
+          bubble: { width: 280, height: 70 },
+          trigger: { left: 500, top: 54, right: 600, bottom: 70 },
+          boundary: { left: 0, top: 0, right: 1280, bottom: 100 },
+        }),
+      ).side,
+      "above",
+    );
+    // Equal room: below wins.
+    assert.equal(
+      tooltipPlacement(
+        placementInput({
+          bubble: { width: 280, height: 90 },
+          trigger: { left: 500, top: 40, right: 600, bottom: 60 },
+          boundary: { left: 0, top: 0, right: 1280, bottom: 100 },
+        }),
+      ).side,
+      "below",
+    );
+  });
+
+  it("shifts back inside when neither inline edge fits, in logical px", () => {
+    // 330 px boundary, 280 px bubble: start crosses the right edge by
+    // 90, end crosses the left edge by 70. End crosses less, then it is
+    // shifted 70 px toward the inline end, so it spans [0, 280].
+    const narrow = placementInput({
+      trigger: { left: 140, top: 300, right: 210, bottom: 320 },
+      boundary: { left: 0, top: 0, right: 330, bottom: 800 },
+    });
+    assert.deepEqual(tooltipPlacement(narrow), {
+      side: "below",
+      align: "end",
+      shift: 70,
+    });
+    // rtl: start is now the right-aligned extent, which crosses less.
+    // The physical move is the same; the logical shift has the other sign.
+    assert.deepEqual(tooltipPlacement({ ...narrow, direction: "rtl" }), {
+      side: "below",
+      align: "start",
+      shift: -70,
+    });
+  });
+
+  it("anchors at the inline start edge when the bubble is wider than the boundary", () => {
+    const tiny = placementInput({
+      trigger: { left: 110, top: 300, right: 150, bottom: 320 },
+      boundary: { left: 100, top: 0, right: 300, bottom: 800 },
+    });
+    const ltr = tooltipPlacement(tiny);
+    // Start edge is left in ltr: bubble starts at 100.
+    assert.equal(ltr.align, "start");
+    assert.equal(ltr.shift, -10);
+    const rtl = tooltipPlacement({ ...tiny, direction: "rtl" });
+    // Start edge is right in rtl: bubble ends at 300.
+    assert.equal(rtl.align, "end");
+    assert.equal(rtl.shift, 90);
+  });
+
+  it("is deterministic and falls back on an empty boundary or unmeasured bubble", () => {
+    const input = placementInput({
+      trigger: { left: 1110, top: 566, right: 1200, bottom: 586 },
+      boundary: { left: 240, top: 160, right: 1240, bottom: 600 },
+    });
+    assert.deepEqual(tooltipPlacement(input), tooltipPlacement(input));
+    assert.deepEqual(tooltipPlacement(input), {
+      side: "above",
+      align: "end",
+      shift: 0,
+    });
+    assert.deepEqual(
+      tooltipPlacement(
+        placementInput({ boundary: { left: 10, top: 10, right: 10, bottom: 500 } }),
+      ),
+      tooltipDefaultPlacement("start"),
+    );
+    assert.deepEqual(
+      tooltipPlacement(placementInput({ align: "end", bubble: { width: 0, height: 0 } })),
+      tooltipDefaultPlacement("end"),
+    );
+  });
+
+  it("intersects clipping ancestors with the viewport", () => {
+    assert.equal(tooltipIntersectRects([]), null);
+    assert.deepEqual(
+      tooltipIntersectRects([
+        { left: 0, top: 0, right: 1280, bottom: 800 },
+        { left: 240, top: 120, right: 1300, bottom: 900 },
+        { left: 200, top: 160, right: 1240, bottom: 600 },
+      ]),
+      { left: 240, top: 160, right: 1240, bottom: 600 },
+    );
+    for (const value of ["hidden", "auto", "scroll", "clip", "hidden auto"]) {
+      assert.equal(tooltipOverflowClips(value), true, value);
+    }
+    for (const value of ["visible", ""]) {
+      assert.equal(tooltipOverflowClips(value), false, value);
+    }
+  });
+
+  it("maps a placement to classes and the shift variable", () => {
+    assert.equal(
+      tooltipTextClass({ open: true, side: "above" }),
+      `${FF_STATUS_TIP_CLASS} ${FF_STATUS_TIP_ABOVE_CLASS}`,
+    );
+    assert.equal(
+      tooltipTextClass({ open: true, align: "end", side: "above" }),
+      `${FF_STATUS_TIP_CLASS} ${FF_STATUS_TIP_END_CLASS} ${FF_STATUS_TIP_ABOVE_CLASS}`,
+    );
+    assert.equal(tooltipTextClass({ open: false, side: "above" }), "sr-only");
+    assert.deepEqual(tooltipShiftStyle({ shift: 0 }), {});
+    assert.deepEqual(tooltipShiftStyle({ shift: -12 }), {
+      [FF_STATUS_TIP_SHIFT_VAR]: "-12px",
+    });
+  });
+
+  it("css flips with logical sides and tokens only", () => {
+    const globals = source("src/app/globals.css");
+    const above = globals.slice(
+      globals.indexOf(".ff-status-tip-above {"),
+      globals.indexOf("}", globals.indexOf(".ff-status-tip-above {")) + 1,
+    );
+    assert.match(above, /inset-block-start: auto/);
+    assert.match(above, /inset-block-end: calc\(100% \+ var\(--ff-space\)\)/);
+    assert.match(globals, /inset-inline-start: var\(--ff-tip-shift, 0px\)/);
+    assert.match(globals, /inset-inline-end: calc\(0px - var\(--ff-tip-shift, 0px\)\)/);
+    const tooltip = source("src/components/a11y/Tooltip.tsx");
+    assert.match(tooltip, /tooltipPlacement\(/);
+    assert.match(tooltip, /tooltipOverflowClips\(/);
+  });
+});
+
+describe("Status tooltip one-Escape close", () => {
+  it("one Escape closes every open tooltip, from focus, hover, or row", () => {
+    const registry = createTooltipEscapeRegistry();
+    let focused = runTooltip(["focus"]);
+    let hovered = runTooltip(["pointerenter"]);
+    let row = runTooltip(["activate"]);
+    const unregister = [
+      registry.register(() => (focused = tooltipReduce(focused, "escape"))),
+      registry.register(() => (hovered = tooltipReduce(hovered, "escape"))),
+      registry.register(() => (row = tooltipReduce(row, "escape"))),
+    ];
+    assert.equal(registry.size(), 3);
+    assert.equal(registry.handleKey({ key: "Escape", defaultPrevented: false }), true);
+    assert.equal(tooltipIsOpen(focused), false);
+    assert.equal(tooltipIsOpen(hovered), false);
+    assert.equal(tooltipIsOpen(row), false);
+    for (const off of unregister) {
+      off();
+    }
+    assert.equal(registry.size(), 0);
+  });
+
+  it("claims the key only when it closed something", () => {
+    const registry = createTooltipEscapeRegistry();
+    // Nothing open: the Escape belongs to a Dialog or the palette.
+    assert.equal(registry.handleKey({ key: "Escape", defaultPrevented: false }), false);
+    let closes = 0;
+    const off = registry.register(() => {
+      closes += 1;
+    });
+    // Another handler already took it, or another key.
+    assert.equal(registry.handleKey({ key: "Escape", defaultPrevented: true }), false);
+    assert.equal(registry.handleKey({ key: "Enter", defaultPrevented: false }), false);
+    assert.equal(closes, 0);
+    assert.equal(registry.handleKey({ key: "Escape", defaultPrevented: false }), true);
+    assert.equal(closes, 1);
+    off();
+    off();
+    assert.equal(registry.size(), 0);
+  });
+
+  it("a close that unregisters during the sweep does not skip the others", () => {
+    const registry = createTooltipEscapeRegistry();
+    const closed: string[] = [];
+    const offs: Array<() => void> = [];
+    offs.push(
+      registry.register(() => {
+        closed.push("a");
+        offs[0]?.();
+        offs[1]?.();
+      }),
+    );
+    offs.push(registry.register(() => closed.push("b")));
+    assert.equal(registry.handleKey({ key: "Escape", defaultPrevented: false }), true);
+    assert.deepEqual(closed, ["a", "b"]);
+  });
+
+  it("the component sets preventDefault only on a closing Escape, before Dialog", () => {
+    const tooltip = source("src/components/a11y/Tooltip.tsx");
+    assert.match(tooltip, /createTooltipEscapeRegistry\(\)/);
+    assert.match(
+      tooltip,
+      /if \(\s*escapeRegistry\.handleKey\(\{[\s\S]*?\}\)\s*\)\s*\{\s*event\.preventDefault\(\);/,
+    );
+    assert.match(tooltip, /addEventListener\("keydown", onEscapeKey, true\)/);
+    // One shared listener, not one per open tooltip.
+    assert.equal((tooltip.match(/addEventListener\("keydown"/g) ?? []).length, 1);
+    // Dialog still skips an Escape a tooltip already used.
+    assert.equal(
+      dialogEscapeCloses({ key: "Escape", defaultPrevented: true, isTop: true }),
+      false,
+    );
+  });
+});
+
+describe("Nested chips opened by their row", () => {
+  it("activate opens, deactivate closes, and Escape holds until the row lets go", () => {
+    assert.equal(tooltipIsOpen(runTooltip(["activate"])), true);
+    assert.equal(tooltipIsOpen(runTooltip(["activate", "deactivate"])), false);
+    assert.equal(tooltipIsOpen(runTooltip(["activate", "escape"])), false);
+    // Still dismissed while hovered after the row lets go.
+    assert.equal(
+      tooltipIsOpen(runTooltip(["activate", "pointerenter", "escape", "deactivate"])),
+      false,
+    );
+    assert.equal(
+      tooltipIsOpen(runTooltip(["activate", "escape", "deactivate", "activate"])),
+      true,
+    );
+    // No-op events keep the same state object, so no extra render.
+    assert.equal(tooltipReduce(TOOLTIP_CLOSED, "deactivate"), TOOLTIP_CLOSED);
+    const active = runTooltip(["activate"]);
+    assert.equal(tooltipReduce(active, "activate"), active);
+  });
+
+  it("opens only with help, on keyboard-current or hover", () => {
+    assert.equal(nestedTipActive({ hasHelp: true, keyboardCurrent: true }), true);
+    assert.equal(
+      nestedTipActive({ hasHelp: true, keyboardCurrent: false, rowHovered: true }),
+      true,
+    );
+    assert.equal(nestedTipActive({ hasHelp: true, keyboardCurrent: false }), false);
+    assert.equal(
+      nestedTipActive({ hasHelp: false, keyboardCurrent: true, rowHovered: true }),
+      false,
+    );
+  });
+
+  it("the indeterminate inbox row uses the shared tooltip, not a row title", () => {
+    const listbox = source("src/components/executions/ExecutionHistoryListbox.tsx");
+    assert.equal(listbox.includes("title={row.indeterminate"), false);
+    assert.equal(listbox.includes("INDETERMINATE_STATUS_HELP : undefined}"), false);
+    assert.match(listbox, /const rowHelp = row\.indeterminate \? INDETERMINATE_STATUS_HELP : undefined;/);
+    assert.match(listbox, /nestedTipActive\(\{/);
+    assert.match(listbox, /keyboardCurrent: keyboardNav && index === safeIndex/);
+    // No tab stop is added to the row.
+    assert.equal(listbox.includes("tabIndex={0}"), true);
+    assert.equal((listbox.match(/tabIndex=/g) ?? []).length, 1);
+    const badge = source("src/components/executions/ExecutionStatusBadge.tsx");
+    assert.match(badge, /description=\{help \?\? presentation\.description\}/);
+    assert.match(badge, /tipActive=\{tipActive\}/);
+    const mark = source("src/components/chrome/StatusMark.tsx");
+    assert.match(mark, /useTooltip\(description, \{ active: tipActive \}\)/);
+  });
+
+  it("the activation chip and the link-less last-run chip use the shared tooltip", () => {
+    const activation = source("src/components/home/HomeActivationStatus.tsx");
+    assert.match(activation, /from "@\/components\/a11y\/Tooltip"/);
+    assert.equal(activation.includes("title="), false);
+    assert.match(activation, /useTooltip\(column\.help\)/);
+    assert.match(activation, /tip\.describedBy/);
+    assert.match(activation, /tip\.focusProps/);
+    assert.match(activation, /<TooltipText controls=\{tip\} text=\{column\.help\}/);
+    const lastRun = source("src/components/home/HomeLastRunStatus.tsx");
+    assert.equal(lastRun.includes("title="), false);
+    assert.match(lastRun, /hasHelp: !href/);
+    assert.match(lastRun, /keyboardCurrent: rowActive/);
+    // The link-less chip still takes no tab stop.
+    assert.equal(lastRun.includes("tabIndex"), false);
+    const home = source("src/components/home/WorkflowHome.tsx");
+    assert.match(home, /rowActive=\{paneKeyboardNav && selected\}/);
   });
 });
 

@@ -14,6 +14,7 @@ import {
   PALETTE_RESULTS_ID,
   PALETTE_SHORTCUT_HELP,
   paletteCommands,
+  paletteEscapeCloses,
   paletteHighlightIndex,
 } from "@/lib/command-palette";
 import { editorWorkflowIdFromPath } from "@/lib/editor-chrome";
@@ -66,7 +67,13 @@ export function CommandPalette() {
           return true;
         });
       }
-      if (event.key === "Escape" && open) {
+      if (
+        paletteEscapeCloses({
+          key: event.key,
+          open,
+          defaultPrevented: event.defaultPrevented,
+        })
+      ) {
         event.preventDefault();
         closePalette();
       }

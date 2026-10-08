@@ -136,8 +136,17 @@ export const E10_APPROVAL_RESUME_ENABLED = false;
 export const APPROVAL_WAIT_DISABLED_HELP =
   "Durable flow.approval wait is enabled. The wait state survives worker or pod loss. This UI does not call a wait API.";
 
+/** Contract note for route checks. Not UI copy: never render it. */
 export const APPROVAL_RESUME_DISABLED_HELP =
   "Resume is decide, not a new route. POST /approvals/{id}/decide with CSRF and fresh authorization. Requester self-approval is denied.";
+
+/**
+ * What the run page's approval state says while a run waits. The panel
+ * either shows the decide buttons in place or links to the approval
+ * page, so the sentence names both.
+ */
+export const APPROVAL_STATE_RESUME_SENTENCE =
+  "The run continues once someone approves or rejects this step, here or on its approval page.";
 
 export const PRE_RUN_PUBLISHED_ONLY_HELP =
   "Only a published workflowVersionId can run. Drafts are never sent on POST /workflows/{id}/executions.";

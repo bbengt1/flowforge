@@ -1247,7 +1247,7 @@ html[dir="rtl"] .ff-explorer-row.ff-explorer-row-selected {
 .ff-status-tip {
   position: absolute;
   inset-block-start: calc(100% + var(--ff-space));
-  inset-inline-start: 0;
+  inset-inline-start: var(--ff-tip-shift, 0px);
   z-index: 40;
   display: block;
   inline-size: max-content;
@@ -1266,9 +1266,14 @@ html[dir="rtl"] .ff-explorer-row.ff-explorer-row-selected {
   box-shadow: 0 4px 12px color-mix(in srgb, var(--ff-canvas) 70%, transparent);
 }
 
+.ff-status-tip-above {
+  inset-block-start: auto;
+  inset-block-end: calc(100% + var(--ff-space));
+}
+
 .ff-status-tip-end {
   inset-inline-start: auto;
-  inset-inline-end: 0;
+  inset-inline-end: calc(0px - var(--ff-tip-shift, 0px));
 }
 
 .ff-theme-option[aria-pressed="true"] {

@@ -21,6 +21,11 @@ type StatusMarkProps = {
   nested?: boolean;
   /** Which edge of the mark the open tooltip lines up with. */
   tipAlign?: TooltipAlign;
+  /**
+   * The surrounding row opens the tooltip, for example while it is the
+   * keyboard-current row of a list. Meant for nested marks.
+   */
+  tipActive?: boolean;
 };
 
 /**
@@ -39,8 +44,9 @@ export function StatusMark({
   role = "status",
   nested = false,
   tipAlign = "end",
+  tipActive = false,
 }: StatusMarkProps) {
-  const tip = useTooltip(description);
+  const tip = useTooltip(description, { active: tipActive });
   const hasTip = Boolean(description?.trim());
   const focusable = hasTip && !nested && role === "status";
   return (

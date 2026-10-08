@@ -8,10 +8,7 @@ import {
   isExecutionAwaitingApproval,
 } from "@/lib/approval";
 import { isTerminalRunStatus } from "@/lib/execution";
-import {
-  APPROVAL_BINDING_HELP,
-  APPROVAL_WAIT_DURABLE_HELP,
-} from "@/lib/approval-contract";
+import { APPROVAL_BINDING_HELP } from "@/lib/approval-contract";
 import type { ApprovalRequest } from "@/lib/approval-types";
 import { approvalWaitControls } from "@/lib/execution-replay";
 import type { DevIdentity } from "@/lib/identity-headers";
@@ -100,16 +97,25 @@ export function ExecutionApprovalState({
           </li>
         ))}
       </ul>
-      {waitControls.waitEnabled ? (
-        <p role="status" className="mt-4 text-sm text-fg">
-          {APPROVAL_WAIT_DURABLE_HELP}
+      {/*
+        Plain words only. The decide route, CSRF, and catalog flags are
+        contract notes, not something a user reads or hovers.
+      */}
+      {waiting ? (
+        <p
+          id="execution-approval-resume"
+          role="status"
+          className="mt-4 text-sm text-fg"
+        >
+          {waitControls.resumeHelp}
         </p>
-      ) : (
+      ) : null}
+      {waitControls.waitEnabled ? null : (
         <div className="mt-4 flex flex-wrap gap-2">
           <button
             type="button"
             disabled
-            title={waitControls.waitHelp}
+            aria-describedby={waiting ? "execution-approval-resume" : undefined}
             className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm text-fg disabled:cursor-not-allowed disabled:opacity-60"
           >
             Wait for approval
@@ -117,14 +123,13 @@ export function ExecutionApprovalState({
           <button
             type="button"
             disabled
-            title={waitControls.resumeHelp}
+            aria-describedby={waiting ? "execution-approval-resume" : undefined}
             className="rounded-lg border border-border bg-bg px-3 py-1.5 text-sm text-fg disabled:cursor-not-allowed disabled:opacity-60"
           >
             Resume
           </button>
         </div>
       )}
-      <p className="mt-2 text-xs text-fg">{waitControls.resumeHelp}</p>
     </section>
   );
 }

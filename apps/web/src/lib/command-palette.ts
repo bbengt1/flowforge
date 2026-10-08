@@ -311,6 +311,18 @@ export const PALETTE_SHORTCUT_HELP = "Esc to close · Ctrl+Shift+K";
 export const PALETTE_INPUT_LABEL = "Filter commands";
 export const PALETTE_RESULTS_ID = "command-palette-results";
 
+/**
+ * Escape closes an open palette unless another handler already took the
+ * key, for example a tooltip inside the palette closing itself first.
+ */
+export function paletteEscapeCloses(input: {
+  key: string;
+  open: boolean;
+  defaultPrevented: boolean;
+}): boolean {
+  return input.open && input.key === "Escape" && !input.defaultPrevented;
+}
+
 export function paletteHighlightIndex(
   current: number,
   key: string,

@@ -68,8 +68,16 @@ export const APPROVAL_WAIT_RESUME_API_PR = 116;
 export const APPROVAL_WAIT_RESUME_ROUTE =
   "POST /api/v1/approvals/{approvalId}/decide";
 
+/** Contract note for route checks. Not UI copy: never render it. */
 export const APPROVAL_DECIDE_HELP =
   "Decide is POST /approvals/{id}/decide {decision:'approved'|'rejected', note?} with cookie session + X-CSRF-Token. Fresh authorization is required on every decide. Server 403 remains the authority. Cite #116.";
+
+/**
+ * Under the Approve and Reject buttons. Plain words: the decide route,
+ * CSRF, and principal ids are contract notes, not UI copy.
+ */
+export const APPROVAL_DECIDE_NOTE =
+  "The person who requested this approval can't approve or reject it.";
 
 export const APPROVAL_SOD_HELP =
   "Separation of duties: the requester cannot approve or reject their own request. Compare GET /workspace principal.id to requestedBy (user UUIDs — never session.subject).";

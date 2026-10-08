@@ -15,7 +15,7 @@ import {
 import { FLOW_APPROVAL_NODE_TYPE } from "./approval-contract.ts";
 import type { ApprovalRequest, PolicyEvaluation } from "./approval-types.ts";
 import {
-  APPROVAL_RESUME_DISABLED_HELP,
+  APPROVAL_STATE_RESUME_SENTENCE,
   APPROVAL_WAIT_DISABLED_HELP,
   COMPARE_REDACTION_HELP,
   E10_APPROVAL_RESUME_ENABLED,
@@ -68,6 +68,7 @@ import { isValidNodeId } from "./workflow-yaml-nodes.ts";
 
 export {
   APPROVAL_RESUME_DISABLED_HELP,
+  APPROVAL_STATE_RESUME_SENTENCE,
   APPROVAL_WAIT_DISABLED_HELP,
   COMPARE_REDACTION_HELP,
   E10_APPROVAL_RESUME_ENABLED,
@@ -688,7 +689,7 @@ export function approvalWaitControls(): ApprovalWaitControls {
     waitEnabled: E10_APPROVAL_WAIT_ENABLED,
     resumeEnabled: E10_APPROVAL_RESUME_ENABLED,
     waitHelp: APPROVAL_WAIT_DISABLED_HELP,
-    resumeHelp: APPROVAL_RESUME_DISABLED_HELP,
+    resumeHelp: APPROVAL_STATE_RESUME_SENTENCE,
   };
 }
 

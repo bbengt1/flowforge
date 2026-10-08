@@ -84,6 +84,9 @@ export const NOT_REACHED_STATUS_ICON = "–";
 
 export const BLOCKED_STATUS_HELP = "Waiting for upstream steps to finish.";
 export const PENDING_STATUS_HELP = "Not started yet. Waiting on inputs.";
+/** Waiting chip help. Plain words: the decide route lives elsewhere. */
+export const WAITING_STATUS_HELP =
+  "Waiting for someone to approve or reject it, or for a timed delay to end.";
 export const SKIPPED_STATUS_HELP =
   "Didn't run because an upstream approval was rejected or expired, or its branch wasn't taken. Not a failure.";
 export const NOT_REACHED_STATUS_HELP =
