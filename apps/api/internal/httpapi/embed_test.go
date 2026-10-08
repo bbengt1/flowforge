@@ -132,7 +132,7 @@ func (e embedEnv) addWorkspaceAdmin(t *testing.T, user identity.User) identity.U
 		t.Fatal(err)
 	}
 	ws, _ := currentWorkspace(t, e.h, e.admin)
-	if err := e.store.SetMemberRoles(ctx, ws.ID, u.ID, []string{authz.RoleAdmin}); err != nil {
+	if err := e.store.SetMemberRoles(ctx, ws.ID, u.ID, []string{authz.RoleAdmin}, identity.MemberActor{Via: identity.MemberViaSystem}); err != nil {
 		t.Fatal(err)
 	}
 	return u
@@ -1916,7 +1916,7 @@ func TestEmbedCatalogHidesMembershipIsolationUnlessGranted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := env.store.SetMemberRoles(t.Context(), ws.ID, u.ID, []string{authz.RoleViewer}); err != nil {
+	if err := env.store.SetMemberRoles(t.Context(), ws.ID, u.ID, []string{authz.RoleViewer}, identity.MemberActor{Via: identity.MemberViaSystem}); err != nil {
 		t.Fatal(err)
 	}
 	createdViewer, _ := createSession(t, env.h, viewerUser.Issuer, viewerUser.ExternalSubject, "Viewer", false)

@@ -276,6 +276,11 @@ func (p *Postgres) Decide(ctx context.Context, scope isolation.Scope, id string,
 	if scope.Zero() {
 		return Record{}, ErrNoScope
 	}
+	// A decision always has a decider. An empty actor is refused before
+	// the transaction opens, so nothing is written or corrected.
+	if scope.ActorID() == "" {
+		return Record{}, ErrForbidden
+	}
 	now := in.Now.UTC()
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -378,7 +383,11 @@ func (p *Postgres) Decide(ctx context.Context, scope isolation.Scope, id string,
 		return Record{}, err
 	}
 	// Step 8: approver check, after the role check and before any write.
-	// A refusal records nothing and corrects nothing.
+	// A refusal records nothing and corrects nothing. A disabled decider
+	// is refused first, read in this transaction.
+	if err := requireEnabledDeciderTx(ctx, tx, scope.ActorID()); err != nil {
+		return Record{}, err
+	}
 	via := ViaTarget
 	if rec.Targeted() {
 		if via, err = decideRouteTx(ctx, tx, scope.WorkspaceID(), rec, scope.ActorID(), in.Roles); err != nil {
@@ -795,4 +804,32 @@ func mapDBErr(err error) error {
 		}
 	}
 	return err
+}
+
+// requireEnabledDeciderTx refuses a decider whose account is disabled,
+// read inside the decide transaction. Request authentication checks the
+// status too, but earlier and outside this transaction; an instance-wide
+// disable that commits in between must still stop the decision. The read
+// is a plain READ COMMITTED read with no lock on the users row (no new
+// lock edge with SCIM or membership paths): a disable that committed
+// before this statement refuses the decision; one that commits later is
+// ordered after it. A decision never needs the re-check that follows a
+// disable to have run. An empty actor is refused (ErrForbidden): there is
+// no system decider, and Decide already refuses one before any write.
+func requireEnabledDeciderTx(ctx context.Context, tx pgx.Tx, actorID string) error {
+	if actorID == "" {
+		return ErrForbidden
+	}
+	var status string
+	err := tx.QueryRow(ctx, `SELECT status FROM users WHERE id = $1::uuid`, actorID).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrForbidden
+	}
+	if err != nil {
+		return mapDBErr(err)
+	}
+	if status != "active" {
+		return ErrForbidden
+	}
+	return nil
 }

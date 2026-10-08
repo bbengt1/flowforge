@@ -108,10 +108,10 @@ func TestMemoryRejectsPlatformAdminWorkspaceBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetMemberRoles(ctx, ws.ID, admin.ID, []string{authz.RolePlatformAdmin}); !errors.Is(err, ErrInvalid) {
+	if err := store.SetMemberRoles(ctx, ws.ID, admin.ID, []string{authz.RolePlatformAdmin}, MemberActor{Via: MemberViaSystem}); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("platform-admin assignment: %v", err)
 	}
-	if err := store.SetMemberRoles(ctx, ws.ID, admin.ID, []string{authz.RoleAdmin, authz.RolePlatformAdmin}); !errors.Is(err, ErrInvalid) {
+	if err := store.SetMemberRoles(ctx, ws.ID, admin.ID, []string{authz.RoleAdmin, authz.RolePlatformAdmin}, MemberActor{Via: MemberViaSystem}); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("mixed platform-admin assignment: %v", err)
 	}
 	roles, perms, err := store.EffectiveAccess(ctx, ws.ID, admin.ID)

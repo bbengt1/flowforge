@@ -61,7 +61,7 @@ func TestEnsureWorkerBindsOperatorIdempotently(t *testing.T) {
 	}
 
 	// Someone made the worker admin by hand: the next boot puts it back.
-	if err := store.SetMemberRoles(ctx, ws.ID, first.UserID, []string{authz.RoleAdmin, authz.RoleApprover}); err != nil {
+	if err := store.SetMemberRoles(ctx, ws.ID, first.UserID, []string{authz.RoleAdmin, authz.RoleApprover}, identity.MemberActor{Via: identity.MemberViaSystem}); err != nil {
 		t.Fatal(err)
 	}
 	third, err := EnsureWorker(ctx, WorkerInput{Store: store, Worker: testWorker})
@@ -125,7 +125,7 @@ func TestEnsureWorkerPostgres(t *testing.T) {
 	if err != nil || second.Changed || second.UserID != first.UserID {
 		t.Fatalf("second = %+v %v", second, err)
 	}
-	if err := store.SetMemberRoles(ctx, ws.ID, first.UserID, []string{authz.RoleAdmin, authz.RoleApprover}); err != nil {
+	if err := store.SetMemberRoles(ctx, ws.ID, first.UserID, []string{authz.RoleAdmin, authz.RoleApprover}, identity.MemberActor{Via: identity.MemberViaSystem}); err != nil {
 		t.Fatal(err)
 	}
 	third, err := EnsureWorker(ctx, in)
