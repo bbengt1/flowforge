@@ -20,6 +20,12 @@ import {
   canManageWorkspaceGroups,
 } from "@/lib/workspace-groups";
 import {
+  SCIM_TOKENS_HREF,
+  SCIM_TOKENS_LINK_HELP,
+  SCIM_TOKENS_TITLE,
+  canManageScimTokens,
+} from "@/lib/scim-tokens";
+import {
   FF_SETTINGS_LINK_CLASS,
   FF_SETTINGS_MUTED_CLASS,
   FF_SETTINGS_PANEL_CLASS,
@@ -33,7 +39,9 @@ export function FoundationAdminLinks() {
   const showAudit = canSeeAuditNav(permissions);
   // The groups API refuses embed sessions, so embed never links to it.
   const showGroups = canManageWorkspaceGroups(permissions, { embed });
-  if (!showAdmin && !showAudit && !showGroups) {
+  // Same for SCIM tokens: admin-only, refused in embed.
+  const showScimTokens = canManageScimTokens(permissions, { embed });
+  if (!showAdmin && !showAudit && !showGroups && !showScimTokens) {
     return null;
   }
 
@@ -72,6 +80,14 @@ export function FoundationAdminLinks() {
               {WORKSPACE_GROUPS_TITLE}
             </Link>
             <span className={FF_SETTINGS_MUTED_CLASS}> — {WORKSPACE_GROUPS_LINK_HELP}</span>
+          </li>
+        ) : null}
+        {showScimTokens ? (
+          <li>
+            <Link href={SCIM_TOKENS_HREF} className={FF_SETTINGS_LINK_CLASS}>
+              {SCIM_TOKENS_TITLE}
+            </Link>
+            <span className={FF_SETTINGS_MUTED_CLASS}> — {SCIM_TOKENS_LINK_HELP}</span>
           </li>
         ) : null}
         {showAudit ? (

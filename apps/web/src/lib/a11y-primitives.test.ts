@@ -50,6 +50,7 @@ const DIALOG_SURFACES = [
   "src/components/groups/GroupNameDialog.tsx",
   "src/components/groups/AddGroupMemberDialog.tsx",
   "src/components/approvals/AdminOverrideConfirm.tsx",
+  "src/components/scim-tokens/CreateScimTokenDialog.tsx",
 ] as const;
 
 const FIELD_SURFACES = [
@@ -73,6 +74,7 @@ const FIELD_SURFACES = [
   "src/components/groups/GroupNameDialog.tsx",
   "src/components/groups/AddGroupMemberDialog.tsx",
   "src/components/workflows/ApproverPicker.tsx",
+  "src/components/scim-tokens/CreateScimTokenDialog.tsx",
 ] as const;
 
 describe("G.3.1 Field primitive", () => {

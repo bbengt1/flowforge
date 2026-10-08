@@ -388,6 +388,20 @@ export function workspaceGroupPickerQueryKey(
   return key;
 }
 
+/**
+ * SCIM tokens admin list. Holds token records only: the plaintext from
+ * a create never enters the query cache.
+ */
+export function scimTokensListQueryKey(
+  scope: string,
+): readonly ["flowforge", string, "scim-tokens", "list"] | null {
+  const key = ["flowforge", scope, "scim-tokens", "list"] as const;
+  if (queryKeyHasSecret(key)) {
+    return null;
+  }
+  return key;
+}
+
 /** Roots reserved for the remaining god-component splits. */
 export const REMAINING_GOD_COMPONENT_QUERY_ROOTS = {
   workflowHome: ["flowforge", "workflow-home"] as const,
