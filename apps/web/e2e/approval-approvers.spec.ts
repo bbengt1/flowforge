@@ -357,3 +357,90 @@ test("run page says no one other than the requester can approve", async ({ page 
   await expect(page.getByText("no_eligible_decider")).toHaveCount(0);
   await expect(page.getByText(NO_ELIGIBLE_CLOSE)).toHaveCount(0);
 });
+
+test("a waiting run's approval state says how it continues in plain words", async ({
+  page,
+}) => {
+  await installOperatorApi(page, { permissions: DECIDE_PERMISSIONS });
+  const detail = {
+    id: EXECUTION_ID,
+    workflowId: OPERATOR_WORKFLOW_ID,
+    workflowName: "Deploy",
+    workflowSlug: "deploy",
+    workflowVersionId: VERSION_ID,
+    workflowVersionNumber: 1,
+    status: "waiting",
+    createdAt: "2026-10-01T12:00:00.000Z",
+    startedAt: "2026-10-01T12:00:00.000Z",
+    permittedActions: ["view"],
+    jobs: [],
+    auditEvents: [],
+    artifacts: [],
+    steps: [
+      {
+        id: GATE_STEP_ID,
+        nodeId: "gate",
+        nodeType: "flow.approval",
+        attempt: 1,
+        status: "waiting",
+      },
+    ],
+  };
+  const pending = {
+    ...targetedApproval(TARGET_ID, "Deploy"),
+    executionId: EXECUTION_ID,
+    executionStatus: "waiting",
+  };
+  await page.route(
+    (url) => {
+      const parsed = new URL(url);
+      const path = parsed.pathname.replace(/\/$/, "");
+      return (
+        path === `/api/v1/executions/${EXECUTION_ID}` ||
+        path === `/api/control-plane/executions/${EXECUTION_ID}` ||
+        path.endsWith("/logs") ||
+        (isControlPlane(url.toString(), "/approvals") &&
+          parsed.searchParams.get("executionId") === EXECUTION_ID)
+      );
+    },
+    async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith("/logs")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ lines: [] }),
+        });
+        return;
+      }
+      if (path.includes("/approvals")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ items: [pending] }),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(detail),
+      });
+    },
+  );
+  await page.goto(`/executions/${EXECUTION_ID}?workflowId=${OPERATOR_WORKFLOW_ID}`);
+  await expect(page.getByRole("heading", { level: 1, name: "Execution" })).toBeVisible();
+  const approvalState = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Execution approval state" }) });
+  await expect(approvalState).toBeVisible();
+  await expect(approvalState.getByRole("status")).toHaveText(
+    "The run continues once someone approves or rejects this step, here or on its approval page.",
+  );
+  await expect(approvalState).not.toContainText("POST");
+  await expect(approvalState).not.toContainText("CSRF");
+  await expect(approvalState).not.toContainText("/approvals/");
+  await expect(approvalState).not.toContainText("waitResumeEnabled");
+  await expect(approvalState.locator("[title]")).toHaveCount(0);
+  await expectNoBlockingAxeViolations(page);
+});
