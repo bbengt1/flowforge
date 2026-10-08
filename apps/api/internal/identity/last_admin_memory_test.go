@@ -34,7 +34,7 @@ func TestMemoryLastAdminGuardIgnoresDisabledAdmins(t *testing.T) {
 			m.SetMemberRoles(ctx, w.ID, a.ID, []string{authz.RoleAdmin}, MemberActor{Via: MemberViaSystem}),
 			m.SetMemberRoles(ctx, w.ID, d.ID, []string{authz.RoleAdmin}, MemberActor{Via: MemberViaSystem}),
 			m.SetMemberRoles(ctx, w.ID, n.ID, []string{authz.RoleViewer}, MemberActor{Via: MemberViaSystem}),
-			m.SetUserStatus(ctx, d.ID, "disabled"),
+			m.SetUserStatus(ctx, d.ID, "disabled", MemberActor{Via: MemberViaSystem}),
 		} {
 			if step != nil {
 				t.Fatal(step)
@@ -57,7 +57,7 @@ func TestMemoryLastAdminGuardIgnoresDisabledAdmins(t *testing.T) {
 			return w.m.RemoveMember(ctx, w.id, w.disabled.ID, MemberActor{Via: MemberViaSystem})
 		}, nil},
 		{"remove a non-admin in a workspace with only disabled admins", func(w ws) error {
-			if err := w.m.SetUserStatus(ctx, w.active.ID, "disabled"); err != nil {
+			if err := w.m.SetUserStatus(ctx, w.active.ID, "disabled", MemberActor{Via: MemberViaSystem}); err != nil {
 				return err
 			}
 			return w.m.RemoveMember(ctx, w.id, w.nonAdmin.ID, MemberActor{Via: MemberViaSystem})
@@ -66,7 +66,7 @@ func TestMemoryLastAdminGuardIgnoresDisabledAdmins(t *testing.T) {
 			if err := w.m.RemoveMember(ctx, w.id, w.disabled.ID, MemberActor{Via: MemberViaSystem}); err != nil {
 				return err
 			}
-			if err := w.m.SetUserStatus(ctx, w.active.ID, "disabled"); err != nil {
+			if err := w.m.SetUserStatus(ctx, w.active.ID, "disabled", MemberActor{Via: MemberViaSystem}); err != nil {
 				return err
 			}
 			return w.m.RemoveMember(ctx, w.id, w.active.ID, MemberActor{Via: MemberViaSystem})

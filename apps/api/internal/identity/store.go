@@ -13,7 +13,9 @@ type Store interface {
 	GetUser(ctx context.Context, id string) (User, error)
 	// SetUserStatus sets users.status to active or disabled. Revoked
 	// machine principals are disabled so existing sessions fail closed.
-	SetUserStatus(ctx context.Context, userID, status string) error
+	// actor (required) is who disabled or re-enabled the account; it is
+	// recorded on any audit row a disable writes.
+	SetUserStatus(ctx context.Context, userID, status string, actor MemberActor) error
 	// FindUser returns an existing principal. It does not upsert.
 	FindUser(ctx context.Context, issuer, subject string) (User, error)
 	// SetLocalPassword stores a bcrypt hash for local login. identifier

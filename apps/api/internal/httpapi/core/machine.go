@@ -215,7 +215,8 @@ func (s *Server) rotateMachinePrincipal(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) revokeMachinePrincipal(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireMachineAdmin(w, r); !ok {
+	admin, ok := s.requireMachineAdmin(w, r)
+	if !ok {
 		return
 	}
 	if !emptyOrObject(w, r) {
@@ -229,7 +230,9 @@ func (s *Server) revokeMachinePrincipal(w http.ResponseWriter, r *http.Request) 
 	// A gate re-check failure still leaves the user disabled: revoke the
 	// sessions anyway, then report 503 so the caller retries the revoke
 	// (a repeat finishes the re-check).
-	statusErr := s.Store.SetUserStatus(r.Context(), item.UserID, "disabled")
+	// The revoking platform administrator is the actor of the disable
+	// (session-user convention), recorded on any audit row it writes.
+	statusErr := s.Store.SetUserStatus(r.Context(), item.UserID, "disabled", identity.MemberActor{UserID: admin.ID, RequestID: RequestIDFromContext(r.Context())})
 	if statusErr != nil && !errors.Is(statusErr, identity.ErrDisableRecheckIncomplete) {
 		s.logMachine("machine_disable_user", r, statusErr)
 		WriteProblem(w, r, http.StatusServiceUnavailable, CodeDependencyUnavailable, "Dependency Unavailable", "Identity store is not available.")

@@ -203,7 +203,12 @@ func TestUserDisableRechecksEveryWorkspaceAndReenableReopensNothing(t *testing.T
 	d2.assertClosed(e2, x2)
 }
 
-func (d *d617) noEnabledAdminRows() []map[string]any {
+type noAdminRow struct {
+	actor   string // actor_id, "" when NULL
+	details map[string]any
+}
+
+func (d *d617) noEnabledAdminRows() []noAdminRow {
 	d.t.Helper()
 	rows, err := d.th.admin.Query(d.th.ctx, `
 		SELECT COALESCE(actor_id::text, ''), resource_type, COALESCE(resource_id::text, ''), details_redacted
@@ -212,51 +217,117 @@ func (d *d617) noEnabledAdminRows() []map[string]any {
 		d.t.Fatal(err)
 	}
 	defer rows.Close()
-	var out []map[string]any
+	var out []noAdminRow
 	for rows.Next() {
-		var actor, rt, rid string
-		var details map[string]any
-		if err := rows.Scan(&actor, &rt, &rid, &details); err != nil {
+		var r noAdminRow
+		var rt, rid string
+		if err := rows.Scan(&r.actor, &rt, &rid, &r.details); err != nil {
 			d.t.Fatal(err)
 		}
-		if actor != "" || rt != "workspace" || rid != d.w.ws.ID {
-			d.t.Fatalf("row actor=%q resource=%s/%s", actor, rt, rid)
+		if rt != "workspace" || rid != d.w.ws.ID {
+			d.t.Fatalf("row resource=%s/%s", rt, rid)
 		}
-		out = append(out, details)
+		out = append(out, r)
 	}
 	return out
 }
 
+// Every disable path records its actor on the row, like a role-change
+// row: via scim_instance_token for the instance SCIM bearer (no
+// actor_id), the revoking platform admin (actor_id and
+// actorDisplayName, no via) for a machine revoke. Details hold only the
+// disabled user's UUID and display name plus that actor.
 func TestUserDisableAuditsNoEnabledAdmin(t *testing.T) {
+	instanceVia := map[string]any{"via": "scim_instance_token"}
+	cases := []struct {
+		name string
+		// run disables the workspace's only enabled admin and returns
+		// them, the response code, the wanted code, and the actor fields.
+		run func(d *d617) (target identity.User, code, want int, actorID string, actor map[string]any)
+	}{
+		{"instance PATCH active:false", func(d *d617) (identity.User, int, int, string, map[string]any) {
+			v := d.scimUser("Vera Admin", "admin")
+			d.dropOwner()
+			return v, d.patchActive(v, false), http.StatusOK, "", instanceVia
+		}},
+		{"instance PUT active:false", func(d *d617) (identity.User, int, int, string, map[string]any) {
+			v := d.scimUser("Vera Admin", "admin")
+			d.dropOwner()
+			return v, d.putActive(v, false), http.StatusOK, "", instanceVia
+		}},
+		{"instance POST active:false", func(d *d617) (identity.User, int, int, string, map[string]any) {
+			v := d.member("Vera Admin", "admin")
+			d.dropOwner()
+			body := strings.Replace(scimUserJSON(d.th.uniq("u617"), v.ExternalSubject, "Vera Admin"), `"active":true`, `"active":false`, 1)
+			return v, d.instance(http.MethodPost, "/scim/v2/Users", body), http.StatusCreated, "", instanceVia
+		}},
+		{"instance DELETE", func(d *d617) (identity.User, int, int, string, map[string]any) {
+			v := d.scimUser("Vera Admin", "admin")
+			d.dropOwner()
+			return v, d.instance(http.MethodDelete, "/scim/v2/Users/"+v.ID, ""), http.StatusNoContent, "", instanceVia
+		}},
+		{"machine principal revoke", func(d *d617) (identity.User, int, int, string, map[string]any) {
+			m, id := d.machineApprover("Vera Admin")
+			d.grant(m, "admin")
+			d.dropOwner()
+			actor := map[string]any{}
+			if n := d.owner().DisplayName; n != "" && !strings.Contains(n, "@") {
+				actor["actorDisplayName"] = n
+			}
+			return m, d.do(d.owner(), http.MethodPost, "/api/v1/machine/principals/"+id+"/revoke", "").Code, http.StatusOK, d.owner().ID, actor
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			d := newD617(t)
+			v, code, want, actorID, actor := c.run(d)
+			if code != want {
+				t.Fatalf("disable = %d, want %d", code, want)
+			}
+			rows := d.noEnabledAdminRows()
+			if len(rows) != 1 {
+				t.Fatalf("rows = %v, want one", rows)
+			}
+			wantDetails := map[string]any{"userId": v.ID, "displayName": "Vera Admin"}
+			for k, val := range actor {
+				wantDetails[k] = val
+			}
+			if rows[0].actor != actorID || fmt.Sprint(rows[0].details) != fmt.Sprint(wantDetails) {
+				t.Fatalf("row actor=%q details=%v, want actor=%q details=%v", rows[0].actor, rows[0].details, actorID, wantDetails)
+			}
+		})
+	}
+}
+
+// A repeat disable writes no second row, a workspace that keeps an
+// enabled admin gets none, and a display name shaped like an email is
+// left out.
+func TestUserDisableNoEnabledAdminRowDedupAndRedaction(t *testing.T) {
 	d := newD617(t)
 	other := d.sibling()
 	v := d.scimUser("Vera Admin", "admin")
 	other.grant(v, "admin") // other keeps the owner as an enabled admin
 	d.dropOwner()
-	for i := 0; i < 2; i++ { // a repeat disable writes no second row
+	for i := 0; i < 2; i++ {
 		if code := d.patchActive(v, false); code != http.StatusOK {
 			t.Fatalf("disable %d = %d", i, code)
 		}
 	}
-	rows := d.noEnabledAdminRows()
-	if len(rows) != 1 {
+	if rows := d.noEnabledAdminRows(); len(rows) != 1 {
 		t.Fatalf("rows = %v, want one", rows)
-	}
-	if len(rows[0]) != 2 || rows[0]["userId"] != v.ID || rows[0]["displayName"] != "Vera Admin" {
-		t.Fatalf("details = %v, want userId and displayName only", rows[0])
 	}
 	if got := other.noEnabledAdminRows(); len(got) != 0 {
 		t.Fatalf("workspace with an enabled admin got %v", got)
 	}
-	// A display name shaped like an email is left out.
 	third := d.sibling()
 	w := third.scimUser("w.admin@example.com", "admin")
 	third.dropOwner()
 	if code := third.patchActive(w, false); code != http.StatusOK {
 		t.Fatalf("disable = %d", code)
 	}
-	if rows := third.noEnabledAdminRows(); len(rows) != 1 || len(rows[0]) != 1 || rows[0]["userId"] != w.ID {
-		t.Fatalf("details = %v, want userId only", rows)
+	rows := third.noEnabledAdminRows()
+	if len(rows) != 1 || fmt.Sprint(rows[0].details) != fmt.Sprint(map[string]any{"userId": w.ID, "via": "scim_instance_token"}) {
+		t.Fatalf("details = %v, want userId and via only", rows)
 	}
 }
 
@@ -828,7 +899,7 @@ func TestMemberAuditRowsHoldNoTokenOrEmail(t *testing.T) {
 				t.Fatalf("%s row has unexpected detail %q: %s", action, k, raw)
 			}
 		}
-		if action != "workspace.no_enabled_admin" && actor == "" && details["via"] == nil {
+		if actor == "" && details["via"] == nil {
 			t.Fatalf("%s row has no actor: %s", action, raw)
 		}
 	}

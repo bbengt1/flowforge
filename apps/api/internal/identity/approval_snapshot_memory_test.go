@@ -53,7 +53,7 @@ func TestMemoryResolveApprovalSnapshot(t *testing.T) {
 		t.Fatalf("group member snapshot = %+v", snap)
 	}
 
-	if err := m.SetUserStatus(ctx, approver.ID, "disabled"); err != nil {
+	if err := m.SetUserStatus(ctx, approver.ID, "disabled", MemberActor{Via: MemberViaSystem}); err != nil {
 		t.Fatal(err)
 	}
 	snap, _ = m.ResolveApprovalSnapshot(ctx, ws.ID, owner.ID, "approver", []string{approver.ID}, []string{g.ID})

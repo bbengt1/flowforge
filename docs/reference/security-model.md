@@ -82,11 +82,15 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
  Re-enabling the account reopens nothing: closed gates and failed runs
  stay closed. A decide re-reads the decider's account status in its own
  transaction, so a decider disabled while the decide is in flight gets
- `403` and the approval stays pending. An instance-wide disable is
+ `403` and the approval stays pending; a decide with no decider is
+ `403` before anything is written. An instance-wide disable is
  allowed even when it leaves a workspace with no enabled administrator;
  each such workspace gets one `workspace.no_enabled_admin` audit row
- (outcome `warning`) holding only the user's UUID and display name,
- until an operator restores an administrator there.
+ (outcome `warning`) holding only the user's UUID and display name and
+ the actor of the disable, recorded like a role change (`via:
+ scim_instance_token` for the instance token; the revoking administrator
+ for a machine principal revoke), until an operator restores an
+ administrator there.
  `SCIM_GROUPS_MODE` decides what a SCIM Group is, for the whole
  instance; any value other than `workspaces` or `groups` is a
  boot-fail. In `workspaces` mode (the default) SCIM Groups are

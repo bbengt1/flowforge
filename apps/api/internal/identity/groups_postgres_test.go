@@ -369,7 +369,7 @@ func TestPostgresGroupAddRejectsNonMembers(t *testing.T) {
 	g := f.group(t, "Approvers")
 	unbound := f.member(t, f.ws, "Unbound")
 	disabled := f.member(t, f.ws, "Disabled", authz.RoleApprover)
-	if err := f.store.SetUserStatus(f.ctx, disabled.ID, "disabled"); err != nil {
+	if err := f.store.SetUserStatus(f.ctx, disabled.ID, "disabled", MemberActor{Via: MemberViaSystem}); err != nil {
 		t.Fatal(err)
 	}
 	wsB, _ := f.newWorkspace(t)
@@ -532,7 +532,7 @@ func TestGroupHelpersDisabledUserDropsOut(t *testing.T) {
 	if !in || !slices.Equal(users, []string{u.ID}) {
 		t.Fatalf("before disable: in=%v users=%v", in, users)
 	}
-	if err := f.store.SetUserStatus(f.ctx, u.ID, "disabled"); err != nil {
+	if err := f.store.SetUserStatus(f.ctx, u.ID, "disabled", MemberActor{Via: MemberViaSystem}); err != nil {
 		t.Fatal(err)
 	}
 	in, users = f.helpers(t, u.ID, []string{g.ID}, []string{u.ID})

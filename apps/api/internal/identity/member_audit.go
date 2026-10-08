@@ -102,36 +102,17 @@ func InsertMemberRolesAuditTx(ctx context.Context, tx pgx.Tx, workspaceID, userI
 	} else if name != "" {
 		details["displayName"] = name
 	}
-	var actorID any
-	switch {
-	case strings.TrimSpace(actor.UserID) != "":
-		id := strings.ToLower(strings.TrimSpace(actor.UserID))
-		actorID = id
-		name, err := userDisplayNameTx(ctx, tx, id)
-		if err != nil {
-			return err
-		}
-		if name != "" {
-			details["actorDisplayName"] = name
-		}
-	case strings.TrimSpace(actor.SCIMTokenID) != "":
-		details["tokenId"] = strings.ToLower(strings.TrimSpace(actor.SCIMTokenID))
-		details["via"] = MemberViaSCIMToken
-	default:
-		details["via"] = actor.Via
+	actorID, err := addActorDetailsTx(ctx, tx, actor, details)
+	if err != nil {
+		return err
 	}
 	detailsRaw, err := json.Marshal(details)
 	if err != nil {
 		return ErrInvalid
 	}
-	host := map[string]string{}
-	rid := auditCorrelation(actor.RequestID)
-	if rid != "" {
-		host["requestId"] = rid
-	}
-	hostRaw, err := json.Marshal(host)
+	hostRaw, rid, err := actorHostContext(actor)
 	if err != nil {
-		return ErrInvalid
+		return err
 	}
 	_, err = tx.Exec(ctx, `
 		INSERT INTO audit_events (
@@ -143,6 +124,47 @@ func InsertMemberRolesAuditTx(ctx context.Context, tx pgx.Tx, workspaceID, userI
 		)
 	`, workspaceID, actorID, hostRaw, action, AuditMemberResource, userID, outcome, rid, detailsRaw)
 	return mapDBErr(err)
+}
+
+// addActorDetailsTx records actor the same way on every identity audit
+// row: a session user is actor_id (returned) plus actorDisplayName; a
+// workspace SCIM token is tokenId plus via scim_token; anything else is a
+// fixed via constant (MemberActor.Valid allows no free text). The
+// returned actor_id is nil when the actor is not a user.
+func addActorDetailsTx(ctx context.Context, tx pgx.Tx, actor MemberActor, details map[string]any) (any, error) {
+	switch {
+	case strings.TrimSpace(actor.UserID) != "":
+		id := strings.ToLower(strings.TrimSpace(actor.UserID))
+		name, err := userDisplayNameTx(ctx, tx, id)
+		if err != nil {
+			return nil, err
+		}
+		if name != "" {
+			details["actorDisplayName"] = name
+		}
+		return id, nil
+	case strings.TrimSpace(actor.SCIMTokenID) != "":
+		details["tokenId"] = strings.ToLower(strings.TrimSpace(actor.SCIMTokenID))
+		details["via"] = MemberViaSCIMToken
+	default:
+		details["via"] = actor.Via
+	}
+	return nil, nil
+}
+
+// actorHostContext returns the host context JSON (request id only) and the
+// correlation id for actor's request.
+func actorHostContext(actor MemberActor) ([]byte, string, error) {
+	host := map[string]string{}
+	rid := auditCorrelation(actor.RequestID)
+	if rid != "" {
+		host["requestId"] = rid
+	}
+	raw, err := json.Marshal(host)
+	if err != nil {
+		return nil, "", ErrInvalid
+	}
+	return raw, rid, nil
 }
 
 // userDisplayNameTx returns the user's display name for an audit row, or

@@ -85,7 +85,7 @@ func TestMemoryGroupsMirrorPostgresRules(t *testing.T) {
 		t.Fatalf("helpers in=%v users=%v", in, users)
 	}
 
-	if err := m.SetUserStatus(ctx, approver.ID, "disabled"); err != nil {
+	if err := m.SetUserStatus(ctx, approver.ID, "disabled", MemberActor{Via: MemberViaSystem}); err != nil {
 		t.Fatal(err)
 	}
 	in, _ = m.InTargetGroups(ctx, ws.ID, approver.ID, []string{g.ID})
@@ -94,7 +94,7 @@ func TestMemoryGroupsMirrorPostgresRules(t *testing.T) {
 	if in || len(users) != 0 || len(d.Members) != 1 || d.Members[0].CanApprove {
 		t.Fatalf("disabled: in=%v users=%v detail=%+v", in, users, d)
 	}
-	if err := m.SetUserStatus(ctx, approver.ID, "active"); err != nil {
+	if err := m.SetUserStatus(ctx, approver.ID, "active", MemberActor{Via: MemberViaSystem}); err != nil {
 		t.Fatal(err)
 	}
 

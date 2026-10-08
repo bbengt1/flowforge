@@ -107,7 +107,10 @@ func (m *Memory) GetUser(_ context.Context, id string) (User, error) {
 	return u, nil
 }
 
-func (m *Memory) SetUserStatus(_ context.Context, userID, status string) error {
+func (m *Memory) SetUserStatus(_ context.Context, userID, status string, actor MemberActor) error {
+	if !actor.Valid() {
+		return ErrInvalid
+	}
 	userID = strings.TrimSpace(userID)
 	status = strings.TrimSpace(status)
 	if userID == "" || (status != "active" && status != "disabled") {

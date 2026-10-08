@@ -264,7 +264,7 @@ func postSCIMUser(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if active {
-		if err := s.Store.SetUserStatus(r.Context(), user.ID, "active"); err != nil {
+		if err := s.Store.SetUserStatus(r.Context(), user.ID, "active", instanceSCIMActor(r.Context())); err != nil {
 			writeSCIMStoreError(s, w, err)
 			return
 		}
@@ -652,7 +652,7 @@ func mutateSCIMUser(s *core.Server, ctx context.Context, user identity.User, rec
 	}
 	if ch.Active != nil {
 		if *ch.Active {
-			if err := s.Store.SetUserStatus(ctx, user.ID, "active"); err != nil {
+			if err := s.Store.SetUserStatus(ctx, user.ID, "active", instanceSCIMActor(ctx)); err != nil {
 				return identity.User{}, scim.Record{}, err
 			}
 		} else if err := disableSCIMUser(s, ctx, user.ID, now); err != nil {
@@ -671,7 +671,7 @@ func disableSCIMUser(s *core.Server, ctx context.Context, userID string, now tim
 	// A re-check failure still leaves the account disabled: revoke its
 	// sessions and memberships anyway, then report the failure so the
 	// identity provider retries (the repeat finishes the re-check).
-	statusErr := s.Store.SetUserStatus(ctx, userID, "disabled")
+	statusErr := s.Store.SetUserStatus(ctx, userID, "disabled", instanceSCIMActor(ctx))
 	if statusErr != nil && !errors.Is(statusErr, identity.ErrDisableRecheckIncomplete) {
 		return statusErr
 	}

@@ -84,7 +84,10 @@ func (p *Postgres) GetUser(ctx context.Context, id string) (User, error) {
 // user who is already disabled, so a retry after a partial failure
 // finishes the job. Re-enabling restores nothing: closed gates stay
 // closed, and the person is a decider again only for gates parked later.
-func (p *Postgres) SetUserStatus(ctx context.Context, userID, status string) error {
+func (p *Postgres) SetUserStatus(ctx context.Context, userID, status string, actor MemberActor) error {
+	if !actor.Valid() {
+		return ErrInvalid
+	}
 	userID = strings.TrimSpace(userID)
 	status = strings.TrimSpace(status)
 	if userID == "" || (status != "active" && status != "disabled") {
@@ -103,7 +106,7 @@ func (p *Postgres) SetUserStatus(ctx context.Context, userID, status string) err
 		return ErrNotFound
 	}
 	if status == "disabled" {
-		if err := p.RecheckDisabledUser(ctx, userID); err != nil {
+		if err := p.RecheckDisabledUser(ctx, userID, actor); err != nil {
 			return errors.Join(ErrDisableRecheckIncomplete, err)
 		}
 	}
@@ -161,8 +164,8 @@ func SetDisableRecheckHookForTest(fn func(workspaceID string) error) (restore fu
 // with the earlier workspaces done; calling it again (any repeat disable)
 // redoes the rest. Boot resync (approval.ResyncOpenApprovals) closes any
 // gate a crash left behind.
-func (p *Postgres) RecheckDisabledUser(ctx context.Context, userID string) error {
-	if !authz.ValidUUID(userID) {
+func (p *Postgres) RecheckDisabledUser(ctx context.Context, userID string, actor MemberActor) error {
+	if !authz.ValidUUID(userID) || !actor.Valid() {
 		return ErrInvalid
 	}
 	rows, err := p.db.Query(ctx, `
@@ -192,14 +195,14 @@ func (p *Postgres) RecheckDisabledUser(ctx context.Context, userID string) error
 				return err
 			}
 		}
-		if err := p.recheckDisabledUserIn(ctx, ws, userID); err != nil {
+		if err := p.recheckDisabledUserIn(ctx, ws, userID, actor); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (p *Postgres) recheckDisabledUserIn(ctx context.Context, workspaceID, userID string) error {
+func (p *Postgres) recheckDisabledUserIn(ctx context.Context, workspaceID, userID string, actor MemberActor) error {
 	tx, err := postgres.BeginScoped(ctx, p.db, workspaceID)
 	if err != nil {
 		return mapDBErr(err)
@@ -237,7 +240,7 @@ func (p *Postgres) recheckDisabledUserIn(ctx context.Context, workspaceID, userI
 			return mapDBErr(err)
 		}
 		if len(left) == 0 {
-			if err := insertNoEnabledAdminAudit(ctx, tx, workspaceID, userID, display); err != nil {
+			if err := insertNoEnabledAdminAudit(ctx, tx, workspaceID, userID, display, actor); err != nil {
 				return err
 			}
 		}
@@ -245,24 +248,34 @@ func (p *Postgres) recheckDisabledUserIn(ctx context.Context, workspaceID, userI
 	return tx.Commit(ctx)
 }
 
-// insertNoEnabledAdminAudit writes the AuditNoEnabledAdmin row with no
-// actor (the change came from the identity provider or the instance
-// operator). Details hold the disabled user's UUID and display name only;
-// a display name shaped like an email, URL or credential is left out.
+// insertNoEnabledAdminAudit writes the AuditNoEnabledAdmin row. Details
+// hold the disabled user's UUID and display name and the actor of the
+// disable, recorded like a role-change row (addActorDetailsTx): via
+// scim_instance_token for an instance SCIM disable, the session user
+// (actor_id and actorDisplayName) for a machine principal revoke. A
+// display name shaped like an email, URL or credential is left out.
 // A retry of the same disable does not write a second row: a row for
 // this user written since their status last changed is enough.
-func insertNoEnabledAdminAudit(ctx context.Context, tx pgx.Tx, workspaceID, userID, display string) error {
-	details := map[string]string{"userId": userID}
+func insertNoEnabledAdminAudit(ctx context.Context, tx pgx.Tx, workspaceID, userID, display string, actor MemberActor) error {
+	details := map[string]any{"userId": userID}
 	if name := auditDisplayName(display); name != "" {
 		details["displayName"] = name
+	}
+	actorID, err := addActorDetailsTx(ctx, tx, actor, details)
+	if err != nil {
+		return err
 	}
 	raw, err := json.Marshal(details)
 	if err != nil {
 		return ErrInvalid
 	}
+	hostRaw, rid, err := actorHostContext(actor)
+	if err != nil {
+		return err
+	}
 	_, err = tx.Exec(ctx, `
-		INSERT INTO audit_events (workspace_id, actor_id, host_context_redacted, action, resource_type, resource_id, outcome, details_redacted)
-		SELECT $1::uuid, NULL, '{}'::jsonb, $2, 'workspace', $1::uuid, 'warning', $3::jsonb
+		INSERT INTO audit_events (workspace_id, actor_id, host_context_redacted, action, resource_type, resource_id, outcome, correlation_id, details_redacted)
+		SELECT $1::uuid, $5::uuid, $6::jsonb, $2, 'workspace', $1::uuid, 'warning', NULLIF($7, ''), $3::jsonb
 		 WHERE NOT EXISTS (
 		       SELECT 1 FROM audit_events a
 		        WHERE a.workspace_id = $1::uuid
@@ -270,7 +283,7 @@ func insertNoEnabledAdminAudit(ctx context.Context, tx pgx.Tx, workspaceID, user
 		          AND a.details_redacted->>'userId' = $4
 		          AND a.occurred_at >= (SELECT updated_at FROM users WHERE id = $4::uuid)
 		 )
-	`, workspaceID, AuditNoEnabledAdmin, raw, userID)
+	`, workspaceID, AuditNoEnabledAdmin, raw, userID, actorID, hostRaw, rid)
 	return mapDBErr(err)
 }
 

@@ -198,7 +198,7 @@ Groups are named sets of workspace members used only to target approvals. A grou
 | `POST /api/v1/workspace/groups/{groupId}/members` | Add `{userId}`. Idempotent. The user must be active and bound in this workspace. | `204` | `400` `401` `403` `404` `409` |
 | `DELETE /api/v1/workspace/groups/{groupId}/members/{userId}` | Remove a member. Idempotent. Re-checks waiting gates that target the group, like delete. | `204` | `400` `401` `403` `404` `409` |
 
-Decide re-reads the decider's account status in its own transaction: a decider disabled while the decide is in flight gets `403` and the approval stays pending.
+Decide re-reads the decider's account status in its own transaction: a decider disabled while the decide is in flight gets `403` and the approval stays pending. A decide without a decider is `403` before any write.
 
 Problem codes: `409 group_name_taken` (`errors[].path` `displayName`, including a lost race on the unique index); `400 group_member_not_in_workspace` (`errors[].path` `userId`) for an unknown, disabled, or unbound user; `400 invalid-request` with `errors[].path` `displayName` for an empty or too-long name, or `userId` (in the add body or the removal path) when it is not a UUID. Each change writes one `audit_events` row in the same transaction (`resource_type` `workspace_group`; actions `workspace_group.create`, `.rename`, `.delete`, `.member_add`, `.member_remove`; details are ids only). An idempotent add or remove, or a rename to the exact current name, changes nothing and writes no row.
 
