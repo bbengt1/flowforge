@@ -1728,6 +1728,7 @@ components:
             - approval_requirement_unavailable
             - group_name_taken
             - group_member_not_in_workspace
+            - group_managed_by_scim
             - approver_not_targeted
             - scim_token_limit
             - scim_not_configured
@@ -3893,9 +3894,10 @@ components:
       description: >
         A named set of workspace members used only to target approvals.
         A group never grants a permission. Membership never grants
-        approval.decide. Groups are not nested and carry no roles, email,
-        or SCIM data.
-      required: [id, displayName, memberCount, createdAt, updatedAt]
+        approval.decide. Groups are not nested and carry no roles or
+        email. managedBy says whether a workspace SCIM token manages the
+        group.
+      required: [id, displayName, memberCount, managedBy, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -3914,6 +3916,18 @@ components:
             Number of membership rows. Counts the same rows the detail
             members array lists, including a disabled user that still
             has rows.
+        managedBy:
+          type: string
+          nullable: true
+          enum: [scim, null]
+          description: >
+            "scim" for a group a workspace SCIM token created while the
+            instance ran SCIM_GROUPS_MODE=groups; null for a local group.
+            Always present. The marker is kept when the instance switches
+            back to SCIM_GROUPS_MODE=workspaces. While the instance is in
+            groups mode (ScimTokenList.groupsMode), a local rename, member
+            add or remove, or delete of a "scim" group is 409
+            group_managed_by_scim; in workspaces mode it is allowed.
         createdAt:
           type: string
           format: date-time
@@ -4042,7 +4056,7 @@ components:
             up to 60 seconds.
     ScimTokenList:
       type: object
-      required: [items, maxActive, configured]
+      required: [items, maxActive, configured, groupsMode]
       properties:
         items:
           type: array
@@ -4060,6 +4074,16 @@ components:
             false when SCIM is off on the instance (no SCIM_* variable
             set). Create is then 503 scim_not_configured. Existing tokens
             still list but cannot authenticate until SCIM is on again.
+        groupsMode:
+          type: string
+          enum: [workspaces, groups]
+          description: >
+            The instance's SCIM_GROUPS_MODE. workspaces (the default): a
+            SCIM Group is a workspace and Group member changes add or
+            remove workspace membership. groups: SCIM Groups are this
+            workspace's groups, managed only by its workspace tokens, and
+            groups with managedBy "scim" cannot be changed locally (409
+            group_managed_by_scim). Reported even when configured is false.
     ScimTokenCreated:
       allOf:
         - $ref: "#/components/schemas/ScimToken"
@@ -4716,6 +4740,50 @@ components:
               - path: displayName
                 code: group_name_taken
                 message: A group with this name already exists in the workspace.
+    GroupManagedBySCIM:
+      description: >
+        group_managed_by_scim: the group has managedBy "scim" and the
+        instance runs SCIM_GROUPS_MODE=groups, so a local rename, member
+        add or remove, or delete is refused. Nothing changes. Change the
+        group in the identity provider. After the instance switches back
+        to SCIM_GROUPS_MODE=workspaces the same request is allowed.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:group_managed_by_scim
+            title: Conflict
+            status: 409
+            detail: This group is managed by SCIM. Change it in the identity provider.
+            instance: /api/v1/workspace/groups/00000000-0000-4000-8000-000000000000
+            code: group_managed_by_scim
+            request_id: 0123456789abcdef0123456789abcdef
+    RenameGroupConflict:
+      description: >
+        group_name_taken: another group in this workspace already has this
+        display name, compared without regard to case (including a rename
+        that loses a race on the unique index); errors[].path is
+        displayName. group_managed_by_scim: the group has managedBy "scim"
+        and the instance runs SCIM_GROUPS_MODE=groups; nothing changes.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:group_managed_by_scim
+            title: Conflict
+            status: 409
+            detail: This group is managed by SCIM. Change it in the identity provider.
+            instance: /api/v1/workspace/groups/00000000-0000-4000-8000-000000000000
+            code: group_managed_by_scim
+            request_id: 0123456789abcdef0123456789abcdef
     AddGroupMemberInvalid:
       description: >
         group_member_not_in_workspace: the user is not an active member of

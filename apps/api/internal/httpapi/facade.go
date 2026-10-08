@@ -52,6 +52,7 @@ const (
 	CodeApprovalRequirementUnavailable = core.CodeApprovalRequirementUnavailable
 	CodeGroupNameTaken                 = core.CodeGroupNameTaken
 	CodeGroupMemberNotInWorkspace      = core.CodeGroupMemberNotInWorkspace
+	CodeGroupManagedBySCIM             = core.CodeGroupManagedBySCIM
 	CodeApproverNotTargeted            = core.CodeApproverNotTargeted
 	CodeScimTokenLimit                 = core.CodeScimTokenLimit
 	CodeScimNotConfigured              = core.CodeScimNotConfigured

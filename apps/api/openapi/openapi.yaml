@@ -1968,6 +1968,7 @@ paths:
       description: |
         Lists the workspace's groups ordered by display name without regard to case, then id. Paged like other collections (limit, cursor, q over displayName).
         memberCount counts every membership row, including a disabled user who still has rows.
+        managedBy is "scim" for a group a workspace SCIM token manages and null for a local group.
         Requires workspace.administer. An embed session is refused with 403 forbidden before permissions are read. Groups only target approvals. They never grant a permission, and membership never grants approval.decide. Another workspace's group is 404, the same as a missing group. A {groupId} path segment that is not a UUID is also 404, after the permission check. No response includes an email address.
         Auth class: authenticated. Identity proxy: browser.
         Responses never include secrets, credentials, tokens, private keys, or vault material.
@@ -2069,6 +2070,8 @@ paths:
       description: |
         Sets displayName. Same validation and 409 group_name_taken rules as create, including a rename that loses a race on the unique index. Renaming a group to its own name in another case is allowed.
         Writes audit action workspace_group.rename in the same transaction when the name changes. A rename to the exact current name (after trimming) changes nothing and writes no audit row.
+        Only displayName changes: the group id, which workflow approvers.groups reference, never changes.
+        While the instance runs SCIM_GROUPS_MODE=groups, this change on a group with managedBy "scim" is 409 group_managed_by_scim and nothing changes; in workspaces mode it is allowed.
         Requires workspace.administer. An embed session is refused with 403 forbidden before permissions are read. Groups only target approvals. They never grant a permission, and membership never grants approval.decide. Another workspace's group is 404, the same as a missing group. A {groupId} path segment that is not a UUID is also 404, after the permission check. No response includes an email address.
         Auth class: authenticated. Identity proxy: browser.
         Responses never include secrets, credentials, tokens, private keys, or vault material.
@@ -2096,7 +2099,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          $ref: "#/components/responses/GroupNameTaken"
+          $ref: "#/components/responses/RenameGroupConflict"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "500":
@@ -2110,6 +2113,8 @@ paths:
         Hard-deletes the group and its membership rows. There is no restore.
         Workflow YAML that still names the deleted group id resolves to nobody, so that approval target fails closed.
         Writes audit action workspace_group.delete in the same transaction.
+        Waiting targeted approval gates that name the group are re-checked in the same transaction: a gate left with no eligible decider is closed the same way as at park time (execution failed with requirement_unresolvable, cause no_eligible_decider); a gate that still has an eligible decider keeps waiting.
+        While the instance runs SCIM_GROUPS_MODE=groups, this change on a group with managedBy "scim" is 409 group_managed_by_scim and nothing changes; in workspaces mode it is allowed.
         Requires workspace.administer. An embed session is refused with 403 forbidden before permissions are read. Groups only target approvals. They never grant a permission, and membership never grants approval.decide. Another workspace's group is 404, the same as a missing group. A {groupId} path segment that is not a UUID is also 404, after the permission check. No response includes an email address.
         Auth class: authenticated. Identity proxy: browser.
         Responses never include secrets, credentials, tokens, private keys, or vault material.
@@ -2124,6 +2129,8 @@ paths:
           description: Caller lacks workspace.administer, or the caller is an embed session.
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/GroupManagedBySCIM"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "500":
@@ -2138,6 +2145,7 @@ paths:
         Adds userId to the group. Idempotent: adding an existing member is 204 and writes no second row.
         The user must be active and hold a role binding in this workspace; otherwise 400 group_member_not_in_workspace with errors[].path userId. A userId that is not a UUID is 400 invalid-request with errors[].path userId.
         Writes audit action workspace_group.member_add when a row is added.
+        While the instance runs SCIM_GROUPS_MODE=groups, this change on a group with managedBy "scim" is 409 group_managed_by_scim and nothing changes; in workspaces mode it is allowed.
         Requires workspace.administer. An embed session is refused with 403 forbidden before permissions are read. Groups only target approvals. They never grant a permission, and membership never grants approval.decide. Another workspace's group is 404, the same as a missing group. A {groupId} path segment that is not a UUID is also 404, after the permission check. No response includes an email address.
         Auth class: authenticated. Identity proxy: browser.
         Responses never include secrets, credentials, tokens, private keys, or vault material.
@@ -2160,6 +2168,8 @@ paths:
           $ref: "#/components/responses/AddGroupMemberInvalid"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/GroupManagedBySCIM"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "500":
@@ -2173,6 +2183,8 @@ paths:
       description: |
         Removes userId from the group. Idempotent: removing a user who is not a member is 204. A userId path segment that is not a UUID is 400 invalid-request with errors[].path userId, the same status and code as DELETE /api/v1/workspace/members/{userID}.
         Writes audit action workspace_group.member_remove when a row is removed.
+        Waiting targeted approval gates that name the group are re-checked in the same transaction: a gate left with no eligible decider is closed the same way as at park time (execution failed with requirement_unresolvable, cause no_eligible_decider); a gate that still has an eligible decider keeps waiting.
+        While the instance runs SCIM_GROUPS_MODE=groups, this change on a group with managedBy "scim" is 409 group_managed_by_scim and nothing changes; in workspaces mode it is allowed.
         Requires workspace.administer. An embed session is refused with 403 forbidden before permissions are read. Groups only target approvals. They never grant a permission, and membership never grants approval.decide. Another workspace's group is 404, the same as a missing group. A {groupId} path segment that is not a UUID is also 404, after the permission check. No response includes an email address.
         Auth class: authenticated. Identity proxy: browser.
         Responses never include secrets, credentials, tokens, private keys, or vault material.
@@ -2190,6 +2202,8 @@ paths:
           $ref: "#/components/responses/InvalidRequest"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/GroupManagedBySCIM"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "500":
@@ -2534,6 +2548,7 @@ paths:
         A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when SCIM is off on the instance. When no instance token is configured, any other bearer is 401.
         Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token. A workspace token never changes users.status, never revokes a session, and never renames a user.
         Workspace-token writes are audited in the token's workspace with no actor and details.tokenId set to the token UUID: scim_user.workspace_add, scim_user.workspace_deactivate, scim_user.workspace_reactivate, scim_user.workspace_remove, scim_user.change_ignored.
+        SCIM_GROUPS_MODE selects what a SCIM Group is, instance-wide. workspaces (the default) is the behaviour described as "workspaces mode" below and is unchanged. In groups mode a Group is a Flowforge group inside the workspace token's workspace; the /Users rules are the same in both modes.
         Same document for both token kinds.
         Auth class: authenticated. Identity proxy: none.
       responses:
@@ -2558,6 +2573,7 @@ paths:
         A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when SCIM is off on the instance. When no instance token is configured, any other bearer is 401.
         Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token. A workspace token never changes users.status, never revokes a session, and never renames a user.
         Workspace-token writes are audited in the token's workspace with no actor and details.tokenId set to the token UUID: scim_user.workspace_add, scim_user.workspace_deactivate, scim_user.workspace_reactivate, scim_user.workspace_remove, scim_user.change_ignored.
+        SCIM_GROUPS_MODE selects what a SCIM Group is, instance-wide. workspaces (the default) is the behaviour described as "workspaces mode" below and is unchanged. In groups mode a Group is a Flowforge group inside the workspace token's workspace; the /Users rules are the same in both modes.
         Same document for both token kinds.
         Auth class: authenticated. Identity proxy: none.
       responses:
@@ -2582,6 +2598,7 @@ paths:
         A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when SCIM is off on the instance. When no instance token is configured, any other bearer is 401.
         Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token. A workspace token never changes users.status, never revokes a session, and never renames a user.
         Workspace-token writes are audited in the token's workspace with no actor and details.tokenId set to the token UUID: scim_user.workspace_add, scim_user.workspace_deactivate, scim_user.workspace_reactivate, scim_user.workspace_remove, scim_user.change_ignored.
+        SCIM_GROUPS_MODE selects what a SCIM Group is, instance-wide. workspaces (the default) is the behaviour described as "workspaces mode" below and is unchanged. In groups mode a Group is a Flowforge group inside the workspace token's workspace; the /Users rules are the same in both modes.
         Same document for both token kinds.
         Auth class: authenticated. Identity proxy: none.
       responses:
@@ -2606,6 +2623,7 @@ paths:
         A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when SCIM is off on the instance. When no instance token is configured, any other bearer is 401.
         Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token. A workspace token never changes users.status, never revokes a session, and never renames a user.
         Workspace-token writes are audited in the token's workspace with no actor and details.tokenId set to the token UUID: scim_user.workspace_add, scim_user.workspace_deactivate, scim_user.workspace_reactivate, scim_user.workspace_remove, scim_user.change_ignored.
+        SCIM_GROUPS_MODE selects what a SCIM Group is, instance-wide. workspaces (the default) is the behaviour described as "workspaces mode" below and is unchanged. In groups mode a Group is a Flowforge group inside the workspace token's workspace; the /Users rules are the same in both modes.
         Instance token: every active directory user, as before.
         Workspace token: only users linked to this workspace (scim_workspace_users), with this workspace's userName and externalId. filter supports userName, externalId, and id, all against this workspace's links.
         active is true only when the account is globally active, this workspace's link is not deactivated, and the user holds at least one role here. A link whose member was removed by an administrator, or by an instance-token disable, reads active false.
@@ -2628,6 +2646,7 @@ paths:
         A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when SCIM is off on the instance. When no instance token is configured, any other bearer is 401.
         Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token. A workspace token never changes users.status, never revokes a session, and never renames a user.
         Workspace-token writes are audited in the token's workspace with no actor and details.tokenId set to the token UUID: scim_user.workspace_add, scim_user.workspace_deactivate, scim_user.workspace_reactivate, scim_user.workspace_remove, scim_user.change_ignored.
+        SCIM_GROUPS_MODE selects what a SCIM Group is, instance-wide. workspaces (the default) is the behaviour described as "workspaces mode" below and is unchanged. In groups mode a Group is a Flowforge group inside the workspace token's workspace; the /Users rules are the same in both modes.
         Instance token: unchanged.
         Workspace token: find or create the user by SCIM issuer plus subject (externalId, else userName) and link it to this workspace with the posted userName and externalId. An existing account keeps its display name and status.
         Membership: SCIM_DEFAULT_ROLE is added here only when the user holds no role here. Existing roles here are never changed, so an existing member with a custom role keeps it and gets no default. From then on this workspace's IdP owns the user's membership here; the last-admin guard still applies.
@@ -2658,6 +2677,7 @@ paths:
         A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when SCIM is off on the instance. When no instance token is configured, any other bearer is 401.
         Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token. A workspace token never changes users.status, never revokes a session, and never renames a user.
         Workspace-token writes are audited in the token's workspace with no actor and details.tokenId set to the token UUID: scim_user.workspace_add, scim_user.workspace_deactivate, scim_user.workspace_reactivate, scim_user.workspace_remove, scim_user.change_ignored.
+        SCIM_GROUPS_MODE selects what a SCIM Group is, instance-wide. workspaces (the default) is the behaviour described as "workspaces mode" below and is unchanged. In groups mode a Group is a Flowforge group inside the workspace token's workspace; the /Users rules are the same in both modes.
         Workspace token: 404 unless the user is linked to this workspace, including any user in another workspace and any member this workspace's IdP never linked, until the IdP POSTs their subject, which links them and is audited.
         Auth class: authenticated. Identity proxy: none.
       responses:
@@ -2680,6 +2700,7 @@ paths:
         A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when SCIM is off on the instance. When no instance token is configured, any other bearer is 401.
         Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token. A workspace token never changes users.status, never revokes a session, and never renames a user.
         Workspace-token writes are audited in the token's workspace with no actor and details.tokenId set to the token UUID: scim_user.workspace_add, scim_user.workspace_deactivate, scim_user.workspace_reactivate, scim_user.workspace_remove, scim_user.change_ignored.
+        SCIM_GROUPS_MODE selects what a SCIM Group is, instance-wide. workspaces (the default) is the behaviour described as "workspaces mode" below and is unchanged. In groups mode a Group is a Flowforge group inside the workspace token's workspace; the /Users rules are the same in both modes.
         Instance token: unchanged, including global disable and session revoke on active false.
         Workspace token: 404 unless linked here. active false deactivates the link: in one transaction it removes the user's role bindings and group rows in this workspace and sets the link's deactivated_at. The link stays, so the resource stays visible with active false. Removing the last workspace admin is 409 and changes nothing.
         active true always reconciles membership here: it adds SCIM_DEFAULT_ROLE when the user holds no role here (a user with any role is left as is) and clears deactivated_at when set. This also restores a member an administrator or an instance-token disable removed while the link stayed live. Group rows are not restored. If the account is globally disabled it stays disabled and the response is active false. A PUT without active is treated as active true.
@@ -2707,6 +2728,7 @@ paths:
         A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when SCIM is off on the instance. When no instance token is configured, any other bearer is 401.
         Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token. A workspace token never changes users.status, never revokes a session, and never renames a user.
         Workspace-token writes are audited in the token's workspace with no actor and details.tokenId set to the token UUID: scim_user.workspace_add, scim_user.workspace_deactivate, scim_user.workspace_reactivate, scim_user.workspace_remove, scim_user.change_ignored.
+        SCIM_GROUPS_MODE selects what a SCIM Group is, instance-wide. workspaces (the default) is the behaviour described as "workspaces mode" below and is unchanged. In groups mode a Group is a Flowforge group inside the workspace token's workspace; the /Users rules are the same in both modes.
         Same rules as PUT for each token kind. A PATCH that does not touch active leaves the link as it is.
         Auth class: authenticated. Identity proxy: none.
       responses:
@@ -2731,6 +2753,7 @@ paths:
         A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when SCIM is off on the instance. When no instance token is configured, any other bearer is 401.
         Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token. A workspace token never changes users.status, never revokes a session, and never renames a user.
         Workspace-token writes are audited in the token's workspace with no actor and details.tokenId set to the token UUID: scim_user.workspace_add, scim_user.workspace_deactivate, scim_user.workspace_reactivate, scim_user.workspace_remove, scim_user.change_ignored.
+        SCIM_GROUPS_MODE selects what a SCIM Group is, instance-wide. workspaces (the default) is the behaviour described as "workspaces mode" below and is unchanged. In groups mode a Group is a Flowforge group inside the workspace token's workspace; the /Users rules are the same in both modes.
         Instance token: unchanged (global disable, session revoke, removal from every workspace).
         Workspace token: 404 unless linked here. In one transaction, deletes the user's role bindings and group rows in this workspace and the link. Never disables the account, revokes sessions, or touches another workspace. A later POST links the user again.
         Removing the last workspace admin is 409 and changes nothing.
@@ -2761,8 +2784,15 @@ paths:
         A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when SCIM is off on the instance. When no instance token is configured, any other bearer is 401.
         Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token. A workspace token never changes users.status, never revokes a session, and never renames a user.
         Workspace-token writes are audited in the token's workspace with no actor and details.tokenId set to the token UUID: scim_user.workspace_add, scim_user.workspace_deactivate, scim_user.workspace_reactivate, scim_user.workspace_remove, scim_user.change_ignored.
-        Instance token: every active workspace is a Group, as before. filter supports displayName, externalId, and id. A Group's externalId is the workspace's workbench key, compared exactly (case-sensitive); it is not the IdP's own group id.
+        SCIM_GROUPS_MODE selects what a SCIM Group is, instance-wide. workspaces (the default) is the behaviour described as "workspaces mode" below and is unchanged. In groups mode a Group is a Flowforge group inside the workspace token's workspace; the /Users rules are the same in both modes.
+        Workspaces mode. Instance token: every active workspace is a Group, as before. filter supports displayName, externalId, and id. A Group's externalId is the workspace's workbench key, compared exactly (case-sensitive); it is not the IdP's own group id.
         Workspace token: exactly one Group, this workspace. Its members are the users linked here whose link is not deactivated and who hold a role binding here. Filters apply to that one Group; externalId matches the workbench key exactly (case-sensitive), displayName matches case-insensitively.
+        Groups mode (SCIM_GROUPS_MODE=groups): the instance token is 403 on every /Groups call, with a detail telling the client to use the workspace's SCIM token. Its /Users handling is unchanged.
+        Groups mode, workspace token: Groups are this workspace's groups that a workspace SCIM token created (managedBy scim on the local API). Local groups and other workspaces' groups are 404. members lists users linked to this workspace only.
+        Groups mode: member add and remove write group rows only. They never add or remove roles or workspace membership; that comes only from /Users. Adding a user who is not linked here, whose link is deactivated, or who is not an active workspace member is 400 invalidValue and the whole request changes nothing. Removing an id that is not linked here is ignored.
+        Groups mode: POST creates a group (displayName required, externalId optional, members optional). A displayName that another group here holds (without regard to case), local or managed, or an externalId another group here holds, is 409 uniqueness; neither group is renamed. PUT and PATCH (replace displayName, add, remove, or replace members) rename the group to the IdP's name; the group id and externalId never change, so workflows that target the group keep targeting it. DELETE hard-deletes the group and its member rows.
+        Groups mode: a delete or member removal goes through the same code as a local one. Waiting approval gates that target the group are re-checked in the same transaction: a gate left with no eligible decider is closed (execution failed with requirement_unresolvable, cause no_eligible_decider); a gate that still has one keeps waiting.
+        Groups mode: every change writes the local workspace_group.* audit action with no actor, details.tokenId set to the token UUID, and details.via scim_token. Switching back to workspaces mode keeps the groups and their markers (editable locally again); switching to groups mode again re-attaches them by id and externalId.
         Auth class: authenticated. Identity proxy: none.
       responses:
         "200":
@@ -2771,6 +2801,8 @@ paths:
           description: SCIM error (invalid request, invalidValue, or unsupported filter).
         "401":
           description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.
+        "403":
+          description: SCIM error. Groups mode and the instance token was presented; use the workspace's SCIM token.
         "503":
           description: SCIM error. SCIM is not configured or the directory is unavailable.
     post:
@@ -2782,15 +2814,24 @@ paths:
         A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when SCIM is off on the instance. When no instance token is configured, any other bearer is 401.
         Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token. A workspace token never changes users.status, never revokes a session, and never renames a user.
         Workspace-token writes are audited in the token's workspace with no actor and details.tokenId set to the token UUID: scim_user.workspace_add, scim_user.workspace_deactivate, scim_user.workspace_reactivate, scim_user.workspace_remove, scim_user.change_ignored.
-        400 for both token kinds: Groups are existing workspaces.
+        SCIM_GROUPS_MODE selects what a SCIM Group is, instance-wide. workspaces (the default) is the behaviour described as "workspaces mode" below and is unchanged. In groups mode a Group is a Flowforge group inside the workspace token's workspace; the /Users rules are the same in both modes.
+        Workspaces mode: 400 for both token kinds: Groups are existing workspaces.
+        Groups mode (SCIM_GROUPS_MODE=groups): the instance token is 403 on every /Groups call, with a detail telling the client to use the workspace's SCIM token. Its /Users handling is unchanged.
+        Groups mode, workspace token: Groups are this workspace's groups that a workspace SCIM token created (managedBy scim on the local API). Local groups and other workspaces' groups are 404. members lists users linked to this workspace only.
+        Groups mode: member add and remove write group rows only. They never add or remove roles or workspace membership; that comes only from /Users. Adding a user who is not linked here, whose link is deactivated, or who is not an active workspace member is 400 invalidValue and the whole request changes nothing. Removing an id that is not linked here is ignored.
+        Groups mode: POST creates a group (displayName required, externalId optional, members optional). A displayName that another group here holds (without regard to case), local or managed, or an externalId another group here holds, is 409 uniqueness; neither group is renamed. PUT and PATCH (replace displayName, add, remove, or replace members) rename the group to the IdP's name; the group id and externalId never change, so workflows that target the group keep targeting it. DELETE hard-deletes the group and its member rows.
+        Groups mode: a delete or member removal goes through the same code as a local one. Waiting approval gates that target the group are re-checked in the same transaction: a gate left with no eligible decider is closed (execution failed with requirement_unresolvable, cause no_eligible_decider); a gate that still has one keeps waiting.
+        Groups mode: every change writes the local workspace_group.* audit action with no actor, details.tokenId set to the token UUID, and details.via scim_token. Switching back to workspaces mode keeps the groups and their markers (editable locally again); switching to groups mode again re-attaches them by id and externalId.
         Auth class: authenticated. Identity proxy: none.
       responses:
-        "200":
-          description: Success.
+        "201":
+          description: Created (groups mode).
         "400":
           description: SCIM error (invalid request, invalidValue, or unsupported filter).
         "401":
           description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.
+        "403":
+          description: SCIM error. Groups mode and the instance token was presented; use the workspace's SCIM token.
         "409":
           description: SCIM error. Uniqueness conflict, or the change would remove the last workspace admin.
         "503":
@@ -2808,7 +2849,14 @@ paths:
         A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when SCIM is off on the instance. When no instance token is configured, any other bearer is 401.
         Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token. A workspace token never changes users.status, never revokes a session, and never renames a user.
         Workspace-token writes are audited in the token's workspace with no actor and details.tokenId set to the token UUID: scim_user.workspace_add, scim_user.workspace_deactivate, scim_user.workspace_reactivate, scim_user.workspace_remove, scim_user.change_ignored.
-        Workspace token: 404 for any id other than this workspace.
+        SCIM_GROUPS_MODE selects what a SCIM Group is, instance-wide. workspaces (the default) is the behaviour described as "workspaces mode" below and is unchanged. In groups mode a Group is a Flowforge group inside the workspace token's workspace; the /Users rules are the same in both modes.
+        Workspaces mode. Workspace token: 404 for any id other than this workspace.
+        Groups mode (SCIM_GROUPS_MODE=groups): the instance token is 403 on every /Groups call, with a detail telling the client to use the workspace's SCIM token. Its /Users handling is unchanged.
+        Groups mode, workspace token: Groups are this workspace's groups that a workspace SCIM token created (managedBy scim on the local API). Local groups and other workspaces' groups are 404. members lists users linked to this workspace only.
+        Groups mode: member add and remove write group rows only. They never add or remove roles or workspace membership; that comes only from /Users. Adding a user who is not linked here, whose link is deactivated, or who is not an active workspace member is 400 invalidValue and the whole request changes nothing. Removing an id that is not linked here is ignored.
+        Groups mode: POST creates a group (displayName required, externalId optional, members optional). A displayName that another group here holds (without regard to case), local or managed, or an externalId another group here holds, is 409 uniqueness; neither group is renamed. PUT and PATCH (replace displayName, add, remove, or replace members) rename the group to the IdP's name; the group id and externalId never change, so workflows that target the group keep targeting it. DELETE hard-deletes the group and its member rows.
+        Groups mode: a delete or member removal goes through the same code as a local one. Waiting approval gates that target the group are re-checked in the same transaction: a gate left with no eligible decider is closed (execution failed with requirement_unresolvable, cause no_eligible_decider); a gate that still has one keeps waiting.
+        Groups mode: every change writes the local workspace_group.* audit action with no actor, details.tokenId set to the token UUID, and details.via scim_token. Switching back to workspaces mode keeps the groups and their markers (editable locally again); switching to groups mode again re-attaches them by id and externalId.
         Auth class: authenticated. Identity proxy: none.
       responses:
         "200":
@@ -2817,6 +2865,8 @@ paths:
           description: SCIM error (invalid request, invalidValue, or unsupported filter).
         "401":
           description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.
+        "403":
+          description: SCIM error. Groups mode and the instance token was presented; use the workspace's SCIM token.
         "404":
           description: SCIM error. Not found, or not visible to this workspace token.
         "503":
@@ -2830,7 +2880,14 @@ paths:
         A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when SCIM is off on the instance. When no instance token is configured, any other bearer is 401.
         Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token. A workspace token never changes users.status, never revokes a session, and never renames a user.
         Workspace-token writes are audited in the token's workspace with no actor and details.tokenId set to the token UUID: scim_user.workspace_add, scim_user.workspace_deactivate, scim_user.workspace_reactivate, scim_user.workspace_remove, scim_user.change_ignored.
-        400 for both token kinds. Patch members to change membership.
+        SCIM_GROUPS_MODE selects what a SCIM Group is, instance-wide. workspaces (the default) is the behaviour described as "workspaces mode" below and is unchanged. In groups mode a Group is a Flowforge group inside the workspace token's workspace; the /Users rules are the same in both modes.
+        Workspaces mode: 400 for both token kinds. Patch members to change membership.
+        Groups mode (SCIM_GROUPS_MODE=groups): the instance token is 403 on every /Groups call, with a detail telling the client to use the workspace's SCIM token. Its /Users handling is unchanged.
+        Groups mode, workspace token: Groups are this workspace's groups that a workspace SCIM token created (managedBy scim on the local API). Local groups and other workspaces' groups are 404. members lists users linked to this workspace only.
+        Groups mode: member add and remove write group rows only. They never add or remove roles or workspace membership; that comes only from /Users. Adding a user who is not linked here, whose link is deactivated, or who is not an active workspace member is 400 invalidValue and the whole request changes nothing. Removing an id that is not linked here is ignored.
+        Groups mode: POST creates a group (displayName required, externalId optional, members optional). A displayName that another group here holds (without regard to case), local or managed, or an externalId another group here holds, is 409 uniqueness; neither group is renamed. PUT and PATCH (replace displayName, add, remove, or replace members) rename the group to the IdP's name; the group id and externalId never change, so workflows that target the group keep targeting it. DELETE hard-deletes the group and its member rows.
+        Groups mode: a delete or member removal goes through the same code as a local one. Waiting approval gates that target the group are re-checked in the same transaction: a gate left with no eligible decider is closed (execution failed with requirement_unresolvable, cause no_eligible_decider); a gate that still has one keeps waiting.
+        Groups mode: every change writes the local workspace_group.* audit action with no actor, details.tokenId set to the token UUID, and details.via scim_token. Switching back to workspaces mode keeps the groups and their markers (editable locally again); switching to groups mode again re-attaches them by id and externalId.
         Auth class: authenticated. Identity proxy: none.
       responses:
         "200":
@@ -2839,6 +2896,8 @@ paths:
           description: SCIM error (invalid request, invalidValue, or unsupported filter).
         "401":
           description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.
+        "403":
+          description: SCIM error. Groups mode and the instance token was presented; use the workspace's SCIM token.
         "404":
           description: SCIM error. Not found, or not visible to this workspace token.
         "409":
@@ -2854,10 +2913,17 @@ paths:
         A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when SCIM is off on the instance. When no instance token is configured, any other bearer is 401.
         Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token. A workspace token never changes users.status, never revokes a session, and never renames a user.
         Workspace-token writes are audited in the token's workspace with no actor and details.tokenId set to the token UUID: scim_user.workspace_add, scim_user.workspace_deactivate, scim_user.workspace_reactivate, scim_user.workspace_remove, scim_user.change_ignored.
-        Instance token: unchanged.
+        SCIM_GROUPS_MODE selects what a SCIM Group is, instance-wide. workspaces (the default) is the behaviour described as "workspaces mode" below and is unchanged. In groups mode a Group is a Flowforge group inside the workspace token's workspace; the /Users rules are the same in both modes.
+        Workspaces mode. Instance token: unchanged.
         Workspace token: 404 for any id other than this workspace. The whole patch is one transaction.
         add takes users linked to this workspace only; any other id is 400 and the whole patch changes nothing. add reactivates a deactivated link and adds SCIM_DEFAULT_ROLE only when the user holds no role here.
         remove deactivates the link, the same as user active false, including the last-admin 409 that rolls back the whole patch. A remove for an id that is not linked here (or not a UUID) is ignored, so a member this IdP never linked cannot be removed.
+        Groups mode (SCIM_GROUPS_MODE=groups): the instance token is 403 on every /Groups call, with a detail telling the client to use the workspace's SCIM token. Its /Users handling is unchanged.
+        Groups mode, workspace token: Groups are this workspace's groups that a workspace SCIM token created (managedBy scim on the local API). Local groups and other workspaces' groups are 404. members lists users linked to this workspace only.
+        Groups mode: member add and remove write group rows only. They never add or remove roles or workspace membership; that comes only from /Users. Adding a user who is not linked here, whose link is deactivated, or who is not an active workspace member is 400 invalidValue and the whole request changes nothing. Removing an id that is not linked here is ignored.
+        Groups mode: POST creates a group (displayName required, externalId optional, members optional). A displayName that another group here holds (without regard to case), local or managed, or an externalId another group here holds, is 409 uniqueness; neither group is renamed. PUT and PATCH (replace displayName, add, remove, or replace members) rename the group to the IdP's name; the group id and externalId never change, so workflows that target the group keep targeting it. DELETE hard-deletes the group and its member rows.
+        Groups mode: a delete or member removal goes through the same code as a local one. Waiting approval gates that target the group are re-checked in the same transaction: a gate left with no eligible decider is closed (execution failed with requirement_unresolvable, cause no_eligible_decider); a gate that still has one keeps waiting.
+        Groups mode: every change writes the local workspace_group.* audit action with no actor, details.tokenId set to the token UUID, and details.via scim_token. Switching back to workspaces mode keeps the groups and their markers (editable locally again); switching to groups mode again re-attaches them by id and externalId.
         Auth class: authenticated. Identity proxy: none.
       responses:
         "200":
@@ -2866,6 +2932,8 @@ paths:
           description: SCIM error (invalid request, invalidValue, or unsupported filter).
         "401":
           description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.
+        "403":
+          description: SCIM error. Groups mode and the instance token was presented; use the workspace's SCIM token.
         "404":
           description: SCIM error. Not found, or not visible to this workspace token.
         "409":
@@ -2881,15 +2949,24 @@ paths:
         A bearer with the ffscim_ prefix is only ever looked up as a workspace token by the SHA-256 of the whole string; it is never compared to the instance token. 401 when it is malformed, unknown, or revoked, or when its workspace or tenant is not active. 503 when SCIM is off on the instance. When no instance token is configured, any other bearer is 401.
         Users created through a workspace token use the instance SCIM issuer and SCIM_DEFAULT_ROLE, the same as the instance token. A workspace token never changes users.status, never revokes a session, and never renames a user.
         Workspace-token writes are audited in the token's workspace with no actor and details.tokenId set to the token UUID: scim_user.workspace_add, scim_user.workspace_deactivate, scim_user.workspace_reactivate, scim_user.workspace_remove, scim_user.change_ignored.
-        400 for both token kinds: workspaces cannot be deleted here.
+        SCIM_GROUPS_MODE selects what a SCIM Group is, instance-wide. workspaces (the default) is the behaviour described as "workspaces mode" below and is unchanged. In groups mode a Group is a Flowforge group inside the workspace token's workspace; the /Users rules are the same in both modes.
+        Workspaces mode: 400 for both token kinds: workspaces cannot be deleted here.
+        Groups mode (SCIM_GROUPS_MODE=groups): the instance token is 403 on every /Groups call, with a detail telling the client to use the workspace's SCIM token. Its /Users handling is unchanged.
+        Groups mode, workspace token: Groups are this workspace's groups that a workspace SCIM token created (managedBy scim on the local API). Local groups and other workspaces' groups are 404. members lists users linked to this workspace only.
+        Groups mode: member add and remove write group rows only. They never add or remove roles or workspace membership; that comes only from /Users. Adding a user who is not linked here, whose link is deactivated, or who is not an active workspace member is 400 invalidValue and the whole request changes nothing. Removing an id that is not linked here is ignored.
+        Groups mode: POST creates a group (displayName required, externalId optional, members optional). A displayName that another group here holds (without regard to case), local or managed, or an externalId another group here holds, is 409 uniqueness; neither group is renamed. PUT and PATCH (replace displayName, add, remove, or replace members) rename the group to the IdP's name; the group id and externalId never change, so workflows that target the group keep targeting it. DELETE hard-deletes the group and its member rows.
+        Groups mode: a delete or member removal goes through the same code as a local one. Waiting approval gates that target the group are re-checked in the same transaction: a gate left with no eligible decider is closed (execution failed with requirement_unresolvable, cause no_eligible_decider); a gate that still has one keeps waiting.
+        Groups mode: every change writes the local workspace_group.* audit action with no actor, details.tokenId set to the token UUID, and details.via scim_token. Switching back to workspaces mode keeps the groups and their markers (editable locally again); switching to groups mode again re-attaches them by id and externalId.
         Auth class: authenticated. Identity proxy: none.
       responses:
-        "200":
-          description: Success.
+        "204":
+          description: Deleted (groups mode). No body.
         "400":
           description: SCIM error (invalid request, invalidValue, or unsupported filter).
         "401":
           description: SCIM error. Missing, malformed, unknown, or revoked bearer, or the workspace token's workspace or tenant is not active. WWW-Authenticate Bearer.
+        "403":
+          description: SCIM error. Groups mode and the instance token was presented; use the workspace's SCIM token.
         "404":
           description: SCIM error. Not found, or not visible to this workspace token.
         "409":
@@ -7493,6 +7570,7 @@ components:
             - approval_requirement_unavailable
             - group_name_taken
             - group_member_not_in_workspace
+            - group_managed_by_scim
             - approver_not_targeted
             - scim_token_limit
             - scim_not_configured
@@ -9658,9 +9736,10 @@ components:
       description: >
         A named set of workspace members used only to target approvals.
         A group never grants a permission. Membership never grants
-        approval.decide. Groups are not nested and carry no roles, email,
-        or SCIM data.
-      required: [id, displayName, memberCount, createdAt, updatedAt]
+        approval.decide. Groups are not nested and carry no roles or
+        email. managedBy says whether a workspace SCIM token manages the
+        group.
+      required: [id, displayName, memberCount, managedBy, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -9679,6 +9758,18 @@ components:
             Number of membership rows. Counts the same rows the detail
             members array lists, including a disabled user that still
             has rows.
+        managedBy:
+          type: string
+          nullable: true
+          enum: [scim, null]
+          description: >
+            "scim" for a group a workspace SCIM token created while the
+            instance ran SCIM_GROUPS_MODE=groups; null for a local group.
+            Always present. The marker is kept when the instance switches
+            back to SCIM_GROUPS_MODE=workspaces. While the instance is in
+            groups mode (ScimTokenList.groupsMode), a local rename, member
+            add or remove, or delete of a "scim" group is 409
+            group_managed_by_scim; in workspaces mode it is allowed.
         createdAt:
           type: string
           format: date-time
@@ -9807,7 +9898,7 @@ components:
             up to 60 seconds.
     ScimTokenList:
       type: object
-      required: [items, maxActive, configured]
+      required: [items, maxActive, configured, groupsMode]
       properties:
         items:
           type: array
@@ -9825,6 +9916,16 @@ components:
             false when SCIM is off on the instance (no SCIM_* variable
             set). Create is then 503 scim_not_configured. Existing tokens
             still list but cannot authenticate until SCIM is on again.
+        groupsMode:
+          type: string
+          enum: [workspaces, groups]
+          description: >
+            The instance's SCIM_GROUPS_MODE. workspaces (the default): a
+            SCIM Group is a workspace and Group member changes add or
+            remove workspace membership. groups: SCIM Groups are this
+            workspace's groups, managed only by its workspace tokens, and
+            groups with managedBy "scim" cannot be changed locally (409
+            group_managed_by_scim). Reported even when configured is false.
     ScimTokenCreated:
       allOf:
         - $ref: "#/components/schemas/ScimToken"
@@ -10481,6 +10582,50 @@ components:
               - path: displayName
                 code: group_name_taken
                 message: A group with this name already exists in the workspace.
+    GroupManagedBySCIM:
+      description: >
+        group_managed_by_scim: the group has managedBy "scim" and the
+        instance runs SCIM_GROUPS_MODE=groups, so a local rename, member
+        add or remove, or delete is refused. Nothing changes. Change the
+        group in the identity provider. After the instance switches back
+        to SCIM_GROUPS_MODE=workspaces the same request is allowed.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:group_managed_by_scim
+            title: Conflict
+            status: 409
+            detail: This group is managed by SCIM. Change it in the identity provider.
+            instance: /api/v1/workspace/groups/00000000-0000-4000-8000-000000000000
+            code: group_managed_by_scim
+            request_id: 0123456789abcdef0123456789abcdef
+    RenameGroupConflict:
+      description: >
+        group_name_taken: another group in this workspace already has this
+        display name, compared without regard to case (including a rename
+        that loses a race on the unique index); errors[].path is
+        displayName. group_managed_by_scim: the group has managedBy "scim"
+        and the instance runs SCIM_GROUPS_MODE=groups; nothing changes.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestID"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: urn:flowforge:problem:group_managed_by_scim
+            title: Conflict
+            status: 409
+            detail: This group is managed by SCIM. Change it in the identity provider.
+            instance: /api/v1/workspace/groups/00000000-0000-4000-8000-000000000000
+            code: group_managed_by_scim
+            request_id: 0123456789abcdef0123456789abcdef
     AddGroupMemberInvalid:
       description: >
         group_member_not_in_workspace: the user is not an active member of

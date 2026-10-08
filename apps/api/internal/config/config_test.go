@@ -988,3 +988,30 @@ func TestLoadLocalWorkerBinding(t *testing.T) {
 		t.Fatalf("no trusted headers must skip binding: %v %v", cfg.BindLocalWorker, err)
 	}
 }
+
+func TestLoadSCIMGroupsModeFailsBoot(t *testing.T) {
+	t.Setenv("EMBED_SIGNING_KEY", "")
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	t.Setenv("EMBED_AUDIENCE", "")
+	t.Setenv("REQUIRE_TLS", "")
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("SCIM_BEARER_TOKEN", "")
+	t.Setenv("SCIM_ISSUER", "")
+	t.Setenv("SCIM_DEFAULT_ROLE", "")
+	t.Setenv("SCIM_GROUPS_MODE", "")
+	cfg, err := loadTestConfig(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SCIM.Mode() != "workspaces" {
+		t.Fatalf("default mode = %q", cfg.SCIM.Mode())
+	}
+	t.Setenv("SCIM_GROUPS_MODE", "groups")
+	if cfg, err = loadTestConfig(t); err != nil || !cfg.SCIM.Groups() {
+		t.Fatalf("groups mode: %v", err)
+	}
+	t.Setenv("SCIM_GROUPS_MODE", "teams")
+	if _, err := loadTestConfig(t); err == nil || !strings.Contains(err.Error(), "SCIM_GROUPS_MODE") {
+		t.Fatalf("invalid SCIM_GROUPS_MODE must fail boot: %v", err)
+	}
+}
