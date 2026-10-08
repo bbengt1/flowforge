@@ -47,11 +47,10 @@ func main() {
 		os.Exit(0)
 	}
 
-	issuer, subject := workerIdentity()
-	if issuer == "" || subject == "" {
-		log.Error("local worker identity is required (WORKER_ISSUER/WORKER_SUBJECT or PLATFORM_ADMINS)")
-		os.Exit(1)
-	}
+	// The worker has its own principal, never a human admin's. The API
+	// binds it as operator in the local workbench at startup.
+	principal := localworker.Identity(os.Getenv(localworker.EnvWorkerIssuer), os.Getenv(localworker.EnvWorkerSubject))
+	issuer, subject := principal.Issuer, principal.Subject
 
 	baseURL := strings.TrimSpace(os.Getenv("API_URL"))
 	if baseURL == "" {
@@ -83,25 +82,6 @@ func main() {
 		log.Error("local worker stopped", "error", err)
 		os.Exit(1)
 	}
-}
-
-func workerIdentity() (string, string) {
-	issuer := strings.TrimSpace(os.Getenv("WORKER_ISSUER"))
-	subject := strings.TrimSpace(os.Getenv("WORKER_SUBJECT"))
-	if issuer != "" && subject != "" {
-		return issuer, subject
-	}
-	admins := authz.ParsePlatformAdmins(os.Getenv(authz.EnvPlatformAdmins), os.Getenv(authz.EnvPlatformAdmin))
-	if len(admins) == 0 {
-		return issuer, subject
-	}
-	if issuer == "" {
-		issuer = admins[0].Issuer
-	}
-	if subject == "" {
-		subject = admins[0].Subject
-	}
-	return issuer, subject
 }
 
 func durationEnv(name string, fallback time.Duration) time.Duration {

@@ -17,6 +17,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/embed"
 	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
+	"github.com/bbengt1/flowforge/apps/api/internal/localworker"
 	"github.com/bbengt1/flowforge/apps/api/internal/lockout"
 	"github.com/bbengt1/flowforge/apps/api/internal/machine"
 	"github.com/bbengt1/flowforge/apps/api/internal/mfa"
@@ -129,6 +130,14 @@ type Config struct {
 	// SEED_LOCAL_DEFAULTS is not an explicit off value. Production-locked
 	// processes stay false; an explicit on flag is a boot-fail.
 	SeedLocalDefaults bool
+	// BindLocalWorker is true when the API binds the compose worker
+	// principal (LocalWorker) as operator in the local workbench at
+	// startup: trusted-dev headers on, not production-locked, and
+	// LOCAL_WORKER not an explicit off value.
+	BindLocalWorker bool
+	// LocalWorker is WORKER_ISSUER / WORKER_SUBJECT, defaulting to the
+	// dedicated compose worker principal.
+	LocalWorker authz.PrincipalRef
 	// PublicBaseURL is the operator-facing origin (B.4). Localseed
 	// persists it on trusted-dev skip. Never returned by GET /bootstrap.
 	PublicBaseURL string
@@ -275,6 +284,8 @@ func load(skipEmbed bool) (Config, error) {
 		return Config{}, err
 	}
 	cfg.SeedLocalDefaults = seedLocal
+	cfg.BindLocalWorker = localworker.BindingEnabled(os.Getenv(localworker.EnvLocalWorker), appEnv, cfg.RequireTLS, trustHeaders)
+	cfg.LocalWorker = localworker.Identity(os.Getenv(localworker.EnvWorkerIssuer), os.Getenv(localworker.EnvWorkerSubject))
 	publicURL, err := bootstrap.NormalizePublicBaseURL(os.Getenv(bootstrap.EnvPublicBaseURL))
 	if err != nil {
 		return Config{}, fmt.Errorf("%s: %w", bootstrap.EnvPublicBaseURL, err)
