@@ -474,7 +474,7 @@ func (s *Server) PutMember(w http.ResponseWriter, r *http.Request) {
 		WriteIdentityError(w, r, err)
 		return
 	}
-	if err := s.Store.SetMemberRoles(r.Context(), ws.ID, target.ID, req.RoleKeys); err != nil {
+	if err := s.Store.SetMemberRoles(r.Context(), ws.ID, target.ID, req.RoleKeys, identity.MemberActor{UserID: user.ID, RequestID: RequestIDFromContext(r.Context())}); err != nil {
 		WriteIdentityError(w, r, err)
 		return
 	}
@@ -506,7 +506,7 @@ func (s *Server) deleteMember(w http.ResponseWriter, r *http.Request) {
 		WriteProblem(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", "userID is required.")
 		return
 	}
-	if err := s.Store.RemoveMember(r.Context(), ws.ID, targetID); err != nil {
+	if err := s.Store.RemoveMember(r.Context(), ws.ID, targetID, identity.MemberActor{UserID: user.ID, RequestID: RequestIDFromContext(r.Context())}); err != nil {
 		WriteIdentityError(w, r, err)
 		return
 	}

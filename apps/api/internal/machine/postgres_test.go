@@ -77,7 +77,7 @@ func TestPostgresMachineNoSecretEcho(t *testing.T) {
 	if err != nil || revoked.Status != StatusRevoked {
 		t.Fatalf("revoke %+v %v", revoked.View(), err)
 	}
-	if err := users.SetUserStatus(ctx, user.ID, "disabled"); err != nil {
+	if err := users.SetUserStatus(ctx, user.ID, "disabled", identity.MemberActor{Via: identity.MemberViaSystem}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := users.GetUser(ctx, user.ID)

@@ -264,7 +264,7 @@ func postSCIMUser(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if active {
-		if err := s.Store.SetUserStatus(r.Context(), user.ID, "active"); err != nil {
+		if err := s.Store.SetUserStatus(r.Context(), user.ID, "active", instanceSCIMActor(r.Context())); err != nil {
 			writeSCIMStoreError(s, w, err)
 			return
 		}
@@ -570,7 +570,7 @@ func patchSCIMGroup(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	for _, id := range ch.Remove {
-		err := s.Store.RemoveMember(r.Context(), ws.ID, id)
+		err := s.Store.RemoveMember(r.Context(), ws.ID, id, instanceSCIMActor(r.Context()))
 		if err == nil || errors.Is(err, identity.ErrNotFound) {
 			continue
 		}
@@ -652,7 +652,7 @@ func mutateSCIMUser(s *core.Server, ctx context.Context, user identity.User, rec
 	}
 	if ch.Active != nil {
 		if *ch.Active {
-			if err := s.Store.SetUserStatus(ctx, user.ID, "active"); err != nil {
+			if err := s.Store.SetUserStatus(ctx, user.ID, "active", instanceSCIMActor(ctx)); err != nil {
 				return identity.User{}, scim.Record{}, err
 			}
 		} else if err := disableSCIMUser(s, ctx, user.ID, now); err != nil {
@@ -668,8 +668,12 @@ func mutateSCIMUser(s *core.Server, ctx context.Context, user identity.User, rec
 }
 
 func disableSCIMUser(s *core.Server, ctx context.Context, userID string, now time.Time) error {
-	if err := s.Store.SetUserStatus(ctx, userID, "disabled"); err != nil {
-		return err
+	// A re-check failure still leaves the account disabled: revoke its
+	// sessions and memberships anyway, then report the failure so the
+	// identity provider retries (the repeat finishes the re-check).
+	statusErr := s.Store.SetUserStatus(ctx, userID, "disabled", instanceSCIMActor(ctx))
+	if statusErr != nil && !errors.Is(statusErr, identity.ErrDisableRecheckIncomplete) {
+		return statusErr
 	}
 	if s.Sessions == nil {
 		return session.ErrStoreUnavailable
@@ -682,13 +686,13 @@ func disableSCIMUser(s *core.Server, ctx context.Context, userID string, now tim
 		return err
 	}
 	for _, membership := range memberships {
-		err := s.Store.RemoveMember(ctx, membership.Workspace.ID, userID)
+		err := s.Store.RemoveMember(ctx, membership.Workspace.ID, userID, instanceSCIMActor(ctx))
 		if err == nil || errors.Is(err, identity.ErrNotFound) || errors.Is(err, identity.ErrLastAdmin) {
 			continue
 		}
 		return err
 	}
-	return nil
+	return statusErr
 }
 
 func loadSCIMGroup(s *core.Server, ctx context.Context, id string) (identity.Workspace, error) {
@@ -734,7 +738,7 @@ func addSCIMMember(s *core.Server, ctx context.Context, workspaceID, userID stri
 	if !slicesContains(roles, role) {
 		roles = append(roles, role)
 	}
-	return s.Store.SetMemberRoles(ctx, workspaceID, userID, roles)
+	return s.Store.SetMemberRoles(ctx, workspaceID, userID, roles, instanceSCIMActor(ctx))
 }
 
 func scimGroupResource(s *core.Server, ctx context.Context, ws identity.Workspace) (map[string]any, error) {
@@ -968,4 +972,11 @@ func presentedBearer(r *http.Request) (string, bool) {
 		return "", false
 	}
 	return token, true
+}
+
+// instanceSCIMActor attributes a role change made by the instance SCIM
+// bearer. It has no row id (it is an environment secret), so the audit
+// row records via scim_instance_token and never the token.
+func instanceSCIMActor(ctx context.Context) identity.MemberActor {
+	return identity.MemberActor{Via: identity.MemberViaSCIMInstanceToken, RequestID: core.RequestIDFromContext(ctx)}
 }

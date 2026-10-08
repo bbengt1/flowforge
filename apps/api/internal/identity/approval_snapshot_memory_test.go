@@ -24,7 +24,7 @@ func TestMemoryResolveApprovalSnapshot(t *testing.T) {
 	approver, _ := m.UpsertUser(ctx, "https://idp.example", "snap-approver", "Approver")
 	admin2, _ := m.UpsertUser(ctx, "https://idp.example", "snap-admin2", "Admin 2")
 	for id, role := range map[string]string{viewer.ID: "viewer", approver.ID: "approver"} {
-		if err := m.SetMemberRoles(ctx, ws.ID, id, []string{role}); err != nil {
+		if err := m.SetMemberRoles(ctx, ws.ID, id, []string{role}, MemberActor{Via: MemberViaSystem}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -53,7 +53,7 @@ func TestMemoryResolveApprovalSnapshot(t *testing.T) {
 		t.Fatalf("group member snapshot = %+v", snap)
 	}
 
-	if err := m.SetUserStatus(ctx, approver.ID, "disabled"); err != nil {
+	if err := m.SetUserStatus(ctx, approver.ID, "disabled", MemberActor{Via: MemberViaSystem}); err != nil {
 		t.Fatal(err)
 	}
 	snap, _ = m.ResolveApprovalSnapshot(ctx, ws.ID, owner.ID, "approver", []string{approver.ID}, []string{g.ID})
@@ -61,7 +61,7 @@ func TestMemoryResolveApprovalSnapshot(t *testing.T) {
 		t.Fatalf("disabled approver counted: %+v", snap)
 	}
 
-	if err := m.SetMemberRoles(ctx, ws.ID, admin2.ID, []string{"admin"}); err != nil {
+	if err := m.SetMemberRoles(ctx, ws.ID, admin2.ID, []string{"admin"}, MemberActor{Via: MemberViaSystem}); err != nil {
 		t.Fatal(err)
 	}
 	snap, _ = m.ResolveApprovalSnapshot(ctx, ws.ID, owner.ID, "approver", nil, []string{g.ID})
