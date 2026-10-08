@@ -46,6 +46,7 @@ const IRREVERSIBLE_SURFACES = [
   "src/components/executions/ExecutionDetail.tsx",
   "src/components/executions/ExecutionOperateActions.tsx",
   "src/components/groups/WorkspaceGroupDetail.tsx",
+  "src/components/scim-tokens/ScimTokensPage.tsx",
 ] as const;
 
 describe("G.3.2 destructive impact", () => {
