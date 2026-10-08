@@ -332,17 +332,19 @@ func TestGateRecheckOnDemotion(t *testing.T) {
 			exec := g.park(e, nil, []string{empty})
 			return exec, e, g.setRoles(g.owner(), b, "operator").Code, http.StatusOK, waiting
 		}},
-		{"admin fallback: no other active admin left (one disabled)", func(g *g611) (string, identity.User, int, int, outcome) {
+		{"admin fallback: last enabled admin demotion refused (one disabled)", func(g *g611) (string, identity.User, int, int, outcome) {
 			empty := g.group("Empty")
 			e := g.member("E", "operator")
 			b, d := g.member("B", "admin"), g.member("D", "admin")
 			exec := g.park(e, nil, []string{empty})
 			// The owner stops being an admin and D is disabled: B is the
-			// only active admin, and D's binding keeps the last-admin guard
-			// satisfied when B demotes themself.
+			// only enabled admin. D's binding no longer satisfies the
+			// last-admin guard, so B cannot demote themself and the gate
+			// keeps its override decider. (Disabling the last enabled admin
+			// instance-wide closes it instead: TestUserDisableRechecksGates.)
 			g.th.scalar(`WITH x AS (DELETE FROM workspace_role_bindings WHERE workspace_id = $1::uuid AND user_id = $2::uuid RETURNING 1) SELECT count(*)::text FROM x`, g.w.ws.ID, g.owner().ID)
 			g.th.scalar(`WITH x AS (UPDATE users SET status = 'disabled' WHERE id = $1::uuid RETURNING 1) SELECT count(*)::text FROM x`, d.ID)
-			return exec, e, g.setRoles(b, b, "operator").Code, http.StatusOK, closed
+			return exec, e, g.setRoles(b, b, "operator").Code, http.StatusConflict, waiting
 		}},
 		{"admin fallback: last admin binding is refused", func(g *g611) (string, identity.User, int, int, outcome) {
 			empty := g.group("Empty")

@@ -18,6 +18,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/localauth"
+	"github.com/bbengt1/flowforge/apps/api/internal/machine"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/scim"
@@ -75,6 +76,7 @@ func newGMHarness(t *testing.T) *gmHarness {
 			Workflows:      wfstore.NewPostgres(pool),
 			Ops:            opsconfig.NewPostgres(pool),
 			Approvals:      approval.NewPostgres(pool),
+			Machines:       machine.NewPostgres(pool),
 			Log:            slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
 			PlatformAdmins: []authz.PrincipalRef{{Issuer: owner.Issuer, Subject: owner.ExternalSubject}},
 			SCIM: scim.Settings{
@@ -1009,7 +1011,7 @@ func TestScimGroupsModeFieldOnGroupListAndDetail(t *testing.T) {
 	if err := store.SetLocalPassword(th.ctx, adminUser.ID, ident, hash); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetMemberRoles(th.ctx, w.ws.ID, adminUser.ID, []string{authz.RoleAdmin}); err != nil {
+	if err := store.SetMemberRoles(th.ctx, w.ws.ID, adminUser.ID, []string{authz.RoleAdmin}, identity.MemberActor{Via: identity.MemberViaSystem}); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
@@ -1052,7 +1054,7 @@ func TestScimGroupsModeFieldOnGroupListAndDetail(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := store.SetMemberRoles(th.ctx, w.ws.ID, u.ID, []string{role}); err != nil {
+		if err := store.SetMemberRoles(th.ctx, w.ws.ID, u.ID, []string{role}, identity.MemberActor{Via: identity.MemberViaSystem}); err != nil {
 			t.Fatal(err)
 		}
 		for _, h := range []http.Handler{th.gm, th.ws} {

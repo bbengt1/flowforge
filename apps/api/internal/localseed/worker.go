@@ -118,7 +118,7 @@ func EnsureWorkerIn(ctx context.Context, in WorkerInput, tenantSlug, workbenchKe
 	}
 	want := []string{localworker.WorkerRole}
 	if !slices.Equal(roles, want) {
-		if err := in.Store.SetMemberRoles(ctx, ws.ID, user.ID, want); err != nil {
+		if err := in.Store.SetMemberRoles(ctx, ws.ID, user.ID, want, identity.MemberActor{Via: identity.MemberViaSystem}); err != nil {
 			return WorkerResult{}, err
 		}
 		res.Changed = true

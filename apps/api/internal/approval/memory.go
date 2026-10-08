@@ -359,6 +359,10 @@ func (m *Memory) Decide(ctx context.Context, scope isolation.Scope, id string, i
 	if scope.Zero() {
 		return Record{}, ErrNoScope
 	}
+	// Same as Postgres: no decider, no decision, nothing written.
+	if scope.ActorID() == "" {
+		return Record{}, ErrForbidden
+	}
 	now := in.Now.UTC()
 	if now.IsZero() {
 		now = time.Now().UTC()

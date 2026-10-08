@@ -164,20 +164,45 @@ func BuildSnapshot(requester, role string, groups []string, cands []Candidate, o
 // OtherActiveAdmin reports whether the workspace has an active admin who
 // is not the requester. That admin could decide by override.
 func OtherActiveAdmin(ctx context.Context, tx pgx.Tx, workspaceID, requester string) (bool, error) {
-	var ok bool
-	err := tx.QueryRow(ctx, `
-		SELECT EXISTS (
-		    SELECT 1
-		      FROM workspace_role_bindings b
-		      JOIN roles r ON r.id = b.role_id
-		      JOIN users u ON u.id = b.user_id
-		     WHERE b.workspace_id = $1::uuid
-		       AND r.key = 'admin'
-		       AND u.status = 'active'
-		       AND b.user_id IS DISTINCT FROM $2::uuid
-		)
-	`, workspaceID, nullUUID(requester)).Scan(&ok)
-	return ok, err
+	ids, err := ActiveAdmins(ctx, tx, workspaceID, requester, 1)
+	return len(ids) > 0, err
+}
+
+// ActiveAdmins returns up to limit (at least 1) distinct active admins of
+// the workspace, sorted by id, leaving out exclude (empty: nobody). It is
+// the one definition of an enabled admin: a live binding to the admin
+// role (the only role holding workspace.administer) and users.status
+// 'active'. The override fallback (OtherActiveAdmin), the bounded
+// re-check on admin loss and the last-admin guard in identity all use it.
+func ActiveAdmins(ctx context.Context, tx pgx.Tx, workspaceID, exclude string, limit int) ([]string, error) {
+	if limit < 1 {
+		limit = 1
+	}
+	rows, err := tx.Query(ctx, `
+		SELECT DISTINCT b.user_id::text
+		  FROM workspace_role_bindings b
+		  JOIN roles r ON r.id = b.role_id
+		  JOIN users u ON u.id = b.user_id
+		 WHERE b.workspace_id = $1::uuid
+		   AND r.key = 'admin'
+		   AND u.status = 'active'
+		   AND b.user_id IS DISTINCT FROM $2::uuid
+		 ORDER BY 1
+		 LIMIT $3
+	`, workspaceID, nullUUID(exclude), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 // WriteSnapshot replaces the approver rows for one approval.
