@@ -17,7 +17,7 @@ const identity: DevIdentity = {
   workbenchKey: "ops",
 };
 
-const TOKEN_ID = "3f1c2a4e-9d7b-4c1a-8e2f-0a1b2c3d4e5f";
+const ROW_ID = "3f1c2a4e-9d7b-4c1a-8e2f-0a1b2c3d4e5f";
 const ADA = "88888888-8888-4888-8888-888888888888";
 const PLAINTEXT = `ffscim_${"x".repeat(43)}`;
 
@@ -78,7 +78,7 @@ function problemResponse(status: number, body: Record<string, unknown>): Respons
 }
 
 const record = {
-  id: TOKEN_ID,
+  id: ROW_ID,
   displayName: "Okta prod",
   prefix: "ffscim_",
   createdBy: { id: ADA, displayName: "Ada" },
@@ -146,9 +146,9 @@ describe("SCIM tokens client", () => {
   it("revokes with DELETE under CSRF; 204 is done", async () => {
     withSession();
     const seen = capture(() => new Response(null, { status: 204 }));
-    const result = await revokeScimToken(identity, TOKEN_ID);
+    const result = await revokeScimToken(identity, ROW_ID);
     assert.equal(seen[0]?.method, "DELETE");
-    assert.equal(seen[0]?.url, `/api/v1/workspace/scim-tokens/${TOKEN_ID}`);
+    assert.equal(seen[0]?.url, `/api/v1/workspace/scim-tokens/${ROW_ID}`);
     assert.equal(seen[0]?.csrf, "csrf-ok");
     assert.deepEqual(result.ok && result.alreadyGone, false);
   });
@@ -156,7 +156,7 @@ describe("SCIM tokens client", () => {
   it("treats a 404 revoke as already gone", async () => {
     withSession();
     capture(() => problemResponse(404, { code: "not-found" }));
-    const result = await revokeScimToken(identity, TOKEN_ID);
+    const result = await revokeScimToken(identity, ROW_ID);
     assert.equal(result.ok, true);
     assert.equal(result.ok && result.alreadyGone, true);
   });
@@ -164,7 +164,7 @@ describe("SCIM tokens client", () => {
   it("returns other revoke problems, such as mfa-required", async () => {
     withSession();
     capture(() => problemResponse(403, { code: "mfa-required", detail: "Verify MFA before using this permission." }));
-    const result = await revokeScimToken(identity, TOKEN_ID);
+    const result = await revokeScimToken(identity, ROW_ID);
     assert.equal(result.ok, false);
     assert.equal(!result.ok && result.problem.code, "mfa-required");
   });

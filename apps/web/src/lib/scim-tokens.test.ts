@@ -51,7 +51,7 @@ function source(relative: string): string {
   return readFileSync(join(webRoot, relative), "utf8");
 }
 
-const TOKEN_ID = "3f1c2a4e-9d7b-4c1a-8e2f-0a1b2c3d4e5f";
+const ROW_ID = "3f1c2a4e-9d7b-4c1a-8e2f-0a1b2c3d4e5f";
 const OTHER_ID = "4a1c2a4e-9d7b-4c1a-8e2f-0a1b2c3d4e5f";
 const ADA = "88888888-8888-4888-8888-888888888888";
 const PLAINTEXT = `ffscim_${"A".repeat(40)}b-_`;
@@ -74,7 +74,7 @@ function problem(
 }
 
 const wire = {
-  id: TOKEN_ID,
+  id: ROW_ID,
   displayName: "Okta prod",
   prefix: "ffscim_",
   createdBy: { id: ADA, displayName: "Ada" },
@@ -120,14 +120,14 @@ describe("SCIM tokens gating", () => {
     const revokeTarget = resolveIdentityProxyTarget("DELETE", [
       "workspace",
       "scim-tokens",
-      TOKEN_ID,
+      ROW_ID,
     ]);
     assert.equal(
       "apiPath" in revokeTarget && revokeTarget.apiPath,
-      `/api/v1/workspace/scim-tokens/${TOKEN_ID}`,
+      `/api/v1/workspace/scim-tokens/${ROW_ID}`,
     );
     assert.equal(SCIM_TOKENS_API_PATH, "/workspace/scim-tokens");
-    assert.equal(scimTokenApiPath(TOKEN_ID), `/workspace/scim-tokens/${TOKEN_ID}`);
+    assert.equal(scimTokenApiPath(ROW_ID), `/workspace/scim-tokens/${ROW_ID}`);
   });
 });
 
@@ -160,7 +160,7 @@ describe("SCIM tokens reading", () => {
     });
     assert.deepEqual(
       read.items.map((item) => item.id),
-      [TOKEN_ID, OTHER_ID],
+      [ROW_ID, OTHER_ID],
     );
     assert.equal(read.maxActive, 2);
     assert.equal(read.configured, true);
