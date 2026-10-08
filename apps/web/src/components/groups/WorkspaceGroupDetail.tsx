@@ -58,6 +58,7 @@ import {
   workspaceGroupMemberLabel,
   workspaceGroupMemberRemoveImpact,
   workspaceGroupProblemTreatment,
+  workspaceGroupRefusalStands,
   type WorkspaceGroupMember,
 } from "@/lib/workspace-groups";
 import {
@@ -128,11 +129,25 @@ function GroupDetailBody({
   const [dialog, setDialog] = useState<"rename" | "delete" | "add" | null>(null);
   const [removeId, setRemoveId] = useState<string | null>(null);
   const [actionProblem, setActionProblem] = useState<ProblemDetails | null>(null);
-  // Set when the server refused a local edit with 409 group_managed_by_scim.
-  const [refused, setRefused] = useState(false);
+  // Set when the server refused a local edit with 409 group_managed_by_scim:
+  // when the detail shown at that moment was read.
+  const [refusedAt, setRefusedAt] = useState<number | null>(null);
   // The mode the 409 proved. Used only while the detail itself carries
   // no mode (an older server); the server's own value always wins.
   const [refusedMode, setRefusedMode] = useState<ScimGroupsMode | null>(null);
+  const refused =
+    refusedAt !== null &&
+    workspaceGroupRefusalStands({
+      refusedAt,
+      dataUpdatedAt: detail.dataUpdatedAt,
+      groupsMode: group?.groupsMode,
+    });
+  if (refusedAt !== null && !refused) {
+    // A read after the refusal says the instance isn't in groups mode
+    // now, so the group isn't locked: drop the note and the 409's mode.
+    setRefusedAt(null);
+    setRefusedMode(null);
+  }
   const management = workspaceGroupManagement({
     managedBy: group?.managedBy,
     groupsMode: group?.groupsMode ?? refusedMode,
@@ -148,8 +163,9 @@ function GroupDetailBody({
    * A stale page offered an edit the server refused because SCIM manages
    * the group. Close whatever was open, show the plain sentence, note
    * that the instance is in groups mode, and refetch so the page switches
-   * to the read-only view from the server's own `groupsMode`. Status plus
-   * code only, never the title.
+   * to the read-only view from the server's own `groupsMode`. If that
+   * newer read says the instance isn't in groups mode, the note clears.
+   * Status plus code only, never the title.
    */
   function handleScimRefusal(error: unknown): boolean {
     const problem = problemOf(error);
@@ -159,7 +175,7 @@ function GroupDetailBody({
     setDialog(null);
     setRemoveId(null);
     setActionProblem(null);
-    setRefused(true);
+    setRefusedAt(detail.dataUpdatedAt);
     setRefusedMode(scimGroupsModeFromProblem(problem));
     void refreshAll();
     return true;

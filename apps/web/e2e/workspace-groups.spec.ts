@@ -74,6 +74,8 @@ type GroupsApi = {
   enforce: "workspaces" | "groups";
   /** What the group list and detail report. Switchable mid-test. */
   report: ReportedMode;
+  /** While set, a group detail read waits for it before answering. */
+  holdDetail: Promise<void> | null;
 };
 
 const MANAGED_DETAIL = "This group is managed by SCIM. Change it in the identity provider.";
@@ -159,6 +161,7 @@ async function installGroupsApi(
     calls: [],
     enforce: options.enforce ?? "workspaces",
     report: options.report ?? options.enforce ?? "workspaces",
+    holdDetail: null,
   };
   // The groups screens read the mode from their own responses. Any call
   // here is recorded (and refused like an un-stepped-up admin) so a test
@@ -233,6 +236,9 @@ async function installGroupsApi(
     const isMembers = path.includes("/members");
     const userId = match[2];
     if (!isMembers && method === "GET") {
+      if (api.holdDetail) {
+        await api.holdDetail;
+      }
       await send(route, 200, detailBody(group, api.report));
       return;
     }
@@ -647,6 +653,58 @@ test.describe("SCIM-managed groups", () => {
       page.locator(`[data-group-row='${SCIM_GROUP_ID}'] [data-group-scim-badge]`),
     ).toHaveAttribute("data-group-scim-badge", "scim-locked");
     expect(api.calls.filter((call) => call.includes("scim-tokens"))).toEqual([]);
+  });
+
+  test("the refusal note clears when the read after the 409 says workspaces mode", async ({
+    page,
+  }) => {
+    // The detail first carries no mode, so the 409 alone locks the page.
+    const api = await installGroupsApi(page, {
+      seed: [SCIM_GROUP],
+      enforce: "groups",
+      report: "omit",
+    });
+    await page.goto(`/groups/${SCIM_GROUP_ID}`);
+    const badge = page.locator("[data-group-scim-badge]");
+    await expect(badge).toHaveAttribute("data-group-scim-badge", "scim-mode-unknown");
+    // Hold the read after the refusal so the locked state can be checked.
+    let release = () => {};
+    api.holdDetail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const renameButton = page.getByRole("button", { name: "Rename", exact: true });
+    await renameButton.click();
+    const rename = page.getByRole("dialog", { name: "Rename group" });
+    await rename.getByLabel("Group name").fill("Renamed here");
+    await rename.getByRole("button", { name: "Save name" }).click();
+    await expect(rename).toHaveCount(0);
+    const refused = page.locator("[data-group-scim-locked='refused']");
+    await expect(refused).toHaveText(GROUP_SCIM_REFUSED_MESSAGE);
+    await expect(badge).toHaveAttribute("data-group-scim-badge", "scim-locked");
+    await expect(renameButton).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Add member", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Delete group", exact: true })).toBeDisabled();
+    expect(api.groups.get(SCIM_GROUP_ID)?.displayName).toBe("Okta approvers");
+
+    // The instance switched to workspaces mode before the read answered.
+    api.enforce = "workspaces";
+    api.report = "workspaces";
+    api.holdDetail = null;
+    release();
+
+    await expect(badge).toHaveAttribute("data-group-scim-badge", "scim-unenforced");
+    await expect(page.locator("[data-group-scim-locked]")).toHaveCount(0);
+    await expect(page.getByText(GROUP_SCIM_REFUSED_MESSAGE)).toHaveCount(0);
+    await expect(renameButton).toBeEnabled();
+    await expect(renameButton).not.toHaveAttribute("aria-describedby", /.+/);
+    await expect(page.getByRole("button", { name: "Add member", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Delete group", exact: true })).toBeEnabled();
+    await expect(
+      page.getByRole("button", { name: "Remove Cal Viewer from this group" }),
+    ).toBeEnabled();
+    expect(api.calls.filter((call) => call.includes("scim-tokens"))).toEqual([]);
+    await expectNoBlockingAxeViolations(page);
   });
 
   test("the badge and its tooltip are reachable by keyboard on the list", async ({ page }) => {

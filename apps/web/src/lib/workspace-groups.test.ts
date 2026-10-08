@@ -50,6 +50,7 @@ import {
   workspaceGroupMemberRemoveImpact,
   workspaceGroupMembersApiPath,
   workspaceGroupProblemTreatment,
+  workspaceGroupRefusalStands,
   workspaceGroupScimBadge,
   type WorkspaceGroupManagement,
 } from "./workspace-groups.ts";
@@ -574,6 +575,27 @@ describe("SCIM-managed groups", () => {
     assert.equal(workspaceGroupFieldError(refused, "userId"), null);
   });
 
+  it("keeps the refusal note until a newer read says the instance left groups mode", () => {
+    const refusedAt = 1_000;
+    const cases: [number, "groups" | "workspaces" | null | undefined, boolean][] = [
+      // The read shown when the server refused proves nothing, whatever it says.
+      [1_000, "workspaces", true],
+      [1_000, "groups", true],
+      [1_000, null, true],
+      [1_000, undefined, true],
+      [900, "workspaces", true],
+      // A newer read: groups, or no mode at all, keeps it; workspaces clears it.
+      [2_000, "groups", true],
+      [2_000, null, true],
+      [2_000, undefined, true],
+      [2_000, "workspaces", false],
+    ];
+    for (const [dataUpdatedAt, groupsMode, stands] of cases) {
+      const input = { refusedAt, dataUpdatedAt, groupsMode };
+      assert.equal(workspaceGroupRefusalStands(input), stands, JSON.stringify(input));
+    }
+  });
+
   it("wires every local edit on the detail page to the refusal and the lock", () => {
     const detail = source("src/components/groups/WorkspaceGroupDetail.tsx");
     // Four mutations (rename, delete, add, remove) each route the refusal.
@@ -582,6 +604,8 @@ describe("SCIM-managed groups", () => {
     assert.equal(detail.match(/disabled=\{locked\}/g)?.length, 3);
     assert.equal(detail.match(/aria-describedby=\{lockedDescribedBy\}/g)?.length, 3);
     assert.match(detail, /disabled=\{removalPending \|\| Boolean\(lockedNoteId\)\}/);
+    // The refusal note clears through the helper, from the newer read only.
+    assert.match(detail, /workspaceGroupRefusalStands\(\{/);
     // The page keys off the helper, never a title or detail string.
     assert.doesNotMatch(detail, /problem\??\.title/);
     assert.doesNotMatch(detail, /problem\??\.detail/);

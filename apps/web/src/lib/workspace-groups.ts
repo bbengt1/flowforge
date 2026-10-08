@@ -469,6 +469,27 @@ export function scimGroupsModeFromProblem(
   return isGroupManagedByScimProblem(problem) ? "groups" : null;
 }
 
+/**
+ * After a 409 `group_managed_by_scim`, the "wasn't saved" note stands
+ * until a detail read after the refusal reports a mode other than
+ * `groups`. A read from before the refusal proves nothing (that stale
+ * read is why the page offered the edit). While the newer read reports
+ * `groups`, or no mode at all (the refusal still locks the page), the
+ * note stays.
+ */
+export function workspaceGroupRefusalStands(input: {
+  /** `dataUpdatedAt` of the detail shown when the server refused. */
+  refusedAt: number;
+  /** `dataUpdatedAt` of the detail shown now. */
+  dataUpdatedAt: number;
+  groupsMode: ScimGroupsMode | null | undefined;
+}): boolean {
+  if (input.dataUpdatedAt <= input.refusedAt) {
+    return true;
+  }
+  return input.groupsMode !== "workspaces";
+}
+
 /* ---------- members ---------- */
 
 /** Member row label. Never an email; display name, then the user id. */

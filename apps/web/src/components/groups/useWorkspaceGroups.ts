@@ -118,6 +118,8 @@ export function useWorkspaceGroupDetail(
   });
   return {
     group: query.data ?? null,
+    /** When the shown detail was last read (0 before the first read). */
+    dataUpdatedAt: query.dataUpdatedAt,
     loaded: query.isSuccess,
     pending: query.isFetching,
     problem: queryProblem(query.error),
