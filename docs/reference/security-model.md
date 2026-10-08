@@ -65,6 +65,28 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
  drop workspace memberships except the last admin. Dropping a
  membership also deletes that user's workspace group rows in the same
  transaction. `DELETE` also hides the user from SCIM (`404`).
+ Every instance-wide disable (instance-token `active: false` on POST,
+ PUT, or PATCH, `DELETE`, and a machine principal revoke) re-checks,
+ in every workspace where the user holds a role, the waiting targeted
+ gates that relied on that user, as though the user had lost every
+ role, including where the membership itself is kept because the user
+ is the last admin. Each workspace is re-checked in its own short
+ transaction after the status change commits, and the re-check runs
+ again on a retry even when the account is already disabled, so a
+ disable that failed part way is finished by repeating it. The
+ account stays disabled and its sessions are revoked even when the
+ re-check fails; the request then fails so the caller retries. A gate
+ nobody else can decide fails with `requirement_unresolvable` /
+ `no_eligible_decider`. If the server stops between the status change
+ and the re-check, the boot re-check of open approvals closes the gate.
+ Re-enabling the account reopens nothing: closed gates and failed runs
+ stay closed. A decide re-reads the decider's account status in its own
+ transaction, so a decider disabled while the decide is in flight gets
+ `403` and the approval stays pending. An instance-wide disable is
+ allowed even when it leaves a workspace with no enabled administrator;
+ each such workspace gets one `workspace.no_enabled_admin` audit row
+ (outcome `warning`) holding only the user's UUID and display name,
+ until an operator restores an administrator there.
  `SCIM_GROUPS_MODE` decides what a SCIM Group is, for the whole
  instance; any value other than `workspaces` or `groups` is a
  boot-fail. In `workspaces` mode (the default) SCIM Groups are
@@ -140,6 +162,32 @@ hardening. A feature that cannot meet these requirements is disabled until it ca
  renames a user: those changes are ignored, the response shows the
  current values, and the ignored change is audited. Every removal is
  checked against the last-admin guard (`409`, nothing changes).
+ The last-admin guard counts enabled administrators. A role change or
+ removal is `409` (`conflict`, nothing changes) when no `admin` role
+ would remain in the workspace, or when the person changed is an
+ enabled administrator and no other enabled administrator would remain.
+ A disabled administrator still holds the role but does not count as
+ the remaining one. Removing or demoting someone who is not an enabled
+ administrator is not blocked by disabled administrators. The count is
+ taken with the workspace row locked, so two concurrent removals cannot
+ both pass.
+ Every committed role change and membership removal writes one audit
+ row in the same transaction: `workspace_member.roles_change` (outcome
+ `updated`) or `workspace_member.remove` (outcome `deleted`), resource
+ type `workspace_member`, resource id the member's UUID. This covers
+ `PUT` and `DELETE /api/v1/workspace/members`, and every SCIM path
+ that adds or removes a role: workspace and instance tokens on `/Users`
+ and `/Groups`, the
+ default role granted on reactivation, and membership removal during an
+ instance-wide disable. Details hold `userId`, `rolesBefore`, and
+ `rolesAfter` as role keys, plus the member's display name. The actor
+ is the session user (`actor_id` and `actorDisplayName`), or, with no
+ `actor_id`, `via: scim_token` with `details.tokenId` for a workspace
+ token, `via: scim_instance_token` for the instance token, or
+ `via: system` for the development seed. A row never holds a token or
+ an email, and a display name that looks like an email, URL, or token
+ is left out. An unchanged role set writes no row, and a refused or
+ rolled-back change writes none.
  Workspace groups (`/workspace/groups`) never grant a permission. They only name
  who an approval targets, and a member still needs `approval.decide`
  from their own roles. A targeted gate (`with.approvers`) is decided by
