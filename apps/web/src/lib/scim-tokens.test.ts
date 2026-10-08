@@ -18,11 +18,13 @@ import {
   SCIM_TOKEN_REVOKE_DESCRIPTION,
   SCIM_TOKEN_UNKNOWN_CREATOR,
   SCIM_TOKENS_API_PATH,
+  SCIM_TOKENS_CREATE_UNAVAILABLE,
   SCIM_TOKENS_FORBIDDEN,
   SCIM_TOKENS_HREF,
   SCIM_TOKENS_MFA_REQUIRED,
   SCIM_TOKENS_NOT_AVAILABLE,
   SCIM_TOKENS_NOT_CONFIGURED,
+  SCIM_TOKENS_RETRY_LABEL,
   canManageScimTokens,
   formatScimTokenTime,
   normalizeScimTokenName,
@@ -36,6 +38,7 @@ import {
   scimTokenCreatorLabel,
   scimTokenLastUsedLabel,
   scimTokenLimitMessage,
+  scimTokenListProblemIsRetryable,
   scimTokenListProblemIsTerminal,
   scimTokenNameClientError,
   scimTokenNameFieldError,
@@ -367,6 +370,91 @@ describe("SCIM tokens page state", () => {
       reason: "not-configured",
       message: SCIM_TOKENS_NOT_CONFIGURED,
     });
+  });
+});
+
+describe("SCIM turned off on the instance", () => {
+  it("uses the agreed sentence and drops the old sign-in wording", () => {
+    assert.equal(
+      SCIM_TOKENS_NOT_CONFIGURED,
+      "SCIM is turned off on this instance. Your identity provider's sync requests are refused until the instance operator turns it back on. Existing tokens are kept and will work again then, so revoke any you no longer need.",
+    );
+    assert.doesNotMatch(SCIM_TOKENS_NOT_CONFIGURED, /sign in|set up/);
+    const page = source("src/lib/scim-tokens.ts");
+    assert.equal(page.includes("can't sign in"), false);
+  });
+
+  it("keeps listing tokens when configured is false", () => {
+    const read = readScimTokenList({ items: [wire], maxActive: 2, configured: false });
+    assert.equal(read.configured, false);
+    assert.deepEqual(
+      read.items.map((item) => item.id),
+      [ROW_ID],
+    );
+  });
+
+  it("turns off create only, with the same sentence a create 503 gets", () => {
+    const off = scimTokenCreateAvailability(list({ configured: false }));
+    assert.equal(off.allowed, false);
+    assert.equal(off.reason, "not-configured");
+    const failure = scimTokenCreateFailure(problem(503, "scim_not_configured"));
+    assert.equal(failure.placement === "notice" && failure.message, off.message);
+    // Even at the cap, SCIM off is the reason shown.
+    const full = list({
+      configured: false,
+      items: [readScimToken(wire)!, readScimToken({ ...wire, id: OTHER_ID })!],
+    });
+    assert.equal(scimTokenCreateAvailability(full).reason, "not-configured");
+  });
+
+  it("never gates Revoke on configured or on a list problem", () => {
+    const page = source("src/components/scim-tokens/ScimTokensPage.tsx");
+    const start = page.indexOf("function ScimTokenRow");
+    assert.ok(start > 0);
+    const row = page.slice(start);
+    const revoke = row.slice(row.indexOf("data-scim-token-revoke"), row.indexOf("</button>"));
+    assert.ok(revoke.includes("onClick={onRevoke}"));
+    assert.equal(revoke.includes("disabled"), false);
+    assert.equal(row.includes("configured"), false);
+    assert.equal(row.includes("availability"), false);
+  });
+});
+
+describe("SCIM token list retry", () => {
+  it("only a banner problem is retryable by hand", () => {
+    assert.equal(scimTokenListProblemIsRetryable(problem(503, "dependency-unavailable")), true);
+    assert.equal(scimTokenListProblemIsRetryable(problem(500, "internal-error")), true);
+    assert.equal(scimTokenListProblemIsRetryable(problem(503, "scim_not_configured")), false);
+    assert.equal(scimTokenListProblemIsRetryable(problem(501, "internal-error")), false);
+    assert.equal(scimTokenListProblemIsRetryable(problem(403, "mfa-required")), false);
+    assert.equal(scimTokenListProblemIsRetryable(null), false);
+  });
+
+  it("a failed list keeps create off even over an older list", () => {
+    const store = problem(503, "dependency-unavailable");
+    assert.deepEqual(scimTokenCreateAvailability(list(), store), {
+      allowed: false,
+      reason: "unavailable",
+      message: SCIM_TOKENS_CREATE_UNAVAILABLE,
+    });
+    assert.equal(
+      scimTokenCreateAvailability(list({ configured: false }), store).reason,
+      "unavailable",
+    );
+    assert.equal(scimTokenCreateAvailability(list(), null).allowed, true);
+  });
+
+  it("the page shows the banner with a Retry that refetches the list", () => {
+    assert.equal(SCIM_TOKENS_RETRY_LABEL, "Retry");
+    const page = source("src/components/scim-tokens/ScimTokensPage.tsx");
+    const start = page.indexOf("data-scim-tokens-retry");
+    assert.ok(start > 0);
+    const retry = page.slice(start, page.indexOf("</button>", start));
+    assert.ok(retry.includes("onClick={onRefresh}"));
+    assert.equal(/\bdisabled=/.test(retry), false);
+    assert.match(page, /scimTokenCreateAvailability\(list, problem\)/);
+    const hook = source("src/components/scim-tokens/useScimTokens.ts");
+    assert.match(hook, /query\.refetch\(\)/);
   });
 });
 

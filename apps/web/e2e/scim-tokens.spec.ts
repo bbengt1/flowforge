@@ -16,6 +16,7 @@ import {
   SCIM_TOKENS_MFA_REQUIRED,
   SCIM_TOKENS_NOT_AVAILABLE,
   SCIM_TOKENS_NOT_CONFIGURED,
+  SCIM_TOKENS_RETRY_LABEL,
   scimTokenLimitMessage,
 } from "../src/lib/scim-tokens.ts";
 
@@ -64,6 +65,8 @@ type Mode =
 type TokensApi = {
   tokens: StoredToken[];
   calls: string[];
+  /** Switchable mid-test, for example to bring the store back. */
+  mode: Mode;
 };
 
 const OKTA: StoredToken = {
@@ -140,10 +143,14 @@ async function installScimTokensApi(
     permissions: options.permissions ?? ADMIN_PERMISSIONS,
     embed: options.embed,
   });
-  const api: TokensApi = { tokens: [...(options.seed ?? [])], calls: [] };
-  const mode = options.mode ?? "ok";
+  const api: TokensApi = {
+    tokens: [...(options.seed ?? [])],
+    calls: [],
+    mode: options.mode ?? "ok",
+  };
   const configured = options.configured ?? true;
   await page.route(/\/api\/(?:v1|control-plane)\/workspace\/scim-tokens/, async (route) => {
+    const mode = api.mode;
     const method = route.request().method();
     const path = apiPath(route.request().url());
     api.calls.push(`${method} ${path}`);
@@ -352,15 +359,41 @@ test.describe("SCIM tokens admin", () => {
     await racePage.close();
   });
 
-  test("SCIM not configured: plain sentence and no create", async ({ page }) => {
-    await installScimTokensApi(page, { seed: [OKTA], configured: false });
+  test("SCIM turned off: plain sentence, no create, list and revoke still work", async ({
+    page,
+  }) => {
+    const api = await installScimTokensApi(page, { seed: [OKTA, ENTRA], configured: false });
     await page.goto("/scim-tokens");
     await expect(page.locator("[data-scim-tokens-create-blocked='not-configured']")).toHaveText(
       SCIM_TOKENS_NOT_CONFIGURED,
     );
-    await expect(page.getByRole("button", { name: "Create token" })).toBeDisabled();
-    // Existing tokens still list and can be revoked.
+    await expect(page.getByText("can't sign in")).toHaveCount(0);
+    const create = page.getByRole("button", { name: "Create token" });
+    await expect(create).toBeDisabled();
+    await expect(create).toHaveAccessibleDescription(SCIM_TOKENS_NOT_CONFIGURED);
+    // Existing tokens still list, and Revoke stays on for each of them.
+    await expect(page.locator("[data-scim-tokens-count]")).toHaveText("2 of 2 active");
     await expect(page.locator(`[data-scim-token-row='${OKTA_ID}']`)).toBeVisible();
+    const revokeOkta = page.getByRole("button", { name: "Revoke Okta production" });
+    await expect(revokeOkta).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Revoke Entra staging" })).toBeEnabled();
+    await expectNoBlockingAxeViolations(page);
+
+    // Revoking while SCIM is off works: it is the only way to stop a
+    // token before SCIM comes back on.
+    await revokeOkta.click();
+    const confirm = page.getByRole("dialog", { name: "Revoke this SCIM token?" });
+    await confirm.getByRole("button", { name: "Revoke token" }).click();
+    await expect(confirm).toHaveCount(0);
+    await expect(page.locator("[data-scim-tokens-note='status']")).toHaveText("Token revoked.");
+    await expect(page.locator(`[data-scim-token-row='${OKTA_ID}']`)).toHaveCount(0);
+    await expect(page.locator("[data-scim-tokens-count]")).toHaveText("1 of 2 active");
+    expect(api.calls).toContain(`DELETE /workspace/scim-tokens/${OKTA_ID}`);
+    // Below the cap now, but create stays off while SCIM is off.
+    await expect(create).toBeDisabled();
+    await expect(page.locator("[data-scim-tokens-create-blocked='not-configured']")).toHaveText(
+      SCIM_TOKENS_NOT_CONFIGURED,
+    );
 
     const second = await page.context().newPage();
     await installScimTokensApi(second, { mode: "create-unconfigured" });
@@ -391,14 +424,59 @@ test.describe("SCIM tokens admin", () => {
     expect(api.calls).toEqual(["GET /workspace/scim-tokens"]);
   });
 
-  test("a store outage on the list shows the banner and keeps create off", async ({ page }) => {
-    await installScimTokensApi(page, { mode: "store-down" });
+  test("a store outage on the list shows the banner, keeps create off, and Retry refetches", async ({
+    page,
+  }) => {
+    const api = await installScimTokensApi(page, { seed: [OKTA], mode: "store-down" });
     await page.goto("/scim-tokens");
     await expect(page.locator("[data-scim-tokens-count]")).toHaveText(
       "SCIM tokens could not be loaded.",
     );
     await expect(page.locator("main").getByRole("alert")).toContainText("Service Unavailable");
     await expect(page.getByRole("button", { name: "Create token" })).toBeDisabled();
+    const retry = page.getByRole("button", { name: SCIM_TOKENS_RETRY_LABEL, exact: true });
+    await expect(retry).toBeVisible();
+    await expect(retry).toBeEnabled();
+    await expectNoBlockingAxeViolations(page);
+
+    // Retry while the store is still down asks again and stays usable.
+    const before = api.calls.length;
+    await retry.click();
+    await expect.poll(() => api.calls.length).toBeGreaterThan(before);
+    await expect(page.locator("main").getByRole("alert")).toContainText("Service Unavailable");
+    await expect(retry).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Create token" })).toBeDisabled();
+
+    // Once the store is back, Retry loads the list and create comes back.
+    api.mode = "ok";
+    await retry.click();
+    await expect(page.locator(`[data-scim-token-row='${OKTA_ID}']`)).toBeVisible();
+    await expect(page.locator("[data-scim-tokens-count]")).toHaveText("1 of 2 active");
+    await expect(page.locator("[data-scim-tokens-retry]")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Create token" })).toBeEnabled();
+    expect(api.calls.filter((call) => call === "GET /workspace/scim-tokens").length).toBeGreaterThan(1);
+  });
+
+  test("a store outage on a refresh keeps the list, shows Retry and turns create off", async ({
+    page,
+  }) => {
+    const api = await installScimTokensApi(page, { seed: [OKTA] });
+    await page.goto("/scim-tokens");
+    await expect(page.locator(`[data-scim-token-row='${OKTA_ID}']`)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Create token" })).toBeEnabled();
+
+    api.mode = "store-down";
+    await page.getByRole("button", { name: "Refresh" }).click();
+    await expect(page.locator("main").getByRole("alert")).toContainText("Service Unavailable");
+    await expect(page.locator(`[data-scim-token-row='${OKTA_ID}']`)).toBeVisible();
+    await expect(page.locator("[data-scim-tokens-create-blocked='unavailable']")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Create token" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Revoke Okta production" })).toBeEnabled();
+
+    api.mode = "ok";
+    await page.getByRole("button", { name: SCIM_TOKENS_RETRY_LABEL, exact: true }).click();
+    await expect(page.locator("[data-scim-tokens-retry]")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Create token" })).toBeEnabled();
   });
 
   test("mfa-required shows the plain step-up line and opens step-up", async ({ page }) => {

@@ -24,6 +24,7 @@ import {
   SCIM_TOKENS_FORBIDDEN,
   SCIM_TOKENS_HELP,
   SCIM_TOKENS_LOAD_FAILED,
+  SCIM_TOKENS_RETRY_LABEL,
   SCIM_TOKENS_TITLE,
   canManageScimTokens,
   formatScimTokenTime,
@@ -31,6 +32,7 @@ import {
   scimTokenCreateAvailability,
   scimTokenCreatorLabel,
   scimTokenLastUsedLabel,
+  scimTokenListProblemIsRetryable,
   scimTokenPrefixHint,
   scimTokenProblemKind,
   scimTokenProblemSentence,
@@ -171,7 +173,11 @@ function ScimTokensPanel({
   const [note, setNote] = useState<ActionNote>(null);
   const [revokeProblem, setRevokeProblem] = useState<ProblemDetails | null>(null);
 
-  const availability = list ? scimTokenCreateAvailability(list) : null;
+  // Create is the only action gated on `configured` or a failed list.
+  // Revoke stays on for every listed token, including while SCIM is off:
+  // that is the only way to stop a token before SCIM comes back.
+  const availability = list ? scimTokenCreateAvailability(list, problem) : null;
+  const listRetryable = scimTokenListProblemIsRetryable(problem);
   const target = list?.items.find((item) => item.id === revokeId) ?? null;
 
   async function revoke(token: ScimToken) {
@@ -261,9 +267,20 @@ function ScimTokensPanel({
         </p>
       ) : null}
 
-      {problem && !list ? (
-        <div className="mt-4">
+      {problem && (!list || listRetryable) ? (
+        <div className="mt-4 space-y-3" data-scim-tokens-list-problem="">
           <ProblemBanner problem={problem} />
+          {listRetryable ? (
+            <button
+              type="button"
+              data-scim-tokens-retry=""
+              onClick={onRefresh}
+              aria-busy={pending}
+              className={FF_SETTINGS_GHOST_CLASS}
+            >
+              {SCIM_TOKENS_RETRY_LABEL}
+            </button>
+          ) : null}
         </div>
       ) : null}
       {revokeProblem ? (
@@ -352,6 +369,7 @@ function ScimTokenRow({ token, onRevoke }: { token: ScimToken; onRevoke: () => v
       </div>
       <button
         type="button"
+        data-scim-token-revoke=""
         onClick={onRevoke}
         aria-label={`Revoke ${token.displayName}`}
         className={FF_SETTINGS_GHOST_CLASS}

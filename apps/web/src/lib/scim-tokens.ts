@@ -82,10 +82,21 @@ export const SCIM_TOKENS_MFA_REQUIRED =
 export const SCIM_TOKENS_NOT_AVAILABLE =
   "SCIM tokens aren't available on this server yet.";
 
+/**
+ * `configured: false` (or a create 503 `scim_not_configured`). Every
+ * `/scim/v2` request is refused while SCIM is off, but tokens are not
+ * revoked: they work again once the instance operator turns SCIM back
+ * on. List and revoke keep working, so this points the admin at revoke.
+ */
 export const SCIM_TOKENS_NOT_CONFIGURED =
-  "SCIM isn't set up on this instance, so new tokens can't be created and existing ones can't sign in. A platform operator needs to turn it on first.";
+  "SCIM is turned off on this instance. Your identity provider's sync requests are refused until the instance operator turns it back on. Existing tokens are kept and will work again then, so revoke any you no longer need.";
 
 export const SCIM_TOKENS_LOAD_FAILED = "SCIM tokens could not be loaded.";
+
+export const SCIM_TOKENS_RETRY_LABEL = "Retry";
+
+export const SCIM_TOKENS_CREATE_UNAVAILABLE =
+  "Creating a token is turned off until the token list loads again.";
 
 export const SCIM_TOKEN_UNKNOWN_CREATOR = "Unknown";
 
@@ -404,6 +415,17 @@ export function scimTokenProblemSentence(
   }
 }
 
+/**
+ * A list problem the admin can retry by hand (for example a 503
+ * `dependency-unavailable` when the token store can't be reached).
+ * Nothing was written, so Retry stays on and Create stays off.
+ */
+export function scimTokenListProblemIsRetryable(
+  problem: Pick<ProblemDetails, "status" | "code" | "errors"> | null | undefined,
+): boolean {
+  return scimTokenProblemKind(problem) === "banner";
+}
+
 /** Terminal list problems are not retried: retrying can't change them. */
 export function scimTokenListProblemIsTerminal(
   problem: Pick<ProblemDetails, "status" | "code" | "errors"> | null | undefined,
@@ -446,10 +468,20 @@ export function scimTokensView(input: {
 
 export type ScimTokenCreateAvailability =
   | { allowed: true; reason: null; message: null }
-  | { allowed: false; reason: "not-configured" | "limit"; message: string };
+  | { allowed: false; reason: "unavailable" | "not-configured" | "limit"; message: string };
 
-/** Create is offered only below `maxActive` on a configured instance. */
-export function scimTokenCreateAvailability(list: ScimTokenList): ScimTokenCreateAvailability {
+/**
+ * Create is offered only below `maxActive` on a configured instance, and
+ * not while the latest list call failed with a retryable problem. This
+ * gates create only: listing and revoking never depend on `configured`.
+ */
+export function scimTokenCreateAvailability(
+  list: ScimTokenList,
+  problem: Pick<ProblemDetails, "status" | "code" | "errors"> | null = null,
+): ScimTokenCreateAvailability {
+  if (scimTokenListProblemIsRetryable(problem)) {
+    return { allowed: false, reason: "unavailable", message: SCIM_TOKENS_CREATE_UNAVAILABLE };
+  }
   if (!list.configured) {
     return { allowed: false, reason: "not-configured", message: SCIM_TOKENS_NOT_CONFIGURED };
   }
