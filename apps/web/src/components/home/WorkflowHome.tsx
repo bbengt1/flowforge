@@ -3993,6 +3993,9 @@ function WorkflowHomeCards({
 }) {
   const embedSurface = useEmbedMode();
   const listRef = useRef<HTMLUListElement>(null);
+  // Arrow keys moved the selection since the last pointer use. The
+  // selected row then shows the help of a last-run chip with no link.
+  const [paneKeyboardNav, setPaneKeyboardNav] = useState(false);
 
   function focusPaneList() {
     listRef.current?.focus();
@@ -4017,6 +4020,12 @@ function WorkflowHomeCards({
         aria-label={EXPLORER_PANE_LABEL}
         data-x3="pane-list"
         className={FF_EXPLORER_LIST_CLASS}
+        onPointerDown={() => setPaneKeyboardNav(false)}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setPaneKeyboardNav(false);
+          }
+        }}
         onKeyDown={(event) => {
           if (event.key === "Enter") {
             if (renamingId || !paneSelection) {
@@ -4035,6 +4044,7 @@ function WorkflowHomeCards({
             );
             if (next) {
               onSelectRow(next);
+              setPaneKeyboardNav(true);
             }
           }
         }}
@@ -4154,6 +4164,7 @@ function WorkflowHomeCards({
                   <HomeLastRunStatus
                     item={item}
                     canSeeLastRun={canSeeLastRun}
+                    rowActive={paneKeyboardNav && selected}
                   />
                 </div>
                 <details

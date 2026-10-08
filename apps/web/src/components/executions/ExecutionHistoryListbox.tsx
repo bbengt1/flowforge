@@ -22,6 +22,7 @@ import {
   INDETERMINATE_STATUS_HELP,
   KEYBOARD_HISTORY_HELP,
 } from "@/lib/execution-contract";
+import { nestedTipActive } from "@/lib/a11y-tooltip";
 import { historyKeyAction } from "@/lib/execution-replay";
 import type { ExecutionListRow } from "@/lib/execution-types";
 import {
@@ -59,6 +60,10 @@ export function ExecutionHistoryListbox({
   operateActions,
 }: ExecutionHistoryListboxProps) {
   const [focusIndex, setFocusIndex] = useState(0);
+  // Arrow keys moved the current row since the last pointer use. An
+  // indeterminate row then shows its help on its nested status chip.
+  const [keyboardNav, setKeyboardNav] = useState(false);
+  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
   const router = useRouter();
   const safeIndex = rows.length === 0 ? 0 : Math.min(focusIndex, rows.length - 1);
   const inbox = layout === "inbox";
@@ -99,11 +104,14 @@ export function ExecutionHistoryListbox({
           inbox ? "Workspace executions" : overlay ? "Workflow runs" : "Execution history"
         }
         tabIndex={0}
+        onPointerDown={() => setKeyboardNav(false)}
+        onBlur={() => setKeyboardNav(false)}
         onKeyDown={(event) => {
           const next = historyKeyAction(event.key, safeIndex, rows.length);
           if (next.index !== safeIndex) {
             event.preventDefault();
             setFocusIndex(next.index);
+            setKeyboardNav(true);
           }
           if (next.activate) {
             event.preventDefault();
@@ -122,13 +130,30 @@ export function ExecutionHistoryListbox({
           const duration = executionInboxDurationLabel(row.startedAt, row.finishedAt);
           const waiting = isExecutionAwaitingApproval(row.status);
           const ending = peakEndKind(row.status, waiting);
+          // The row owns the indeterminate help. It shows through the
+          // shared tooltip on the row's nested status chip, on row hover
+          // or while the row is keyboard-current. No extra tab stop.
+          const rowHelp = row.indeterminate ? INDETERMINATE_STATUS_HELP : undefined;
+          const rowTipActive = nestedTipActive({
+            hasHelp: Boolean(rowHelp),
+            keyboardCurrent: keyboardNav && index === safeIndex,
+            rowHovered: hoveredRowId === row.id,
+          });
           return (
             <li
               key={row.id}
               role="option"
               aria-selected={focused}
               onClick={() => activate(row)}
-              title={row.indeterminate ? INDETERMINATE_STATUS_HELP : undefined}
+              onPointerEnter={rowHelp ? () => setHoveredRowId(row.id) : undefined}
+              onPointerLeave={
+                rowHelp
+                  ? () =>
+                      setHoveredRowId((current) =>
+                        current === row.id ? null : current,
+                      )
+                  : undefined
+              }
               className={
                 inbox
                   ? row.indeterminate
@@ -161,7 +186,12 @@ export function ExecutionHistoryListbox({
                         {row.id}
                       </p>
                     </div>
-                    <ExecutionStatusBadge status={row.status} nested />
+                    <ExecutionStatusBadge
+                      status={row.status}
+                      nested
+                      help={rowHelp}
+                      tipActive={rowTipActive}
+                    />
                   </div>
                   {peakEndOverlayRowShowsEnding(ending, {
                     focused,
@@ -190,7 +220,12 @@ export function ExecutionHistoryListbox({
                 <>
                 <div className={INBOX_GRID}>
                   <div>
-                    <ExecutionStatusBadge status={row.status} nested />
+                    <ExecutionStatusBadge
+                      status={row.status}
+                      nested
+                      help={rowHelp}
+                      tipActive={rowTipActive}
+                    />
                   </div>
                   <div className="min-w-0">
                     <p className={`truncate text-sm ${FF_INBOX_TITLE_CLASS}`}>
@@ -237,7 +272,12 @@ export function ExecutionHistoryListbox({
                       </h3>
                       <p className={`mt-1 ${FF_VAULT_UUID_CLASS}`}>{row.id}</p>
                     </div>
-                    <ExecutionStatusBadge status={row.status} nested />
+                    <ExecutionStatusBadge
+                      status={row.status}
+                      nested
+                      help={rowHelp}
+                      tipActive={rowTipActive}
+                    />
                   </div>
                   <dl className={`mt-3 grid gap-2 text-sm ${compact ? "" : "sm:grid-cols-2"}`}>
                     <div>

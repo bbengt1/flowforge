@@ -15,6 +15,10 @@ type ExecutionStatusBadgeProps = {
   siblingJobStatuses?: readonly string[];
   /** Inside an interactive row: no tab stop of its own. See StatusMark. */
   nested?: boolean;
+  /** Help that the row owns, shown instead of the status help. */
+  help?: string;
+  /** The row opens the tooltip. See StatusMark. */
+  tipActive?: boolean;
 };
 
 export function ExecutionStatusBadge({
@@ -22,6 +26,8 @@ export function ExecutionStatusBadge({
   runStatus,
   siblingJobStatuses,
   nested = false,
+  help,
+  tipActive = false,
 }: ExecutionStatusBadgeProps) {
   const presentation = executionStatusPresentationInRun(
     status,
@@ -39,8 +45,9 @@ export function ExecutionStatusBadge({
     <StatusMark
       icon={presentation.icon}
       label={presentation.label}
-      description={presentation.description}
+      description={help ?? presentation.description}
       nested={nested}
+      tipActive={tipActive}
       className={`rounded-full px-2.5 py-0.5 text-xs ${toneClass}`}
     />
   );

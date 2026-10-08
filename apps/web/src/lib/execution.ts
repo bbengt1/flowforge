@@ -19,7 +19,6 @@ import {
 import { EXECUTION_WAITING_STATUSES } from "./approval-types.ts";
 import { readRecordCapabilities } from "./execution-retry.ts";
 import {
-  APPROVAL_RESUME_DISABLED_HELP,
   CANCEL_APPLIED_MESSAGE,
   CANCEL_IDEMPOTENT_MESSAGE,
   DOWNLOAD_EXPIRED_MESSAGE,
@@ -59,6 +58,7 @@ import {
   SKIPPED_STATUS_ICON,
   SKIPPED_STATUS_LABEL,
   TERMINAL_STEP_STATUSES,
+  WAITING_STATUS_HELP,
   WORKFLOW_EXECUTE_PERMISSION,
   REDACTED_MARKER,
   type DownloadGrantView,
@@ -729,7 +729,7 @@ export function executionStatusPresentation(
     waiting: {
       label: "Waiting",
       icon: "⏸",
-      description: APPROVAL_RESUME_DISABLED_HELP,
+      description: WAITING_STATUS_HELP,
       tone: "claimed",
     },
     blocked: {

@@ -11,10 +11,7 @@ import {
 import { isTerminalRunStatus } from "@/lib/execution";
 import { APPROVAL_CLOSED_MESSAGE } from "@/lib/execution-retry";
 import { approveApproval, rejectApproval } from "@/lib/approval-client";
-import {
-  APPROVAL_DECIDE_HELP,
-  APPROVAL_SOD_HELP,
-} from "@/lib/approval-contract";
+import { APPROVAL_DECIDE_NOTE } from "@/lib/approval-contract";
 import {
   APPROVAL_ADMIN_OVERRIDE_NOTE,
   APPROVAL_ADMIN_OVERRIDE_TAG,
@@ -171,7 +168,7 @@ export function ApprovalDecideControls({
       ) : null}
       {offerDecision ? (
         <p className="text-xs text-[var(--ff-muted)]">
-          {APPROVAL_SOD_HELP} {APPROVAL_DECIDE_HELP}
+          {APPROVAL_DECIDE_NOTE}
         </p>
       ) : null}
       {confirming ? (

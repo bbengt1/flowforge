@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { TooltipText, useTooltip } from "@/components/a11y/Tooltip";
-import { FF_STATUS_TIP_TRIGGER_CLASS } from "@/lib/a11y-tooltip";
+import {
+  FF_STATUS_TIP_TRIGGER_CLASS,
+  nestedTipActive,
+} from "@/lib/a11y-tooltip";
 import {
   LOUD_ERROR_CLASS,
   LOUD_INDETERMINATE_CLASS,
@@ -29,6 +32,11 @@ type HomeLastRunStatusProps = {
     | "lastRunIndeterminate"
   >;
   canSeeLastRun: boolean;
+  /**
+   * The explorer row is keyboard-current. Without a link the chip has no
+   * tab stop, so the row shows its help instead.
+   */
+  rowActive?: boolean;
 };
 
 function lastRunClassName(kind: HomeLastRunKind): string {
@@ -48,6 +56,7 @@ function lastRunClassName(kind: HomeLastRunKind): string {
 export function HomeLastRunStatus({
   item,
   canSeeLastRun,
+  rowActive = false,
 }: HomeLastRunStatusProps) {
   const presentation = homeLastRunPresentation({
     status: item.lastRunStatus,
@@ -65,8 +74,13 @@ export function HomeLastRunStatus({
   // The link is already a tab stop and its name already includes the
   // help, so keyboard focus shows that help visibly. Without a link the
   // chip adds no tab stop to the explorer row; the help stays in the
-  // row text and shows on hover.
-  const tip = useTooltip(presentation.help);
+  // row text, shows on hover, and shows while the row is keyboard-current.
+  const tip = useTooltip(presentation.help, {
+    active: nestedTipActive({
+      hasHelp: !href,
+      keyboardCurrent: rowActive,
+    }),
+  });
   const body = (
     <>
       <span aria-hidden="true">{presentation.icon}</span>
@@ -98,7 +112,11 @@ export function HomeLastRunStatus({
           {body}
         </Link>
       ) : (
-        <span {...tip.hoverProps} className={className}>
+        <span
+          {...tip.hoverProps}
+          data-home-last-run-tip="row"
+          className={className}
+        >
           {body}
         </span>
       )}

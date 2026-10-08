@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  APPROVAL_STATE_RESUME_SENTENCE,
   INDETERMINATE_STATUS_HELP,
   RETRY_INDETERMINATE_MESSAGE,
 } from "./execution-contract.ts";
+import {
+  APPROVAL_BINDING_HELP,
+  APPROVAL_DECIDE_NOTE,
+} from "./approval-contract.ts";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -542,13 +547,93 @@ describe("keyboard and error navigation", () => {
   });
 });
 
+/** Developer wording that must never reach approval UI copy. */
+const DEVELOPER_COPY = /POST\b|CSRF|\/approvals\/\{id\}|\/approvals\/catalog|waitResumeEnabled|#\d+/;
+
 describe("approval wait is durable in E10.3", () => {
   it("enables durable wait and keeps resume as decide", () => {
     const controls = approvalWaitControls();
     assert.equal(controls.waitEnabled, true);
     assert.equal(controls.resumeEnabled, false);
     assert.match(controls.waitHelp, /survives/);
-    assert.match(controls.resumeHelp, /decide/);
+    assert.equal(controls.resumeHelp, APPROVAL_STATE_RESUME_SENTENCE);
+  });
+
+  it("says how a waiting run continues in plain words", () => {
+    assert.equal(
+      APPROVAL_STATE_RESUME_SENTENCE,
+      "The run continues once someone approves or rejects this step, here or on its approval page.",
+    );
+    assert.doesNotMatch(APPROVAL_STATE_RESUME_SENTENCE, DEVELOPER_COPY);
+    assert.doesNotMatch(approvalWaitControls().resumeHelp, DEVELOPER_COPY);
+    // Distinct from the Waiting chip help, and short.
+    assert.notEqual(
+      APPROVAL_STATE_RESUME_SENTENCE,
+      executionStatusPresentation("waiting").description,
+    );
+    assert.ok(APPROVAL_STATE_RESUME_SENTENCE.length <= 100);
+  });
+
+  it("the run page approval state renders no developer wording and no title", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const panel = readFileSync(
+      join(here, "../components/approvals/ExecutionApprovalState.tsx"),
+      "utf8",
+    );
+    assert.equal(panel.includes("title="), false);
+    assert.equal(panel.includes("APPROVAL_RESUME_DISABLED_HELP"), false);
+    assert.equal(panel.includes("APPROVAL_WAIT_DURABLE_HELP"), false);
+    assert.match(panel, /\{waitControls\.resumeHelp\}/);
+    // Every literal the panel can render, with comments stripped.
+    const code = panel.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    const literals = [
+      ...code.matchAll(/"([^"\n]*)"/g),
+      ...code.matchAll(/`([^`]*)`/g),
+      ...code.matchAll(/>([^<>{}]+)</g),
+    ].map((match) => match[1]);
+    for (const literal of literals) {
+      assert.doesNotMatch(literal, DEVELOPER_COPY, literal);
+    }
+    // The shared constants it renders are plain too.
+    assert.doesNotMatch(APPROVAL_BINDING_HELP, DEVELOPER_COPY);
+  });
+
+  it("the decide controls inside it say who can't decide, in plain words", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const controls = readFileSync(
+      join(here, "../components/approvals/ApprovalDecideControls.tsx"),
+      "utf8",
+    );
+    assert.equal(
+      APPROVAL_DECIDE_NOTE,
+      "The person who requested this approval can't approve or reject it.",
+    );
+    assert.doesNotMatch(APPROVAL_DECIDE_NOTE, DEVELOPER_COPY);
+    assert.match(controls, /\{APPROVAL_DECIDE_NOTE\}/);
+    assert.equal(controls.includes("APPROVAL_DECIDE_HELP"), false);
+    assert.equal(controls.includes("APPROVAL_SOD_HELP"), false);
+    assert.equal(controls.includes("title="), false);
+    const code = controls.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    for (const match of code.matchAll(/>([^<>{}]+)</g)) {
+      assert.doesNotMatch(match[1], DEVELOPER_COPY, match[1]);
+    }
+  });
+
+  it("no component renders the decide-route contract note", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    for (const relative of [
+      "../components/approvals/ExecutionApprovalState.tsx",
+      "../components/approvals/ApprovalDetail.tsx",
+      "../components/approvals/ApprovalList.tsx",
+      "../components/approvals/ApprovalDecideControls.tsx",
+      "../components/executions/ExecutionDetail.tsx",
+      "../components/executions/ExecutionDecideActions.tsx",
+      "../components/workflows/RunControl.tsx",
+    ]) {
+      const text = readFileSync(join(here, relative), "utf8");
+      assert.equal(text.includes("APPROVAL_RESUME_DISABLED_HELP"), false, relative);
+      assert.equal(text.includes("resumeHelp"), relative.endsWith("ExecutionApprovalState.tsx"), relative);
+    }
   });
 });
 
