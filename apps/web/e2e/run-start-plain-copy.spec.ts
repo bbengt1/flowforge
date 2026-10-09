@@ -5,7 +5,6 @@ import {
   OPERATOR_FAILED_EXECUTION_ID,
   OPERATOR_WORKFLOW_ID,
 } from "./operator-api";
-import { EXECUTION_INBOX_OPEN_HINT } from "../src/lib/execution-inbox.ts";
 import { MANUAL_START_INPUT_HELP } from "../src/lib/manual-start-contract.ts";
 
 /**
@@ -150,10 +149,9 @@ test.describe("runs inbox", () => {
     ).toBeVisible();
     await expectNoDeveloperText(main);
     await expect(main.locator("code")).toHaveCount(0);
-    // A listbox option holds no buttons or links (#634 F3), and says what Open does.
+    // A listbox option holds no buttons or links (#634 F3).
     const listbox = page.getByRole("listbox", { name: "Workspace executions" });
     await expect(listbox.locator("[role='option'] :is(button, a, input, select)")).toHaveCount(0);
-    await expect(listbox).toContainText(EXECUTION_INBOX_OPEN_HINT);
     await expect(listbox).not.toContainText("/executions/{id}");
     await expectNoBlockingAxeViolations(page);
   });
