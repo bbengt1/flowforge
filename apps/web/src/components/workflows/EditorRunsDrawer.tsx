@@ -61,6 +61,10 @@ import { listExecutionApprovals } from "@/lib/approval-client";
 import type { ApprovalRequest } from "@/lib/approval-types";
 import { listWorkflowExecutions, loadExecutionHistory } from "@/lib/execution-client";
 import { isExecutionForbidden } from "@/lib/execution";
+import {
+  EXECUTIONS_VIEW_DENIED,
+  strippedSecretFieldsMessage,
+} from "@/lib/execution-contract";
 import { executionDecideShouldLoadApprovals } from "@/lib/execution-decide";
 import { executionOperateShouldLoadDetail } from "@/lib/execution-operate";
 import type {
@@ -312,9 +316,8 @@ export function EditorRunsDrawer({
         <p className={`text-xs ${FF_EDITOR_MUTED_CLASS}`}>{EDITOR_RUNS_OPERATE_HELP}</p>
         {workflowName ? (
           <p className={`mt-1 text-xs ${FF_EDITOR_MUTED_CLASS}`}>
-            <code className="font-mono">GET /workflows/{"{id}"}/executions</code>
-            {" "}
-            for <span className={`font-medium ${FF_EDITOR_TITLE_CLASS}`}>{workflowName}</span>
+            Runs of{" "}
+            <span className={`font-medium ${FF_EDITOR_TITLE_CLASS}`}>{workflowName}</span>
             .
           </p>
         ) : null}
@@ -402,8 +405,7 @@ export function EditorRunsDrawer({
 
         {denied ? (
           <p className={`mt-4 text-sm ${FF_EDITOR_MUTED_CLASS}`}>
-            This role cannot view executions (
-            <code className="font-mono text-xs">execution.view</code> missing).
+            {EXECUTIONS_VIEW_DENIED}
           </p>
         ) : null}
 
@@ -414,8 +416,7 @@ export function EditorRunsDrawer({
         ) : null}
         {strippedKeys.length ? (
           <p role="status" className="mt-3 text-sm text-fg">
-            Unexpected secret fields were stripped from the API response:{" "}
-            {strippedKeys.join(", ")}. Treat this as a backend contract bug.
+            {strippedSecretFieldsMessage(strippedKeys)}
           </p>
         ) : null}
 

@@ -413,7 +413,7 @@ export function ManualStartPanel({
           />
           {pins.length > 0 ? (
             <p className="text-xs text-fg">
-              {pins.length} ops-config pin{pins.length === 1 ? "" : "s"} on this
+              {pins.length} config pin{pins.length === 1 ? "" : "s"} on this
               published version.
             </p>
           ) : null}

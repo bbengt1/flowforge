@@ -57,25 +57,25 @@ export const SCRIPT_REVOKE_FORBIDDEN_MESSAGE =
   "Revoke requires script.revoke (operator/admin). HTTP 403 is fail-closed; the artifact is not treated as revoked.";
 
 export const SCRIPT_EMERGENCY_STOP_HELP =
-  "Emergency stop is distinct from Cancel. It requires script.emergencyStop and may be denied by a bound kind=script policy (allowEmergencyStop=false). Viewer → 403.";
+  "Emergency stop is distinct from Cancel. Your role and the bound script policy both have to allow it.";
 
 export const SCRIPT_EMERGENCY_STOP_CONFIRM_HELP =
-  "Queued or claimed (no heartbeat) stops become canceled — the runner never started. Running or uncertain provider outcome stays loud indeterminate until verified. Never assume the script did not run. This UI does not offer a blind retry after stop.";
+  "If the script hadn't started yet, the run is canceled. If it was already running or the outcome is unknown, the run stays Indeterminate until someone checks it. Don't assume the script didn't run, and FlowForge won't retry it blindly after a stop.";
 
 export const SCRIPT_EMERGENCY_STOP_INDETERMINATE_HELP =
-  "Emergency stop left an uncertain provider outcome. Status is indeterminate until verified. A side effect may have occurred. Do not assume the script did not run. Retry is hidden — never a blind re-run.";
+  "Emergency stop left an uncertain outcome. The run stays Indeterminate until someone checks it. A side effect may have occurred — don't assume the script didn't run. Retry stays hidden so it isn't re-run blindly.";
 
 export const SCRIPT_EMERGENCY_STOP_CANCELED_HELP =
   "Emergency stop halted the script before dispatch. The runner was not started. Status is canceled.";
 
 export const SCRIPT_EMERGENCY_STOP_FORBIDDEN_MESSAGE =
-  "Emergency stop requires script.emergencyStop (operator/admin) and an allowing kind=script policy. HTTP 403 is fail-closed; the run is not treated as stopped.";
+  "Your role or the bound script policy can't emergency-stop this run. The run wasn't stopped.";
 
 export const SCRIPT_EMERGENCY_STOP_DENIED_MESSAGE =
-  "Emergency stop was denied (403 emergency-stop-denied or policy allowEmergencyStop=false). The run is unchanged.";
+  "Emergency stop was denied by policy. The run is unchanged.";
 
 export const SCRIPT_NO_BLIND_RETRY_AFTER_STOP_HELP =
-  "This UI never offers a blind retry after emergency stop. Queued stops stay canceled. Running or uncertain stays indeterminate until a verification hook. A closed run can't be retried.";
+  "FlowForge never offers a blind retry after an emergency stop. Queued stops stay canceled. Running or uncertain runs stay Indeterminate until someone checks them. A closed run can't be retried.";
 
 export const SCRIPT_OPS_AUDIT_SECRET_FREE_HELP =
   "Audit rows script.artifact.revoke and script.emergency_stop are secret-free (digest, actor, outcome). Package blobs, storageRef, and secrets are never shown.";

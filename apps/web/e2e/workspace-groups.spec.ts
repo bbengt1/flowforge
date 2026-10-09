@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
 import { expectNoBlockingAxeViolations } from "./axe";
 import { expectNoSecretsInBrowserStorage, installOperatorApi } from "./operator-api";
 import { ROUTE_NOT_FOUND_HEADING } from "../src/lib/route-boundary-chrome.ts";
@@ -487,6 +487,22 @@ test.describe("workspace groups admin", () => {
 
 const SCIM_GROUP_ID = "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0";
 
+/**
+ * The status chip's tooltip text is nested inside the chip. Checks that
+ * the chip's aria-describedby names that nested tooltip, reading both ids
+ * fresh on every poll so a re-render can't leave the test holding an old id.
+ */
+async function expectChipDescribedByOwnTip(chip: Locator, tip: Locator) {
+  await expect(tip).toHaveCount(1);
+  await expect
+    .poll(async () => {
+      const describedBy = await chip.getAttribute("aria-describedby");
+      const tipId = await tip.getAttribute("id");
+      return Boolean(describedBy) && describedBy === tipId;
+    })
+    .toBe(true);
+}
+
 const SCIM_GROUP: StoredGroup = {
   id: SCIM_GROUP_ID,
   displayName: "Okta approvers",
@@ -723,10 +739,10 @@ test.describe("SCIM-managed groups", () => {
     await expect(chip).toHaveAccessibleName(GROUP_SCIM_MANAGED_LABEL);
     await expect(chip).toHaveAccessibleDescription(GROUP_SCIM_MANAGED_DESCRIPTION);
     await expect(chip).toHaveAttribute("tabindex", "0");
-    const tipId = await chip.getAttribute("aria-describedby");
-    expect(tipId).toBeTruthy();
-    const tip = page.locator(`[id="${tipId}"]`);
-    await expect(tip).toHaveAttribute("role", "tooltip");
+    // Find the tooltip inside the chip rather than building a locator from
+    // an id read once.
+    const tip = chip.locator('[role="tooltip"]');
+    await expectChipDescribedByOwnTip(chip, tip);
     await expect(tip).toHaveAttribute("data-ff-tooltip", "closed");
 
     // Tab from the group's link lands on the chip and opens the tooltip.
@@ -749,14 +765,27 @@ test.describe("SCIM-managed groups", () => {
     await page.keyboard.press("Escape");
     await expect(tip).toHaveAttribute("data-ff-tooltip", "closed");
 
-    // The detail page badge works the same way.
+    // The detail page badge works the same way. Wait for the detail page
+    // first: until the route change commits, the list's chip is still on
+    // screen and a page-wide badge locator would match it instead.
     await row.getByRole("link", { name: "Okta approvers" }).click();
-    const detailChip = page.locator("[data-group-scim-badge]").getByRole("status");
+    await expect(page).toHaveURL(new RegExp(`/groups/${SCIM_GROUP_ID}$`));
+    const detail = page.locator("[data-groups-page='detail']");
+    await expect(detail.getByRole("heading", { level: 1, name: "Okta approvers" })).toBeVisible();
+    await expect(detail.locator("[data-group-scim-locked='locked']")).toHaveText(
+      GROUP_SCIM_LOCKED_MESSAGE,
+    );
+    await expect(page.locator("[data-groups-page='list']")).toHaveCount(0);
+    const detailChip = detail.locator("[data-group-scim-badge]").getByRole("status");
+    await expect(detailChip).toHaveAccessibleName(GROUP_SCIM_MANAGED_LABEL);
     await expect(detailChip).toHaveAccessibleDescription(GROUP_SCIM_MANAGED_DESCRIPTION);
+    const detailTip = detailChip.locator('[role="tooltip"]');
+    await expectChipDescribedByOwnTip(detailChip, detailTip);
     await page.keyboard.press("Shift");
     await detailChip.focus();
-    const detailTip = page.locator(`[id="${await detailChip.getAttribute("aria-describedby")}"]`);
+    await expect(detailChip).toBeFocused();
     await expect(detailTip).toHaveAttribute("data-ff-tooltip", "open");
+    await expect(detailTip).toHaveText(GROUP_SCIM_MANAGED_DESCRIPTION);
     await page.keyboard.press("Escape");
     await expect(detailTip).toHaveAttribute("data-ff-tooltip", "closed");
     await expect(detailChip).toBeFocused();

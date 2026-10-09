@@ -77,12 +77,42 @@ export const EXECUTION_INBOX_DEFERRED_QUERY_KEYS = [
 export const INVENTED_REPLAY_ROUTE = "/replay";
 
 export const EXECUTION_INBOX_KEYBOARD_HELP =
-  "Arrow keys move the inbox. Enter or Space opens the focused run on existing /executions/{id} detail. Cancel, Retry, and Stop stay on the row when the existing contracts allow them. Status and workflow filters stay on this page.";
+  "Arrow keys move through the runs. Enter or Space opens the focused run. Cancel, Retry, and Stop stay on the row when they apply. Status and workflow filters stay on this page.";
 
 export const EXECUTION_INBOX_OPEN_LABEL = "Open";
 
+/**
+ * Contract note for route checks. Not UI copy: never render it. The
+ * inbox filters with GET /executions status, workflowId, and limit,
+ * keeps the load-more cursor in memory only, opens rows into the
+ * existing /executions/{id} detail, and decides waiting runs with
+ * POST /approvals/{id}/decide.
+ */
+export const EXECUTION_INBOX_CONTRACT_NOTE =
+  "Filter with GET /executions status, workflowId, and limit. Load more sends cursor from the previous next in memory — the opaque token is not written to the URL. Open a row into existing /executions/{id} detail — no second graph here. Cancel, retry, and emergency stop use the existing E5/E8/E9 routes on the row. Retry stays gated by capabilities.retry.allowed. Waiting runs decide the bound approval with POST /approvals/{id}/decide.";
+
+/** Header on the workspace runs inbox. */
+export const EXECUTIONS_PAGE_HELP =
+  "Runs in this workspace. Open a run to see each step on the graph, its output, and its artifacts.";
+
+/** Above the inbox filters. Plain words, no routes, flags, or query keys. */
 export const EXECUTION_INBOX_HELP =
-  "Workspace inbox for operate-a-run. Filter with GET /executions status, workflowId, and limit. Load more sends cursor from the previous next in memory — the opaque token is not written to the URL. Open a row into existing /executions/{id} detail — no second graph here. Cancel, retry, and emergency stop use the existing E5/E8/E9 routes on the row. Retry stays gated by capabilities.retry.allowed. Waiting runs decide the bound approval with POST /approvals/{id}/decide. Drafts never run. Secrets stay [redacted].";
+  "Filter runs by status or workflow, then open one to see its steps. Cancel, Retry, and Stop are on each row when they apply. A waiting run continues once someone approves or rejects it. Drafts never run, and secrets show as [redacted].";
+
+/** Inbox empty state. */
+export const EXECUTION_INBOX_EMPTY_HELP =
+  "Start a published version from the workflow page or the panel below. Starting again with the same idempotency key opens the existing run, and the same key with different input starts nothing. Drafts never run.";
+
+/** Inbox link that opens the Start panel on the workflows page. */
+export const EXECUTION_INBOX_START_LINK = "Start a run";
+
+/** Above the Start panel on the inbox. */
+export const EXECUTION_INBOX_START_HELP =
+  "Start a published version from here. Drafts never run.";
+
+/** Above the run compare form on the inbox. */
+export const EXECUTION_INBOX_COMPARE_HELP =
+  "Compare two runs side by side. Secrets stay hidden. When both runs come from the same workflow, you can also compare their versions.";
 
 export const EXECUTION_INBOX_DETAIL_PATH = "/executions/{id}";
 export const EXECUTION_INBOX_REPLAY_GRAPH_SOURCE =
