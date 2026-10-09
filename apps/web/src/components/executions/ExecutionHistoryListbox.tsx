@@ -13,6 +13,7 @@ import {
 import {
   EXECUTION_INBOX_COLUMNS,
   EXECUTION_INBOX_KEYBOARD_HELP,
+  EXECUTION_INBOX_OPEN_HINT,
   EXECUTION_INBOX_OPEN_LABEL,
   executionInboxDurationLabel,
   executionInboxTimeLabel,
@@ -142,9 +143,7 @@ export function ExecutionHistoryListbox({
           return (
             <li
               key={row.id}
-              role="option"
-              aria-selected={focused}
-              onClick={() => activate(row)}
+              role="none"
               onPointerEnter={rowHelp ? () => setHoveredRowId(row.id) : undefined}
               onPointerLeave={
                 rowHelp
@@ -174,6 +173,7 @@ export function ExecutionHistoryListbox({
                         : `rounded-xl ${FF_INBOX_ROW_CLASS} ${pad}`
               }
             >
+              <div role="option" aria-selected={focused} onClick={() => activate(row)}>
               {overlay ? (
                 <>
                   <div className="flex flex-wrap items-start justify-between gap-2">
@@ -210,11 +210,8 @@ export function ExecutionHistoryListbox({
                     <span className={`font-medium ${FF_INBOX_LINK_CLASS}`}>
                       {EXECUTION_INBOX_OPEN_LABEL}
                     </span>
-                    <span className={FF_INBOX_MUTED_CLASS}> — /executions/{"{id}"}</span>
+                    <span className={FF_INBOX_MUTED_CLASS}> — {EXECUTION_INBOX_OPEN_HINT}</span>
                   </p>
-                  {operateActions ? (
-                    <div className="mt-2">{operateActions(row)}</div>
-                  ) : null}
                 </>
               ) : inbox ? (
                 <>
@@ -259,9 +256,6 @@ export function ExecutionHistoryListbox({
                     </span>
                   </p>
                 </div>
-                {operateActions ? (
-                  <div className="mt-2">{operateActions(row)}</div>
-                ) : null}
                 </>
               ) : (
                 <>
@@ -309,11 +303,15 @@ export function ExecutionHistoryListbox({
                       <span className={`font-medium ${FF_INBOX_LINK_CLASS}`}>
                         Open execution
                       </span>
-                      <span className={FF_INBOX_MUTED_CLASS}> — workspace replay</span>
+                      <span className={FF_INBOX_MUTED_CLASS}> — {EXECUTION_INBOX_OPEN_HINT}</span>
                     </p>
                   ) : null}
                 </>
               )}
+              </div>
+              {operateActions ? (
+                <div className="mt-2">{operateActions(row)}</div>
+              ) : null}
             </li>
           );
         })}

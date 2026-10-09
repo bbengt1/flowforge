@@ -5,6 +5,8 @@ import {
   OPERATOR_FAILED_EXECUTION_ID,
   OPERATOR_WORKFLOW_ID,
 } from "./operator-api";
+import { EXECUTION_INBOX_OPEN_HINT } from "../src/lib/execution-inbox.ts";
+import { MANUAL_START_INPUT_HELP } from "../src/lib/manual-start-contract.ts";
 
 /**
  * The runs inbox, the run page, and the Start panel say things in plain
@@ -148,6 +150,11 @@ test.describe("runs inbox", () => {
     ).toBeVisible();
     await expectNoDeveloperText(main);
     await expect(main.locator("code")).toHaveCount(0);
+    // A listbox option holds no buttons or links (#634 F3), and says what Open does.
+    const listbox = page.getByRole("listbox", { name: "Workspace executions" });
+    await expect(listbox.locator("[role='option'] :is(button, a, input, select)")).toHaveCount(0);
+    await expect(listbox).toContainText(EXECUTION_INBOX_OPEN_HINT);
+    await expect(listbox).not.toContainText("/executions/{id}");
     await expectNoBlockingAxeViolations(page);
   });
 
@@ -186,6 +193,8 @@ test("the run page and its retry conflict are plain", async ({ page }) => {
       "Worker jobs for this run, with their lease and heartbeat details when available. Worker secrets are never shown.",
     ),
   ).toBeVisible();
+  // Landmarks are named once each (#634 F4).
+  await expect(page.getByRole("region", { name: "Graph replay" })).toHaveCount(1);
   await expectNoDeveloperText(main);
   await expect(main.locator("code")).toHaveCount(0);
   await expectNoBlockingAxeViolations(page);
@@ -233,6 +242,8 @@ test("the Start panel's conflict message is plain", async ({ page }) => {
   }
   const start = panel.getByRole("button", { name: "Start", exact: true });
   await expect(start).toBeEnabled();
+  // The input hint shows once (#634 L-b).
+  await expect(panel.getByText(MANUAL_START_INPUT_HELP)).toHaveCount(1);
   await expectNoDeveloperText(panel);
   await expectNoTitles(panel);
   await start.click();
