@@ -75,6 +75,32 @@ func assertMissingActorFailed(t *testing.T, ctx context.Context, store Store, sc
 	}
 }
 
+// assertMissingActorAudit checks the claim wrote exactly one job.fail
+// audit row for the run, carrying the run's correlation id.
+func assertMissingActorAudit(t *testing.T, ctx context.Context, store Store, scope isolation.Scope, execID, wantCorrelation string) {
+	t.Helper()
+	if wantCorrelation == "" {
+		t.Fatal("test run has no correlation id")
+	}
+	events, err := store.ListAuditEvents(ctx, scope, AuditListFilter{ResourceType: "execution", ResourceID: execID, Action: "job.fail", Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found int
+	for _, ev := range events {
+		if ev.Details["reason"] != ReasonMissingActor {
+			continue
+		}
+		found++
+		if ev.CorrelationID != wantCorrelation {
+			t.Fatalf("job.fail correlationId = %q, want %q", ev.CorrelationID, wantCorrelation)
+		}
+	}
+	if found != 1 {
+		t.Fatalf("missing_actor job.fail rows = %d, events = %+v", found, events)
+	}
+}
+
 func TestMemoryClaimFailsMissingActor(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemory()
@@ -89,7 +115,7 @@ func TestMemoryClaimFailsMissingActor(t *testing.T) {
 	wf, ver := publishDispatch(t, ctx, store, scope)
 	now := time.Now().UTC().Add(time.Second)
 	for _, trig := range []string{"manual", "api", ""} {
-		exec, err := store.PlantExecutionForTest(ctx, sys, wf.ID, StartInput{VersionID: ver.ID, TriggerType: trig})
+		exec, err := store.PlantExecutionForTest(ctx, sys, wf.ID, StartInput{VersionID: ver.ID, TriggerType: trig, CorrelationID: "f1-mem-" + trig})
 		if err != nil {
 			t.Fatalf("%q plant: %v", trig, err)
 		}
@@ -97,6 +123,7 @@ func TestMemoryClaimFailsMissingActor(t *testing.T) {
 			t.Fatalf("%q claim = %v, want ErrEmptyClaim", trig, err)
 		}
 		assertMissingActorFailed(t, ctx, store, scope, wf.ID, exec.ID, 0)
+		assertMissingActorAudit(t, ctx, store, scope, exec.ID, "f1-mem-"+trig)
 	}
 	// A schedule run with no requester still claims.
 	if _, err := store.StartExecution(ctx, sys, wf.ID, StartInput{VersionID: ver.ID, TriggerType: "schedule"}); err != nil {
@@ -170,7 +197,7 @@ func TestPostgresClaimFailsMissingActor(t *testing.T) {
 	}
 	plant := func(trig string) string {
 		t.Helper()
-		exec, err := store.StartExecution(ctx, scope, wf.ID, StartInput{VersionID: ver.ID, TriggerType: trig})
+		exec, err := store.StartExecution(ctx, scope, wf.ID, StartInput{VersionID: ver.ID, TriggerType: trig, CorrelationID: "f1-pg-" + trig})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -187,11 +214,12 @@ func TestPostgresClaimFailsMissingActor(t *testing.T) {
 				t.Fatalf("%s claim = %v, want ErrEmptyClaim", trig, err)
 			}
 			assertMissingActorFailed(t, ctx, store, scope, wf.ID, id, 0)
+			assertMissingActorAudit(t, ctx, store, scope, id, "f1-pg-"+trig)
 		}
 	})
 
 	t.Run("requeued", func(t *testing.T) {
-		exec, err := store.StartExecution(ctx, scope, wf.ID, StartInput{VersionID: ver.ID})
+		exec, err := store.StartExecution(ctx, scope, wf.ID, StartInput{VersionID: ver.ID, CorrelationID: "f1-pg-requeued"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -215,6 +243,7 @@ func TestPostgresClaimFailsMissingActor(t *testing.T) {
 			t.Fatalf("requeued claim = %v, want ErrEmptyClaim", err)
 		}
 		assertMissingActorFailed(t, ctx, store, scope, wf.ID, exec.ID, first.Job.FencingToken)
+		assertMissingActorAudit(t, ctx, store, scope, exec.ID, "f1-pg-requeued")
 	})
 
 	t.Run("schedule still claims", func(t *testing.T) {

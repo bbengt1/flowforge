@@ -64,7 +64,8 @@ func MissingActorFailure(exec Execution) (map[string]any, bool) {
 // end failed with MissingActorError (the step never starts), the run is
 // rolled up (statusReason missing_actor), and a job.fail audit row is
 // written. No fencing token or lease is ever issued for the job.
-func failMissingActorJobTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now time.Time, jobID, executionID string, failure map[string]any) error {
+func failMissingActorJobTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now time.Time, jobID string, exec Execution, failure map[string]any) error {
+	executionID := exec.ID
 	errRaw, err := marshalObject(failure)
 	if err != nil {
 		return ErrInvalid
@@ -96,11 +97,12 @@ func failMissingActorJobTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope
 		return err
 	}
 	_, err = insertAuditTx(ctx, tx, scope, AuditWrite{
-		Action:       "job.fail",
-		ResourceType: "execution",
-		ResourceID:   executionID,
-		Outcome:      "failed",
-		Details:      map[string]any{"reason": ReasonMissingActor, "jobId": jobID},
+		Action:        "job.fail",
+		ResourceType:  "execution",
+		ResourceID:    executionID,
+		Outcome:       "failed",
+		CorrelationID: exec.CorrelationID,
+		Details:       map[string]any{"reason": ReasonMissingActor, "jobId": jobID},
 	})
 	return err
 }

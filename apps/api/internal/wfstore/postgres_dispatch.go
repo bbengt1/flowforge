@@ -170,7 +170,7 @@ func (p *Postgres) ClaimJob(ctx context.Context, scope isolation.Scope, now time
 		return DispatchResult{}, err
 	}
 	if failure, refuse := MissingActorFailure(picked0); refuse {
-		if err := failMissingActorJobTx(ctx, tx, scope, now, jobID, executionID, failure); err != nil {
+		if err := failMissingActorJobTx(ctx, tx, scope, now, jobID, picked0, failure); err != nil {
 			return DispatchResult{}, err
 		}
 		if err := tx.Commit(ctx); err != nil {
