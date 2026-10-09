@@ -167,8 +167,7 @@ test.describe("runs inbox", () => {
 
 test("the run page and its retry conflict are plain", async ({ page }) => {
   await installOperatorApi(page, { permissions: PERMISSIONS });
-  // A 403 here swaps the whole page for the forbidden view, so the inline
-  // refusal is exercised with a 409 instead.
+  // A 403 on retry is covered in run-retry-forbidden.spec.ts (#630).
   await failPost(page, (path) => path.endsWith("/retry"), 409, "conflict");
   await page.goto(`/executions/${OPERATOR_FAILED_EXECUTION_ID}?workflowId=${OPERATOR_WORKFLOW_ID}`);
   await expect(page.getByRole("heading", { level: 1, name: "Execution" })).toBeVisible();

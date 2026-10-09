@@ -99,6 +99,8 @@ import {
   scriptRetryBlockedMessage,
 } from "@/lib/script-io-contract";
 import { emergencyStopImpact } from "@/lib/confirm-destructive";
+import type { ProblemDetails } from "@/lib/problem";
+import { runActionFailure } from "@/lib/run-action-problem";
 import { emergencyStopExecution } from "@/lib/script-ops-client";
 import {
   SCRIPT_EMERGENCY_STOP_CONFIRM_HELP,
@@ -186,6 +188,12 @@ export function ExecutionDetail({
   const [cancelMessage, setCancelMessage] = useState<string | null>(null);
   const [retryPending, setRetryPending] = useState<string | null>(null);
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
+  // Which Retry control the message belongs to: "execution" or a step id.
+  const [retryTarget, setRetryTarget] = useState<string>("execution");
+  // A non-role 403 from an action (#630). Shown as a banner; the run stays.
+  const [actionProblem, setActionProblem] = useState<ProblemDetails | null>(
+    null,
+  );
   const [stopPending, setStopPending] = useState<string | null>(null);
   const [stopMessage, setStopMessage] = useState<string | null>(null);
   const [stopTarget, setStopTarget] = useState<string | null>(null);
@@ -200,7 +208,10 @@ export function ExecutionDetail({
   const [versionCompare, setVersionCompare] =
     useState<CompareWorkflowResult | null>(null);
 
+  // Only a 403 on loading the run swaps the page for the forbidden view.
+  // Action refusals never reach `problem` (#630).
   const forbidden = isExecutionForbidden(problem);
+  const bannerProblem = problem ?? actionProblem;
   const view = detail && !forbidden && !denied ? executionDetailDisplay(detail) : null;
   const failureReason = view
     ? executionFailureReasonText({
@@ -266,6 +277,7 @@ export function ExecutionDetail({
     }
     setCancelPending(true);
     reportProblem(null);
+    setActionProblem(null);
     setCancelMessage(null);
     const result = await cancelExecution(identity, executionId, {
       workflowId: workflowId || detail?.workflowId,
@@ -274,8 +286,10 @@ export function ExecutionDetail({
     noteRequestId(result.requestId);
     setCancelPending(false);
     if (!result.ok) {
-      reportProblem(result.problem);
-      if (result.forbidden && result.problem.code === "forbidden") {
+      const failure = runActionFailure(result.problem, result.statusCode);
+      reportProblem(failure.pageProblem);
+      setActionProblem(failure.actionProblem);
+      if (failure.roleRefused) {
         setCancelMessage(CANCEL_FORBIDDEN_MESSAGE);
       }
       return;
@@ -293,6 +307,7 @@ export function ExecutionDetail({
     }
     setStopPending(stepId ?? "execution");
     reportProblem(null);
+    setActionProblem(null);
     setStopMessage(null);
     const status = stepId
       ? view?.steps.find((step) => step.id === stepId)?.status
@@ -305,8 +320,10 @@ export function ExecutionDetail({
     noteRequestId(result.requestId);
     setStopPending(null);
     if (!result.ok) {
-      reportProblem(result.problem);
-      if (result.forbidden) {
+      const failure = runActionFailure(result.problem, result.statusCode);
+      reportProblem(failure.pageProblem);
+      setActionProblem(failure.actionProblem);
+      if (failure.roleRefused) {
         setStopMessage(SCRIPT_EMERGENCY_STOP_FORBIDDEN_MESSAGE);
       }
       return;
@@ -333,7 +350,9 @@ export function ExecutionDetail({
       return;
     }
     setRetryPending(stepId ?? "execution");
+    setRetryTarget("execution");
     reportProblem(null);
+    setActionProblem(null);
     setRetryMessage(null);
     const result = stepId
       ? await retryExecutionStep(identity, executionId, stepId)
@@ -343,9 +362,13 @@ export function ExecutionDetail({
     noteRequestId(result.requestId);
     setRetryPending(null);
     if (!result.ok) {
-      reportProblem(result.problem);
+      const failure = runActionFailure(result.problem, result.statusCode);
+      reportProblem(failure.pageProblem);
+      setActionProblem(failure.actionProblem);
       const conflict = retryFailureCopy(result.problem, result.statusCode);
-      if (result.forbidden) {
+      // A refused step retry is explained next to that step's Retry button.
+      setRetryTarget(stepId ?? "execution");
+      if (failure.roleRefused) {
         setRetryMessage(RETRY_FORBIDDEN_MESSAGE);
       } else if (conflict) {
         setRetryMessage(conflict);
@@ -369,6 +392,7 @@ export function ExecutionDetail({
     const artifact = detail?.artifacts.find((item) => item.id === artifactId);
     setDownloadPending(artifactId);
     reportProblem(null);
+    setActionProblem(null);
     setDownloadMessage(null);
     const result = await downloadExecutionArtifact(
       identity,
@@ -393,7 +417,9 @@ export function ExecutionDetail({
     noteRequestId(result.requestId);
     setDownloadPending(null);
     if (!result.ok) {
-      reportProblem(result.problem);
+      const failure = runActionFailure(result.problem, result.statusCode);
+      reportProblem(failure.pageProblem);
+      setActionProblem(failure.actionProblem);
       setDownloadMessage(
         downloadGrantFailureMessage({
           forbidden: result.forbidden,
@@ -447,9 +473,9 @@ export function ExecutionDetail({
       </nav>
 
       <div id="execution-errors">
-        {problem ? <ProblemBanner problem={problem} /> : null}
+        {bannerProblem ? <ProblemBanner problem={bannerProblem} /> : null}
       </div>
-      {!problem ? (
+      {!bannerProblem ? (
         <RequestReference id={lastRequestId} className={`text-xs ${FF_INBOX_MUTED_CLASS}`} />
       ) : null}
       {strippedKeys.length ? (
@@ -462,7 +488,10 @@ export function ExecutionDetail({
       <div className="flex justify-end">
         <button
           type="button"
-          onClick={() => void refresh()}
+          onClick={() => {
+            setActionProblem(null);
+            void refresh();
+          }}
           disabled={pending || !ready || denied}
           className={FF_INBOX_GHOST_CLASS}
         >
@@ -475,7 +504,7 @@ export function ExecutionDetail({
           {(() => {
             const errorLinks = executionErrorNavLinks({
               steps: view.steps,
-              problem,
+              problem: bannerProblem,
             });
             if (errorLinks.length === 0) {
               return null;
@@ -659,7 +688,7 @@ export function ExecutionDetail({
                 {stopMessage}
               </p>
             ) : null}
-            {retryMessage ? (
+            {retryMessage && retryTarget === "execution" ? (
               <p role="status" className="mt-3 text-sm">
                 {retryMessage}
               </p>
@@ -782,6 +811,7 @@ export function ExecutionDetail({
                 if (!id) {
                   return;
                 }
+                setActionProblem(null);
                 void loadExecutionHistory(
                   identity,
                   id,
@@ -789,7 +819,15 @@ export function ExecutionDetail({
                 ).then(async (result) => {
                   noteRequestId(result.requestId);
                   if (!result.ok) {
-                    reportProblem(result.problem);
+                    // A 403 on the other run keeps this run on screen.
+                    const failure = runActionFailure(
+                      result.problem,
+                      result.statusCode,
+                    );
+                    reportProblem(failure.pageProblem);
+                    setActionProblem(
+                      failure.roleRefused ? result.problem : failure.actionProblem,
+                    );
                     return;
                   }
                   setCompareDetail(sanitizeQueryCacheValue(result.execution).value);
@@ -967,6 +1005,11 @@ export function ExecutionDetail({
                       }
                       return null;
                     })()}
+                    {retryMessage && retryTarget === step.id ? (
+                      <p role="status" className="mt-2 text-sm">
+                        {retryMessage}
+                      </p>
+                    ) : null}
                     {canOfferScriptEmergencyStop({
                       permissions,
                       status: step.status,
