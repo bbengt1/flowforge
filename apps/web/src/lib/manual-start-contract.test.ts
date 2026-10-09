@@ -6,6 +6,7 @@ import {
   MANUAL_START_AUDIT_ACTION,
   MANUAL_START_AUDIT_HELP,
   MANUAL_START_CATALOG_HELP,
+  MANUAL_START_BAD_INPUT_MESSAGE,
   MANUAL_START_CONFLICT_MESSAGE,
   MANUAL_START_CONTRACT_FALLBACK_HELP,
   MANUAL_START_CSRF_HELP,
@@ -373,6 +374,8 @@ describe("manual-start contract adapter", () => {
       assert.doesNotMatch(message, /HTTP|CSRF|workflow\.execute|\b\d{3}\b|This UI/, message);
     }
     assert.match(MANUAL_START_CONFLICT_MESSAGE, /approval/);
+    assert.doesNotMatch(MANUAL_START_BAD_INPUT_MESSAGE, /HTTP|400|CSRF/);
+    assert.doesNotMatch(MANUAL_START_CONFLICT_MESSAGE, /HTTP|409|CSRF/);
     assert.equal(
       startFailureMessage({
         type: "urn:flowforge:problem:invalid-request",
@@ -383,7 +386,7 @@ describe("manual-start contract adapter", () => {
         code: "invalid-request",
         request_id: "req-4",
       }),
-      "HTTP 400: drafts cannot run, or the start body/input is invalid or exceeds 16 KiB.",
+      MANUAL_START_BAD_INPUT_MESSAGE,
     );
     assert.equal(
       startFailureMessage({

@@ -61,7 +61,7 @@ export const SSH_INDETERMINATE_LEASE_LOSS_HELP =
   "Indeterminate SSH outcome — lease lost, unknown after dispatch, or verification could not confirm state. A remote side effect may have occurred. Do not assume the command did not run.";
 
 export const SSH_NO_BLIND_RETRY_HELP =
-  "This UI never offers a blind retry for ssh.run. Retry is shown only when result.retry.allowed is true (retrySafe + verification + remaining attempts). A closed retry is not offered.";
+  "FlowForge never offers a blind retry for an SSH step. Retry appears only when the step is marked safe to retry and its check confirms it.";
 
 export const SSH_PROBE_HELP =
   "spec.verification is an idempotent read-only probe using the same parameterSchema and POSIX quoting as the mutating template. It is never the mutating command. already-applied succeeds without re-run; safe-to-retry may re-run once; onError stays indeterminate.";
@@ -596,7 +596,7 @@ export function sshRetryBlockedMessage(input: {
 } = {}): string {
   const retry = parseSshRetryResult(input.output, input.error);
   if (retry?.allowed) {
-    return `${SSH_NO_BLIND_RETRY_HELP} result.retry.allowed is true — Retry queues a verify-first attempt.`;
+    return `${SSH_NO_BLIND_RETRY_HELP} Retry queues a check-first attempt.`;
   }
   if (isIndeterminateStatus(input.status)) {
     return `${SSH_INDETERMINATE_LEASE_LOSS_HELP} ${input.catalog?.ui.hideRetryWhen || DEFAULT_SSH_RETRY_UI.hideRetryWhen}.`;

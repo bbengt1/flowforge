@@ -21,9 +21,17 @@ import {
   isExecutionForbidden,
 } from "@/lib/execution";
 import {
+  EXECUTIONS_VIEW_DENIED,
+  strippedSecretFieldsMessage,
+} from "@/lib/execution-contract";
+import {
+  EXECUTION_INBOX_COMPARE_HELP,
   EXECUTION_INBOX_DEFAULT_LIMIT,
+  EXECUTION_INBOX_EMPTY_HELP,
   EXECUTION_INBOX_HELP,
   EXECUTION_INBOX_LIMITS,
+  EXECUTION_INBOX_START_HELP,
+  EXECUTION_INBOX_START_LINK,
   executionInboxHasActiveFilters,
   executionInboxHref,
   executionInboxStatuses,
@@ -41,7 +49,10 @@ import type {
   ExecutionRecord,
 } from "@/lib/execution-types";
 import { ManualStartPanel } from "@/components/workflows/ManualStartPanel";
-import { canOfferManualStart } from "@/lib/manual-start-contract";
+import {
+  MANUAL_START_ROLE_DENIED,
+  canOfferManualStart,
+} from "@/lib/manual-start-contract";
 import { compareWorkflow } from "@/lib/workflow-client";
 import { versionCompareRef } from "@/lib/workflow";
 import type { CompareWorkflowResult } from "@/lib/workflow-types";
@@ -268,8 +279,7 @@ export function ExecutionHistory() {
 
       {denied ? (
         <p className={`text-sm ${FF_INBOX_DANGER_CLASS}`}>
-          This role cannot view executions (
-          <code className="font-mono text-xs">execution.view</code> missing).
+          {EXECUTIONS_VIEW_DENIED}
         </p>
       ) : null}
 
@@ -281,8 +291,7 @@ export function ExecutionHistory() {
       ) : null}
       {strippedKeys.length ? (
         <p role="status" className={`text-sm ${FF_INBOX_DANGER_CLASS}`}>
-          Unexpected secret fields were stripped from the API response:{" "}
-          {strippedKeys.join(", ")}. Treat this as a backend contract bug.
+          {strippedSecretFieldsMessage(strippedKeys)}
         </p>
       ) : null}
 
@@ -293,21 +302,7 @@ export function ExecutionHistory() {
               {perWorkflow ? "Workflow runs" : "Workspace runs"}
             </h2>
             <p className={`mt-1 max-w-3xl text-sm ${FF_INBOX_MUTED_CLASS}`}>
-              {EXECUTION_INBOX_HELP}{" "}
-              {perWorkflow ? (
-                <>
-                  This filter uses{" "}
-                  <code className="font-mono text-xs">
-                    GET /workflows/{"{id}"}/executions
-                  </code>
-                  .
-                </>
-              ) : (
-                <>
-                  Workspace list is{" "}
-                  <code className="font-mono text-xs">GET /executions</code>.
-                </>
-              )}
+              {EXECUTION_INBOX_HELP}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -432,11 +427,7 @@ export function ExecutionHistory() {
             {filtersActive ? "No runs match these filters" : "No executions yet"}
           </h2>
           <p className={`mt-2 text-sm ${FF_INBOX_MUTED_CLASS}`}>
-            Start a published version from workflow home or the panel below.
-            Duplicate idempotency keys replay the existing run (
-            <code className="font-mono text-xs">200</code>). Same key +
-            different input is <code className="font-mono text-xs">409</code>.
-            Drafts never run.
+            {EXECUTION_INBOX_EMPTY_HELP}
           </p>
           <p className="mt-4 flex flex-wrap justify-center gap-4">
             {filtersActive ? (
@@ -452,7 +443,7 @@ export function ExecutionHistory() {
               href="/workflows?start=1"
               className={`text-sm font-medium ${FF_INBOX_LINK_CLASS}`}
             >
-              Open authenticated manual start
+              {EXECUTION_INBOX_START_LINK}
             </Link>
           </p>
         </section>
@@ -505,7 +496,7 @@ export function ExecutionHistory() {
             Start a published version
           </summary>
           <p className={`mt-2 text-sm ${FF_INBOX_MUTED_CLASS}`}>
-            Authenticated manual start from the inbox. Drafts never run.
+            {EXECUTION_INBOX_START_HELP}
           </p>
           <label className="mt-3 block text-sm">
             <span className={FF_INBOX_MUTED_CLASS}>Workflow</span>
@@ -537,7 +528,7 @@ export function ExecutionHistory() {
             </div>
           ) : startWorkflowId && !canExecute ? (
             <p className={`mt-3 text-sm font-medium ${FF_INBOX_DANGER_CLASS}`}>
-              Start requires workflow.execute. This surface is fail-closed.
+              {MANUAL_START_ROLE_DENIED}
             </p>
           ) : null}
         </details>
@@ -549,9 +540,7 @@ export function ExecutionHistory() {
             Compare executions
           </summary>
           <p className={`mt-2 text-sm ${FF_INBOX_MUTED_CLASS}`}>
-            Two redacted summaries. YAML compare uses the existing workflow
-            compare route when both pins share a workflow. No invented compare
-            route.
+            {EXECUTION_INBOX_COMPARE_HELP}
           </p>
           <form
             className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"

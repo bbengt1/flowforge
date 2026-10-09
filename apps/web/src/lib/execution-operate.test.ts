@@ -118,10 +118,9 @@ describe("R4.4 execution operate density", () => {
     assert.equal(executionOperateInheritsR4Guardrails(), true);
     assert.equal(R4_GUARDRAILS.loudIndeterminate, true);
     assert.match(R4_LATER_STORY_NOTES.r44, /#257/);
-    assert.match(EXECUTION_OPERATE_HELP, /capabilities\.retry\.allowed/);
-    assert.match(EXECUTION_OPERATE_HELP, /\/executions\/\{id\}\/cancel/);
-    assert.match(EXECUTION_OPERATE_HELP, /emergency-stop/);
-    assert.match(EXECUTION_OPERATE_HELP, /never silent success/);
+    assert.match(EXECUTION_OPERATE_HELP, /safe to retry/);
+    assert.match(EXECUTION_OPERATE_HELP, /Indeterminate/);
+    assert.match(EXECUTION_OPERATE_HELP, /Drafts never run/);
     assert.equal(EXECUTION_OPERATE_CANCEL_LABEL, "Cancel");
     assert.equal(EXECUTION_OPERATE_RETRY_LABEL, "Retry");
     assert.equal(EXECUTION_OPERATE_STOP_LABEL, "Stop");
@@ -242,7 +241,7 @@ describe("R4.4 execution operate density", () => {
     assert.equal(closed, false);
 
     assert.equal(executionOperateNeverOffersBlindRetry(), true);
-    assert.match(EXECUTION_OPERATE_RETRY_GATE_HELP, /capabilities\.retry\.allowed/);
+    assert.match(EXECUTION_OPERATE_RETRY_GATE_HELP, /safe to retry/);
   });
 
   it("offers emergency stop only for open script runs", () => {

@@ -1,7 +1,7 @@
 import {
-  SCRIPT_IO_HANDLE_HELP,
   SCRIPT_IO_INDETERMINATE_HELP,
   SCRIPT_IO_NO_BLIND_RETRY_HELP,
+  SCRIPT_IO_RESULT_PANEL_HELP,
   SCRIPT_IO_VALIDATION_HELP,
   isScriptIoStep,
   parseScriptIoResult,
@@ -46,10 +46,8 @@ export function ScriptIoResultPanel({ steps = [] }: ScriptIoResultPanelProps) {
     <section className={FF_INBOX_PANEL_CLASS}>
       <h2 className={`text-lg ${FF_INBOX_TITLE_CLASS}`}>Script I/O result</h2>
       <p className={`mt-1 text-sm ${FF_INBOX_MUTED_CLASS}`}>
-        Redacted typed outputs from existing{" "}
-        <code className="font-mono text-xs">GET /executions/{"{id}"}</code>{" "}
-        steps.         {SCRIPT_IO_VALIDATION_HELP} {SCRIPT_IO_HANDLE_HELP}{" "}
-        {SCRIPT_IO_NO_BLIND_RETRY_HELP} A closed retry is not offered.
+        {SCRIPT_IO_RESULT_PANEL_HELP} {SCRIPT_IO_VALIDATION_HELP}{" "}
+        {SCRIPT_IO_NO_BLIND_RETRY_HELP}
       </p>
       <ul className="mt-4 grid gap-3">
         {results.map(({ step, parsed }) => (
@@ -97,11 +95,11 @@ export function ScriptIoResultPanel({ steps = [] }: ScriptIoResultPanelProps) {
             ) : null}
             {parsed.retry ? (
               <p className={`mt-2 text-xs ${FF_INBOX_MUTED_CLASS}`}>
-                result.retry.allowed={String(parsed.retry.allowed)} · maxAttempts=
-                {parsed.retry.maxAttempts} · executed=
-                {parsed.retry.executedAttempts}
+                {parsed.retry.allowed ? "Retry allowed" : "Retry not allowed"} ·
+                attempts used {parsed.retry.executedAttempts} of{" "}
+                {parsed.retry.maxAttempts}
                 {parsed.retry.verificationOutcome
-                  ? ` · ${parsed.retry.verificationOutcome}`
+                  ? ` · check: ${parsed.retry.verificationOutcome}`
                   : ""}
                 . {parsed.retry.allowed ? "" : SCRIPT_IO_NO_BLIND_RETRY_HELP}
               </p>
@@ -112,7 +110,8 @@ export function ScriptIoResultPanel({ steps = [] }: ScriptIoResultPanelProps) {
             )}
             {parsed.strippedHandleKeys.length > 0 ? (
               <p className={`mt-2 text-xs ${FF_INBOX_MUTED_CLASS}`}>
-                Stripped scoped handle fields: {parsed.strippedHandleKeys.join(", ")}.
+                Hidden credential handle fields:{" "}
+                {parsed.strippedHandleKeys.join(", ")}.
               </p>
             ) : null}
           </li>

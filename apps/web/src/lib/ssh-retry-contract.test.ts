@@ -172,7 +172,7 @@ describe("ssh retry contract adapter", () => {
       }),
       true,
     );
-    assert.match(SSH_NO_BLIND_RETRY_HELP, /result\.retry\.allowed/);
+    assert.match(SSH_NO_BLIND_RETRY_HELP, /safe to retry/);
     assert.match(SSH_INDETERMINATE_LEASE_LOSS_HELP, /Do not assume the command did not run/);
   });
 

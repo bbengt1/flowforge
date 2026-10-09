@@ -155,10 +155,10 @@ export const SCRIPT_IO_INVALID_VERIFICATION_MESSAGE =
   "retrySafe=true requires idempotencyKey (1–128, letter-prefixed) and verification.behavior=declared-hook. Missing or invalid declaration is invalid-verification at validate/publish.";
 
 export const SCRIPT_IO_NO_BLIND_RETRY_HELP =
-  "This UI never offers a blind retry for script.python or script.go. Retry is shown only when result.retry.allowed is true (retrySafe + idempotencyKey + verification + remaining attempts). Lease loss stays indeterminate until the verification hook runs first. A closed retry is not offered.";
+  "FlowForge never offers a blind retry for a script step. Retry appears only when the step is marked safe to retry and its check confirms it. If the lease was lost, the run stays Indeterminate until that check runs first.";
 
 export const SCRIPT_IO_INDETERMINATE_HELP =
-  "Indeterminate script outcome — lease lost after dispatch or verification could not confirm state. A side effect may have occurred. Do not assume the script did not run. Verify first — never blindly re-run.";
+  "The script outcome is Indeterminate — the lease was lost after dispatch, or the check could not confirm state. A side effect may have occurred. Don't assume the script didn't run. Check first — never blindly re-run it.";
 
 export const SCRIPT_IO_IDEMPOTENCY_KEY_HELP =
   "Required when retrySafe. 1–128 identifier starting with a letter; letters, digits, and ._: - only.";
@@ -166,8 +166,12 @@ export const SCRIPT_IO_IDEMPOTENCY_KEY_HELP =
 export const SCRIPT_IO_VERIFICATION_HELP =
   "declared-hook is an idempotent check of prior output / expect. onMatch defaults to already-applied (do not re-run). onMismatch defaults to safe-to-retry. onError stays indeterminate.";
 
+/** Intro on the run page's Script I/O result panel. */
+export const SCRIPT_IO_RESULT_PANEL_HELP =
+  "Typed outputs from this run's script steps, with secrets redacted.";
+
 export const SCRIPT_IO_VALIDATION_HELP =
-  "Typed outputs must match the declared schema and size limit. Schema failures name field paths only and never echo secret content.";
+  "Outputs must match the published schema and size limit. Validation errors name field paths only and never show secret values.";
 
 export type ScriptIoCatalogSource =
   | "scripts-catalog"
@@ -987,7 +991,7 @@ export function scriptRetryBlockedMessage(input: {
 } = {}): string {
   const retry = parseScriptIoRetryResult(input.output, input.error);
   if (retry?.allowed) {
-    return `${SCRIPT_IO_NO_BLIND_RETRY_HELP} result.retry.allowed is true — Retry queues a verify-first attempt.`;
+    return `${SCRIPT_IO_NO_BLIND_RETRY_HELP} Retry queues a check-first attempt.`;
   }
   if (isIndeterminateStatus(input.status)) {
     return `${SCRIPT_IO_INDETERMINATE_HELP} ${input.catalog?.ui.hideRetryWhen || DEFAULT_SCRIPT_IO_UI.hideRetryWhen}.`;

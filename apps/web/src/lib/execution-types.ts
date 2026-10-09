@@ -220,6 +220,8 @@ export const EXECUTION_STATUS_REASONS = [
   "no-worker",
   "workflow_deleted",
   "requirement_unresolvable",
+  // #628: a manual or API run with no recorded starter fails instead of running.
+  "missing_actor",
 ] as const;
 
 export type ExecutionStatusReason = (typeof EXECUTION_STATUS_REASONS)[number];

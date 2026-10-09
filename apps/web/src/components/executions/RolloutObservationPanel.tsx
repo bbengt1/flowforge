@@ -1,7 +1,9 @@
 import {
   KUBERNETES_ROLLOUT_CANCEL_HELP,
   KUBERNETES_ROLLOUT_NO_MUTATION_MESSAGE,
+  KUBERNETES_ROLLOUT_AUDIT_HELP,
   KUBERNETES_ROLLOUT_REDACTION_HELP,
+  KUBERNETES_ROLLOUT_WAITING_MESSAGE,
   type KubernetesRolloutAuditSnapshot,
   type KubernetesRolloutObservation,
 } from "@/lib/kubernetes-rollout-contract";
@@ -36,11 +38,7 @@ export function RolloutObservationPanel({
       <p className={`mt-1 text-xs ${FF_INBOX_MUTED_CLASS}`}>{KUBERNETES_ROLLOUT_REDACTION_HELP}</p>
       {observations.length === 0 ? (
         <p className={`mt-3 text-sm ${FF_INBOX_MUTED_CLASS}`}>
-          No observation payload yet. Poll continues on{" "}
-          <code className="font-mono text-xs">GET /executions/{"{id}"}</code>{" "}
-          for <code className="font-mono text-xs">result.observation</code>,{" "}
-          <code className="font-mono text-xs">result.status.progress[]</code>,
-          and redacted <code className="font-mono text-xs">result.audit</code>.
+          {KUBERNETES_ROLLOUT_WAITING_MESSAGE}
         </p>
       ) : (
         <ul className="mt-4 grid gap-3">
@@ -158,8 +156,7 @@ export function RolloutObservationPanel({
         <div className="mt-5">
           <h3 className="text-sm font-semibold">Redacted observation audit</h3>
           <p className={`mt-1 text-xs ${FF_INBOX_MUTED_CLASS}`}>
-            Actor, target, policy revision, resource identities, and
-            correlation id only. Same E5.4 / E6.4 audit browse — no secrets.
+            {KUBERNETES_ROLLOUT_AUDIT_HELP}
           </p>
           <ul className="mt-3 grid gap-2">
             {auditSnapshots.map((event) => (

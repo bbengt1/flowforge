@@ -146,7 +146,7 @@ describe("script ops client", () => {
       assert.equal(running.outcome, "indeterminate");
       assert.equal(running.uncertain, true);
       assert.equal(running.retryOffered, false);
-      assert.match(running.message, /indeterminate/);
+      assert.match(running.message, /indeterminate/i);
     }
     assert.equal(seen.url, `/api/v1/executions/${EXECUTION_ID}/emergency-stop`);
     assert.deepEqual(JSON.parse(String(seen.init?.body)), { uncertain: true });
@@ -181,7 +181,7 @@ describe("script ops client", () => {
     assert.equal(denied.ok, false);
     if (!denied.ok) {
       assert.equal(denied.forbidden, true);
-      assert.match(denied.problem.detail ?? "", /allowEmergencyStop|emergency-stop-denied/);
+      assert.match(denied.problem.detail ?? "", /denied by policy/);
     }
   });
 });

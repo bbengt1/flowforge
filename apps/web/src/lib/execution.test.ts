@@ -817,7 +817,7 @@ describe("execution redaction and list/detail rendering", () => {
       }),
       false,
     );
-    assert.match(RETRY_UNAVAILABLE_MESSAGE, /data\.\* \/ flow\.\*/);
+    assert.match(RETRY_UNAVAILABLE_MESSAGE, /built-in data and flow steps/);
     assert.match(RETRY_INDETERMINATE_MESSAGE, /Do not assume the action did not run/);
   });
 
@@ -877,7 +877,7 @@ describe("execution redaction and list/detail rendering", () => {
       cancelOutcomeMessage({ previousStatus: "running", status: "canceled" }),
       CANCEL_APPLIED_MESSAGE,
     );
-    assert.match(CANCEL_FORBIDDEN_MESSAGE, /fail-closed/);
+    assert.match(CANCEL_FORBIDDEN_MESSAGE, /can't cancel runs/);
   });
 
   it("surfaces indeterminate distinctly and filters by documented query only", () => {
@@ -1085,7 +1085,7 @@ describe("execution artifacts and bounded logs", () => {
       null,
     );
     assert.match(downloadGrantFailureMessage({ expired: true }), /expired/);
-    assert.match(downloadGrantFailureMessage({ forbidden: true }), /403/);
+    assert.match(downloadGrantFailureMessage({ forbidden: true }), /don't have access/);
   });
 
   it("hides download after retention deletion unless a legal hold preserves evidence", () => {
@@ -1189,6 +1189,10 @@ describe("execution statusReason", () => {
     assert.equal(
       executionStatusReasonSentence("no-worker"),
       "No worker is claiming jobs.",
+    );
+    assert.equal(
+      executionStatusReasonSentence("missing_actor"),
+      "This run didn't start because FlowForge couldn't tell who started it. Start it again.",
     );
     assert.equal(executionStatusReasonSentence("not-a-reason"), null);
     assert.equal(executionStatusReasonSentence(undefined), null);
@@ -1357,5 +1361,60 @@ describe("step output when logs are empty", () => {
     });
     assert.equal(presented.errorText, message);
     assert.equal(presented.errorText?.includes("requirement_unresolvable"), false);
+  });
+});
+
+describe("missing_actor statusReason (#628)", () => {
+  const SENTENCE =
+    "This run didn't start because FlowForge couldn't tell who started it. Start it again.";
+  const API_DETAIL = "This run has no actor, so it can't start.";
+
+  it("keeps the reason on a parsed run and maps it to the plain sentence", () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    const run = parseExecutionDetail({
+      id,
+      workflowId: id,
+      workflowVersionId: id,
+      status: "failed",
+      statusReason: "missing_actor",
+    });
+    assert.equal(run?.statusReason, "missing_actor");
+    assert.equal(readExecutionStatusReason("missing_actor"), "missing_actor");
+    assert.equal(executionStatusReasonSentence("missing_actor"), SENTENCE);
+  });
+
+  it("shows the sentence on the run page, never the code or the API detail", () => {
+    const text = executionFailureReasonText({
+      status: "failed",
+      statusReason: "missing_actor",
+      steps: [{ status: "failed", error: { code: "missing_actor", message: API_DETAIL } }],
+    });
+    assert.equal(text, SENTENCE);
+    for (const error of [
+      { code: "missing_actor", message: API_DETAIL },
+      { code: "missing_actor", message: `missing_actor: ${API_DETAIL}` },
+      { code: "missing_actor" },
+    ]) {
+      assert.equal(stepFailureErrorText({ status: "failed", error }), SENTENCE);
+    }
+    // Without the run-level reason, the step's code still reads plainly.
+    assert.equal(
+      executionFailureReasonText({
+        status: "failed",
+        steps: [{ status: "failed", error: { code: "missing_actor", message: API_DETAIL } }],
+      }),
+      SENTENCE,
+    );
+    assert.doesNotMatch(SENTENCE, /actor|missing_actor/i);
+  });
+
+  it("leaves other known codes' API messages alone", () => {
+    assert.equal(
+      stepFailureErrorText({
+        status: "failed",
+        error: { code: "workflow_deleted", message: "The workflow was deleted." },
+      }),
+      "The workflow was deleted.",
+    );
   });
 });

@@ -88,6 +88,9 @@ export const MANUAL_START_IDEMPOTENCY_HELP =
 export const MANUAL_START_FORBIDDEN_MESSAGE =
   "You can't start this run. Your role doesn't allow it, or a policy blocked it. Nothing was started.";
 
+/** Where Start is offered but the role can't start runs at all. */
+export const MANUAL_START_ROLE_DENIED = "Your role can't start runs.";
+
 export const MANUAL_START_UNAUTHENTICATED_MESSAGE =
   "Your session has ended. Sign in again, then start the run. Nothing was started.";
 
@@ -106,12 +109,12 @@ export const MANUAL_START_CONFIRM_HELP =
   "Check the version, input, and idempotency key before you start. The audit log keeps this record.";
 
 export const MANUAL_START_BAD_INPUT_MESSAGE =
-  "HTTP 400: drafts cannot run, or the start body/input is invalid or exceeds 16 KiB.";
+  "The run wasn't started. Only published versions can run, and the input has to be valid and no larger than 16 KiB.";
 
 export const MANUAL_START_CREATED_MESSAGE = IDEMPOTENCY_CREATED_MESSAGE;
 export const MANUAL_START_REPLAY_MESSAGE = IDEMPOTENCY_REPLAY_MESSAGE;
 export const MANUAL_START_CONFLICT_MESSAGE =
-  "HTTP 409: this idempotency key was already used with a different input (fingerprint mismatch), or this start requires approval. The API did not start a new run.";
+  "The run wasn't started. This idempotency key was already used with different input, or this start needs approval first.";
 
 export const DEFAULT_MANUAL_START_SCHEMA: Record<string, unknown> = {
   type: "object",

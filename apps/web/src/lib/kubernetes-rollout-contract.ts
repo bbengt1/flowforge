@@ -69,7 +69,19 @@ export const KUBERNETES_ROLLOUT_TIMEOUT_HELP =
   "Bounded timeoutSeconds elapsed. Waiting stopped. Resources were not deleted or rolled back.";
 
 export const KUBERNETES_ROLLOUT_REDACTION_HELP =
-  "Results are redacted diagnostics only. Secrets, kubeconfigs, and unexpected secret field names are stripped and treated as a contract bug.";
+  "Results show redacted diagnostics only. Secrets, kubeconfigs, and fields that look like secrets are hidden.";
+
+/**
+ * Rollout panel before the first observation arrives. The run page keeps
+ * polling GET /executions/{id} for result.observation,
+ * result.status.progress[], and the redacted result.audit.
+ */
+export const KUBERNETES_ROLLOUT_WAITING_MESSAGE =
+  "No rollout progress yet. This page updates while the run is active.";
+
+/** Above the rollout panel's audit entries. */
+export const KUBERNETES_ROLLOUT_AUDIT_HELP =
+  "Who watched the rollout, the cluster target, policy revision, resources, and correlation ID. Secrets are never shown.";
 
 export const KUBERNETES_ROLLOUT_KIND_MESSAGE =
   "kind must be Deployment, StatefulSet, DaemonSet, or Job (or supplied via resource).";

@@ -94,13 +94,20 @@ export const EXECUTION_OPERATE_DETAIL_STATUSES = [
   "indeterminate",
 ] as const;
 
+/**
+ * Contract note for route checks. Not UI copy: never render it.
+ */
+export const EXECUTION_OPERATE_CONTRACT_NOTE =
+  "Cancel uses POST /executions/{id}/cancel. Retry uses POST /executions/{id}/retry and is shown only when capabilities.retry.allowed is true. Stop uses POST /executions/{id}/emergency-stop for script runs. Indeterminate stays loud — never silent success.";
+
+/** Screen-reader help next to a run's Cancel, Retry, and Stop buttons. */
 export const EXECUTION_OPERATE_HELP =
-  "Cancel, retry, and emergency stop stay on this operate path. Cancel uses POST /executions/{id}/cancel. Retry uses POST /executions/{id}/retry and is shown only when capabilities.retry.allowed is true. Stop uses POST /executions/{id}/emergency-stop for script runs. Indeterminate stays loud — never silent success. Drafts never run.";
+  "Cancel, Retry, and Stop act on this run. Retry appears only when FlowForge confirms the run is safe to retry. A run whose result is unknown stays marked Indeterminate. Drafts never run.";
 
 export const EXECUTION_OPERATE_INDETERMINATE_HELP = INDETERMINATE_STATUS_HELP;
 
 export const EXECUTION_OPERATE_RETRY_GATE_HELP =
-  "Retry is shown only when capabilities.retry.allowed is true. A missing or malformed capability is not retried.";
+  "Retry appears only when FlowForge confirms the run is safe to retry.";
 
 export type ExecutionOperateSurface = "inbox" | "overlay" | "detail";
 

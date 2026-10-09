@@ -136,10 +136,20 @@ export const EDITOR_RUNS = {
 } as const;
 
 export const EDITOR_RUN_OVERLAY_KEYBOARD_HELP =
-  "Arrow keys move through this workflow's runs. Enter or Space overlays the focused run on this canvas and highlights matching steps. Open execution still goes to /executions/{id}.";
+  "Arrow keys move through this workflow's runs. Enter or Space overlays the focused run on this canvas and highlights matching steps. Open execution opens the full run page.";
 
+/**
+ * Contract note for route checks. Not UI copy: never render it. Cancel,
+ * retry, and emergency stop use the existing E5/E8/E9 routes, retry is
+ * gated by capabilities.retry.allowed, waiting runs decide with
+ * POST /approvals/{id}/decide, and Open execution goes to /executions/{id}.
+ */
+export const EDITOR_RUNS_CONTRACT_NOTE =
+  "Cancel, retry, and emergency stop use the existing E5/E8/E9 routes. Retry stays gated by capabilities.retry.allowed. Waiting runs decide the bound approval with POST /approvals/{id}/decide — no invented resume. Open execution still goes to /executions/{id}.";
+
+/** Help at the top of the editor's Runs drawer. */
 export const EDITOR_RUNS_OPERATE_HELP =
-  "Operate this workflow's runs without leaving the graph. Filter by status, skip to failed or indeterminate, and select a run to highlight matching steps on this canvas. Cancel, retry, and emergency stop use the existing E5/E8/E9 routes. Retry stays gated by capabilities.retry.allowed. Waiting runs decide the bound approval with POST /approvals/{id}/decide — no invented resume. Open execution still goes to /executions/{id}. Drafts never run.";
+  "Work with this workflow's runs without leaving the graph. Filter by status, skip to failed or indeterminate runs, and select a run to highlight its steps on this canvas. Cancel, Retry, and Stop appear when they apply. A waiting run continues once someone approves or rejects it. Open execution opens the full run page. Drafts never run.";
 
 export const EDITOR_RUNS_SKIP_FAILED_LABEL = "Skip to failed";
 export const EDITOR_RUNS_SKIP_INDETERMINATE_LABEL = "Skip to indeterminate";
