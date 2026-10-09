@@ -35,6 +35,7 @@ func approvalOperation(rt Route) (*yaml.Node, bool, error) {
 			"Requires approval.view. Paged (limit, cursor).",
 			"status=pending is the actionable inbox: pending rows the caller could decide now. An untargeted gate is actionable for holders of its role (or admin). A targeted gate is actionable for a snapshot user, a live member of a snapshot group, and any workspace admin who is not the requester (capabilities.decide.via admin_override).",
 			"awaiting=me narrows to pending rows that are untargeted and actionable, or targeted at the caller as a snapshot user or a live group member. It never includes a row the caller could decide only by admin override.",
+			"A machine principal never decides, so no row is actionable or awaiting it and its capabilities.decide is always false.",
 			"Each item carries approvers (targeted gates only; display name and UUID) and capabilities.decide for the caller.",
 		)
 		b.WriteString("parameters:\n")
@@ -50,7 +51,7 @@ func approvalOperation(rt Route) (*yaml.Node, bool, error) {
 	case "GET /api/v1/approvals/approver-candidates":
 		header("List approver candidates for the builder",
 			"Requires workflow.edit. Returns users and groups a gate may name in with.approvers.",
-			"users are active workspace members whose roles grant approval.decide and meet role (exact role or admin). groups are every workspace group, including empty ones; membership is checked live when a gate is decided.",
+			"users are active workspace members who are people, never machine principals, whose roles grant approval.decide and meet role (exact role or admin). groups are every workspace group, including empty ones; membership is checked live when a gate is decided, and machine members never count.",
 			"Display name and UUID only. No emails, no role details, no member lists. role must be a known role key; otherwise 400 invalid-request with errors[].path role.",
 			"An embed session is refused with 403 forbidden.",
 		)
@@ -63,6 +64,7 @@ func approvalOperation(rt Route) (*yaml.Node, bool, error) {
 		header("Decide an approval",
 			"Records an approve or reject decision and resumes a waiting gate.",
 			"Order: 401 without a principal; 403 forbidden without approval.decide; 404 when the approval is not in the workspace; 409 approval_closed for a deleted workflow; rebuild the pinned requirement (transient 503); under the approval row lock 409 approval_closed when closed or not waiting, 403 forbidden for self-approval (the requester can never decide, even as admin), 409 when expired, invalidated, or not pending; 403 forbidden on a role mismatch.",
+			"Then 403 forbidden, with nothing recorded, when the caller's account is disabled or is a machine principal, read in the decide transaction; this covers the admin override route too. Only a person approves.",
 			"Approver check on a targeted gate: allowed when the caller is in the park-time user snapshot or a live member of a snapshot group (via target). Otherwise a workspace admin who is not the requester is allowed (via admin_override) and the decision writes audit action approval.decided_by_admin_override. Otherwise 403 approver_not_targeted, with nothing recorded.",
 			"The decide transaction locks the approval row and then only the group membership row it matches (FOR SHARE). Role bindings are read without a lock.",
 			"A database, network, or timeout failure while rebuilding the pinned requirement or reading targets returns 503 approval_requirement_unavailable.",

@@ -998,16 +998,17 @@ func otherActiveAdminsTx(ctx context.Context, tx pgx.Tx, workspaceID, userID str
 }
 
 // wasActiveAdminTx reports whether userID, holding current role keys, is
-// an enabled admin right now (before the caller changes anything).
+// an enabled admin right now (before the caller changes anything), by
+// the parkedapproval.ActiveAdmins rule: a machine principal never is.
 func wasActiveAdminTx(ctx context.Context, tx pgx.Tx, userID string, current []string) (bool, error) {
 	if !containsKey(current, authz.RoleAdmin) {
 		return false, nil
 	}
-	var status string
-	if err := tx.QueryRow(ctx, `SELECT status FROM users WHERE id = $1::uuid`, userID).Scan(&status); err != nil {
+	var status, issuer string
+	if err := tx.QueryRow(ctx, `SELECT status, issuer FROM users WHERE id = $1::uuid`, userID).Scan(&status, &issuer); err != nil {
 		return false, mapDBErr(err)
 	}
-	return status == "active", nil
+	return status == "active" && !parkedapproval.IsMachine(issuer), nil
 }
 
 // RemoveMember deletes the user's role bindings and their workspace group

@@ -156,7 +156,7 @@ func listApprovals(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		rec = refreshRecord(s, r.Context(), scope, rec, now)
 		out = append(out, rec)
 	}
-	out = presentApprovals(s, r.Context(), scope, user.ID, roles, out)
+	out = presentApprovals(s, r.Context(), scope, user, roles, out)
 	core.WritePage(w, out, pageQuery, next)
 }
 
@@ -231,7 +231,7 @@ func getApproval(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rec = refreshRecord(s, r.Context(), scope, rec, s.Clock().UTC())
-	core.WriteJSON(w, http.StatusOK, presentApproval(s, r.Context(), scope, user.ID, roles, rec))
+	core.WriteJSON(w, http.StatusOK, presentApproval(s, r.Context(), scope, user, roles, rec))
 }
 
 func decideApproval(s *core.Server, w http.ResponseWriter, r *http.Request) {
@@ -316,7 +316,7 @@ func decideApproval(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	if len(out.ApproverUserIDs) == 0 && len(out.ApproverGroupIDs) == 0 && out.ApproversDigest == rec.ApproversDigest {
 		out.ApproverUserIDs, out.ApproverGroupIDs = rec.ApproverUserIDs, rec.ApproverGroupIDs
 	}
-	core.WriteJSON(w, http.StatusOK, presentApproval(s, r.Context(), scope, user.ID, roles, out))
+	core.WriteJSON(w, http.StatusOK, presentApproval(s, r.Context(), scope, user, roles, out))
 }
 
 func listApprovalEvents(s *core.Server, w http.ResponseWriter, r *http.Request) {

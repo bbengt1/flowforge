@@ -46,6 +46,33 @@ type Memory struct {
 	gate    GateWaiting
 	failRun UnresolvableRun
 	groups  GroupMembership
+	decider DeciderCheck
+}
+
+// DeciderCheck reports whether userID is an enabled person who may
+// decide: the account exists, is active, and is not a machine principal.
+// It is the memory twin of requireEnabledDeciderTx. A nil hook skips the
+// check (approval-only unit tests with no identity store).
+type DeciderCheck func(ctx context.Context, userID string) (bool, error)
+
+// SetDeciderCheck installs the decider check Decide runs before routing.
+func (m *Memory) SetDeciderCheck(fn DeciderCheck) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.decider = fn
+}
+
+// personLocked reports whether userID passes the decider check. A failed
+// lookup is false (fail closed). A nil hook is true.
+func (m *Memory) personLocked(ctx context.Context, userID string) bool {
+	if m.decider == nil {
+		return true
+	}
+	ok, err := m.decider(ctx, userID)
+	return err == nil && ok
 }
 
 // GroupMembership reports whether userID is an active, bound member of
@@ -64,6 +91,9 @@ func (m *Memory) SetGroupMembership(fn GroupMembership) {
 }
 
 func (m *Memory) targetsLocked(ctx context.Context, workspaceID string, rec Record, userID string) bool {
+	if userID == "" || !m.personLocked(ctx, userID) {
+		return false
+	}
 	if slices.Contains(rec.ApproverUserIDs, userID) {
 		return true
 	}
@@ -424,6 +454,11 @@ func (m *Memory) Decide(ctx context.Context, scope isolation.Scope, id string, i
 		}
 		return Record{}, err
 	}
+	// Same as requireEnabledDeciderTx: a disabled account or a machine
+	// principal is refused on every route, before routing and any write.
+	if m.decider != nil && !m.personLocked(ctx, scope.ActorID()) {
+		return Record{}, ErrForbidden
+	}
 	via := ViaTarget
 	if rec.Targeted() {
 		switch {
@@ -661,6 +696,9 @@ func targetIDs(digest string, ids []string, requester string) []string {
 
 // actionableLocked is the memory twin of the Postgres list predicate.
 func (m *Memory) actionableLocked(ctx context.Context, workspaceID string, rec Record, filter Filter) bool {
+	if filter.ActorID != "" && !m.personLocked(ctx, filter.ActorID) {
+		return false
+	}
 	roleOK := MayAct(filter.ActorRoles, rec)
 	requester := filter.ActorID != "" && rec.RequestedBy == filter.ActorID
 	if filter.AwaitingMe {

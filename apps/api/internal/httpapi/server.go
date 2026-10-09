@@ -327,6 +327,7 @@ func newServer(d Deps) *API {
 	if apMem, ok := approvalStore.(*approval.Memory); ok {
 		if idMem, ok := d.Store.(*identity.Memory); ok {
 			apMem.SetGroupMembership(idMem.InTargetGroups)
+			apMem.SetDeciderCheck(idMem.EnabledPerson)
 			if wfMem, ok := workflows.(*wfstore.Memory); ok {
 				wfMem.SetApprovalDecider(func(ctx context.Context, workspaceID string, p wfstore.ParkedApproval) (bool, error) {
 					snap, err := idMem.ResolveApprovalSnapshot(ctx, workspaceID, p.RequestedBy, p.ApproverRole, p.ApproverUsers, p.ApproverGroups)

@@ -8,16 +8,21 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/core"
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/parkedapproval"
 )
 
 // presentApprovals fills approvers (display names for a targeted
 // snapshot) and the caller's capabilities. Read-only; decide re-checks
 // everything under the row lock. A failed live group lookup reports the
-// gate as not targeting the caller (fail closed).
-func presentApprovals(s *core.Server, ctx context.Context, scope isolation.Scope, userID string, roles []string, recs []approval.Record) []approval.Record {
+// gate as not targeting the caller (fail closed). A machine principal
+// never decides (decide refuses it on every route), so its capability is
+// always denied.
+func presentApprovals(s *core.Server, ctx context.Context, scope isolation.Scope, user identity.User, roles []string, recs []approval.Record) []approval.Record {
 	if len(recs) == 0 {
 		return recs
 	}
+	userID := user.ID
+	machine := parkedapproval.IsMachine(user.Issuer)
 	var targets map[string]bool
 	if s.Approvals != nil {
 		targets, _ = s.Approvals.TargetsCaller(ctx, scope, recs, userID)
@@ -29,14 +34,17 @@ func presentApprovals(s *core.Server, ctx context.Context, scope isolation.Scope
 			rec.Approvers = names.approvers(rec)
 		}
 		capability := DecideCapability(rec, userID, roles, targets[rec.ID])
+		if machine && capability.Allowed {
+			capability = approval.DecideCapability{Allowed: false, Code: approval.CapMissingPermission, Reason: "Machine accounts cannot decide approvals. Only a person can approve."}
+		}
 		rec.Capabilities = &approval.Capabilities{Decide: capability}
 		out[i] = rec
 	}
 	return out
 }
 
-func presentApproval(s *core.Server, ctx context.Context, scope isolation.Scope, userID string, roles []string, rec approval.Record) approval.Record {
-	return presentApprovals(s, ctx, scope, userID, roles, []approval.Record{rec})[0]
+func presentApproval(s *core.Server, ctx context.Context, scope isolation.Scope, user identity.User, roles []string, rec approval.Record) approval.Record {
+	return presentApprovals(s, ctx, scope, user, roles, []approval.Record{rec})[0]
 }
 
 // DecideCapability mirrors decide's order on the stored row: permission,

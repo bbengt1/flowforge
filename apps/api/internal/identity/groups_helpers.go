@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/parkedapproval"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -32,6 +33,9 @@ type Querier interface {
 // 'active' join still excludes a last admin whose RemoveMember was
 // refused and who kept their bindings.
 //
+// A machine principal (users.issuer = parkedapproval.MachineIssuer, bound
+// as a parameter) is never an eligible member.
+//
 // Membership never grants approval.decide. The caller still checks the
 // user's own permission. At the approval decide call site:
 //   - a non-nil error (database, network, timeout) should map to
@@ -53,13 +57,14 @@ func InTargetGroups(ctx context.Context, q Querier, workspaceID, userID string, 
 		  AND m.user_id = $2::uuid
 		  AND m.group_id = ANY($3::uuid[])
 		  AND u.status = 'active'
+		  AND u.issuer <> $4
 		  AND EXISTS (
 		      SELECT 1 FROM workspace_role_bindings b
 		      WHERE b.workspace_id = m.workspace_id AND b.user_id = m.user_id
 		  )
 		LIMIT 1
 		FOR SHARE OF m
-	`, workspaceID, userID, groups)
+	`, workspaceID, userID, groups, parkedapproval.MachineIssuer)
 	if err != nil {
 		return false, err
 	}
@@ -70,56 +75,4 @@ func InTargetGroups(ctx context.Context, q Querier, workspaceID, userID string, 
 		return false, err
 	}
 	return found, nil
-}
-
-// ResolveTargetUsers returns a sorted snapshot of eligible user ids for a
-// park-time check: members of groupIDs plus the direct userIDs, keeping
-// only users who are active and hold a live role binding in workspaceID.
-// It does not lock and does not write approval rows. Malformed ids and
-// deleted groups contribute nobody. Run it inside the caller's
-// workspace-scoped transaction.
-func ResolveTargetUsers(ctx context.Context, q Querier, workspaceID string, groupIDs, userIDs []string) ([]string, error) {
-	out := []string{}
-	if !authz.ValidUUID(workspaceID) {
-		return out, nil
-	}
-	groups := validGroupIDs(groupIDs)
-	users := validGroupIDs(userIDs)
-	if len(groups) == 0 && len(users) == 0 {
-		return out, nil
-	}
-	rows, err := q.Query(ctx, `
-		SELECT u.id::text
-		FROM users u
-		WHERE u.status = 'active'
-		  AND EXISTS (
-		      SELECT 1 FROM workspace_role_bindings b
-		      WHERE b.workspace_id = $1::uuid AND b.user_id = u.id
-		  )
-		  AND (
-		      u.id = ANY($3::uuid[])
-		      OR EXISTS (
-		          SELECT 1 FROM workspace_group_members m
-		          WHERE m.workspace_id = $1::uuid
-		            AND m.user_id = u.id
-		            AND m.group_id = ANY($2::uuid[])
-		      )
-		  )
-		ORDER BY u.id
-	`, workspaceID, groups, users)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		out = append(out, id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return out, nil
 }

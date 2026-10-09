@@ -126,8 +126,12 @@ func (p *Postgres) List(ctx context.Context, scope isolation.Scope, filter Filte
 		rolesArg := page.Place(&args, roles)
 		roleMatch := `(approver_role = ANY($` + rolesArg + `::text[]) OR 'admin' = ANY($` + rolesArg + `::text[]))`
 		actor := page.Place(&args, nullUUID(filter.ActorID))
-		targeted := targetedPredicate("$" + actor)
+		issuer := page.Place(&args, parkedapproval.MachineIssuer)
+		targeted := targetedPredicate("$"+actor, "$"+issuer)
 		notRequester := `requested_by IS DISTINCT FROM $` + actor + `::uuid`
+		// A machine principal never decides (requireEnabledDeciderTx), so
+		// nothing is actionable or awaiting it, on any route.
+		parts = append(parts, notMachinePredicate("$"+actor, "$"+issuer))
 		if filter.AwaitingMe {
 			parts = append(parts, notRequester, `(`+roleMatch+` AND (approvers_digest = '' OR `+targeted+`))`)
 		} else {
@@ -198,15 +202,24 @@ func (p *Postgres) List(ctx context.Context, scope isolation.Scope, filter Filte
 }
 
 // targetedPredicate matches a row whose snapshot names actor directly or
-// through a group the actor is a live, active, bound member of.
-func targetedPredicate(actor string) string {
+// through a group the actor is a live, active, bound member of. A machine
+// principal (users.issuer = issuer, bound as a parameter) never matches,
+// even when an older snapshot names it.
+func targetedPredicate(actor, issuer string) string {
 	return `(EXISTS (SELECT 1 FROM approval_approver_users au
+	                   JOIN users u ON u.id = au.user_id AND u.issuer <> ` + issuer + `
 	                  WHERE au.workspace_id = approvals.workspace_id AND au.approval_id = approvals.id AND au.user_id = ` + actor + `::uuid)
 	      OR EXISTS (SELECT 1 FROM approval_approver_groups ag
 	                   JOIN workspace_group_members m ON m.workspace_id = ag.workspace_id AND m.group_id = ag.group_id
-	                   JOIN users u ON u.id = m.user_id AND u.status = 'active'
+	                   JOIN users u ON u.id = m.user_id AND u.status = 'active' AND u.issuer <> ` + issuer + `
 	                  WHERE ag.workspace_id = approvals.workspace_id AND ag.approval_id = approvals.id AND m.user_id = ` + actor + `::uuid
 	                    AND EXISTS (SELECT 1 FROM workspace_role_bindings b WHERE b.workspace_id = m.workspace_id AND b.user_id = m.user_id)))`
+}
+
+// notMachinePredicate is false when actor is a machine principal
+// (users.issuer = issuer, bound as a parameter).
+func notMachinePredicate(actor, issuer string) string {
+	return `NOT EXISTS (SELECT 1 FROM users mu WHERE mu.id = ` + actor + `::uuid AND mu.issuer = ` + issuer + `)`
 }
 
 // TargetsCaller implements Store.
@@ -807,8 +820,9 @@ func mapDBErr(err error) error {
 	return err
 }
 
-// requireEnabledDeciderTx refuses a decider whose account is disabled,
-// read inside the decide transaction. Request authentication checks the
+// requireEnabledDeciderTx refuses a decider whose account is disabled or
+// who is a machine principal, read inside the decide transaction in one
+// row read (status and issuer). Request authentication checks the
 // status too, but earlier and outside this transaction; an instance-wide
 // disable that commits in between must still stop the decision. The read
 // is a plain READ COMMITTED read with no lock on the users row (no new
@@ -817,19 +831,22 @@ func mapDBErr(err error) error {
 // ordered after it. A decision never needs the re-check that follows a
 // disable to have run. An empty actor is refused (ErrForbidden): there is
 // no system decider, and Decide already refuses one before any write.
+// A machine principal is refused (ErrForbidden) on every route, target
+// and admin override alike: only a person approves. Decide runs this
+// before decideRouteTx and before any write.
 func requireEnabledDeciderTx(ctx context.Context, tx pgx.Tx, actorID string) error {
 	if actorID == "" {
 		return ErrForbidden
 	}
-	var status string
-	err := tx.QueryRow(ctx, `SELECT status FROM users WHERE id = $1::uuid`, actorID).Scan(&status)
+	var status, issuer string
+	err := tx.QueryRow(ctx, `SELECT status, issuer FROM users WHERE id = $1::uuid`, actorID).Scan(&status, &issuer)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrForbidden
 	}
 	if err != nil {
 		return mapDBErr(err)
 	}
-	if status != "active" {
+	if status != "active" || parkedapproval.IsMachine(issuer) {
 		return ErrForbidden
 	}
 	return nil

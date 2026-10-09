@@ -24,11 +24,25 @@ type Snapshot struct {
 	Targeted bool
 }
 
+// MachineIssuer is the users.issuer of machine principals
+// (machine.Issuer, defined as authz.MachineIssuer). SQL binds it as a
+// parameter, never as a literal.
+const MachineIssuer = authz.MachineIssuer
+
+// IsMachine reports whether a users.issuer belongs to a machine
+// principal. A machine principal is never a person: it never decides an
+// approval, never counts as a targeted decider, and never counts as an
+// enabled admin (ActiveAdmins).
+func IsMachine(issuer string) bool {
+	return issuer == MachineIssuer
+}
+
 // Eligible reports the decider rule shared by park, resync, and decide:
-// active, roles grant approval.decide, roles meet the gate role (exact
-// role or admin), and not the requester.
-func Eligible(userID, status, requester, role string, roleKeys []string) bool {
-	if status != "active" || len(roleKeys) == 0 {
+// a person (not a machine principal), active, roles grant
+// approval.decide, roles meet the gate role (exact role or admin), and
+// not the requester.
+func Eligible(userID, issuer, status, requester, role string, roleKeys []string) bool {
+	if IsMachine(issuer) || status != "active" || len(roleKeys) == 0 {
 		return false
 	}
 	if requester != "" && strings.EqualFold(userID, requester) {
@@ -90,13 +104,13 @@ func ResolveSnapshot(ctx context.Context, tx pgx.Tx, workspaceID, requester, rol
 		      FROM workspace_group_members m
 		     WHERE m.workspace_id = $1::uuid AND m.group_id = ANY($3::uuid[])
 		)
-		SELECT c.user_id::text, bool_or(c.named), u.status,
+		SELECT c.user_id::text, bool_or(c.named), u.issuer, u.status,
 		       COALESCE(array_agg(DISTINCT r.key) FILTER (WHERE r.key IS NOT NULL), '{}')
 		  FROM cand c
 		  JOIN users u ON u.id = c.user_id
 		  LEFT JOIN workspace_role_bindings b ON b.workspace_id = $1::uuid AND b.user_id = c.user_id
 		  LEFT JOIN roles r ON r.id = b.role_id
-		 GROUP BY c.user_id, u.status
+		 GROUP BY c.user_id, u.issuer, u.status
 		 ORDER BY c.user_id
 	`, workspaceID, users, snap.Groups)
 	if err != nil {
@@ -104,7 +118,7 @@ func ResolveSnapshot(ctx context.Context, tx pgx.Tx, workspaceID, requester, rol
 	}
 	for rows.Next() {
 		var c Candidate
-		if err := rows.Scan(&c.ID, &c.Named, &c.Status, &c.Roles); err != nil {
+		if err := rows.Scan(&c.ID, &c.Named, &c.Issuer, &c.Status, &c.Roles); err != nil {
 			rows.Close()
 			return Snapshot{}, err
 		}
@@ -120,11 +134,13 @@ func ResolveSnapshot(ctx context.Context, tx pgx.Tx, workspaceID, requester, rol
 }
 
 // Candidate is one possible decider for a targeted gate: a named user
-// (Named) or a live member of a named group, with the user's status and
-// role keys in the gate's workspace.
+// (Named) or a live member of a named group, with the user's issuer,
+// status and role keys in the gate's workspace. A machine principal
+// (IsMachine(Issuer)) is never eligible.
 type Candidate struct {
 	ID     string
 	Named  bool
+	Issuer string
 	Status string
 	Roles  []string
 }
@@ -138,7 +154,7 @@ func BuildSnapshot(requester, role string, groups []string, cands []Candidate, o
 	requester = strings.ToLower(strings.TrimSpace(requester))
 	snap := Snapshot{Users: []string{}, Groups: append([]string{}, groups...)}
 	for _, c := range cands {
-		if !Eligible(c.ID, c.Status, requester, role, c.Roles) {
+		if !Eligible(c.ID, c.Issuer, c.Status, requester, role, c.Roles) {
 			continue
 		}
 		snap.Targeted = true
@@ -171,9 +187,12 @@ func OtherActiveAdmin(ctx context.Context, tx pgx.Tx, workspaceID, requester str
 // ActiveAdmins returns up to limit (at least 1) distinct active admins of
 // the workspace, sorted by id, leaving out exclude (empty: nobody). It is
 // the one definition of an enabled admin: a live binding to the admin
-// role (the only role holding workspace.administer) and users.status
-// 'active'. The override fallback (OtherActiveAdmin), the bounded
-// re-check on admin loss and the last-admin guard in identity all use it.
+// role (the only role holding workspace.administer), users.status
+// 'active', and a person. The override fallback (OtherActiveAdmin), the
+// bounded re-check on admin loss and the last-admin guard in identity
+// all use it. A machine principal (users.issuer = MachineIssuer, bound as
+// a parameter) is never an enabled admin, so it never counts for any of
+// those, and a token can never be the only admin left.
 func ActiveAdmins(ctx context.Context, tx pgx.Tx, workspaceID, exclude string, limit int) ([]string, error) {
 	if limit < 1 {
 		limit = 1
@@ -186,10 +205,11 @@ func ActiveAdmins(ctx context.Context, tx pgx.Tx, workspaceID, exclude string, l
 		 WHERE b.workspace_id = $1::uuid
 		   AND r.key = 'admin'
 		   AND u.status = 'active'
+		   AND u.issuer <> $4
 		   AND b.user_id IS DISTINCT FROM $2::uuid
 		 ORDER BY 1
 		 LIMIT $3
-	`, workspaceID, nullUUID(exclude), limit)
+	`, workspaceID, nullUUID(exclude), limit, MachineIssuer)
 	if err != nil {
 		return nil, err
 	}

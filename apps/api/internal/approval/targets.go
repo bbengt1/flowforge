@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
+	"github.com/bbengt1/flowforge/apps/api/internal/parkedapproval"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -130,22 +131,31 @@ func insertOverrideAuditTx(ctx context.Context, tx pgx.Tx, workspaceID, actorID 
 
 // IsTargetedCaller reports, without locks, whether userID is a snapshot
 // user or a live eligible member of a snapshot group. It backs the list
-// filter and capabilities; decide stays authoritative.
+// filter and capabilities; decide stays authoritative. A machine
+// principal is never targeted, even when an older snapshot names it.
 func isTargetedCallerTx(ctx context.Context, tx pgx.Tx, workspaceID string, rec Record, userID string) (bool, error) {
-	if slices.Contains(rec.ApproverUserIDs, userID) {
-		return true, nil
-	}
-	if len(rec.ApproverGroupIDs) == 0 || userID == "" {
+	if userID == "" {
 		return false, nil
+	}
+	named := slices.Contains(rec.ApproverUserIDs, userID)
+	if !named && len(rec.ApproverGroupIDs) == 0 {
+		return false, nil
+	}
+	groups := rec.ApproverGroupIDs
+	if groups == nil {
+		groups = []string{}
 	}
 	var in bool
 	err := tx.QueryRow(ctx, `
 		SELECT EXISTS (
-		    SELECT 1 FROM workspace_group_members m
-		      JOIN users u ON u.id = m.user_id AND u.status = 'active'
-		     WHERE m.workspace_id = $1::uuid AND m.user_id = $2::uuid AND m.group_id = ANY($3::uuid[])
-		       AND EXISTS (SELECT 1 FROM workspace_role_bindings b WHERE b.workspace_id = m.workspace_id AND b.user_id = m.user_id)
-		)`, workspaceID, userID, rec.ApproverGroupIDs).Scan(&in)
+		    SELECT 1 FROM users u
+		     WHERE u.id = $2::uuid AND u.issuer <> $5
+		       AND ($4
+		        OR (u.status = 'active'
+		            AND EXISTS (SELECT 1 FROM workspace_group_members m
+		                         WHERE m.workspace_id = $1::uuid AND m.user_id = u.id AND m.group_id = ANY($3::uuid[]))
+		            AND EXISTS (SELECT 1 FROM workspace_role_bindings b WHERE b.workspace_id = $1::uuid AND b.user_id = u.id)))
+		)`, workspaceID, userID, groups, named, parkedapproval.MachineIssuer).Scan(&in)
 	if err != nil {
 		return false, mapDBErr(err)
 	}
