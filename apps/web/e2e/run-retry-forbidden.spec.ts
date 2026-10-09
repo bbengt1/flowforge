@@ -5,7 +5,7 @@ import {
   OPERATOR_FAILED_EXECUTION_ID,
   OPERATOR_WORKFLOW_ID,
 } from "./operator-api";
-import { PROBLEM_CSRF_HEADING } from "../src/lib/problem-copy.ts";
+import { PROBLEM_CSRF_HEADING, PROBLEM_HEADING_FORBIDDEN } from "../src/lib/problem-copy.ts";
 
 /**
  * #630: a refused Retry keeps the run page on screen and says why next to
@@ -172,7 +172,7 @@ test("a refusal to load the run still shows the forbidden view", async ({ page }
   await expect(page.getByRole("heading", { level: 1, name: "Execution" })).toBeVisible();
   const banner = page.locator("#execution-errors [role='alert']");
   await expect(banner).toBeVisible();
-  await expect(banner).toContainText("(403)");
+  await expect(banner).toContainText(PROBLEM_HEADING_FORBIDDEN);
   const main = page.locator("main");
   await expect(main.getByRole("heading", { name: "Steps", level: 2 })).toHaveCount(0);
   await expect(main.getByRole("button", { name: "Retry execution" })).toHaveCount(0);
