@@ -52,21 +52,55 @@ export const ALERT_PROBLEM_CODES = {
 export const ALERT_SECRET_FREE_HELP =
   "Alerts show kind, severity, action, outcome, code, timestamps, and correlation/resource/request ids. Unexpected secret fields are stripped.";
 
+/** Above the audit list. */
 export const AUDIT_APPEND_ONLY_HELP =
-  "Workspace audit is append-only for normal roles. This UI does not offer edit or delete. Mutation attempts fail closed at the API.";
+  "Entries are only ever added to the audit log. Nobody can edit or delete them here.";
 
+/** Contract note. Not UI copy: never render it. */
 export const AUDIT_NOT_ISOLATION_HELP =
-  "Product audit is GET /audit-events. E2.2 GET /workspace/audit-events is an isolation stub, not this browser.";
+  "Product audit is GET /audit-events. E2.2 GET /workspace/audit-events is an isolation stub, not this browser. Mutation attempts fail closed at the API.";
 
-export const ALERT_ACK_APPLIED_MESSAGE =
-  "Alert acknowledged (HTTP 200). The API accepted the request.";
+/** Under the Workspace audit heading. */
+export const AUDIT_PAGE_HELP =
+  "Who did what in this workspace, and when. Filter by resource or action to find an entry.";
+
+/** Audit list with no matching entries. */
+export const AUDIT_EMPTY_MESSAGE = "No audit entries match these filters.";
+
+/** Shown when the role can't read the audit log. */
+export const AUDIT_VIEW_DENIED = "Your role can't view the audit log.";
+
+/** Under the Operational alerts heading. */
+export const ALERTS_PAGE_HELP =
+  "Authorization, replay, policy, and redaction problems in this workspace. Each alert shows what happened, when, and the ids to trace it, never secrets or the full event details. Acknowledge an alert to show it's been seen.";
+
+/** Under the Alert detail heading. */
+export const ALERT_DETAIL_PAGE_HELP =
+  "This alert shows the ids to trace it, never secrets or the full event details. Acknowledging it again changes nothing, and alerts can't be resolved here.";
+
+/** Alert list with no matching alerts. */
+export const ALERTS_EMPTY_MESSAGE =
+  "No alerts match. Authorization, replay, policy, and redaction problems show up here when FlowForge records them.";
+
+/** Shown when the role can't view alerts. */
+export const ALERTS_VIEW_DENIED = "Your role can't view alerts.";
+
+/** An alert with no action, outcome, or code. */
+export const ALERT_NO_DETAILS = "No other details were recorded for this alert.";
+
+/** Where the Acknowledge button would be when it isn't offered. */
+export const ALERT_ACK_UNAVAILABLE =
+  "Only open alerts can be acknowledged, and only by roles that can acknowledge alerts.";
+
+export const ALERT_ACK_APPLIED_MESSAGE = "Alert acknowledged.";
 
 export const ALERT_ACK_IDEMPOTENT_MESSAGE =
-  "Already acknowledged. A second ack is idempotent — the API did not start new work.";
+  "This alert was already acknowledged. Nothing else changed.";
 
 export const ALERT_ACK_FORBIDDEN_MESSAGE =
-  "Acknowledge requires alert.ack. HTTP 403 is fail-closed; this UI does not mark the alert acknowledged.";
+  "Your role can't acknowledge alerts. The alert wasn't changed.";
 
+/** Contract note. Not UI copy: never render it. */
 export const ALERT_ACK_CSRF_HELP =
   "Ack sends X-CSRF-Token with the session cookie. Missing CSRF fails closed before the Go API is called.";
 

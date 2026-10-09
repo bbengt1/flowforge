@@ -382,7 +382,7 @@ describe("script contract adapter", () => {
     });
     assert.equal(revoked.kind, "revoked");
     assert.match(revoked.label, /cannot start/i);
-    assert.match(revoked.help, /artifact-revoked/);
+    assert.match(revoked.help, /new runs that use it can't start/);
     assert.equal(revoked.revokedAt, "2026-09-09T15:04:00Z");
   });
 

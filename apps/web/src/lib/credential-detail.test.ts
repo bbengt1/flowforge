@@ -20,6 +20,7 @@ import type {
 import {
   CREDENTIAL_DETAIL,
   CREDENTIAL_DETAIL_CHROME_OMIT_KEYS,
+  CREDENTIAL_DETAIL_CONTRACT_NOTE,
   CREDENTIAL_DETAIL_DISABLE_ENABLE_HELP,
   CREDENTIAL_DETAIL_HELP,
   CREDENTIAL_DETAIL_HREF,
@@ -151,15 +152,15 @@ describe("R5.2 credential detail operate density", () => {
     assert.equal(CREDENTIAL_DETAIL.migrateInPlace, true);
     assert.equal(CREDENTIAL_DETAIL.inheritR5SecurityLine, true);
     assert.equal(CREDENTIAL_DETAIL_HREF, "/credentials/{id}");
-    assert.match(CREDENTIAL_DETAIL_HELP, /operate/);
-    assert.match(CREDENTIAL_DETAIL_HELP, /test/);
+    assert.match(CREDENTIAL_DETAIL_CONTRACT_NOTE, /Operate density/);
+    assert.match(CREDENTIAL_DETAIL_HELP, /Test/);
     assert.match(CREDENTIAL_DETAIL_HELP, /rotate/);
-    assert.match(CREDENTIAL_DETAIL_HELP, /usage/);
-    assert.match(CREDENTIAL_DETAIL_HELP, /deletion-impact/);
-    assert.doesNotMatch(CREDENTIAL_DETAIL_HELP, /CREDENTIAL_KEK/);
-    assert.match(CREDENTIAL_DETAIL_HELP, /strip \+ stop/);
-    assert.match(CREDENTIAL_DETAIL_HELP, /CSRF/);
-    assert.match(CREDENTIAL_DETAIL_ROTATE_HELP, /display-name \+ UUID only/);
+    assert.match(CREDENTIAL_DETAIL_HELP, /where it's used/);
+    assert.match(CREDENTIAL_DETAIL_HELP, /what deleting it would affect/);
+    assert.doesNotMatch(CREDENTIAL_DETAIL_HELP, /CREDENTIAL_KEK|CSRF|strip/);
+    assert.match(CREDENTIAL_DETAIL_CONTRACT_NOTE, /strip \+ stop/);
+    assert.match(CREDENTIAL_DETAIL_CONTRACT_NOTE, /CSRF/);
+    assert.match(CREDENTIAL_DETAIL_ROTATE_HELP, /only the name and id/);
     assert.match(CREDENTIAL_DETAIL_DISABLE_ENABLE_HELP, /Disable and enable/);
     assert.equal(R5_SECURITY_LINE.noKekInBrowser, true);
     assert.equal(R5_SECURITY_LINE.displayNamePlusUuidOnly, true);
@@ -287,7 +288,7 @@ describe("R5.2 credential detail operate density", () => {
     assert.equal(credentialDetailDisableEnableLabel("disabled"), "Enable");
     assert.equal(credentialDetailCsrfOnMutations(), true);
     assert.equal(CSRF_HEADER, "X-CSRF-Token");
-    assert.match(CREDENTIAL_DETAIL_DISABLE_ENABLE_HELP, /not a cryptic toggle/);
+    assert.match(CREDENTIAL_DETAIL_DISABLE_ENABLE_HELP, /Active or Disabled/);
   });
 
   it("returns display-name + UUID only after mutate and never surfaces rotate plaintext", () => {
@@ -350,7 +351,7 @@ describe("R5.2 credential detail operate density", () => {
     assert.equal(credentialDetailMustStopAfterStrip([]), false);
     assert.equal(credentialDetailMustStopAfterStrip(["kubeconfig"]), true);
     assert.match(CREDENTIAL_DETAIL_STRIP_STOP_HELP, /Stop/);
-    assert.match(CREDENTIAL_DETAIL_STRIP_STOP_HELP, /do not paste/);
+    assert.match(CREDENTIAL_DETAIL_STRIP_STOP_HELP, /Don't paste/);
     assert.equal(
       credentialDetailChromeOmitsSecretKeys("-----BEGIN OPENSSH PRIVATE KEY-----"),
       false,

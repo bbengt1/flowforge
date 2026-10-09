@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState, useSyncExternalStore } from "react";
+import { RequestReference } from "@/components/RequestReference";
 import { ConfirmDestructive } from "@/components/a11y/ConfirmDestructive";
 import { ExecutionApprovalState } from "@/components/approvals/ExecutionApprovalState";
 import { ConfigPinList } from "@/components/config/ConfigPinList";
@@ -448,10 +449,8 @@ export function ExecutionDetail({
       <div id="execution-errors">
         {problem ? <ProblemBanner problem={problem} /> : null}
       </div>
-      {lastRequestId && !problem ? (
-        <p className={`font-mono text-xs ${FF_INBOX_MUTED_CLASS}`}>
-          last request_id {lastRequestId}
-        </p>
+      {!problem ? (
+        <RequestReference id={lastRequestId} className={`text-xs ${FF_INBOX_MUTED_CLASS}`} />
       ) : null}
       {strippedKeys.length ? (
         <p role="status" className={`text-sm ${FF_INBOX_DANGER_CLASS}`}>

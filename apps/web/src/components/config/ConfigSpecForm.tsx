@@ -8,6 +8,7 @@ import { KubernetesPolicyForm } from "@/components/config/KubernetesPolicyForm";
 import { PolicyRefSelect } from "@/components/config/PolicyRefSelect";
 import { RuntimeProfileForm } from "@/components/config/RuntimeProfileForm";
 import { SshTargetForm } from "@/components/config/SshTargetForm";
+import { kubernetesRoleTemplateHelp } from "@/lib/config-plain-copy";
 import type { DevIdentity } from "@/lib/identity-headers";
 import { getKubernetesCatalog } from "@/lib/kubernetes-client";
 import { isKubernetesPolicySpec } from "@/lib/kubernetes";
@@ -223,9 +224,7 @@ export function ConfigSpecForm({
             }
           />
           <p className="text-xs text-fg">
-            Optional operator metadata for E7.2. Default template is{" "}
-            <code className="font-mono">{KUBERNETES_ROLE_TEMPLATE}</code>.
-            ClusterRoles are not MVP. Paths come from GET /kubernetes/catalog.
+            {kubernetesRoleTemplateHelp(KUBERNETES_ROLE_TEMPLATE)}
           </p>
         </>
       ) : null}

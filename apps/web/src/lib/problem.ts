@@ -1,3 +1,15 @@
+import {
+  PROBLEM_HEADING_BAD_REQUEST,
+  PROBLEM_HEADING_CONFLICT,
+  PROBLEM_HEADING_FORBIDDEN,
+  PROBLEM_HEADING_NOT_FOUND,
+  PROBLEM_HEADING_RATE_LIMITED,
+  PROBLEM_HEADING_SERVER,
+  PROBLEM_HEADING_UNAUTHENTICATED,
+  PROBLEM_HEADING_UNREACHABLE,
+  PROBLEM_SENSITIVE_DETAIL,
+} from "./problem-copy.ts";
+
 /** Field-level workflow validation error from `invalid-workflow` problems. */
 export type ProblemFieldError = {
   path: string;
@@ -94,7 +106,7 @@ export function unreachableProblem(
     type: "urn:flowforge:problem:control-plane-unreachable",
     title: "Control Plane Unreachable",
     status: 503,
-    detail: "The Go control plane did not respond.",
+    detail: "Check your connection, then try again.",
     instance,
     code: "control-plane-unreachable",
     request_id: requestId,
@@ -105,7 +117,7 @@ export function upstreamProblem(
   status: number,
   instance: string,
   requestId: string,
-  detail = `The control plane returned HTTP ${status} without problem details.`,
+  detail = "FlowForge's server sent a response it couldn't read.",
 ): ProblemDetails {
   return {
     type: "urn:flowforge:problem:upstream-error",
@@ -121,12 +133,42 @@ export function upstreamProblem(
 /** UI-safe detail: never surface credentials or connection strings. */
 export function safeProblemDetail(detail: string): string {
   if (!detail || SENSITIVE_DETAIL.test(detail)) {
-    return "The control plane reported an error. Sensitive detail was omitted.";
+    return PROBLEM_SENSITIVE_DETAIL;
   }
   return detail;
 }
 
-/** ProblemBanner heading: existing chrome, including replay `409`. */
-export function problemBannerHeading(problem: Pick<ProblemDetails, "title" | "status">): string {
-  return problem.status ? `${problem.title} (${problem.status})` : problem.title;
+/**
+ * ProblemBanner heading: a plain sentence for the status. Never shows the
+ * HTTP status code or the API's reason phrase (such as "Conflict (409)").
+ */
+export function problemBannerHeading(
+  problem: Pick<ProblemDetails, "title" | "status"> & { code?: string },
+): string {
+  const status = problem.status;
+  if (problem.code === "control-plane-unreachable") {
+    return PROBLEM_HEADING_UNREACHABLE;
+  }
+  if (status === 400 || status === 413 || status === 422) {
+    return PROBLEM_HEADING_BAD_REQUEST;
+  }
+  if (status === 401) {
+    return PROBLEM_HEADING_UNAUTHENTICATED;
+  }
+  if (status === 403) {
+    return PROBLEM_HEADING_FORBIDDEN;
+  }
+  if (status === 404 || status === 410) {
+    return PROBLEM_HEADING_NOT_FOUND;
+  }
+  if (status === 409 || status === 412) {
+    return PROBLEM_HEADING_CONFLICT;
+  }
+  if (status === 429) {
+    return PROBLEM_HEADING_RATE_LIMITED;
+  }
+  if (status >= 500) {
+    return PROBLEM_HEADING_SERVER;
+  }
+  return problem.title || PROBLEM_HEADING_CONFLICT;
 }

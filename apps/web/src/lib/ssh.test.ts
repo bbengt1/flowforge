@@ -327,7 +327,7 @@ describe("authorized SSH selectors", () => {
     });
     assert.equal(forbidden.closed, true);
     assert.deepEqual(forbidden.options, []);
-    assert.match(forbidden.reason ?? "", /Forbidden/);
+    assert.match(forbidden.reason ?? "", /Your role can't use these/);
     assert.equal(
       JSON.stringify(forbidden.options).includes("BEGIN"),
       false,

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { RequestReference } from "@/components/RequestReference";
 import { CollectionLoadMore } from "@/components/CollectionLoadMore";
 import { CredentialVaultListbox } from "@/components/credentials/CredentialVaultListbox";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
@@ -14,7 +15,9 @@ import {
 import { getCredentialCatalog, listCredentials } from "@/lib/credential-client";
 import { FALLBACK_CREDENTIAL_CATALOG } from "@/lib/credential-contract";
 import {
+  CREDENTIAL_HIDDEN_FIELDS_LABEL,
   CREDENTIAL_VAULT_HELP,
+  CREDENTIAL_VIEW_DENIED,
   CREDENTIAL_VAULT_STRIP_STOP_HELP,
   credentialVaultDisplay,
   credentialVaultHasActiveFilters,
@@ -192,20 +195,17 @@ export function CredentialVault() {
 
       {denied ? (
         <p className={`text-sm ${FF_VAULT_DANGER_CLASS}`}>
-          This role cannot view credentials (
-          <code className="font-mono text-xs">credential.view</code> missing).
+          {CREDENTIAL_VIEW_DENIED}
         </p>
       ) : null}
 
       {problem ? <ProblemBanner problem={problem} /> : null}
-      {lastRequestId && !problem ? (
-        <p className={`font-mono text-xs ${FF_VAULT_MUTED_CLASS}`}>
-          last request_id {lastRequestId}
-        </p>
+      {!problem ? (
+        <RequestReference id={lastRequestId} className={`text-xs ${FF_VAULT_MUTED_CLASS}`} />
       ) : null}
       {credentialVaultMustStopAfterStrip(strippedKeys) ? (
         <p role="alert" className={`text-sm ${FF_VAULT_DANGER_CLASS}`}>
-          {CREDENTIAL_VAULT_STRIP_STOP_HELP} Stripped keys:{" "}
+          {CREDENTIAL_VAULT_STRIP_STOP_HELP} {CREDENTIAL_HIDDEN_FIELDS_LABEL}{" "}
           {strippedKeys.join(", ")}.
         </p>
       ) : null}
@@ -215,9 +215,7 @@ export function CredentialVault() {
           <div>
             <h2 className={`text-lg ${FF_VAULT_TITLE_CLASS}`}>Workspace vault</h2>
             <p className={`mt-1 max-w-3xl text-sm ${FF_VAULT_MUTED_CLASS}`}>
-              {CREDENTIAL_VAULT_HELP}{" "}
-              List is{" "}
-              <code className="font-mono text-xs">GET /credentials</code>.
+              {CREDENTIAL_VAULT_HELP}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">

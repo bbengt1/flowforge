@@ -1,8 +1,7 @@
 import { notFound } from "next/navigation";
 import { ConfigKindList } from "@/components/config/ConfigKindList";
-import { kubernetesOpsKind } from "@/lib/kubernetes";
+import { configKindPageHelp } from "@/lib/config-plain-copy";
 import { kindFromCollection } from "@/lib/ops-config-contract";
-import { sshOpsKind } from "@/lib/ssh";
 
 export const dynamic = "force-dynamic";
 
@@ -20,30 +19,11 @@ export default async function ConfigKindPage({ params }: PageProps) {
   return (
     <main className="mx-auto flex min-h-full w-full max-w-5xl flex-col gap-8 px-6 py-12">
       <header className="space-y-3">
-        <p className="text-sm font-medium tracking-wide text-fg uppercase">
-          {kubernetesOpsKind(kind)
-            ? "E4.2 · E7.1"
-            : sshOpsKind(kind)
-              ? "E4.2 · E8.1"
-              : "E4.2"}{" "}
-          · {kind.replaceAll("_", " ")}
-        </p>
         <h1 className="text-3xl font-semibold tracking-tight">
           {kind.replaceAll("_", " ")}
         </h1>
         <p className="max-w-3xl text-base leading-7 text-fg">
-          List workspace heads, then create or edit a draft and publish an
-          immutable pin. Select uses POST …/select. Foreign or empty lists fail
-          closed with problem+json.
-          {kind === "cluster_target"
-            ? " Cluster targets bind a workspace type=kubernetes vault credential, endpoint.apiServer or tlsServerName, and optional policy/serviceAccount. The UI never receives kubeconfigs."
-            : kind === "ssh_target"
-              ? " SSH targets bind a workspace SSH vault credential, hostname, known-host fingerprint, and optional address allowlist. The UI never receives keys, passwords, or raw logs. Password auth and forwarding stay denied."
-              : kind === "command_profile"
-                ? " Command profiles are admin-owned templates with typed parameter constraints. No raw shell interpolation. Publish pins an immutable revision; later drafts do not retarget a pin."
-                : kind === "policy"
-                  ? " Kubernetes policies omit empty allowlists. Publish needs namespaces unless deny=true."
-                  : ""}
+          {configKindPageHelp(kind)}
         </p>
       </header>
       <ConfigKindList kind={kind} />

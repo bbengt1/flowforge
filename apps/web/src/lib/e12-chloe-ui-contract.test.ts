@@ -302,9 +302,9 @@ describe("E12.1 Chloe UI checklist", () => {
       assert.equal(replay.statusCode, 409);
       const banner = e12ChloeReplayBanner(replay.problem);
       assert.equal(banner.status, 409);
-      assert.equal(banner.heading, "Conflict (409)");
+      assert.equal(banner.heading, "FlowForge couldn't do that.");
       assert.match(banner.detail, /single-use|already used/);
-      assert.equal(problemBannerHeading(replay.problem), "Conflict (409)");
+      assert.equal(problemBannerHeading(replay.problem), "FlowForge couldn't do that.");
     }
     assert.equal(replayHolder.assertion, "");
     assert.equal(exchanges, 2);
@@ -337,7 +337,7 @@ describe("E12.1 Chloe UI checklist", () => {
     assert.equal(snapshot.embedChrome?.source, "get-session");
     assert.equal(snapshot.embedChrome?.tenantSlug, "acme");
     assert.notEqual(snapshot.embedChrome?.tenantSlug, "evil");
-    assert.match(e12ChloeMissingSessionChromeMessage(), /not chrome authority/);
+    assert.match(e12ChloeMissingSessionChromeMessage(), /isn't signed in to FlowForge/);
   });
 
   it("reuses existing stale/expired session chrome on 401 (no new chrome)", async () => {

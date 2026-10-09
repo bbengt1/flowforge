@@ -229,7 +229,7 @@ describe("R5.3 NDV add credential without leaving the graph", () => {
     assert.equal(credentialNdvMustStopAfterStrip([]), false);
     assert.equal(credentialNdvMustStopAfterStrip(["kubeconfig"]), true);
     assert.match(CREDENTIAL_NDV_ADD_STRIP_STOP_HELP, /Stop/);
-    assert.match(CREDENTIAL_NDV_ADD_STRIP_STOP_HELP, /do not paste/);
+    assert.match(CREDENTIAL_NDV_ADD_STRIP_STOP_HELP, /Don't paste/);
     assert.equal(
       credentialNdvChromeOmitsSecretKeys("-----BEGIN OPENSSH PRIVATE KEY-----"),
       false,

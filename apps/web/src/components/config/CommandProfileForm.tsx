@@ -1,17 +1,20 @@
 "use client";
 
 import { SshSafetyNotes } from "@/components/config/SshSafetyNotes";
+import {
+  COMMAND_PROFILE_PROBE_HELP,
+  COMMAND_PROFILE_PROBE_INVALID,
+  COMMAND_PROFILE_RETRY_NOTE,
+  COMMAND_PROFILE_RETRY_SAFE_HELP,
+  COMMAND_PROFILE_RETRY_SAFE_UNAVAILABLE,
+} from "@/lib/config-plain-copy";
 import { parseJsonObject, specJson } from "@/lib/ops-config";
 import type { OpsConfigSpec } from "@/lib/ops-config-types";
 import {
   SSH_IMMUTABLE_PIN_HELP,
-  SSH_RETRY_SAFE_HELP,
   SSH_REVIEWED_RENDER_HELP,
 } from "@/lib/ssh-contract";
 import {
-  SSH_INVALID_VERIFICATION_MESSAGE,
-  SSH_PROBE_HELP,
-  SSH_RETRY_ZERO_MESSAGE,
   defaultSshVerificationSpec,
   parseSshVerificationSpec,
   validateSshVerificationSpec,
@@ -153,22 +156,18 @@ export function CommandProfileForm({
             className="mt-1"
           />
           <span>
-            <span className="font-medium">Retry-safe (idempotent verification path)</span>
+            <span className="font-medium">Retry-safe (checks before retrying)</span>
             <span className="mt-1 block text-xs text-teal-950/90">
-              Default is off. Enable only when this profile can verify remote
-              state without repeating the command. ssh.run{" "}
-              <code className="font-mono">maxAttempts&gt;0</code> requires this
-              flag. {SSH_RETRY_ZERO_MESSAGE}
+              {COMMAND_PROFILE_RETRY_SAFE_HELP}
             </span>
           </span>
         </label>
         <p className="text-xs text-teal-950/80">
-          {catalog?.retryNote || SSH_RETRY_SAFE_HELP}
+          {catalog?.retryNote || COMMAND_PROFILE_RETRY_NOTE}
         </p>
         {!retrySafeExposed ? (
           <p role="status" className="text-xs text-amber-950">
-            Live catalog did not expose <code className="font-mono">retrySafe</code>.
-            The flag stays off (fail closed).
+            {COMMAND_PROFILE_RETRY_SAFE_UNAVAILABLE}
           </p>
         ) : null}
         {spec.retrySafe ? (
@@ -400,7 +399,7 @@ function VerificationFields({
   }
   return (
     <div className="grid gap-3 rounded-lg border border-teal-200 bg-bg px-3 py-3">
-      <p className="text-xs text-fg">{SSH_PROBE_HELP}</p>
+      <p className="text-xs text-fg">{COMMAND_PROFILE_PROBE_HELP}</p>
       <label className="text-sm">
         <span className="font-medium">Verification probe template</span>
         <textarea
@@ -417,7 +416,7 @@ function VerificationFields({
         </span>
       </label>
       <label className="text-sm">
-        <span className="font-medium">expectExitCode</span>
+        <span className="font-medium">Expected exit code</span>
         <input
           type="number"
           value={parsed.expectExitCode}
@@ -432,7 +431,7 @@ function VerificationFields({
         <span className="mt-1 block text-xs text-fg">Default 0.</span>
       </label>
       <label className="text-sm">
-        <span className="font-medium">expectStdoutContains (optional)</span>
+        <span className="font-medium">Output must contain (optional)</span>
         <input
           value={parsed.expectStdoutContains ?? ""}
           disabled={readOnly}
@@ -446,7 +445,7 @@ function VerificationFields({
         />
       </label>
       <label className="text-sm">
-        <span className="font-medium">onMatch</span>
+        <span className="font-medium">When the check matches</span>
         <select
           value={parsed.onMatch}
           disabled={readOnly}
@@ -458,7 +457,7 @@ function VerificationFields({
         </select>
       </label>
       <label className="text-sm">
-        <span className="font-medium">onMismatch</span>
+        <span className="font-medium">When the check doesn&apos;t match</span>
         <select
           value={parsed.onMismatch}
           disabled={readOnly}
@@ -470,16 +469,16 @@ function VerificationFields({
         </select>
       </label>
       <label className="text-sm">
-        <span className="font-medium">onError</span>
+        <span className="font-medium">When the check fails to run</span>
         <input value="indeterminate" disabled readOnly className={className} />
         <span className="mt-1 block text-xs text-fg">
-          Probe failure stays loud indeterminate. The UI never implies the
-          command did not run.
+          A failed check marks the step Indeterminate. FlowForge never
+          suggests the command didn&apos;t run.
         </span>
       </label>
       {errors.length > 0 ? (
         <p role="status" className="text-sm text-fg">
-          {errors[0] || SSH_INVALID_VERIFICATION_MESSAGE}
+          {errors[0] || COMMAND_PROFILE_PROBE_INVALID}
         </p>
       ) : null}
     </div>

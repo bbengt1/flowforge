@@ -27,6 +27,7 @@ import {
 } from "./alert-contract.ts";
 import {
   ackOutcomeMessage,
+  isIdempotentAck,
   isAlertForbidden,
   parseAlertList,
   parseOperationalAlert,
@@ -182,10 +183,11 @@ export async function ackAlert(
     statusCode: result.statusCode,
     requestId: result.requestId,
     alert: parsed,
-    idempotent: ackOutcomeMessage({
+    // Same check ackOutcomeMessage uses; the message no longer says "idempotent".
+    idempotent: isIdempotentAck({
       previousStatus,
       status: parsed?.status ?? "acked",
-    }).includes("idempotent"),
+    }),
     message: ackOutcomeMessage({
       previousStatus,
       status: parsed?.status ?? "acked",

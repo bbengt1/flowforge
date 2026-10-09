@@ -34,7 +34,7 @@ describe("portal-embed-client", () => {
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.equal(result.statusCode, 403);
-      assert.match(result.problem.detail, /Portal entry is denied/);
+      assert.match(result.problem.detail, /Portal access is denied/);
     }
     assert.equal(called, false);
   });

@@ -42,19 +42,27 @@ export const SCRIPT_OPS_MAX_REASON_BYTES = 256;
 export const SCRIPT_OPS_POLICY_ALLOW_FIELD = "allowEmergencyStop" as const;
 
 export const SCRIPT_REVOKE_HELP =
+  "Revoking a script blocks new runs that use it, and FlowForge checks again just before each step runs. Runs already in progress keep going; use emergency stop for those.";
+
+/** Contract note. Not UI copy: never render it. */
+export const SCRIPT_REVOKE_CONTRACT_NOTE =
   "Revoke is idempotent and requires script.revoke (operator/admin). It sets revokedAt. New starts fail closed with 409 artifact-revoked. Dispatch rechecks signature, scan, and revocation at start, claim, and heartbeat-before-dispatch. Already-running executions are not auto-halted — use emergency stop.";
 
 export const SCRIPT_REVOKE_CONFIRM_HELP =
   "Revoking this digest blocks every new start that pins it. Already-running script steps keep running until an authorized emergency stop. Optional reason is secret-free and at most 256 bytes.";
 
 export const SCRIPT_REVOKED_STATUS_HELP =
-  "This artifact is revoked. It cannot start. Dispatch rechecks revokedAt and returns 409 artifact-revoked. Publish a new signed digest to run again — revocation is not undone from this UI.";
+  "This script is revoked and can't start. To run it again, publish a new signed version. Revoking can't be undone here.";
 
 export const SCRIPT_REVOKED_RUN_BLOCK_HELP =
   "A pinned script artifact on this version is revoked. Run is blocked. New starts return 409 artifact-revoked. Emergency-stop any already-running script separately.";
 
+/** Next to a pinned script whose details didn't load, so it can't be revoked here. */
+export const SCRIPT_REVOKE_NOT_LOADED_MESSAGE =
+  "This script's details didn't load, so it can't be revoked here. Reload the page to try again.";
+
 export const SCRIPT_REVOKE_FORBIDDEN_MESSAGE =
-  "Revoke requires script.revoke (operator/admin). HTTP 403 is fail-closed; the artifact is not treated as revoked.";
+  "Your role can't revoke scripts. The script wasn't revoked.";
 
 export const SCRIPT_EMERGENCY_STOP_HELP =
   "Emergency stop is distinct from Cancel. Your role and the bound script policy both have to allow it.";
@@ -78,7 +86,7 @@ export const SCRIPT_NO_BLIND_RETRY_AFTER_STOP_HELP =
   "FlowForge never offers a blind retry after an emergency stop. Queued stops stay canceled. Running or uncertain runs stay Indeterminate until someone checks them. A closed run can't be retried.";
 
 export const SCRIPT_OPS_AUDIT_SECRET_FREE_HELP =
-  "Audit rows script.artifact.revoke and script.emergency_stop are secret-free (digest, actor, outcome). Package blobs, storageRef, and secrets are never shown.";
+  "Revokes and emergency stops go in the audit log with the script's digest, who did it, and the outcome. Script packages and secrets are never shown.";
 
 export type ScriptOpsCatalogSource =
   | "scripts-catalog"

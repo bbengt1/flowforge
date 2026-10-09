@@ -146,7 +146,7 @@ describe("R7.1 rewrite chrome on /embed/v1 + session.embed", () => {
       "open",
     );
     assert.equal(rewriteEmbedAdv021Unchanged(), true);
-    assert.match(EMBED_CHROME_MISSING_SESSION_MESSAGE, /not chrome authority/);
+    assert.match(EMBED_CHROME_MISSING_SESSION_MESSAGE, /isn't signed in to FlowForge/);
   });
 
   it("mounts product children only after session.embed + verified bind", () => {

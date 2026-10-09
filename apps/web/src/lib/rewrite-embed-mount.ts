@@ -67,6 +67,7 @@ export const REWRITE_EMBED_MOUNT_PREFIX = EMBED_MOUNT_PREFIX;
 export const REWRITE_EMBED_MOUNT_ATTR = "data-rewrite-embed-mount";
 export const REWRITE_EMBED_TOOLS_ATTR = "data-rewrite-embed-tools";
 
+/** Contract note. Not UI copy: never render it. */
 export const REWRITE_EMBED_MOUNT_HELP =
   "R2–R6 rewrite chrome mounts on this /embed/v1 tree after GET /session session.embed. Same pages as standalone — no second embed tree. Host query is never authorization.";
 

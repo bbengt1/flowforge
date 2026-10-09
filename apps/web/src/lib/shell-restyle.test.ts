@@ -209,7 +209,7 @@ describe("V.2 Shell restyle", () => {
     assert.equal(embedHostQueryIsDisplayOnly(embed), true);
     assert.match(embed, /EMBED_CHROME_MISSING_SESSION_MESSAGE/);
     assert.match(embed, /role="alert"/);
-    assert.match(EMBED_CHROME_MISSING_SESSION_MESSAGE, /not chrome authority/);
+    assert.match(EMBED_CHROME_MISSING_SESSION_MESSAGE, /isn't signed in to FlowForge/);
     assert.match(embed, /EMBED_HOST_DISPLAY_HELP/);
     assert.match(embed, /data-doherty-wait="host-query"/);
     assert.match(embed, /isSessionEmbedMode|sessionEmbed/);

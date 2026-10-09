@@ -67,15 +67,33 @@ describe("safeProblemDetail", () => {
     );
     assert.match(
       safeProblemDetail("password=super-secret"),
-      /Sensitive detail was omitted/,
+      /FlowForge hid the details because they might include a secret/,
     );
     assert.match(
       safeProblemDetail("postgres://flowforge:replace-with-local-password@postgres/db"),
-      /Sensitive detail was omitted/,
+      /FlowForge hid the details because they might include a secret/,
     );
     assert.equal(
       problemBannerHeading({ title: "Conflict", status: 409 }),
-      "Conflict (409)",
+      "FlowForge couldn't do that.",
     );
+    assert.equal(
+      problemBannerHeading({ title: "Forbidden", status: 403 }),
+      "You don't have access to do that.",
+    );
+    assert.equal(
+      problemBannerHeading({
+        title: "Control Plane Unreachable",
+        status: 503,
+        code: "control-plane-unreachable",
+      }),
+      "FlowForge's server didn't respond. Try again.",
+    );
+    for (const status of [400, 401, 403, 404, 409, 422, 429, 500, 503]) {
+      assert.doesNotMatch(
+        problemBannerHeading({ title: "Not allowed", status }),
+        /\d{3}|Not allowed/,
+      );
+    }
   });
 });
