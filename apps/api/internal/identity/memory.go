@@ -32,6 +32,7 @@ type Memory struct {
 	localByID   map[string]string    // normalized identifier -> userID
 	groups      map[string]*memGroup // groupID -> group (carries its workspace)
 	groupAudit  []GroupAuditRecord
+	memberAudit []MemberAuditRecord
 }
 
 // NewMemory returns a store seeded with the in-process permission catalog.
@@ -340,6 +341,18 @@ func (m *Memory) CreateWorkspace(_ context.Context, tenantID, workbenchKey, name
 	}
 	m.workspaces[ws.ID] = ws
 	m.bindings[bindKey(ws.ID, creatorUserID)] = []string{authz.RoleAdmin}
+	// Same row Postgres writes in the create transaction: the creator's
+	// first grant, creator as actor and target.
+	m.memberAudit = append(m.memberAudit, MemberAuditRecord{
+		WorkspaceID:  ws.ID,
+		Action:       AuditMemberRolesChange,
+		UserID:       creatorUserID,
+		ActorUserID:  creatorUserID,
+		RolesBefore:  []string{},
+		RolesAfter:   []string{authz.RoleAdmin},
+		DisplayName:  auditDisplayName(m.users[creatorUserID].DisplayName),
+		ActorDisplay: auditDisplayName(m.users[creatorUserID].DisplayName),
+	})
 	return ws, nil
 }
 

@@ -170,14 +170,17 @@ func TestPostgresRevokeBoundToWorkspaceAndHardDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `DELETE FROM workspaces WHERE id = $1::uuid`, hardWS.ID); err != nil {
-		t.Fatalf("hard delete: %v", err)
+	// The supported delete path (workspace disable). A workspace now has
+	// an append-only audit row from its creation, so it is not hard
+	// deleted; the disable trigger revokes its bound sessions.
+	if _, err := users.DeleteWorkspace(ctx, hardWS.ID); err != nil {
+		t.Fatalf("delete workspace: %v", err)
 	}
 	if _, err := store.Lookup(ctx, hardSess.Token, now.Add(2*time.Second)); err != ErrRevoked {
-		t.Fatalf("hard-delete session: %v", err)
+		t.Fatalf("deleted-workspace session: %v", err)
 	}
 	if _, err := store.Lookup(ctx, unrelated.Token, now.Add(2*time.Second)); err != nil {
-		t.Fatalf("unrelated after hard delete: %v", err)
+		t.Fatalf("unrelated after workspace delete: %v", err)
 	}
 }
 
