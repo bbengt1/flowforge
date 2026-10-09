@@ -180,3 +180,24 @@ func userDisplayNameTx(ctx context.Context, tx pgx.Tx, userID string) (string, e
 	}
 	return auditDisplayName(name), nil
 }
+
+// MemberAuditRecord is the in-memory twin of one workspace_member audit
+// row (tests only). The memory store records it for workspace creation,
+// the one member-role write whose audit row is mirrored here.
+type MemberAuditRecord struct {
+	WorkspaceID  string
+	Action       string
+	UserID       string
+	ActorUserID  string
+	RolesBefore  []string
+	RolesAfter   []string
+	DisplayName  string
+	ActorDisplay string
+}
+
+// MemberAudit returns the recorded member audit rows (tests only).
+func (m *Memory) MemberAudit() []MemberAuditRecord {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]MemberAuditRecord(nil), m.memberAudit...)
+}
