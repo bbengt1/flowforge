@@ -33,15 +33,10 @@ func prepareStart(scope isolation.Scope, workflowID string, in StartInput) (prep
 // that may run with no requester. The strings match the runner's stored
 // trigger types.
 func refuseSystemTrigger(scope isolation.Scope, trigger string) error {
-	if !scope.System() {
+	if !scope.System() || systemTrigger(trigger) {
 		return nil
 	}
-	switch strings.TrimSpace(trigger) {
-	case "schedule", "webhook", "resync":
-		return nil
-	default:
-		return ErrInvalid
-	}
+	return ErrInvalid
 }
 
 func prepareStartUnchecked(scope isolation.Scope, workflowID string, in StartInput) (preparedStart, error) {
@@ -158,12 +153,7 @@ func cloneExecution(exec Execution, wf Workflow) Execution {
 }
 
 func startAuditDetails(workflowID string, ver Version, exec Execution, outcome string) map[string]any {
-	triggerType := "manual"
-	if exec.PolicySnapshot != nil {
-		if t, ok := exec.PolicySnapshot["triggerType"].(string); ok && strings.TrimSpace(t) != "" {
-			triggerType = strings.TrimSpace(t)
-		}
-	}
+	triggerType := ExecutionTriggerType(exec)
 	details := map[string]any{
 		"actorId":           exec.RequestedBy,
 		"workflowId":        workflowID,

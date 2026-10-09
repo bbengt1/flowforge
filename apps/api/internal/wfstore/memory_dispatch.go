@@ -111,6 +111,36 @@ func (m *Memory) ClaimJob(ctx context.Context, scope isolation.Scope, now time.T
 		return DispatchResult{Recovered: recovered}, ErrEmptyClaim
 	}
 
+	// #628 F1: same as Postgres. A manual or API run with no requester is
+	// failed inside the claim; no worker gets a job for it.
+	if failure, refuse := MissingActorFailure(chosen.record); refuse {
+		job := chosen.jobs[jobIdx]
+		job.Status = JobFailed
+		job.WorkerID = ""
+		job.LeaseExpiresAt = nil
+		job.HeartbeatAt = nil
+		job.UpdatedAt = now
+		chosen.jobs[jobIdx] = job
+		if stepIdx := indexStep(chosen.steps, job.ExecutionStepID); stepIdx >= 0 {
+			step := chosen.steps[stepIdx]
+			step.Error = redactObject(failure)
+			applyStepStatus(&step, ExecutionFailed, now)
+			chosen.steps[stepIdx] = step
+		}
+		m.rollupLocked(chosen, now)
+		m.executions[chosen.record.ID] = *chosen
+		m.appendAuditLocked(scope, AuditWrite{
+			Action:        "job.fail",
+			ResourceType:  "execution",
+			ResourceID:    chosen.record.ID,
+			Outcome:       "failed",
+			CorrelationID: chosen.record.CorrelationID,
+			Details:       map[string]any{"reason": ReasonMissingActor, "jobId": job.ID},
+		}, now)
+		observability.NoteLeaseClaim(ctx, "empty", 0)
+		return DispatchResult{Recovered: recovered}, ErrEmptyClaim
+	}
+
 	leaseExp := now.Add(lease)
 	job := chosen.jobs[jobIdx]
 	job.Status = JobClaimed

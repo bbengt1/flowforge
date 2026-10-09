@@ -161,6 +161,25 @@ func (p *Postgres) ClaimJob(ctx context.Context, scope isolation.Scope, now time
 		return DispatchResult{Recovered: recovered}, ErrEmptyClaim
 	}
 
+	// #628 F1: a manual or API run with no requester is failed here, in
+	// the claim transaction, before any worker gets a job token for it.
+	// Every claim (the runner's StoreQueue and the compose worker's HTTP
+	// claim, after lease recovery or requeue) passes this point.
+	picked0, err := getExecutionTx(ctx, tx, executionID)
+	if err != nil {
+		return DispatchResult{}, err
+	}
+	if failure, refuse := MissingActorFailure(picked0); refuse {
+		if err := failMissingActorJobTx(ctx, tx, scope, now, jobID, executionID, failure); err != nil {
+			return DispatchResult{}, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return DispatchResult{}, mapDBErr(err)
+		}
+		observability.NoteLeaseClaim(ctx, "empty", 0)
+		return DispatchResult{Recovered: recovered}, ErrEmptyClaim
+	}
+
 	leaseExp := now.Add(lease)
 	job, err := scanJob(tx.QueryRow(ctx, `
 		UPDATE execution_jobs

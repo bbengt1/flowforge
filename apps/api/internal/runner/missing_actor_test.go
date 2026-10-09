@@ -38,7 +38,7 @@ func TestScopeForDoesNotInferSystem(t *testing.T) {
 		if _, err := scopeForJob(ws, exec); !errors.Is(err, isolation.ErrNoActor) {
 			t.Fatalf("%q scopeForJob = %v", trig, err)
 		}
-		failure, refuse := missingActorFailure(exec)
+		failure, refuse := wfstore.MissingActorFailure(exec)
 		if !refuse || failure["code"] != wfstore.ReasonMissingActor {
 			t.Fatalf("%q failure = %#v refuse=%v", trig, failure, refuse)
 		}
@@ -47,12 +47,12 @@ func TestScopeForDoesNotInferSystem(t *testing.T) {
 		}
 	}
 	okExec := wfstore.Execution{RequestedBy: actorID, PolicySnapshot: map[string]any{"triggerType": "manual"}}
-	if _, refuse := missingActorFailure(okExec); refuse {
+	if _, refuse := wfstore.MissingActorFailure(okExec); refuse {
 		t.Fatal("a requester must not be refused")
 	}
 	for _, trig := range []string{triggerSchedule, triggerWebhook, triggerResync} {
 		exec := wfstore.Execution{PolicySnapshot: map[string]any{"triggerType": trig}}
-		if _, refuse := missingActorFailure(exec); refuse {
+		if _, refuse := wfstore.MissingActorFailure(exec); refuse {
 			t.Fatalf("%s run was refused", trig)
 		}
 	}
@@ -93,8 +93,9 @@ func TestRunnerFailsManualAndAPIWithoutRequester(t *testing.T) {
 		}); !errors.Is(err, wfstore.ErrInvalid) {
 			t.Fatalf("%s start = %v, want ErrInvalid", trig, err)
 		}
-		// Older rows can still exist. Plant one directly so the runner
-		// backstop is what fails the job, not StartExecution.
+		// Older rows can still exist. Plant one directly so the claim
+		// (wfstore, shared with the HTTP worker claim) fails the job, not
+		// StartExecution.
 		if _, err := r.wf.PlantExecutionForTest(ctx, sys, ver.WorkflowID, wfstore.StartInput{
 			VersionID:   ver.ID,
 			TriggerType: trig,
@@ -102,8 +103,13 @@ func TestRunnerFailsManualAndAPIWithoutRequester(t *testing.T) {
 			t.Fatalf("%s plant: %v", trig, err)
 		}
 	}
-	if _, err := r.loop.Drain(ctx); err != nil {
-		t.Fatal(err)
+	// A claim that fails a missing-requester run returns an empty claim,
+	// which Drain counts as an idle poll, so drain until nothing is
+	// queued.
+	for i := 0; i < 6; i++ {
+		if _, err := r.loop.Drain(ctx); err != nil {
+			t.Fatal(err)
+		}
 	}
 	execs, err := r.wf.ListExecutions(ctx, r.scope, wfstore.ExecutionListFilter{})
 	if err != nil {
@@ -145,5 +151,41 @@ func TestRunnerFailsManualAndAPIWithoutRequester(t *testing.T) {
 	}
 	if ran != 3 || failed != 2 {
 		t.Fatalf("ran=%d failed=%d execs=%d", ran, failed, len(execs))
+	}
+}
+
+// #628 F1: StoreQueue.Claim gets no job for a planted manual run with no
+// requester; the shared claim fails it before any step attempt.
+func TestStoreQueueClaimFailsMissingActor(t *testing.T) {
+	r, _ := newRig(t, authz.ExpandRoles([]string{authz.RoleOperator}))
+	ver := r.publish(t, coreYAML("stop", "flow.stop", "status: success"))
+	sys, err := isolation.AuthorizeSystem(wsID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	exec, err := r.wf.PlantExecutionForTest(ctx, sys, ver.WorkflowID, wfstore.StartInput{VersionID: ver.ID, TriggerType: "manual"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := r.queue.Claim(ctx, r.queue.Fixed[0])
+	if err != nil || job != nil {
+		t.Fatalf("claim = %+v, %v; want no job", job, err)
+	}
+	got, err := r.wf.GetExecution(ctx, r.scope, ver.WorkflowID, exec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != wfstore.ExecutionFailed {
+		t.Fatalf("status = %s", got.Status)
+	}
+	steps, err := r.wf.ListSteps(ctx, r.scope, exec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range steps {
+		if step.Error["code"] != wfstore.ReasonMissingActor || step.StartedAt != nil || step.FencingToken != 0 {
+			t.Fatalf("step = %+v", step)
+		}
 	}
 }

@@ -309,12 +309,10 @@ func scopeForJob(ws Workspace, exec wfstore.Execution) (isolation.Scope, error) 
 	if strings.TrimSpace(ws.ActorID) != "" {
 		return scopeForActor(ws)
 	}
-	switch executionTrigger(exec) {
-	case triggerSchedule, triggerWebhook, triggerResync:
+	if wfstore.IsSystemTrigger(exec) {
 		return systemScope(ws)
-	default:
-		return isolation.Scope{}, isolation.ErrNoActor
 	}
+	return isolation.Scope{}, isolation.ErrNoActor
 }
 
 func scopeForActor(ws Workspace) (isolation.Scope, error) {
@@ -338,29 +336,3 @@ const (
 	triggerWebhook  = "webhook"
 	triggerResync   = "resync"
 )
-
-func executionTrigger(exec wfstore.Execution) string {
-	if exec.PolicySnapshot != nil {
-		if t, ok := exec.PolicySnapshot["triggerType"].(string); ok && strings.TrimSpace(t) != "" {
-			return strings.TrimSpace(t)
-		}
-	}
-	return "manual"
-}
-
-// missingActorFailure reports a manual or API run whose requester is
-// empty. Schedule, webhook, and resync starts are system work and are
-// allowed through. A present requester is never refused here.
-func missingActorFailure(exec wfstore.Execution) (map[string]any, bool) {
-	// A zero execution is a test double that never started a run. A stored
-	// run always has an id. Only those are corrupt when the requester is empty.
-	if strings.TrimSpace(exec.ID) == "" || strings.TrimSpace(exec.RequestedBy) != "" {
-		return nil, false
-	}
-	switch executionTrigger(exec) {
-	case triggerSchedule, triggerWebhook, triggerResync:
-		return nil, false
-	default:
-		return wfstore.MissingActorError(), true
-	}
-}
