@@ -4,11 +4,11 @@ import "testing"
 
 func TestCacheIsWorkspaceScoped(t *testing.T) {
 	c := NewCache()
-	a, err := Authorize("11111111-1111-1111-1111-111111111111", "")
+	a, err := AuthorizeSystem("11111111-1111-1111-1111-111111111111")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := Authorize("22222222-2222-2222-2222-222222222222", "")
+	b, err := AuthorizeSystem("22222222-2222-2222-2222-222222222222")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,11 +29,11 @@ func TestCacheIsWorkspaceScoped(t *testing.T) {
 
 func TestCachePropagatesTenantWorkbench(t *testing.T) {
 	c := NewCache()
-	ops, err := AuthorizeTenancy("11111111-1111-1111-1111-111111111111", "", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "ops")
+	ops, err := AuthorizeSystemTenancy("11111111-1111-1111-1111-111111111111", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "ops")
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := AuthorizeTenancy("11111111-1111-1111-1111-111111111111", "", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "other")
+	other, err := AuthorizeSystemTenancy("11111111-1111-1111-1111-111111111111", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "other")
 	if err != nil {
 		t.Fatal(err)
 	}

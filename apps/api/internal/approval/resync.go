@@ -116,7 +116,7 @@ type pendingRef struct {
 
 func resyncWorkspace(ctx context.Context, db DB, versions VersionSource, ops PinSource, workspaceID string, now time.Time) (ResyncStats, error) {
 	var stats ResyncStats
-	scope, err := isolation.Authorize(workspaceID, "")
+	scope, err := isolation.AuthorizeSystem(workspaceID)
 	if err != nil {
 		return stats, err
 	}

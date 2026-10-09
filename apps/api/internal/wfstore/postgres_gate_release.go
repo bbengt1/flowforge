@@ -37,7 +37,7 @@ func SettleUnresolvableGate(ctx context.Context, tx pgx.Tx, scope isolation.Scop
 // no-eligible-decider failure.
 func init() {
 	approvalgate.RegisterSettler(func(ctx context.Context, tx pgx.Tx, workspaceID, workflowID, executionID, nodeID string, now time.Time) error {
-		scope, err := isolation.Authorize(workspaceID, "")
+		scope, err := isolation.AuthorizeSystem(workspaceID)
 		if err != nil {
 			return err
 		}
@@ -159,6 +159,15 @@ func NoEligibleDeciderError() map[string]any {
 // rolls the run up so statusReason is requirement_unresolvable.
 func RequirementUnresolvableError() map[string]any {
 	return requirementUnresolvableStepError()
+}
+
+// MissingActorError fails a claimed job that belongs to a manual or API
+// run with no requester. The runner does not execute that job.
+func MissingActorError() map[string]any {
+	return map[string]any{
+		"code":    ReasonMissingActor,
+		"message": MissingActorDetail,
+	}
 }
 
 func requirementUnresolvableStepError() map[string]any {

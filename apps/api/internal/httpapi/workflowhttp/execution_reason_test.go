@@ -1,6 +1,7 @@
 package workflowhttp
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -28,5 +29,14 @@ func TestExecutionStatusReasonUnresolvable(t *testing.T) {
 	}}
 	if got := ExecutionStatusReason(exec, deleted, nil, now); got != wfstore.ReasonWorkflowDeleted {
 		t.Fatalf("deleted reason = %q", got)
+	}
+	missing := []wfstore.ExecutionStep{{
+		Error: map[string]any{"code": wfstore.ReasonMissingActor, "message": wfstore.MissingActorDetail},
+	}}
+	if got := ExecutionStatusReason(exec, missing, nil, now); got != wfstore.ReasonMissingActor {
+		t.Fatalf("missing reason = %q", got)
+	}
+	if strings.Contains(wfstore.MissingActorDetail, "actor") {
+		t.Fatal("user-facing detail names an actor")
 	}
 }
