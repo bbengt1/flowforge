@@ -44,9 +44,12 @@ type decideStore interface {
 func assertEmptyActorRefused(t *testing.T, store decideStore, scope isolation.Scope, rec Record, now time.Time) {
 	t.Helper()
 	ctx := context.Background()
-	nobody, err := isolation.Authorize(scope.WorkspaceID(), "")
+	nobody, err := isolation.AuthorizeSystem(scope.WorkspaceID())
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !nobody.System() || nobody.ActorID() != "" {
+		t.Fatal("system scope must keep an empty actor")
 	}
 	before, err := store.Events(ctx, scope, rec.ID)
 	if err != nil {

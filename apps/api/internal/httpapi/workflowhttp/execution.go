@@ -261,19 +261,25 @@ func WriteExecutionDetail(s *core.Server, w http.ResponseWriter, r *http.Request
 }
 
 // ExecutionStatusReason surfaces requirement_unresolvable, then
-// workflow_deleted, on a failed run, then the queued no-worker hint.
-// Workflow-scoped execution routes stay 404.
+// missing_actor, then workflow_deleted, on a failed run, then the queued
+// no-worker hint. Workflow-scoped execution routes stay 404.
 func ExecutionStatusReason(exec wfstore.Execution, steps []wfstore.ExecutionStep, jobs []wfstore.ExecutionJob, now time.Time) string {
 	if exec.Status == wfstore.ExecutionFailed {
-		var deleted bool
+		var deleted, missing bool
 		for _, step := range steps {
 			code, _ := step.Error["code"].(string)
 			if code == wfstore.ReasonRequirementUnresolvable {
 				return wfstore.ReasonRequirementUnresolvable
 			}
+			if code == wfstore.ReasonMissingActor {
+				missing = true
+			}
 			if code == wfstore.ReasonWorkflowDeleted {
 				deleted = true
 			}
+		}
+		if missing {
+			return wfstore.ReasonMissingActor
 		}
 		if deleted {
 			return wfstore.ReasonWorkflowDeleted

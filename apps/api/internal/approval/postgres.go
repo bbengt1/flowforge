@@ -276,9 +276,10 @@ func (p *Postgres) Decide(ctx context.Context, scope isolation.Scope, id string,
 	if scope.Zero() {
 		return Record{}, ErrNoScope
 	}
-	// A decision always has a decider. An empty actor is refused before
-	// the transaction opens, so nothing is written or corrected.
-	if scope.ActorID() == "" {
+	// A decision always has a decider. An empty actor and a system scope
+	// are refused before the transaction opens, so nothing is written
+	// or corrected. An approval step exists for a person.
+	if scope.ActorID() == "" || scope.System() {
 		return Record{}, ErrForbidden
 	}
 	now := in.Now.UTC()

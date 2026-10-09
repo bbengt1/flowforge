@@ -67,10 +67,7 @@ func TestSchedulerTicksDispatchRecoverPurgeAndSkipsDrafts(t *testing.T) {
 		t.Fatalf("create workspace: %d %s", rec.Code, rec.Body.String())
 	}
 	ws, tenant := currentWorkspace(t, h, admin)
-	scope, err := isolation.AuthorizeTenancy(ws.ID, admin.ID, tenant.ID, ws.WorkbenchKey)
-	if err != nil {
-		t.Fatal(err)
-	}
+	scope := authorizeTestActor(t, idStore, admin, ws, tenant)
 
 	created := createWorkflow(t, h, admin, tenant, ws, scheduleYAML)
 	// Pin a schedule at a version that was never published. The tick must
@@ -182,8 +179,9 @@ func TestConcurrentDispatchDoesNotDoubleStart(t *testing.T) {
 	ops := opsconfig.NewMemory()
 	hooks := webhook.NewMemory()
 	keys := vault.TestKeys()
+	idStore := identity.NewMemory()
 	h := NewWithDeps(withHTTPTestIdentity(Deps{
-		Store:         identity.NewMemory(),
+		Store:         idStore,
 		Scoped:        isolation.NewMemory(),
 		Sessions:      session.NewMemory(),
 		Workflows:     workflows,
@@ -214,10 +212,7 @@ func TestConcurrentDispatchDoesNotDoubleStart(t *testing.T) {
 		t.Fatalf("create workspace: %d %s", rec.Code, rec.Body.String())
 	}
 	ws, tenant := currentWorkspace(t, h, admin)
-	scope, err := isolation.AuthorizeTenancy(ws.ID, admin.ID, tenant.ID, ws.WorkbenchKey)
-	if err != nil {
-		t.Fatal(err)
-	}
+	scope := authorizeTestActor(t, idStore, admin, ws, tenant)
 	created := createWorkflow(t, h, admin, tenant, ws, scheduleYAML)
 	pub := publishWorkflow(t, h, admin, tenant, ws, created.Workflow.ID, created.Draft.Revision, "sched-once")
 	body, _ := json.Marshal(map[string]any{

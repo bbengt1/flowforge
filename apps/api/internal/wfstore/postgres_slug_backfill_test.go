@@ -86,7 +86,7 @@ func TestPostgresDraftSlugBackfill(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The command's scope: a workspace from the session setting, no actor.
-	runA, err := isolation.Authorize(wsA, "")
+	runA, err := isolation.AuthorizeSystem(wsA)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +262,7 @@ func TestPostgresDraftSlugBackfill(t *testing.T) {
 	})
 
 	t.Run("workspace B is fixed only by its own run", func(t *testing.T) {
-		runB, err := isolation.Authorize(wsB, "")
+		runB, err := isolation.AuthorizeSystem(wsB)
 		if err != nil {
 			t.Fatal(err)
 		}

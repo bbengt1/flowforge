@@ -245,8 +245,24 @@ func TestWebhookIngressValidAndFailClosed(t *testing.T) {
 	}
 	found := false
 	for _, ev := range listed.Items {
-		if ev.Action == "execution.start" && ev.Details["triggerType"] == "webhook" {
-			found = true
+		if ev.Action != "execution.start" || ev.Details["via"] != webhook.AuditVia {
+			continue
+		}
+		found = true
+		if ev.Details["triggerType"] != webhook.TypeWebhook {
+			t.Fatalf("triggerType = %v", ev.Details["triggerType"])
+		}
+		if ev.Details["triggerId"] != trig.ID {
+			t.Fatalf("triggerId = %v", ev.Details["triggerId"])
+		}
+		for _, key := range []string{"secret", "signature", "webhookSecret"} {
+			if _, ok := ev.Details[key]; ok {
+				t.Fatalf("audit details include %s", key)
+			}
+		}
+		raw := rec.Body.String()
+		if strings.Contains(raw, sig) {
+			t.Fatal("audit response includes the signature")
 		}
 	}
 	if !found {

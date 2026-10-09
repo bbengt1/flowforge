@@ -98,7 +98,7 @@ func TestPostgresRLSUnsetStaleAndCrossWorkspace(t *testing.T) {
 
 	t.Run("cross-workspace read and write fail", func(t *testing.T) {
 		store := NewPostgres(app)
-		scopeB, err := Authorize(wsB, "")
+		scopeB, err := AuthorizeSystem(wsB)
 		if err != nil {
 			t.Fatal(err)
 		}

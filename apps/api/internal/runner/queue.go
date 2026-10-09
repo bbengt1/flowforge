@@ -189,7 +189,7 @@ func (q *StoreQueue) Claim(ctx context.Context, ws Workspace) (*Job, error) {
 }
 
 func (q *StoreQueue) Heartbeat(ctx context.Context, ws Workspace, job Job) error {
-	scope, err := scopeFor(ws)
+	scope, err := scopeForJob(ws, job.Execution)
 	if err != nil {
 		return err
 	}
@@ -198,7 +198,7 @@ func (q *StoreQueue) Heartbeat(ctx context.Context, ws Workspace, job Job) error
 }
 
 func (q *StoreQueue) Complete(ctx context.Context, ws Workspace, job Job, output map[string]any) error {
-	scope, err := scopeFor(ws)
+	scope, err := scopeForJob(ws, job.Execution)
 	if err != nil {
 		return err
 	}
@@ -209,7 +209,7 @@ func (q *StoreQueue) Complete(ctx context.Context, ws Workspace, job Job, output
 }
 
 func (q *StoreQueue) Release(ctx context.Context, ws Workspace, job Job) (wfstore.DispatchResult, error) {
-	scope, err := scopeFor(ws)
+	scope, err := scopeForJob(ws, job.Execution)
 	if err != nil {
 		return wfstore.DispatchResult{}, err
 	}
@@ -221,7 +221,7 @@ func (q *StoreQueue) Release(ctx context.Context, ws Workspace, job Job) (wfstor
 }
 
 func (q *StoreQueue) Fail(ctx context.Context, ws Workspace, job Job, failure map[string]any) error {
-	scope, err := scopeFor(ws)
+	scope, err := scopeForJob(ws, job.Execution)
 	if err != nil {
 		return err
 	}
@@ -242,7 +242,7 @@ func (q *StoreQueue) ParkApproval(ctx context.Context, ws Workspace, job Job, un
 }
 
 func (q *StoreQueue) park(ctx context.Context, ws Workspace, job Job, until time.Time, seed *approval.CreateInput) error {
-	scope, err := scopeFor(ws)
+	scope, err := scopeForJob(ws, job.Execution)
 	if err != nil {
 		return err
 	}
@@ -292,9 +292,75 @@ func parkedApproval(in *approval.CreateInput) *wfstore.ParkedApproval {
 	}
 }
 
+// scopeFor is the workspace scope for a claim, before any run is known.
+// An empty actor is not treated as system. That inference is what #628
+// removes. Callers that have the run use scopeForJob.
 func scopeFor(ws Workspace) (isolation.Scope, error) {
+	if strings.TrimSpace(ws.ActorID) == "" {
+		return isolation.Scope{}, isolation.ErrNoActor
+	}
+	return scopeForActor(ws)
+}
+
+// scopeForJob scopes work on a claimed run. A worker actor is used as
+// itself. An empty worker actor is not assumed to be system: schedule,
+// webhook, and resync runs get a system scope, and anything else is refused.
+func scopeForJob(ws Workspace, exec wfstore.Execution) (isolation.Scope, error) {
+	if strings.TrimSpace(ws.ActorID) != "" {
+		return scopeForActor(ws)
+	}
+	switch executionTrigger(exec) {
+	case triggerSchedule, triggerWebhook, triggerResync:
+		return systemScope(ws)
+	default:
+		return isolation.Scope{}, isolation.ErrNoActor
+	}
+}
+
+func scopeForActor(ws Workspace) (isolation.Scope, error) {
 	if strings.TrimSpace(ws.TenantID) != "" && strings.TrimSpace(ws.WorkbenchKey) != "" {
 		return isolation.AuthorizeTenancy(ws.ID, ws.ActorID, ws.TenantID, ws.WorkbenchKey)
 	}
 	return isolation.Authorize(ws.ID, ws.ActorID)
+}
+
+func systemScope(ws Workspace) (isolation.Scope, error) {
+	if strings.TrimSpace(ws.TenantID) != "" && strings.TrimSpace(ws.WorkbenchKey) != "" {
+		return isolation.AuthorizeSystemTenancy(ws.ID, ws.TenantID, ws.WorkbenchKey)
+	}
+	return isolation.AuthorizeSystem(ws.ID)
+}
+
+// Stored trigger types that are allowed to run with no requester.
+// manual and api are not in this set.
+const (
+	triggerSchedule = "schedule"
+	triggerWebhook  = "webhook"
+	triggerResync   = "resync"
+)
+
+func executionTrigger(exec wfstore.Execution) string {
+	if exec.PolicySnapshot != nil {
+		if t, ok := exec.PolicySnapshot["triggerType"].(string); ok && strings.TrimSpace(t) != "" {
+			return strings.TrimSpace(t)
+		}
+	}
+	return "manual"
+}
+
+// missingActorFailure reports a manual or API run whose requester is
+// empty. Schedule, webhook, and resync starts are system work and are
+// allowed through. A present requester is never refused here.
+func missingActorFailure(exec wfstore.Execution) (map[string]any, bool) {
+	// A zero execution is a test double that never started a run. A stored
+	// run always has an id. Only those are corrupt when the requester is empty.
+	if strings.TrimSpace(exec.ID) == "" || strings.TrimSpace(exec.RequestedBy) != "" {
+		return nil, false
+	}
+	switch executionTrigger(exec) {
+	case triggerSchedule, triggerWebhook, triggerResync:
+		return nil, false
+	default:
+		return wfstore.MissingActorError(), true
+	}
 }

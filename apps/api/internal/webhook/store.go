@@ -39,7 +39,10 @@ var (
 
 // Lifecycle and type values.
 const (
-	TypeWebhook    = "webhook"
+	TypeWebhook = "webhook"
+	// AuditVia is the fixed audit details.via for ingress. It names the
+	// path, not a person. It is never a secret or a signature.
+	AuditVia       = "webhook"
 	StatusEnabled  = "enabled"
 	StatusDisabled = "disabled"
 

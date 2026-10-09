@@ -219,7 +219,7 @@ func (m *Memory) CancelUnresolvableGate(executionID, nodeID string, now time.Tim
 		rec.DecidedAt = nil
 		rec.UpdatedAt = now
 		m.rows[id] = memRow{workspaceID: row.workspaceID, record: rec}
-		scope, err := isolation.Authorize(row.workspaceID, "")
+		scope, err := isolation.AuthorizeSystem(row.workspaceID)
 		if err != nil {
 			continue
 		}
@@ -360,7 +360,8 @@ func (m *Memory) Decide(ctx context.Context, scope isolation.Scope, id string, i
 		return Record{}, ErrNoScope
 	}
 	// Same as Postgres: no decider, no decision, nothing written.
-	if scope.ActorID() == "" {
+	// A system scope is not a person and cannot decide.
+	if scope.ActorID() == "" || scope.System() {
 		return Record{}, ErrForbidden
 	}
 	now := in.Now.UTC()
@@ -721,7 +722,7 @@ func (m *Memory) ResyncPending(ctx context.Context, versions VersionSource, ops 
 			seenWS[item.workspaceID] = struct{}{}
 			stats.Workspaces++
 		}
-		scope, err := isolation.Authorize(item.workspaceID, "")
+		scope, err := isolation.AuthorizeSystem(item.workspaceID)
 		if err != nil {
 			stats.Failed++
 			continue

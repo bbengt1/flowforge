@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/ssh"
 )
@@ -17,6 +18,33 @@ type preparedStart struct {
 }
 
 func prepareStart(scope isolation.Scope, workflowID string, in StartInput) (preparedStart, error) {
+	prepared, err := prepareStartUnchecked(scope, workflowID, in)
+	if err != nil {
+		return preparedStart{}, err
+	}
+	if err := refuseSystemTrigger(scope, in.TriggerType); err != nil {
+		return preparedStart{}, err
+	}
+	return prepared, nil
+}
+
+// refuseSystemTrigger blocks a system scope from starting a manual, API,
+// or unspecified run. Schedule, webhook, and resync are the only triggers
+// that may run with no requester. The strings match the runner's stored
+// trigger types.
+func refuseSystemTrigger(scope isolation.Scope, trigger string) error {
+	if !scope.System() {
+		return nil
+	}
+	switch strings.TrimSpace(trigger) {
+	case "schedule", "webhook", "resync":
+		return nil
+	default:
+		return ErrInvalid
+	}
+}
+
+func prepareStartUnchecked(scope isolation.Scope, workflowID string, in StartInput) (preparedStart, error) {
 	if scope.Zero() {
 		return preparedStart{}, ErrNoScope
 	}
@@ -155,6 +183,14 @@ func startAuditDetails(workflowID string, ver Version, exec Execution, outcome s
 }
 
 func newAudit(scope isolation.Scope, in AuditWrite, now time.Time) AuditEvent {
+	details := redactObject(in.Details)
+	// A system scope has no UUID. Record the fixed system via unless the
+	// caller already named the path (webhook ingress sets via webhook).
+	if scope.System() {
+		if via, _ := details["via"].(string); strings.TrimSpace(via) == "" {
+			details["via"] = identity.MemberViaSystem
+		}
+	}
 	return AuditEvent{
 		ID:             newID(),
 		ActorID:        scope.ActorID(),
@@ -164,7 +200,7 @@ func newAudit(scope isolation.Scope, in AuditWrite, now time.Time) AuditEvent {
 		ResourceID:     strings.TrimSpace(in.ResourceID),
 		Outcome:        strings.TrimSpace(in.Outcome),
 		CorrelationID:  strings.TrimSpace(in.CorrelationID),
-		Details:        redactObject(in.Details),
+		Details:        details,
 		OccurredAt:     now,
 		RetentionUntil: now.Add(DefaultAuditRetention),
 	}

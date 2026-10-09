@@ -116,6 +116,15 @@ const (
 	// It is a broken setup, not a wait that timed out.
 	ReasonRequirementUnresolvable = "requirement_unresolvable"
 
+	// ReasonMissingActor is the matchable end reason when a manual or API
+	// run has no requester. Schedule, webhook, and resync runs are system
+	// starts and do not use this code. The run page maps the code itself
+	// and does not show MissingActorDetail.
+	ReasonMissingActor = "missing_actor"
+	// MissingActorDetail is the fixed step message. It does not name an
+	// internal actor. Chloe's copy (#629) is what people read.
+	MissingActorDetail = "This run didn't start because FlowForge couldn't tell who started it. Start it again."
+
 	// Retry refusal codes and reasons. The same values are written on
 	// capabilities.retry and on the retry 409. SSH and script policy
 	// denial is execution_not_retryable with reason retry_not_allowed.
