@@ -132,7 +132,7 @@ func TestCSRFFailClosedOnStateChangingRequests(t *testing.T) {
 		rec := httptest.NewRecorder()
 		req := sessionAPIRequest(http.MethodPost, "/api/v1/tenants", `{"slug":"nope","name":"Nope"}`, token, "")
 		env.h.ServeHTTP(rec, req)
-		assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+		assertProblem(t, rec, http.StatusForbidden, CodeCSRFInvalid, "")
 	})
 
 	t.Run("wrong csrf header", func(t *testing.T) {
@@ -140,7 +140,7 @@ func TestCSRFFailClosedOnStateChangingRequests(t *testing.T) {
 		req := sessionAPIRequest(http.MethodPost, "/api/v1/tenants", `{"slug":"nope","name":"Nope"}`, token, csrf)
 		req.Header.Set(session.CSRFHeader, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
 		env.h.ServeHTTP(rec, req)
-		assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+		assertProblem(t, rec, http.StatusForbidden, CodeCSRFInvalid, "")
 	})
 
 	t.Run("header and cookie mismatch", func(t *testing.T) {
@@ -151,7 +151,7 @@ func TestCSRFFailClosedOnStateChangingRequests(t *testing.T) {
 		req.AddCookie(&http.Cookie{Name: session.CSRFCookieName, Value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})
 		req.Header.Set(session.CSRFHeader, csrf)
 		env.h.ServeHTTP(rec, req)
-		assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+		assertProblem(t, rec, http.StatusForbidden, CodeCSRFInvalid, "")
 	})
 
 	t.Run("valid csrf succeeds", func(t *testing.T) {
@@ -170,7 +170,7 @@ func TestCSRFFailClosedOnStateChangingRequests(t *testing.T) {
 		rec := httptest.NewRecorder()
 		req := sessionAPIRequest(http.MethodPost, "/api/v1/session/logout", "", token, "")
 		env.h.ServeHTTP(rec, req)
-		assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "")
+		assertProblem(t, rec, http.StatusForbidden, CodeCSRFInvalid, "")
 	})
 }
 

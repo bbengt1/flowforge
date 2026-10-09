@@ -21,6 +21,7 @@ const (
 	CodeArtifactUnscanned              = core.CodeArtifactUnscanned
 	CodeArtifactUnsigned               = core.CodeArtifactUnsigned
 	CodeConflict                       = core.CodeConflict
+	CodeCSRFInvalid                    = core.CodeCSRFInvalid
 	CodeDependencyUnavailable          = core.CodeDependencyUnavailable
 	CodeEgressDenied                   = core.CodeEgressDenied
 	CodeForbidden                      = core.CodeForbidden

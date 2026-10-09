@@ -15,9 +15,13 @@ const ProblemTypePrefix = "urn:flowforge:problem:"
 // Documented problem codes. New API handlers should reuse these rather than
 // inventing ad-hoc strings.
 const (
-	CodeInvalidRequest        = "invalid-request"
-	CodeUnauthenticated       = "unauthenticated"
-	CodeForbidden             = "forbidden"
+	CodeInvalidRequest  = "invalid-request"
+	CodeUnauthenticated = "unauthenticated"
+	CodeForbidden       = "forbidden"
+	// CodeCSRFInvalid is the 403 for a cookie-session mutation whose
+	// X-CSRF-Token is missing or does not match. Clients match this code,
+	// not the detail text. A role refusal stays CodeForbidden.
+	CodeCSRFInvalid           = "csrf-invalid"
 	CodeNotFound              = "not-found"
 	CodeConflict              = "conflict"
 	CodeMethodNotAllowed      = "method-not-allowed"

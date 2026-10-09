@@ -342,7 +342,7 @@ func TestChangePasswordRequiresCSRF(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, sessionAPIRequest(http.MethodPost, "/api/v1/session/password", `{"password":"correct-horse"}`, token, ""))
-	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "caller-request-16")
+	assertProblem(t, rec, http.StatusForbidden, CodeCSRFInvalid, "caller-request-16")
 }
 
 func TestChangePasswordRejectsEmbedSession(t *testing.T) {

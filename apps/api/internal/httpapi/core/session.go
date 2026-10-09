@@ -216,7 +216,7 @@ func (s *Server) RequireSessionPrincipal(w http.ResponseWriter, r *http.Request,
 	}
 	if unsafeMethod(r.Method) && !s.validCSRF(r, rec) {
 		s.AuditSession(r, rec, session.EventCSRFRejected, session.OutcomeDenied, "csrf mismatch")
-		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "CSRF validation failed.")
+		WriteProblem(w, r, http.StatusForbidden, CodeCSRFInvalid, "Forbidden", "CSRF validation failed.")
 		return identity.User{}, false
 	}
 	user, err := s.Store.GetUser(r.Context(), rec.UserID)
@@ -386,7 +386,7 @@ func (s *Server) logoutSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if rec.ID != "" && !s.validCSRF(r, rec) {
 		s.AuditSession(r, rec, session.EventCSRFRejected, session.OutcomeDenied, "csrf mismatch")
-		WriteProblem(w, r, http.StatusForbidden, CodeForbidden, "Forbidden", "CSRF validation failed.")
+		WriteProblem(w, r, http.StatusForbidden, CodeCSRFInvalid, "Forbidden", "CSRF validation failed.")
 		return
 	}
 	if rec.ID != "" {
