@@ -322,30 +322,3 @@ func (m *Memory) ResolveApprovalSnapshot(_ context.Context, workspaceID, request
 		return false, nil
 	})
 }
-
-// ResolveTargetUsers is the in-memory twin of the package-level helper.
-func (m *Memory) ResolveTargetUsers(_ context.Context, workspaceID string, groupIDs, userIDs []string) ([]string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	set := map[string]bool{}
-	for _, id := range validGroupIDs(userIDs) {
-		set[id] = true
-	}
-	for _, id := range validGroupIDs(groupIDs) {
-		g, err := m.groupLocked(workspaceID, id)
-		if err != nil {
-			continue
-		}
-		for userID := range g.members {
-			set[userID] = true
-		}
-	}
-	out := []string{}
-	for id := range set {
-		if m.activeBoundLocked(workspaceID, id) {
-			out = append(out, id)
-		}
-	}
-	sort.Strings(out)
-	return out, nil
-}

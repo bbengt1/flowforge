@@ -111,8 +111,9 @@ func (f *groupFixture) memberRows(t *testing.T, where string, args ...any) int {
 	return n
 }
 
-// helpers runs both #558 helpers in a fresh workspace-scoped tx.
-func (f *groupFixture) helpers(t *testing.T, userID string, groupIDs, direct []string) (bool, []string) {
+// inGroups runs the #558 InTargetGroups helper in a fresh
+// workspace-scoped tx.
+func (f *groupFixture) inGroups(t *testing.T, userID string, groupIDs []string) bool {
 	t.Helper()
 	tx, err := postgres.BeginScoped(f.ctx, f.pool, f.ws.ID)
 	if err != nil {
@@ -123,14 +124,10 @@ func (f *groupFixture) helpers(t *testing.T, userID string, groupIDs, direct []s
 	if err != nil {
 		t.Fatal(err)
 	}
-	users, err := ResolveTargetUsers(f.ctx, tx, f.ws.ID, groupIDs, direct)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := tx.Commit(f.ctx); err != nil {
 		t.Fatal(err)
 	}
-	return in, users
+	return in
 }
 
 func findMember(d GroupDetail, userID string) (GroupMember, bool) {
@@ -354,10 +351,6 @@ func TestPostgresGroupRLSSecondTenant(t *testing.T) {
 	if err != nil || in {
 		t.Fatalf("InTargetGroups across scope = %v %v", in, err)
 	}
-	users, err := ResolveTargetUsers(f.ctx, tx, f.ws.ID, []string{g.ID}, nil)
-	if err != nil || len(users) != 0 {
-		t.Fatalf("ResolveTargetUsers across scope = %v %v", users, err)
-	}
 	// Writes under B's scope cannot plant rows in A.
 	if _, err := tx.Exec(f.ctx, `INSERT INTO workspace_groups (workspace_id, display_name) VALUES ($1, 'x')`, f.ws.ID); err == nil {
 		t.Fatal("insert into A under B scope succeeded")
@@ -528,16 +521,14 @@ func TestGroupHelpersDisabledUserDropsOut(t *testing.T) {
 	g := f.group(t, "Disable Target")
 	f.add(t, g.ID, u.ID)
 
-	in, users := f.helpers(t, u.ID, []string{g.ID}, nil)
-	if !in || !slices.Equal(users, []string{u.ID}) {
-		t.Fatalf("before disable: in=%v users=%v", in, users)
+	if in := f.inGroups(t, u.ID, []string{g.ID}); !in {
+		t.Fatalf("before disable: in=%v", in)
 	}
 	if err := f.store.SetUserStatus(f.ctx, u.ID, "disabled", MemberActor{Via: MemberViaSystem}); err != nil {
 		t.Fatal(err)
 	}
-	in, users = f.helpers(t, u.ID, []string{g.ID}, []string{u.ID})
-	if in || len(users) != 0 {
-		t.Fatalf("after disable: in=%v users=%v", in, users)
+	if in := f.inGroups(t, u.ID, []string{g.ID}); in {
+		t.Fatalf("after disable: in=%v", in)
 	}
 	d, err := f.store.GetGroup(f.ctx, f.ws.ID, g.ID)
 	if err != nil {
@@ -570,9 +561,11 @@ func TestGroupHelpersRemoveMemberDropsOutAndDeletesRows(t *testing.T) {
 	if n := f.memberRows(t, "workspace_id = $1 AND user_id = $2", f.ws.ID, keep.ID); n != 1 {
 		t.Fatalf("other member rows = %d", n)
 	}
-	in, users := f.helpers(t, u.ID, []string{g1.ID, g2.ID}, []string{u.ID})
-	if in || !slices.Equal(users, []string{keep.ID}) {
-		t.Fatalf("after remove: in=%v users=%v", in, users)
+	if in := f.inGroups(t, u.ID, []string{g1.ID, g2.ID}); in {
+		t.Fatalf("after remove: in=%v", in)
+	}
+	if in := f.inGroups(t, keep.ID, []string{g1.ID, g2.ID}); !in {
+		t.Fatalf("kept member: in=%v", in)
 	}
 	d, err := f.store.GetGroup(f.ctx, f.ws.ID, g1.ID)
 	if err != nil {
@@ -651,9 +644,8 @@ func TestInTargetGroupsForShareBlocksConcurrentRemoval(t *testing.T) {
 			case <-time.After(10 * time.Second):
 				t.Fatal("removal did not finish after the holder committed")
 			}
-			in, users := f.helpers(t, u.ID, []string{g.ID}, nil)
-			if in || len(users) != 0 {
-				t.Fatalf("after removal: in=%v users=%v", in, users)
+			if in := f.inGroups(t, u.ID, []string{g.ID}); in {
+				t.Fatalf("after removal: in=%v", in)
 			}
 		})
 	}
@@ -715,24 +707,17 @@ func TestInTargetGroupsWaitsForInFlightRemoval(t *testing.T) {
 func TestGroupHelpersDeletedGroupResolvesToNobody(t *testing.T) {
 	f := newGroupFixture(t)
 	u := f.member(t, f.ws, "Orphan", authz.RoleApprover)
-	direct := f.member(t, f.ws, "Direct", authz.RoleApprover)
 	g := f.group(t, "Deleted Group")
 	f.add(t, g.ID, u.ID)
 	if err := f.store.DeleteGroup(f.ctx, f.ws.ID, f.actor(), g.ID); err != nil {
 		t.Fatal(err)
 	}
-	in, users := f.helpers(t, u.ID, []string{g.ID}, nil)
-	if in || len(users) != 0 {
-		t.Fatalf("deleted group: in=%v users=%v", in, users)
+	if in := f.inGroups(t, u.ID, []string{g.ID}); in {
+		t.Fatalf("deleted group: in=%v", in)
 	}
-	_, users = f.helpers(t, u.ID, []string{g.ID}, []string{direct.ID})
-	if !slices.Equal(users, []string{direct.ID}) {
-		t.Fatalf("deleted group plus direct user = %v", users)
-	}
-	// Malformed and empty inputs also resolve to nobody.
-	in, users = f.helpers(t, u.ID, []string{"not-a-uuid", ""}, []string{"nope"})
-	if in || len(users) != 0 {
-		t.Fatalf("malformed ids: in=%v users=%v", in, users)
+	// Malformed and empty inputs also match nobody.
+	if in := f.inGroups(t, u.ID, []string{"not-a-uuid", ""}); in {
+		t.Fatalf("malformed ids: in=%v", in)
 	}
 }
 
@@ -746,9 +731,8 @@ func TestGroupHelpersRequireLiveBinding(t *testing.T) {
 	if _, err := f.admin.Exec(f.ctx, `INSERT INTO workspace_group_members (workspace_id, group_id, user_id) VALUES ($1, $2, $3)`, f.ws.ID, g.ID, unbound.ID); err != nil {
 		t.Fatal(err)
 	}
-	in, users := f.helpers(t, unbound.ID, []string{g.ID}, []string{unbound.ID})
-	if in || len(users) != 0 {
-		t.Fatalf("unbound user: in=%v users=%v", in, users)
+	if in := f.inGroups(t, unbound.ID, []string{g.ID}); in {
+		t.Fatalf("unbound user: in=%v", in)
 	}
 	d, err := f.store.GetGroup(f.ctx, f.ws.ID, g.ID)
 	if err != nil {

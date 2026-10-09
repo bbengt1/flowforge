@@ -80,19 +80,17 @@ func TestMemoryGroupsMirrorPostgresRules(t *testing.T) {
 		}
 	}
 	in, _ := m.InTargetGroups(ctx, ws.ID, approver.ID, []string{g.ID})
-	users, _ := m.ResolveTargetUsers(ctx, ws.ID, []string{g.ID}, nil)
-	if !in || !slices.Equal(users, []string{approver.ID}) {
-		t.Fatalf("helpers in=%v users=%v", in, users)
+	if !in {
+		t.Fatalf("helpers in=%v", in)
 	}
 
 	if err := m.SetUserStatus(ctx, approver.ID, "disabled", MemberActor{Via: MemberViaSystem}); err != nil {
 		t.Fatal(err)
 	}
 	in, _ = m.InTargetGroups(ctx, ws.ID, approver.ID, []string{g.ID})
-	users, _ = m.ResolveTargetUsers(ctx, ws.ID, []string{g.ID}, []string{approver.ID})
 	d, _ := m.GetGroup(ctx, ws.ID, g.ID)
-	if in || len(users) != 0 || len(d.Members) != 1 || d.Members[0].CanApprove {
-		t.Fatalf("disabled: in=%v users=%v detail=%+v", in, users, d)
+	if in || len(d.Members) != 1 || d.Members[0].CanApprove {
+		t.Fatalf("disabled: in=%v detail=%+v", in, d)
 	}
 	if err := m.SetUserStatus(ctx, approver.ID, "active", MemberActor{Via: MemberViaSystem}); err != nil {
 		t.Fatal(err)
