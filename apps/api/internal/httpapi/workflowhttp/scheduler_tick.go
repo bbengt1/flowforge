@@ -103,7 +103,7 @@ func eachActiveWorkspace(s *core.Server, ctx context.Context, fn func(isolation.
 		if !strings.EqualFold(strings.TrimSpace(ws.Status), "active") {
 			continue
 		}
-		scope, err := isolation.AuthorizeTenancy(ws.ID, "", ws.TenantID, ws.WorkbenchKey)
+		scope, err := isolation.AuthorizeSystemTenancy(ws.ID, ws.TenantID, ws.WorkbenchKey)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("workspace %s: %w", ws.ID, err))
 			continue

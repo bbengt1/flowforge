@@ -99,7 +99,7 @@ func run(ctx context.Context, databaseURL, workspaceID string, stdout io.Writer,
 	if strings.TrimSpace(databaseURL) == "" {
 		return fmt.Errorf("DATABASE_URL is required")
 	}
-	scope, err := isolation.Authorize(strings.TrimSpace(workspaceID), "")
+	scope, err := isolation.AuthorizeSystem(strings.TrimSpace(workspaceID))
 	if err != nil {
 		return fmt.Errorf("%s must be a workspace UUID: %w", EnvWorkspaceID, errUsage)
 	}

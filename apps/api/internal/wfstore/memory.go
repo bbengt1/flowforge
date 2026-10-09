@@ -468,7 +468,25 @@ func (m *Memory) Restore(_ context.Context, scope isolation.Scope, workflowID st
 }
 
 func (m *Memory) StartExecution(ctx context.Context, scope isolation.Scope, workflowID string, in StartInput) (Execution, error) {
-	prepared, err := prepareStart(scope, workflowID, in)
+	return m.startExecution(ctx, scope, workflowID, in, true)
+}
+
+// PlantExecutionForTest writes a queued run the way StartExecution does,
+// but skips the system-trigger refusal. Tests plant a manual or api row
+// with no requester so the runner's missing_actor backstop still has a
+// row to fail. Production code must not call this.
+func (m *Memory) PlantExecutionForTest(ctx context.Context, scope isolation.Scope, workflowID string, in StartInput) (Execution, error) {
+	return m.startExecution(ctx, scope, workflowID, in, false)
+}
+
+func (m *Memory) startExecution(ctx context.Context, scope isolation.Scope, workflowID string, in StartInput, enforceSystemTrigger bool) (Execution, error) {
+	var prepared preparedStart
+	var err error
+	if enforceSystemTrigger {
+		prepared, err = prepareStart(scope, workflowID, in)
+	} else {
+		prepared, err = prepareStartUnchecked(scope, workflowID, in)
+	}
 	if err != nil {
 		return Execution{}, err
 	}

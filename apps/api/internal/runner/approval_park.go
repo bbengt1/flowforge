@@ -50,7 +50,7 @@ func (r *Runner) approvalSeed(ctx context.Context, ws Workspace, job Job, until 
 	if !ok || q.Workflows == nil {
 		return approval.CreateInput{}, bindingUnresolved(errors.New("workflow version is not available"))
 	}
-	scope, err := scopeFor(ws)
+	scope, err := scopeForJob(ws, job.Execution)
 	if err != nil {
 		return approval.CreateInput{}, bindingUnresolved(err)
 	}
