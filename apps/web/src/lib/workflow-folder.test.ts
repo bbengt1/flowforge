@@ -1436,7 +1436,7 @@ describe("F.7 embed folder parity", () => {
     const home = source("src/components/home/WorkflowHome.tsx");
     assert.equal(embedMissingSessionEmbedIsAlert(chrome), true);
     assert.match(chrome, /EMBED_CHROME_MISSING_SESSION_MESSAGE/);
-    assert.match(EMBED_CHROME_MISSING_SESSION_MESSAGE, /not chrome authority/);
+    assert.match(EMBED_CHROME_MISSING_SESSION_MESSAGE, /isn't signed in to FlowForge/);
     assert.match(shell, /EmbedExchangeGate/);
     assert.match(shell, /isSessionEmbedMode\(session\.embedChrome\)/);
     assert.doesNotMatch(

@@ -78,7 +78,7 @@ describe("script ops contract adapter", () => {
       executionStepEmergencyStopPath(EXECUTION_ID, STEP_ID),
       `/executions/${EXECUTION_ID}/steps/${STEP_ID}/emergency-stop`,
     );
-    assert.match(SCRIPT_REVOKE_HELP, /Already-running/);
+    assert.match(SCRIPT_REVOKE_HELP, /Runs already in progress/);
     assert.match(SCRIPT_EMERGENCY_STOP_HELP, /distinct from Cancel/);
     assert.match(SCRIPT_REVOKED_RUN_BLOCK_HELP, /revoked/);
     assert.match(SCRIPT_NO_BLIND_RETRY_AFTER_STOP_HELP, /never offers a blind retry/);

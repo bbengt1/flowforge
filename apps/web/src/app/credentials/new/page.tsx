@@ -4,12 +4,10 @@ import {
   PAGE_SHELL_CLASS,
   TYPE_HEADING_CLASS,
 } from "@/lib/aesthetic-usability-density";
-import {
-  FF_VAULT_EYEBROW_CLASS,
-  FF_VAULT_HELP_CLASS,
-} from "@/lib/vault-executions-visual";
+import { FF_VAULT_HELP_CLASS } from "@/lib/vault-executions-visual";
 import { parseInspectorCredentialReturnTo } from "@/lib/editor-credential";
 import { CREDENTIAL_NDV_ADD_WIZARD_HELP } from "@/lib/credential-ndv-add";
+import { CREDENTIAL_NEW_PAGE_HELP } from "@/lib/credential-vault";
 
 export const dynamic = "force-dynamic";
 
@@ -23,16 +21,11 @@ export default async function NewCredentialPage({ searchParams }: PageProps) {
   return (
     <main className={PAGE_SHELL_CLASS}>
       <header className={PAGE_HEADER_CLASS}>
-        <p className={FF_VAULT_EYEBROW_CLASS}>
-          E6.3 · Vault
-        </p>
         <h1 className={TYPE_HEADING_CLASS}>
           New vault credential
         </h1>
         <p className={FF_VAULT_HELP_CLASS}>
-          Catalog-driven wizard: display name, type, masked secret fields,
-          safe metadata, and optional expiresAt. After create the secret
-          inputs are emptied and only metadata is kept.
+          {CREDENTIAL_NEW_PAGE_HELP}
           {returnContext
             ? ` ${CREDENTIAL_NDV_ADD_WIZARD_HELP}`
             : ""}

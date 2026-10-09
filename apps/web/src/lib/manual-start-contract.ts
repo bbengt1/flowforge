@@ -881,6 +881,27 @@ export function startFailureMessage(
   return null;
 }
 
+/**
+ * The sentence the Start panel hands to `ProblemBanner` after pressing Start.
+ * Only a bad-input 400 and a 409 get one, picked by status and never by
+ * text. Session, CSRF and permission failures return null so the banner keeps
+ * its normal treatment, including the sign-in link on a stale session.
+ */
+export function startBannerMessage(
+  problem: ProblemDetails | null | undefined,
+): string | null {
+  if (!problem || isManualStartAuthFailure(problem)) {
+    return null;
+  }
+  if (problem.status === 400) {
+    return MANUAL_START_BAD_INPUT_MESSAGE;
+  }
+  if (problem.status === 409) {
+    return MANUAL_START_CONFLICT_MESSAGE;
+  }
+  return null;
+}
+
 function unique(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
 }

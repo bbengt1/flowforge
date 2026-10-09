@@ -19,7 +19,7 @@ import {
 } from "./rtl";
 
 const ADV021_ALERT =
-  "This embed has no FlowForge-bound session. GET /session did not return session.embed. Host identity and catalog values are not chrome authority. Exchange a host assertion.";
+  "This embedded view isn't signed in to FlowForge. Open it again from the app it's part of.";
 
 test.beforeEach(async ({ page, baseURL }) => {
   await installDocumentRtl(page, baseURL ?? "http://127.0.0.1:3100");
@@ -356,7 +356,7 @@ test.describe("RTL embed cold path", () => {
     await installSignedOutApi(page);
     await page.goto("/embed/v1");
     await expectDocumentRtl(page);
-    const adv021 = page.getByRole("alert").filter({ hasText: "session.embed" });
+    const adv021 = page.getByRole("alert").filter({ hasText: "isn't signed in to FlowForge" });
     await expect(adv021).toHaveCount(2);
     await expect(adv021.first()).toHaveText(ADV021_ALERT);
     await expect(

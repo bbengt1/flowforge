@@ -7,6 +7,7 @@ import {
   CREDENTIAL_VAULT,
   CREDENTIAL_VAULT_COLUMNS,
   CREDENTIAL_VAULT_DETAIL_PATH,
+  CREDENTIAL_VAULT_CONTRACT_NOTE,
   CREDENTIAL_VAULT_HELP,
   CREDENTIAL_VAULT_HREF,
   CREDENTIAL_VAULT_KEYBOARD_HELP,
@@ -84,9 +85,9 @@ describe("R5.1 credential vault find", () => {
     assert.equal(CREDENTIAL_VAULT.findByDisplayName, true);
     assert.equal(CREDENTIAL_VAULT.operateDensity, true);
     assert.match(CREDENTIAL_VAULT_HELP, /display name/);
-    assert.match(CREDENTIAL_VAULT_HELP, /\/credentials\/\{id\}/);
-    assert.doesNotMatch(CREDENTIAL_VAULT_HELP, /CREDENTIAL_KEK/);
-    assert.match(CREDENTIAL_VAULT_HELP, /strip \+ stop/);
+    assert.match(CREDENTIAL_VAULT_CONTRACT_NOTE, /\/credentials\/\{id\}/);
+    assert.doesNotMatch(CREDENTIAL_VAULT_HELP, /CREDENTIAL_KEK|\/credentials|GET /);
+    assert.match(CREDENTIAL_VAULT_CONTRACT_NOTE, /strip \+ stop/);
     assert.match(CREDENTIAL_VAULT_KEYBOARD_HELP, /opens the focused credential/);
     assert.equal(R5_SECURITY_LINE.noKekInBrowser, true);
     assert.equal(R5_SECURITY_LINE.displayNamePlusUuidOnly, true);
@@ -322,7 +323,7 @@ describe("R5.1 credential vault find", () => {
     assert.equal(credentialVaultMustStopAfterStrip([]), false);
     assert.equal(credentialVaultMustStopAfterStrip(["secret"]), true);
     assert.match(CREDENTIAL_VAULT_STRIP_STOP_HELP, /Stop/);
-    assert.match(CREDENTIAL_VAULT_STRIP_STOP_HELP, /do not paste/);
+    assert.match(CREDENTIAL_VAULT_STRIP_STOP_HELP, /Don't paste/);
     assert.equal(parseCredentialVaultQuery("q=-----BEGIN OPENSSH PRIVATE KEY-----").q, "");
     assert.equal(
       serializeCredentialVaultQuery({

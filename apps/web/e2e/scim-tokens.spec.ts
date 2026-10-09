@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { expectNoBlockingAxeViolations } from "./axe";
 import { expectNoSecretsInBrowserStorage, installOperatorApi } from "./operator-api";
+import { PROBLEM_HEADING_SERVER } from "../src/lib/problem-copy.ts";
 import { QUERY_MAX_RETRIES } from "../src/lib/query-cache.ts";
 import {
   SCIM_GROUPS_MODE_GROUPS_LINE,
@@ -498,7 +499,7 @@ test.describe("SCIM tokens admin", () => {
       "SCIM tokens could not be loaded.",
     );
     const alert = page.locator("main").getByRole("alert");
-    await expect(alert).toContainText("Service Unavailable");
+    await expect(alert).toContainText(PROBLEM_HEADING_SERVER);
     await expect(page.getByRole("button", { name: "Create token" })).toBeDisabled();
     const retry = page.getByRole("button", { name: SCIM_TOKENS_RETRY_LABEL, exact: true });
     await expect(retry).toBeVisible();
@@ -516,7 +517,7 @@ test.describe("SCIM tokens admin", () => {
     const before = lists();
     await retry.click();
     await expect.poll(lists).toBe(before + LIST_ATTEMPTS);
-    await expect(alert).toContainText("Service Unavailable");
+    await expect(alert).toContainText(PROBLEM_HEADING_SERVER);
     await expect(retry).toHaveAttribute("aria-busy", "false");
     await expect(retry).toBeEnabled();
     await expect(page.getByRole("button", { name: "Create token" })).toBeDisabled();
@@ -551,7 +552,7 @@ test.describe("SCIM tokens admin", () => {
     api.mode = "store-down";
     const before = lists();
     await page.getByRole("button", { name: "Refresh" }).click();
-    await expect(page.locator("main").getByRole("alert")).toContainText("Service Unavailable");
+    await expect(page.locator("main").getByRole("alert")).toContainText(PROBLEM_HEADING_SERVER);
     await expect(page.locator(`[data-scim-token-row='${OKTA_ID}']`)).toBeVisible();
     await expect(page.locator("[data-scim-tokens-create-blocked='unavailable']")).toBeVisible();
     await expect(page.getByRole("button", { name: "Create token" })).toBeDisabled();

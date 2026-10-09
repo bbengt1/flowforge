@@ -40,6 +40,9 @@ import {
 import {
   CREDENTIAL_DETAIL_DISABLE_ENABLE_HELP,
   CREDENTIAL_DETAIL_HELP,
+  CREDENTIAL_DETAIL_VIEW_DENIED,
+  CREDENTIAL_EVENTS_HELP,
+  CREDENTIAL_METADATA_HELP,
   CREDENTIAL_DETAIL_ROTATE_HELP,
   CREDENTIAL_DETAIL_STRIP_STOP_HELP,
   credentialDetailAfterMutate,
@@ -52,7 +55,7 @@ import {
   credentialDetailTestDisplay,
   credentialDetailUsageDisplay,
 } from "@/lib/credential-detail";
-import { isCredentialForbidden } from "@/lib/credential-vault";
+import { CREDENTIAL_HIDDEN_FIELDS_LABEL, isCredentialForbidden } from "@/lib/credential-vault";
 import type {
   CredentialCatalog,
   CredentialDeletionImpact,
@@ -401,7 +404,7 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
       {problem ? <ProblemBanner problem={problem} /> : null}
       {stopAfterStrip ? (
         <p role="alert" className={`text-sm ${FF_VAULT_DANGER_CLASS}`}>
-          {CREDENTIAL_DETAIL_STRIP_STOP_HELP} Stripped keys:{" "}
+          {CREDENTIAL_DETAIL_STRIP_STOP_HELP} {CREDENTIAL_HIDDEN_FIELDS_LABEL}{" "}
           {strippedKeys.join(", ")}.
         </p>
       ) : null}
@@ -410,8 +413,7 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
         <SessionSetupHint purpose="before opening a credential." />
       ) : forbidden ? (
         <p className={`text-sm ${FF_VAULT_DANGER_CLASS}`}>
-          This role cannot view this credential (
-          <code className="font-mono text-xs">credential.view</code> missing).
+          {CREDENTIAL_DETAIL_VIEW_DENIED}
         </p>
       ) : !record ? (
         <p className={`text-sm ${FF_VAULT_MUTED_CLASS}`} aria-live="polite">
@@ -631,9 +633,7 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
               <section className={FF_VAULT_PANEL_CLASS}>
                 <h3 className="text-base font-semibold">Safe metadata</h3>
                 <p className={`mt-1 text-sm ${FF_VAULT_MUTED_CLASS}`}>
-                  <code className="font-mono text-xs">PATCH /credentials/{"{id}"}</code>{" "}
-                  accepts displayName, tags, metadata, and expiresAt. Sending{" "}
-                  <code className="font-mono text-xs">secret</code> is 400.
+                  {CREDENTIAL_METADATA_HELP}
                 </p>
                 <div className="mt-4 space-y-3">
                   <label className="block text-sm">
@@ -720,8 +720,7 @@ export function CredentialDetail({ credentialId }: CredentialDetailProps) {
                   </ul>
                 ) : (
                   <p className={`mt-2 text-sm ${FF_VAULT_MUTED_CLASS}`}>
-                    Events stay on demand. They are metadata only — not{" "}
-                    <code className="font-mono text-xs">/audit</code>.
+                    {CREDENTIAL_EVENTS_HELP}
                   </p>
                 )}
                 <CollectionLoadMore

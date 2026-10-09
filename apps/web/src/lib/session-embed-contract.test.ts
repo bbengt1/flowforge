@@ -97,8 +97,8 @@ describe("session-embed-contract", () => {
     assert.equal(SESSION_EMBED_CHROME_RULES.sessionIsAuthority, true);
     assert.equal(SESSION_EMBED_CHROME_RULES.failClosedWithoutEmbedBinding, true);
     assert.match(SESSION_EMBED_CHROME_HELP, /GET \/session/);
-    assert.match(SESSION_EMBED_WAITING_HELP, /display-only/);
-    assert.match(EMBED_CHROME_MISSING_SESSION_MESSAGE, /not chrome authority/);
+    assert.match(SESSION_EMBED_WAITING_HELP, /only shown/);
+    assert.match(EMBED_CHROME_MISSING_SESSION_MESSAGE, /isn't signed in to FlowForge/);
   });
 
   it("parses GET /session session.embed as chrome via parseEmbedChromeFromSession", () => {
@@ -322,7 +322,7 @@ describe("session-embed-contract", () => {
     assert.doesNotMatch(EMBED_VERIFIED_HELP, /keep #\d+ open/i);
     assert.doesNotMatch(EMBED_EXCHANGE_HELP, /Part of #/);
     assert.doesNotMatch(EMBED_VERIFIED_HELP, /Part of #/);
-    assert.match(EMBED_CHROME_MISSING_SESSION_MESSAGE, /not chrome authority/);
+    assert.match(EMBED_CHROME_MISSING_SESSION_MESSAGE, /isn't signed in to FlowForge/);
     assert.doesNotMatch(gate, /LoginChrome|FirstRunWizard|ChangePasswordChrome|SetPasswordChrome/);
     assert.doesNotMatch(chrome, /LoginChrome|FirstRunWizard|ChangePasswordChrome|SetPasswordChrome/);
   });

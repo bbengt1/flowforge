@@ -203,7 +203,7 @@ export async function streamIdentityProxy(
             response.status,
             instance,
             echoed,
-            "The control plane returned a problem response that could not be parsed.",
+            "FlowForge's server sent a response it couldn't read.",
           );
       if (isStaleSessionProblem(problem)) {
         markSessionStale();
@@ -279,7 +279,7 @@ export async function fetchSameOriginProxy<T>(options: {
             response.status,
             options.instance,
             echoed,
-            "The control plane returned a problem response that could not be parsed.",
+            "FlowForge's server sent a response it couldn't read.",
           );
       // Keep the session only for the wrong-current detail on this POST.
       if (

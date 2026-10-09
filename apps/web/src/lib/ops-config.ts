@@ -149,29 +149,40 @@ export function authorizedSelectorOptions(input: {
     return {
       options: [],
       closed: true,
-      reason: "No server-authorized resources for this workspace.",
+      reason: OPS_CONFIG_SELECT_EMPTY,
     };
   }
   return { options: items, closed: false, reason: null };
 }
+
+/**
+ * Why a config picker has nothing to pick. A refused or failed list never
+ * falls back to guessed options (fail closed), but the words stay plain.
+ */
+export const OPS_CONFIG_SELECT_FORBIDDEN =
+  "Your role can't use these. Items from other workspaces are never listed.";
+export const OPS_CONFIG_SELECT_NOT_FOUND =
+  "FlowForge couldn't find these in this workspace.";
+export const OPS_CONFIG_SELECT_SIGNED_OUT = "Sign in before picking config.";
+export const OPS_CONFIG_SELECT_FAILED =
+  "This list couldn't be loaded, so there's nothing to pick. Try again.";
+export const OPS_CONFIG_SELECT_EMPTY =
+  "Nothing published that you can use in this workspace yet.";
 
 export function failClosedReason(
   problem: ProblemDetails | null | undefined,
   statusCode?: number,
 ): string {
   if (problem?.status === 403 || statusCode === 403) {
-    return "Forbidden. Cross-workspace or unauthorized resources are not listed.";
+    return OPS_CONFIG_SELECT_FORBIDDEN;
   }
   if (problem?.status === 404 || statusCode === 404) {
-    return "Not found. Foreign workspace resources fail closed.";
+    return OPS_CONFIG_SELECT_NOT_FOUND;
   }
   if (problem?.status === 401 || statusCode === 401) {
-    return "Unauthenticated. Establish a workspace session before selecting config.";
+    return OPS_CONFIG_SELECT_SIGNED_OUT;
   }
-  if (problem) {
-    return problem.title;
-  }
-  return "Selector failed closed.";
+  return OPS_CONFIG_SELECT_FAILED;
 }
 
 export function isSafePin(value: unknown): value is OpsConfigPin {

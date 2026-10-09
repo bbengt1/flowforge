@@ -114,7 +114,7 @@ describe("kubernetes policy parse / write", () => {
         requireApproval: false,
         operations: [],
       }) ?? "",
-      /allowedNamespaces/,
+      /Allowed namespaces/,
     );
     assert.equal(
       kubernetesPolicyPublishGap({
@@ -310,7 +310,7 @@ describe("authorized cluster target selectors", () => {
     });
     assert.equal(forbidden.closed, true);
     assert.deepEqual(forbidden.options, []);
-    assert.match(forbidden.reason ?? "", /Forbidden/);
+    assert.match(forbidden.reason ?? "", /Your role can't use these/);
     assert.equal(
       JSON.stringify(forbidden.options).includes("kubeconfig"),
       false,

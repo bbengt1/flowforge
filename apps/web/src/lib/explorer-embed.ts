@@ -289,7 +289,7 @@ export function embedExplorerMissingSessionIsAlert(
 ): boolean {
   return (
     embedMissingSessionEmbedIsAlert(chromeSource) &&
-    /not chrome authority/.test(EMBED_CHROME_MISSING_SESSION_MESSAGE)
+    /isn't signed in to FlowForge/.test(EMBED_CHROME_MISSING_SESSION_MESSAGE)
   );
 }
 

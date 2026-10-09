@@ -80,14 +80,44 @@ export const CREDENTIAL_DETAIL_LIST_HREF = "/credentials";
 
 export const CREDENTIAL_DETAIL_STRIP_STOP_HELP = CREDENTIAL_VAULT_STRIP_STOP_HELP;
 
+/** Contract note. Not UI copy: never render it. */
+export const CREDENTIAL_DETAIL_CONTRACT_NOTE =
+  "Operate density: test, rotate, usage, and deletion-impact on existing vault routes. POST /credentials/{id}/rotate {secret}; POST …/disable and …/enable; PATCH /credentials/{id} takes displayName, tags, metadata, expiresAt (secret is 400). After rotate, display-name + UUID only. Unexpected plaintext is a contract bug (strip + stop). CSRF on mutations.";
+
+/** Under the credential's heading. */
 export const CREDENTIAL_DETAIL_HELP =
-  "Operate this credential at operate density: test, rotate, usage, and deletion-impact on existing vault routes. Disable and enable stay clear. After rotate, display-name + UUID only. Secrets never enter YAML, search, or analytics. Unexpected plaintext is a contract bug (strip + stop). CSRF on mutations.";
+  "Test, rotate, disable, or delete this credential, and see where it's used and what deleting it would affect. After a rotation, FlowForge still shows only the name and id. Secret values never appear in workflows, search, or analytics.";
 
+/** In the Rotate section. */
 export const CREDENTIAL_DETAIL_ROTATE_HELP =
-  "POST /credentials/{id}/rotate {secret}. Masked fields submit once and clear. Rotate never returns plaintext — chrome shows display-name + UUID only.";
+  "Enter the new secret. The fields are masked, sent once, and then cleared. FlowForge never shows the secret back; afterward you see only the name and id.";
 
+/** Next to Disable and Enable. */
 export const CREDENTIAL_DETAIL_DISABLE_ENABLE_HELP =
-  "Disable and enable stay explicit on POST /credentials/{id}/disable and …/enable. Status is Active or Disabled — not a cryptic toggle.";
+  "Disable and enable are separate buttons, and the status always reads Active or Disabled.";
+
+/** Under the Credential detail heading. */
+export const CREDENTIAL_DETAIL_PAGE_HELP =
+  "Manage one credential. FlowForge never shows its secret value.";
+
+/** Shown when the role can't view this credential. */
+export const CREDENTIAL_DETAIL_VIEW_DENIED = "Your role can't view this credential.";
+
+/** In the Safe metadata section. */
+export const CREDENTIAL_METADATA_HELP =
+  "Change the display name, tags, metadata, or expiry here. To change the secret itself, use Rotate.";
+
+/** Before the credential's events load. */
+export const CREDENTIAL_EVENTS_HELP =
+  "Events load when you ask for them. They're this credential's own history, separate from the workspace audit log, and never include secret values.";
+
+/** In the Test connection dialog. */
+export const CREDENTIAL_TEST_HELP =
+  "FlowForge tests the stored, encrypted secret. This page never sends or shows the secret itself.";
+
+/** In the Delete dialog. */
+export const CREDENTIAL_DELETE_HELP =
+  "The impact below matches the credential's page. A credential can't be deleted while runs that use it are active. Secret values are never shown.";
 
 export const CREDENTIAL_DETAIL_SOURCES: readonly string[] = [
   "src/lib/credential-detail.ts",

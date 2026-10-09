@@ -57,7 +57,7 @@ import {
   R7_HARD_LINE,
 } from "./rewrite-embed-mount.ts";
 import { SETTINGS_WIZARD_VISUAL } from "./settings-wizard-visual.ts";
-import { EMBED_CHROME_MISSING_SESSION_MESSAGE } from "./session-embed-contract.ts";
+import { EMBED_CHROME_MISSING_SESSION_CONTRACT_NOTE } from "./embed-contract.ts";
 import { SHELL_RESTYLE } from "./shell-restyle.ts";
 import { VAULT_EXECUTIONS_VISUAL } from "./vault-executions-visual.ts";
 import {
@@ -361,7 +361,7 @@ export function missingSessionEmbedFailsClosed(embedChrome: string): boolean {
     embedChrome.includes("EMBED_CHROME_MISSING_SESSION_MESSAGE") &&
     embedChrome.includes('role="alert"') &&
     embedChrome.includes("missingEmbed") &&
-    EMBED_CHROME_MISSING_SESSION_MESSAGE.includes("session.embed")
+    EMBED_CHROME_MISSING_SESSION_CONTRACT_NOTE.includes("session.embed")
   );
 }
 

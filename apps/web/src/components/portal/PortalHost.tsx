@@ -9,16 +9,21 @@ import {
   type EmbedRouteId,
 } from "@/lib/embed-contract";
 import {
+  PORTAL_ADMIN_NOT_MEMBER_HELP,
   PORTAL_ASSERTION_HELP,
   PORTAL_BOUNDARY,
   PORTAL_BOUNDARY_HELP,
-  PORTAL_ENTRY_PATH,
   PORTAL_HELP,
   PORTAL_HOST_NAME,
+  PORTAL_NOT_MOUNTED_HELP,
   PORTAL_RBAC_HELP,
   PORTAL_ROLES,
-  PORTAL_ROUTE_MAP_SOURCE,
+  PORTAL_SETTINGS_LOADED,
+  PORTAL_SETTINGS_UNAVAILABLE,
   PORTAL_TENANCY_HELP,
+  PORTAL_TOKEN_CREATED,
+  PORTAL_TOKEN_DELIVERED,
+  PORTAL_TOKEN_SKIPPED,
   buildPortalEmbedSrc,
   mapPortalRoles,
   portalEntryRbac,
@@ -84,13 +89,11 @@ export function PortalHost() {
       }
       if (!result.ok) {
         setHostAllowlist([]);
-        setCatalogNote(
-          `GET /portal/adapter unavailable (${result.statusCode}). Using the published #129 capability map. postMessage stays fail-closed until frameAncestors loads.`,
-        );
+        setCatalogNote(PORTAL_SETTINGS_UNAVAILABLE);
         return;
       }
       setHostAllowlist(parseCatalogFrameAncestors(result.data));
-      setCatalogNote("GET /portal/adapter loaded. Roles map on the FlowForge side. frameAncestors is the shared host allowlist.");
+      setCatalogNote(PORTAL_SETTINGS_LOADED);
     });
     return () => {
       cancelled = true;
@@ -124,9 +127,7 @@ export function PortalHost() {
     pendingAssertion.current = result.assertion;
     setMounted(true);
     setTokenId(result.tokenId);
-    setStatus(
-      `Assertion minted (${result.tokenId || "jti"}). It will be postMessaged on iframe load; the embed shell exchanges via POST /embed/exchange.`,
-    );
+    setStatus(PORTAL_TOKEN_CREATED);
     setPending(false);
   }
 
@@ -146,9 +147,7 @@ export function PortalHost() {
       window.location.origin,
     );
     setStatus(
-      delivered.delivered
-        ? "Assertion postMessaged into the iframe and forgotten. FlowForge exchange uses the verified session — not Portal RBAC."
-        : "Iframe loaded but postMessage was skipped. The assertion was still forgotten.",
+      delivered.delivered ? PORTAL_TOKEN_DELIVERED : PORTAL_TOKEN_SKIPPED,
     );
   }
 
@@ -157,15 +156,13 @@ export function PortalHost() {
       <header className="border-b border-border bg-bg">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-6 py-6">
           <p className="text-sm font-medium tracking-wide text-fg uppercase">
-            E11.3 · {PORTAL_HOST_NAME} · {PORTAL_ROUTE_MAP_SOURCE} ·{" "}
-            {PORTAL_ENTRY_PATH}
+            {PORTAL_HOST_NAME}
           </p>
           <h1 className="text-3xl font-semibold tracking-tight">
             Protected workflow surface
           </h1>
           <p className="max-w-3xl text-sm leading-6 text-fg">
-            {PORTAL_BOUNDARY_HELP} {PORTAL_HELP} Relates to #123 / Part of #120 —
-            keep #123 open.
+            {PORTAL_BOUNDARY_HELP} {PORTAL_HELP}
           </p>
         </div>
       </header>
@@ -183,21 +180,22 @@ export function PortalHost() {
 
         <section className="rounded-2xl border border-border bg-bg px-5 py-4 text-sm text-fg">
           <p className="text-xs font-medium tracking-wide text-fg uppercase">
-            Published #129 map
+            Role map
           </p>
           <p className="mt-2">{catalogNote}</p>
-          <p className="mt-2 font-mono text-xs text-fg">
-            sharesDatabase={String(PORTAL_BOUNDARY.sharesDatabase)} ·
-            sharesExecutor={String(PORTAL_BOUNDARY.sharesExecutor)} ·
-            portalEntryIsAuthorization=
-            {String(PORTAL_BOUNDARY.portalEntryIsAuthorization)}
+          <p className="mt-2 text-xs text-fg">
+            Shares the portal&apos;s database:{" "}
+            {PORTAL_BOUNDARY.sharesDatabase ? "Yes" : "No"} · Shares the
+            portal&apos;s workers: {PORTAL_BOUNDARY.sharesExecutor ? "Yes" : "No"} ·
+            Portal access grants FlowForge access:{" "}
+            {PORTAL_BOUNDARY.portalEntryIsAuthorization ? "Yes" : "No"}
           </p>
         </section>
 
         <section className="grid gap-6 lg:grid-cols-2">
           <div className="rounded-2xl border border-border bg-bg px-5 py-5">
             <h2 className="text-lg font-semibold tracking-tight">
-              1. Portal entry RBAC
+              1. Portal access
             </h2>
             <p className="mt-2 text-sm text-fg">{PORTAL_RBAC_HELP}</p>
             <fieldset className="mt-4 space-y-2">
@@ -210,12 +208,12 @@ export function PortalHost() {
                     checked={entryRole === role}
                     onChange={() => setEntryRole(role)}
                   />
-                  Portal entry {role}
+                  Portal access {role}
                 </label>
               ))}
             </fieldset>
             <p className="mt-3 text-xs text-fg">
-              authorizesFlowForge = false · Portal admin ≠ FlowForge membership
+              {PORTAL_ADMIN_NOT_MEMBER_HELP}
             </p>
           </div>
 
@@ -241,8 +239,10 @@ export function PortalHost() {
               </select>
             </label>
             <p className="mt-2 text-xs text-fg">
-              Mapped request (API still intersects the minting caller):{" "}
-              {mappedCaps.length > 0 ? mappedCaps.join(", ") : "admin → full set if member"}
+              Permissions requested (FlowForge still limits them to your own):{" "}
+              {mappedCaps.length > 0
+                ? mappedCaps.join(", ")
+                : "everything your FlowForge membership allows"}
             </p>
             <label className="mt-3 block text-sm font-medium">
               Tenant (display)
@@ -276,7 +276,7 @@ export function PortalHost() {
 
         <section className="rounded-2xl border border-border bg-bg px-5 py-5">
           <h2 className="text-lg font-semibold tracking-tight">
-            3–5. Mint, mount, exchange
+            3. Open FlowForge
           </h2>
           <p className="mt-2 text-sm text-fg">{PORTAL_ASSERTION_HELP}</p>
           <label className="mt-4 block text-sm font-medium">
@@ -290,23 +290,23 @@ export function PortalHost() {
             >
               {DEEP_LINK_OPTIONS.map((route) => (
                 <option key={route.id} value={route.id}>
-                  {route.embed} — {route.description}
+                  {route.description}
                 </option>
               ))}
             </select>
           </label>
           <p className="mt-3 font-mono text-xs break-all text-fg">
-            iframe src {embedSrc.src}
+            Frame address: {embedSrc.src}
           </p>
           {rejectedAssertion ? (
             <p className="mt-2 text-sm text-fg">
-              An assertion token was stripped from a host URL. It was never
-              copied into the iframe src.
+              A sign-in token was removed from the portal&apos;s address. It was
+              never copied into the frame.
             </p>
           ) : null}
           {tokenId ? (
             <p className="mt-2 text-xs text-fg">
-              Last mint jti {tokenId} (metadata only)
+              Last sign-in token id: {tokenId}
             </p>
           ) : null}
           <button
@@ -315,7 +315,7 @@ export function PortalHost() {
             disabled={pending}
             onClick={() => void mintAndMount()}
           >
-            {pending ? "Minting…" : "Mint assertion and mount FlowForge"}
+            {pending ? "Opening…" : "Open FlowForge"}
           </button>
         </section>
 
@@ -330,11 +330,7 @@ export function PortalHost() {
             />
           </section>
         ) : (
-          <p className="text-sm text-fg">
-            FlowForge stays unmounted until Portal entry is granted and an
-            assertion is minted. The iframe is not given a database, executor,
-            or Portal role.
-          </p>
+          <p className="text-sm text-fg">{PORTAL_NOT_MOUNTED_HELP}</p>
         )}
       </div>
     </div>

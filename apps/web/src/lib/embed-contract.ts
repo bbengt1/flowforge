@@ -583,8 +583,13 @@ export const EMBED_COOKIE_REQUIREMENTS = {
 export const EMBED_MINT_HELP =
   "Mint is POST /embed/assertions from the host backend (CSRF if ff_session). Subject and issuer bind to the authenticated caller. A different subject requires embed.impersonate (PLATFORM_ADMINS); a different issuer is 403. This shell does not mint. E11.3 owns the Portal adapter.";
 
-export const EMBED_URL_SECRET_MESSAGE =
+/** Contract note. Not UI copy: never render it. */
+export const EMBED_URL_SECRET_CONTRACT_NOTE =
   "Assertion tokens must not appear in the URL (query, hash, or path). Remove assertion/token/jws params and POST the compact JWS in the exchange body.";
+
+/** Shown when a sign-in token was found in the embed's address and ignored. */
+export const EMBED_URL_SECRET_MESSAGE =
+  "FlowForge ignored a sign-in token in this page's address. Tokens must never be put in a link. Ask the admin of the app around this view to fix it.";
 
 export const EMBED_EXCHANGED_MESSAGE =
   "Assertion exchanged. FlowForge issued a CHIPS ff_session / ff_csrf cookie session (SameSite=None; Secure; Partitioned). Host identity is no longer the authority.";
@@ -618,8 +623,13 @@ export const EMBED_RATE_LIMIT_RULES = {
   noUiChangeBeyondBackoff: true,
 } as const;
 
-export const EMBED_HOST_DISPLAY_HELP =
+/** Contract note. Not UI copy: never render it. */
+export const EMBED_HOST_DISPLAY_CONTRACT_NOTE =
   "Host session ≠ FlowForge session. tenant, workbench, host, and displayName on the deep link are display context only until exchange succeeds. They never authorize.";
+
+/** On the embed before FlowForge confirms the sign-in. */
+export const EMBED_HOST_DISPLAY_HELP =
+  "Being signed in to the app around this view doesn't sign you in to FlowForge. Names passed in the link are only shown and never grant access.";
 
 export const EMBED_TENANCY_HELP =
   "After exchange, persist tenantId + workbenchKey from the API workspace/session.embed — never from host query. Send X-FlowForge-Tenant-ID + X-FlowForge-Workbench-Key on every later call. A disagreeing host tenant/workbench is HTTP 403. Host tenant is never authorization.";
@@ -770,8 +780,13 @@ export const EMBED_CHROME_FROM_SESSION_RULES = {
 export const EMBED_CHROME_FROM_SESSION_HELP =
   "Drive embed chrome from GET /session session.embed after exchange. Capabilities, tenant/workbench display, workspace identity, and the embed mode flag come from that object (plus principal.display_name). Host query, catalog guesses, and assertion leftovers are not chrome authority. Fail closed on /embed/v1 if session.embed is missing.";
 
-export const EMBED_CHROME_MISSING_SESSION_MESSAGE =
+/** Contract note. Not UI copy: never render it. */
+export const EMBED_CHROME_MISSING_SESSION_CONTRACT_NOTE =
   "This embed has no FlowForge-bound session. GET /session did not return session.embed. Host identity and catalog values are not chrome authority. Exchange a host assertion.";
+
+/** Shown on the embed when FlowForge has no embed session (ADV-021 fail-closed alert). */
+export const EMBED_CHROME_MISSING_SESSION_MESSAGE =
+  "This embedded view isn't signed in to FlowForge. Open it again from the app it's part of.";
 
 /** ADV-008: exchange verifies before tenant/workbench resolution. No UI. */
 export const EMBED_VERIFY_RULES = {

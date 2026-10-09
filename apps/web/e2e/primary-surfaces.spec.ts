@@ -14,7 +14,7 @@ import {
 } from "./operator-api";
 
 const ADV021_ALERT =
-  "This embed has no FlowForge-bound session. GET /session did not return session.embed. Host identity and catalog values are not chrome authority. Exchange a host assertion.";
+  "This embedded view isn't signed in to FlowForge. Open it again from the app it's part of.";
 
 async function expectOneMain(page: Page): Promise<void> {
   await expect(page.locator("main")).toHaveCount(1);
@@ -394,7 +394,7 @@ test.describe("embed cold path", () => {
   }) => {
     await installSignedOutApi(page, { mfaEnforcement: "off" });
     await page.goto("/embed/v1");
-    const adv021 = page.getByRole("alert").filter({ hasText: "session.embed" });
+    const adv021 = page.getByRole("alert").filter({ hasText: "isn't signed in to FlowForge" });
     await expect(adv021).toHaveCount(2);
     await expect(adv021.first()).toHaveText(ADV021_ALERT);
     await expect(

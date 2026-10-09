@@ -87,7 +87,7 @@ export const CREDENTIAL_NDV_ADD_HELP =
   "Add a vault credential from the selected node without abandoning the graph. The guided masked wizard stays add; this inspector stays edit/pick. After add, the picker selects the new credential by display name and YAML stores the UUID only. SecretField and plaintext stay out of the NDV. Unexpected plaintext is a contract bug (strip + stop).";
 
 export const CREDENTIAL_NDV_ADD_WIZARD_HELP =
-  "Guided add only. Masked fields submit once and clear. After create you return to the editor; the NDV picker selects the display name and YAML stores the UUID. The inspector never gains a secret surface.";
+  "Guided add only. Masked fields are sent once and then cleared. After you create the credential, you return to the editor, where the step picks it by display name. The step settings never show a secret.";
 
 export const CREDENTIAL_NDV_ADD_SOURCES: readonly string[] = [
   "src/lib/credential-ndv-add.ts",

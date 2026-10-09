@@ -5,6 +5,7 @@ import {
   OPERATOR_FAILED_EXECUTION_ID,
   OPERATOR_WORKFLOW_ID,
 } from "./operator-api";
+import { PROBLEM_CSRF_HEADING } from "../src/lib/problem-copy.ts";
 
 /**
  * #630: a refused Retry keeps the run page on screen and says why next to
@@ -159,7 +160,7 @@ test("the server's CSRF rejection on retry is a session notice, not a role refus
   await main.getByRole("button", { name: "Retry execution" }).click();
   const banner = page.locator("#execution-errors [role='alert']");
   await expect(banner).toBeVisible();
-  await expect(banner).toContainText("CSRF fail-closed.");
+  await expect(banner).toContainText(PROBLEM_CSRF_HEADING);
   await expectRunPageStays(page);
   await expect(main.getByText(RETRY_FORBIDDEN)).toHaveCount(0);
 });

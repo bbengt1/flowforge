@@ -193,7 +193,7 @@ describe("V.7 Status + embed visual gate", () => {
     assert.match(library, /fail closed/i);
     assert.match(embed, /EMBED_CHROME_MISSING_SESSION_MESSAGE/);
     assert.match(embed, /role="alert"/);
-    assert.match(EMBED_CHROME_MISSING_SESSION_MESSAGE, /session.embed/);
+    assert.match(EMBED_CHROME_MISSING_SESSION_MESSAGE, /isn't signed in to FlowForge/);
     assert.equal(
       R7_HARD_LINE.adv021FailClosedWithoutSessionEmbedOnEmbedV1,
       true,

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState, useSyncExternalStore } from "react";
+import { RequestReference } from "@/components/RequestReference";
 import { CollectionLoadMore } from "@/components/CollectionLoadMore";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
@@ -14,6 +15,7 @@ import {
   appendCollectionItems,
 } from "@/lib/collection-page";
 import { listOpsConfig } from "@/lib/ops-config-client";
+import { CONFIG_LIST_EXTRA_HELP, CONFIG_LIST_PROBLEM_HELP } from "@/lib/config-plain-copy";
 import { descriptorForKind } from "@/lib/ops-config-contract";
 import type { KindDescriptor, OpsConfigKind, OpsConfigSummary } from "@/lib/ops-config-types";
 import type { ProblemDetails } from "@/lib/problem";
@@ -90,24 +92,16 @@ export function ConfigKindList({ kind }: ConfigKindListProps) {
   return (
     <div className="space-y-6">
       {problem ? <ProblemBanner problem={problem} /> : null}
-      {lastRequestId && !problem ? (
-        <p className="font-mono text-xs text-fg">
-          last request_id {lastRequestId}
-        </p>
-      ) : null}
+      {!problem ? <RequestReference id={lastRequestId} /> : null}
 
       <section className="rounded-2xl border border-border bg-bg p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold">{descriptor.title}</h2>
             <p className="mt-1 max-w-2xl text-sm text-fg">
-              {descriptor.summary} Drafts are editable; published versions are
-              immutable pins for workflows.
-              {kind === "cluster_target"
-                ? " E7.1: bind a workspace kubernetes credential and optional policy. Kubeconfig never appears here."
-                : kind === "policy"
-                  ? " E7.1: kubernetes policies use namespace, kind, and verb allowlists plus approval-required actions."
-                  : ""}
+              {descriptor.summary} Drafts can change; workflows use published
+              versions, which never change.
+              {CONFIG_LIST_EXTRA_HELP[kind] ? ` ${CONFIG_LIST_EXTRA_HELP[kind]}` : ""}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -134,10 +128,7 @@ export function ConfigKindList({ kind }: ConfigKindListProps) {
       ) : items.length === 0 && !problem ? (
         <EmptyKindState descriptor={descriptor} />
       ) : items.length === 0 && problem ? (
-        <p className="text-sm text-fg">
-          List and select fail closed when the API returns 403 or an empty
-          published set. Pins come from POST …/select, not GET …/authorized.
-        </p>
+        <p className="text-sm text-fg">{CONFIG_LIST_PROBLEM_HELP}</p>
       ) : (
         <ul className="grid gap-4 md:grid-cols-2">
           {items.map((item) => (
@@ -165,7 +156,7 @@ export function ConfigKindList({ kind }: ConfigKindListProps) {
                   )}
                 </p>
                 <p className="mt-2 font-mono text-xs text-fg">
-                  draft rev {item.draftRevision ?? "—"}
+                  Draft revision {item.draftRevision ?? "—"}
                 </p>
               </Link>
             </li>
@@ -186,8 +177,8 @@ function EmptyKindState({ descriptor }: { descriptor: KindDescriptor }) {
     <section className="rounded-2xl border border-dashed border-border bg-bg/60 p-8 text-center">
       <h2 className="text-lg font-semibold">No {descriptor.title.toLowerCase()} yet</h2>
       <p className="mt-2 text-sm text-fg">
-        Create a draft, then publish an immutable revision. Workflows pin the
-        published version, never a live draft.
+        Create a draft, then publish it to make a fixed version. Workflows use
+        the published version, never a draft.
       </p>
       <p className="mt-4">
         <Link

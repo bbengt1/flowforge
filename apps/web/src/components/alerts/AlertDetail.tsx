@@ -5,14 +5,20 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { AlertSeverityBadge } from "@/components/alerts/AlertSeverityBadge";
 import { SessionSetupHint } from "@/components/session/SessionSetupHint";
 import { ProblemBanner } from "@/components/ProblemBanner";
+import { RequestReference } from "@/components/RequestReference";
 import {
   alertKindLabel,
   alertStatusLabel,
   canAckAlert,
 } from "@/lib/alert";
 import { ackAlert, getAlert } from "@/lib/alert-client";
-import { executionCorrelateHref } from "@/lib/alert-contract";
+import {
+  ALERT_ACK_UNAVAILABLE,
+  ALERT_NO_DETAILS,
+  executionCorrelateHref,
+} from "@/lib/alert-contract";
 import type { OperationalAlert } from "@/lib/alert-types";
+import { strippedSecretFieldsMessage } from "@/lib/execution-contract";
 import { emptyStoredIdentity, loadDevIdentity, subscribeDevIdentity } from "@/lib/dev-identity";
 import { loadHeaderFallback, subscribeHeaderFallback } from "@/lib/header-fallback";
 import { hasOperatorCaller, hasWorkspaceLookup } from "@/lib/identity-headers";
@@ -138,8 +144,7 @@ export function AlertDetail({ alertId }: AlertDetailProps) {
 
       {strippedKeys.length ? (
         <p role="status" className="text-sm text-fg">
-          Unexpected secret fields were stripped from the API response:{" "}
-          {strippedKeys.join(", ")}. Treat this as a backend contract bug.
+          {strippedSecretFieldsMessage(strippedKeys)}
         </p>
       ) : null}
 
@@ -168,12 +173,10 @@ export function AlertDetail({ alertId }: AlertDetailProps) {
             <p className="text-sm text-fg">
               {[alert.action, alert.outcome, alert.code]
                 .filter(Boolean)
-                .join(" · ") || "Identifiers only — no details payload."}
+                .join(" · ") || ALERT_NO_DETAILS}
             </p>
-            <p className="font-mono text-xs break-all text-fg">
-              {alert.id}
-              {lastRequestId ? ` · ${lastRequestId}` : ""}
-            </p>
+            <p className="font-mono text-xs break-all text-fg">{alert.id}</p>
+            <RequestReference id={lastRequestId} />
           </header>
 
           <dl className="grid gap-2 text-sm sm:grid-cols-2">
@@ -255,13 +258,7 @@ export function AlertDetail({ alertId }: AlertDetailProps) {
               </button>
             </div>
           ) : (
-            <p className="text-sm text-fg">
-              Acknowledge requires{" "}
-              <code className="font-mono text-xs">alert.ack</code> and an open
-              alert. The POST is CSRF + empty{" "}
-              <code className="font-mono text-xs">{"{}"}</code>. Viewer ack is
-              fail-closed (403). There is no resolve route.
-            </p>
+            <p className="text-sm text-fg">{ALERT_ACK_UNAVAILABLE}</p>
           )}
         </section>
       ) : null}

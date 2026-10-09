@@ -696,8 +696,8 @@ describe("embed-contract", () => {
       return;
     }
     assert.equal(standalone.reason, "missing-embed-binding");
-    assert.match(standalone.message, /session\.embed/);
-    assert.match(EMBED_CHROME_MISSING_SESSION_MESSAGE, /not chrome authority/);
+    assert.equal(standalone.message, EMBED_CHROME_MISSING_SESSION_MESSAGE);
+    assert.match(EMBED_CHROME_MISSING_SESSION_MESSAGE, /isn't signed in to FlowForge/);
     assert.equal(isEmbedBoundSession({ id: "sess-standalone" }), false);
     assert.equal(
       parseSessionEmbedBinding({ embed: { mode: "standalone", tenantId: "ten-1", workbenchKey: "ops" } }),
