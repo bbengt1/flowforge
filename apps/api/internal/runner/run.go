@@ -212,9 +212,10 @@ func (r *Runner) claimOne(ctx context.Context, ws Workspace) (bool, error) {
 	if job == nil {
 		return false, nil
 	}
-	// A manual or API run with no requester is corrupt. Fail it before
-	// any node runs. Schedule, webhook, and resync runs are system starts.
-	if failure, refuse := missingActorFailure(job.Execution); refuse {
+	// A manual or API run with no requester is corrupt. ClaimJob already
+	// fails it inside the claim; this backstop uses the same rule
+	// (wfstore.MissingActorFailure) for a job that still reaches here.
+	if failure, refuse := wfstore.MissingActorFailure(job.Execution); refuse {
 		if err := r.queue.Fail(ctx, ws, *job, failure); err != nil {
 			return true, err
 		}

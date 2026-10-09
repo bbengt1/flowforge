@@ -473,8 +473,8 @@ func (m *Memory) StartExecution(ctx context.Context, scope isolation.Scope, work
 
 // PlantExecutionForTest writes a queued run the way StartExecution does,
 // but skips the system-trigger refusal. Tests plant a manual or api row
-// with no requester so the runner's missing_actor backstop still has a
-// row to fail. Production code must not call this.
+// with no requester so the claim's missing_actor check (and the runner's
+// backstop) still has a row to fail. Production code must not call this.
 func (m *Memory) PlantExecutionForTest(ctx context.Context, scope isolation.Scope, workflowID string, in StartInput) (Execution, error) {
 	return m.startExecution(ctx, scope, workflowID, in, false)
 }
