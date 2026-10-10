@@ -81,6 +81,7 @@ import {
   executionFailureReasonText,
   executionKnowsWorkflowDeleted,
   executionLogsAreEmpty,
+  auditEventDetailsDisplay,
   executionStatusReasonSentence,
   parseExecutionDetail,
   readExecutionStatusReason,
@@ -1381,6 +1382,20 @@ describe("missing_actor statusReason (#628)", () => {
     assert.equal(run?.statusReason, "missing_actor");
     assert.equal(readExecutionStatusReason("missing_actor"), "missing_actor");
     assert.equal(executionStatusReasonSentence("missing_actor"), SENTENCE);
+  });
+
+  it("shows missing_actor in audit details as the sentence, not the raw code (#634 L-a)", () => {
+    const row = { reason: "missing_actor", actorId: "", idempotencyKey: "k-1" };
+    const shown = auditEventDetailsDisplay(row);
+    assert.equal(shown.sentence, SENTENCE);
+    assert.deepEqual(shown.details, { actorId: "", idempotencyKey: "k-1" });
+    assert.doesNotMatch(JSON.stringify(shown.details), /missing_actor/);
+    assert.equal(auditEventDetailsDisplay({ reason: "missing_actor" }).details, null);
+    // Other rows and shapes pass through untouched.
+    const other = { reason: "something_else", actorId: "a" };
+    assert.deepEqual(auditEventDetailsDisplay(other), { sentence: null, details: other });
+    assert.deepEqual(auditEventDetailsDisplay(null), { sentence: null, details: null });
+    assert.deepEqual(auditEventDetailsDisplay("text"), { sentence: null, details: "text" });
   });
 
   it("shows the sentence on the run page, never the code or the API detail", () => {

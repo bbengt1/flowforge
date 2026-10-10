@@ -81,6 +81,9 @@ export const EXECUTION_INBOX_KEYBOARD_HELP =
 
 export const EXECUTION_INBOX_OPEN_LABEL = "Open";
 
+/** Plain words after the Open link on a run row. */
+export const EXECUTION_INBOX_OPEN_HINT = "full run details";
+
 /**
  * Contract note for route checks. Not UI copy: never render it. The
  * inbox filters with GET /executions status, workflowId, and limit,

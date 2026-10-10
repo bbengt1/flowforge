@@ -200,8 +200,9 @@ test.describe("primary surfaces", () => {
     await expect(page.getByText("before listing executions.")).toHaveCount(0);
     await expect(
       page
-        .getByRole("listbox", { name: "Workspace executions" })
-        .getByRole("option", { name: /Deploy/ }),
+        .getByRole("list", { name: "Workspace executions" })
+        .getByRole("listitem")
+        .filter({ hasText: "Deploy" }),
     ).toBeVisible();
     await expectOneMain(page);
     await expectNoBlockingAxeViolations(page);

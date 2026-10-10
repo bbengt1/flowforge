@@ -134,7 +134,7 @@ export function ExecutionReplay({
           entries={entries}
           readOnly
           currentNodeId={currentNodeId ?? undefined}
-          heading="Graph replay"
+          heading="Run graph"
           onSelect={onSelect}
         />
       ) : (

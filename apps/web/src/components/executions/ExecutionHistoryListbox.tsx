@@ -13,6 +13,7 @@ import {
 import {
   EXECUTION_INBOX_COLUMNS,
   EXECUTION_INBOX_KEYBOARD_HELP,
+  EXECUTION_INBOX_OPEN_HINT,
   EXECUTION_INBOX_OPEN_LABEL,
   executionInboxDurationLabel,
   executionInboxTimeLabel,
@@ -66,6 +67,10 @@ export function ExecutionHistoryListbox({
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
   const router = useRouter();
   const safeIndex = rows.length === 0 ? 0 : Math.min(focusIndex, rows.length - 1);
+  // Rows that carry buttons (Cancel, Retry, Approve) cannot sit in an ARIA
+  // listbox: a listbox may only hold options. They use a plain list; the
+  // current row is marked with aria-current and arrow keys still move it.
+  const hasRowActions = Boolean(operateActions);
   const inbox = layout === "inbox";
   const overlay = layout === "overlay";
   const pad = overlay ? "p-2.5" : compact ? "p-3" : inbox ? "px-3 py-2.5" : "p-4";
@@ -99,7 +104,7 @@ export function ExecutionHistoryListbox({
         </div>
       ) : null}
       <ul
-        role="listbox"
+        role={hasRowActions ? undefined : "listbox"}
         aria-label={
           inbox ? "Workspace executions" : overlay ? "Workflow runs" : "Execution history"
         }
@@ -142,9 +147,7 @@ export function ExecutionHistoryListbox({
           return (
             <li
               key={row.id}
-              role="option"
-              aria-selected={focused}
-              onClick={() => activate(row)}
+              role={hasRowActions ? undefined : "none"}
               onPointerEnter={rowHelp ? () => setHoveredRowId(row.id) : undefined}
               onPointerLeave={
                 rowHelp
@@ -174,6 +177,12 @@ export function ExecutionHistoryListbox({
                         : `rounded-xl ${FF_INBOX_ROW_CLASS} ${pad}`
               }
             >
+              <div
+                role={hasRowActions ? undefined : "option"}
+                aria-selected={hasRowActions ? undefined : focused}
+                aria-current={hasRowActions && focused ? "true" : undefined}
+                onClick={() => activate(row)}
+              >
               {overlay ? (
                 <>
                   <div className="flex flex-wrap items-start justify-between gap-2">
@@ -210,11 +219,8 @@ export function ExecutionHistoryListbox({
                     <span className={`font-medium ${FF_INBOX_LINK_CLASS}`}>
                       {EXECUTION_INBOX_OPEN_LABEL}
                     </span>
-                    <span className={FF_INBOX_MUTED_CLASS}> — /executions/{"{id}"}</span>
+                    <span className={FF_INBOX_MUTED_CLASS}> — {EXECUTION_INBOX_OPEN_HINT}</span>
                   </p>
-                  {operateActions ? (
-                    <div className="mt-2">{operateActions(row)}</div>
-                  ) : null}
                 </>
               ) : inbox ? (
                 <>
@@ -259,9 +265,6 @@ export function ExecutionHistoryListbox({
                     </span>
                   </p>
                 </div>
-                {operateActions ? (
-                  <div className="mt-2">{operateActions(row)}</div>
-                ) : null}
                 </>
               ) : (
                 <>
@@ -309,11 +312,15 @@ export function ExecutionHistoryListbox({
                       <span className={`font-medium ${FF_INBOX_LINK_CLASS}`}>
                         Open execution
                       </span>
-                      <span className={FF_INBOX_MUTED_CLASS}> — workspace replay</span>
+                      <span className={FF_INBOX_MUTED_CLASS}> — {EXECUTION_INBOX_OPEN_HINT}</span>
                     </p>
                   ) : null}
                 </>
               )}
+              </div>
+              {operateActions ? (
+                <div className="mt-2">{operateActions(row)}</div>
+              ) : null}
             </li>
           );
         })}
