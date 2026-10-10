@@ -530,6 +530,17 @@ func (p *Postgres) CreateWorkspace(ctx context.Context, tenantID, workbenchKey, 
 	`, ws.ID, creatorUserID, authz.RoleAdmin); err != nil {
 		return Workspace{}, mapDBErr(err)
 	}
+	// The creator's admin grant is a role change like any other: one
+	// roles_change row (creator as actor and target, before [], after
+	// [admin]) in this same transaction, so a rolled-back create leaves
+	// neither the grant nor the row. audit_events is workspace-scoped, so
+	// scope the transaction to the workspace it just created.
+	if _, err := tx.Exec(ctx, `SELECT app.set_workspace_id($1::uuid)`, ws.ID); err != nil {
+		return Workspace{}, mapDBErr(err)
+	}
+	if err := InsertMemberRolesAuditTx(ctx, tx, ws.ID, creatorUserID, nil, []string{authz.RoleAdmin}, MemberActor{UserID: creatorUserID}); err != nil {
+		return Workspace{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return Workspace{}, mapDBErr(err)
 	}

@@ -501,7 +501,7 @@ func TestAdminPasswordRequiresCSRFWhenSessionPresent(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, sessionAPIRequest(http.MethodPost, "/api/v1/bootstrap/admin-password", setupBody(setupTokenValue, setupPassword), issued.Token, ""))
-	assertProblem(t, rec, http.StatusForbidden, CodeForbidden, "caller-request-16")
+	assertProblem(t, rec, http.StatusForbidden, CodeCSRFInvalid, "caller-request-16")
 	st, err := boot.Get(t.Context())
 	if err != nil {
 		t.Fatal(err)

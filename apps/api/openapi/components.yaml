@@ -449,6 +449,7 @@ components:
       description: |
         Required on state-changing requests authenticated by `ff_session`.
         Must match the `ff_csrf` cookie and the server-side session secret.
+        A missing or mismatched token is `403` with problem code `csrf-invalid`.
       schema:
         type: string
     TenantID:
@@ -1702,6 +1703,7 @@ components:
             - invalid-request
             - unauthenticated
             - forbidden
+            - csrf-invalid
             - not-found
             - conflict
             - method-not-allowed
