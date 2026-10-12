@@ -61,6 +61,9 @@ func retryStatusError(exec Execution, step ExecutionStep, steps []ExecutionStep)
 	if step.Status != ExecutionFailed && step.Status != ExecutionIndeterminate {
 		return &NotRetryableError{Reason: ReasonStepNotFailed}
 	}
+	if stepErrorHandling(step) != "" {
+		return &NotRetryableError{Reason: ReasonStepErrorHandled}
+	}
 	if step.Status == ExecutionIndeterminate && !allowsIndeterminateRetry(step.NodeType) {
 		return ErrRetryNotAllowed
 	}

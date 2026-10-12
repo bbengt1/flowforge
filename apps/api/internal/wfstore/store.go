@@ -94,16 +94,19 @@ const (
 
 // Execution and step statuses. pinned is retained for E3.2 stub rows.
 const (
-	ExecutionQueued        = "queued"
-	ExecutionPinned        = "pinned"
-	ExecutionRunning       = "running"
-	ExecutionWaiting       = "waiting"
-	ExecutionSucceeded     = "succeeded"
-	ExecutionFailed        = "failed"
-	ExecutionCanceled      = "canceled"
-	ExecutionIndeterminate = "indeterminate"
-	ExecutionPending       = "pending"
-	ExecutionSkipped       = "skipped"
+	ExecutionQueued    = "queued"
+	ExecutionPinned    = "pinned"
+	ExecutionRunning   = "running"
+	ExecutionWaiting   = "waiting"
+	ExecutionSucceeded = "succeeded"
+	// ExecutionSucceededWithErrors is terminal: every failure was routed
+	// by onError (continue or errorOutput). It never fires an error workflow.
+	ExecutionSucceededWithErrors = "succeededWithErrors"
+	ExecutionFailed              = "failed"
+	ExecutionCanceled            = "canceled"
+	ExecutionIndeterminate       = "indeterminate"
+	ExecutionPending             = "pending"
+	ExecutionSkipped             = "skipped"
 
 	// ReasonWorkflowDeleted is the matchable end reason on a run that was
 	// waiting or about to resume when its workflow was soft-deleted.
@@ -273,7 +276,10 @@ type ExecutionStep struct {
 	UpdatedAt       time.Time      `json:"updatedAt"`
 	// SkipReason is set exactly when Status is skipped (#660): one of
 	// SkipReasons.
-	SkipReason string `json:"skipReason,omitempty"`
+	// ErrorHandling is continue or errorOutput when the final attempt
+	// failed and onError (from the pinned version) routed the failure.
+	ErrorHandling string `json:"errorHandling,omitempty"`
+	SkipReason    string `json:"skipReason,omitempty"`
 	// UnresolvedIncoming is the number of incoming edges that have not
 	// resolved yet. It is a claim backstop, not an API field.
 	UnresolvedIncoming int                    `json:"-"`

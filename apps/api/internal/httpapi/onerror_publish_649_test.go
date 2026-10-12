@@ -8,8 +8,7 @@ import (
 	"testing"
 )
 
-// #649 S1: drafts with onError: errorOutput save and validate; only publish
-// refuses with on-error-not-yet-supported until S2 enables the engine path.
+// onError: errorOutput and continue save, validate and publish.
 func onErrorPersistYAML(mode, from string) string {
 	return `apiVersion: flowforge/v1
 kind: Workflow
@@ -39,7 +38,7 @@ spec:
 `
 }
 
-func TestOnErrorDraftSavesButPublishGated649(t *testing.T) {
+func TestOnErrorDraftSavesAndPublishes649(t *testing.T) {
 	h, admin := seededWorkspace(t)
 	ws, tenant := currentWorkspace(t, h, admin)
 	src := onErrorPersistYAML("errorOutput", "error")
@@ -52,12 +51,9 @@ func TestOnErrorDraftSavesButPublishGated649(t *testing.T) {
 	}
 	created := createWorkflow(t, h, admin, tenant, ws, src)
 
-	pub, _ := json.Marshal(map[string]any{"revision": created.Draft.Revision})
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, workspaceJSON(http.MethodPost, "/api/v1/workflows/"+created.Workflow.ID+"/publish", pub, admin, tenant, ws))
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"on-error-not-yet-supported"`) {
-		t.Fatalf("publish: %d %s", rec.Code, rec.Body.String())
-	}
+	publishWorkflow(t, h, admin, tenant, ws, created.Workflow.ID, created.Draft.Revision, "errorOutput publishes")
+	cont := createWorkflow(t, h, admin, tenant, ws, onErrorPersistYAML("continue", "result"))
+	publishWorkflow(t, h, admin, tenant, ws, cont.Workflow.ID, cont.Draft.Revision, "continue publishes")
 
 	stop := createWorkflow(t, h, admin, tenant, ws, onErrorPersistYAML("stop", "result"))
 	publishWorkflow(t, h, admin, tenant, ws, stop.Workflow.ID, stop.Draft.Revision, "stop publishes")

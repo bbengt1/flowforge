@@ -1738,7 +1738,7 @@ components:
           type: string
         reason:
           type: string
-          description: Machine-readable cause. Set on execution_not_retryable (run_canceled, run_not_failed, step_not_started, step_not_failed, incoming_unresolved, retry_not_allowed, workflow_deleted).
+          description: Machine-readable cause. Set on execution_not_retryable (run_canceled, run_not_failed, step_not_started, step_not_failed, step_error_handled, incoming_unresolved, retry_not_allowed, workflow_deleted).
         errors:
           type: array
           description: >
@@ -2798,7 +2798,7 @@ components:
               onError:
                 type: string
                 enum: [stop, continue, errorOutput]
-                description: "Failure mode after retries (#649). Omitted is stop. errorOutput requires an edge from port error; not allowed on flow.approval or triggers. Publish codes: invalid-on-error, on-error-not-allowed, error-edge-missing, error-edge-without-error-output. Publish-only until the engine path ships: continue/errorOutput return on-error-not-yet-supported."
+                description: "Failure mode after retries (#649). Omitted is stop. errorOutput requires an edge from port error; not allowed on flow.approval or triggers. Publish codes: invalid-on-error, on-error-not-allowed, error-edge-missing, error-edge-without-error-output. continue: the step ends failed and its main output port fires with {}. errorOutput: the step ends failed and only the error port fires with {code, message, nodeId, attempt}. Lease loss (indeterminate), cancel, policy refusals and emergency stop are never routed."
         edges:
           type: array
           items:
@@ -3292,7 +3292,7 @@ components:
         reason:
           type: string
           description: Set when code is execution_not_retryable.
-          enum: [run_canceled, run_not_failed, step_not_started, step_not_failed, incoming_unresolved, retry_not_allowed, workflow_deleted]
+          enum: [run_canceled, run_not_failed, step_not_started, step_not_failed, step_error_handled, incoming_unresolved, retry_not_allowed, workflow_deleted]
     ExecutionCapabilities:
       type: object
       required: [retry]
@@ -3322,7 +3322,8 @@ components:
           type: string
         status:
           type: string
-          enum: [queued, pinned, running, waiting, succeeded, failed, canceled, indeterminate]
+          description: "succeededWithErrors is terminal: the run finished and every failed step was handled by onError (continue or errorOutput). It counts as finished, is not retryable, and never starts an error workflow."
+          enum: [queued, pinned, running, waiting, succeeded, succeededWithErrors, failed, canceled, indeterminate]
         idempotencyKey:
           type: string
         input:
@@ -3541,6 +3542,10 @@ components:
           type: string
           description: "pending: incoming edges have not all resolved. queued: eligible for a worker. running: a worker holds the step. waiting: parked on an approval or delay. succeeded: the step finished and emitted its ports. failed: the step failed and did not release downstream edges. canceled: a step that had started was stopped by a run cancel or workflow delete. Older runs may also show canceled on steps that never ran; that is legacy, and new runs report those as skipped with a skipReason. indeterminate: the lease was lost after work may have started. skipped: the step finished without running and does not fail the run; skipReason says why."
           enum: [pending, queued, running, waiting, succeeded, failed, canceled, indeterminate, skipped]
+        errorHandling:
+          type: string
+          description: "Set only when the step's final attempt failed and onError in the run's pinned workflow version routed the failure. continue: the main output port fired with {}. errorOutput: only the error port fired. Omitted when the failure was unhandled or the step did not fail."
+          enum: [continue, errorOutput]
         skipReason:
           type: string
           description: "Present exactly when status is skipped. branch_not_taken: an incoming edge resolved unsatisfied under the default AND join, or every incoming edge did under join any. upstream_failed: the run ended failed before this step ran. upstream_indeterminate: the run ended indeterminate before this step ran. run_canceled: the run was canceled before this step ran. workflow_deleted: the workflow was deleted before this step ran. Accepting a retry returns upstream_failed and upstream_indeterminate steps to pending (or queued when nothing upstream is unresolved) with no skipReason. branch_not_taken, run_canceled and workflow_deleted are final."

@@ -217,7 +217,7 @@ func snapsFromSteps(steps []ExecutionStep, ids []string) map[string]succeededSna
 	}
 	best := map[string]ExecutionStep{}
 	for _, step := range steps {
-		if _, ok := want[step.NodeID]; !ok || step.Status != ExecutionSucceeded {
+		if _, ok := want[step.NodeID]; !ok || (step.Status != ExecutionSucceeded && stepErrorHandling(step) == "") {
 			continue
 		}
 		prev, ok := best[step.NodeID]

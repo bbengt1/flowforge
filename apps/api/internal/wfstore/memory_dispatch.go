@@ -313,6 +313,7 @@ func (m *Memory) FailJob(_ context.Context, scope isolation.Scope, now time.Time
 			step.Error = map[string]any{}
 		}
 		applyStepStatus(step, ExecutionFailed, now)
+		m.routeFailureLocked(scope, exec, step, now)
 		return nil
 	}, "job.fail", "failed")
 }

@@ -349,12 +349,6 @@ func PublishWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
-	// TODO(#649 S2): the onError gate inside PublishGate goes away with the
-	// engine path. It reports alongside every other validation code.
-	if errs := workflow.PublishGate([]byte(draft.DefinitionYAML)); len(errs) > 0 {
-		writeWorkflowErrors(w, r, errs)
-		return
-	}
 	if errs, err := validatePublishApprovers(r.Context(), s, scope, draft.DefinitionYAML); err != nil {
 		core.WriteProblem(w, r, http.StatusServiceUnavailable, core.CodeDependencyUnavailable, "Dependency Unavailable", "Approvers could not be checked. Retry.")
 		return

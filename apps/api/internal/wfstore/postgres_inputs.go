@@ -24,7 +24,8 @@ func resolveInputsTx(ctx context.Context, tx pgx.Tx, executionID, nodeID string)
 	rows, err := tx.Query(ctx, `
 		SELECT DISTINCT ON (node_id) node_id, node_type, output_redacted
 		FROM execution_steps
-		WHERE execution_id = $1::uuid AND status = 'succeeded' AND node_id = ANY($2::text[])
+		WHERE execution_id = $1::uuid AND node_id = ANY($2::text[])
+		  AND (status = 'succeeded' OR (status = 'failed' AND error_redacted ? 'handling'))
 		ORDER BY node_id, attempt DESC
 	`, executionID, ids)
 	if err != nil {

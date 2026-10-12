@@ -319,7 +319,8 @@ func (p *Postgres) FailJob(ctx context.Context, scope isolation.Scope, now time.
 			}
 			return JobFailed, redactObject(in.Error), nil
 		},
-		writeError: true,
+		writeError:   true,
+		routeOnError: true,
 	})
 }
 
@@ -1037,6 +1038,8 @@ type mutateOpts struct {
 	writeOutput      bool
 	writeError       bool
 	releaseOnSuccess bool
+	// routeOnError applies the pinned node's onError on a fresh failure.
+	routeOnError bool
 }
 
 func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now time.Time, in JobActionInput, opts mutateOpts) (DispatchResult, error) {
@@ -1205,6 +1208,13 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 				return DispatchResult{}, mapDBErr(err)
 			}
 		}
+	}
+	if opts.routeOnError && opts.writeError && nextStatus == JobFailed && prevStatus != JobFailed && routableFailure(payload) {
+		routed, err := routeFailureTx(ctx, tx, scope, exec, step, payload, now)
+		if err != nil {
+			return DispatchResult{}, err
+		}
+		step = routed
 	}
 	if opts.releaseOnSuccess && nextStatus == JobSucceeded && prevStatus != JobSucceeded {
 		if err := resolveOutgoingTx(ctx, tx, job.ExecutionID, step.NodeID, emittedPorts(step.NodeType, step.Output), now); err != nil {
@@ -1853,7 +1863,7 @@ func applyExecutionStatusTx(ctx context.Context, tx pgx.Tx, scope isolation.Scop
 		UPDATE executions
 		SET status = $2,
 		    started_at = CASE WHEN $2 = 'running' THEN COALESCE(started_at, $1) ELSE started_at END,
-		    finished_at = CASE WHEN $2 IN ('succeeded', 'failed', 'canceled', 'indeterminate') THEN COALESCE(finished_at, $1)
+		    finished_at = CASE WHEN $2 IN ('succeeded', 'succeededWithErrors', 'failed', 'canceled', 'indeterminate') THEN COALESCE(finished_at, $1)
 		                       WHEN $2 IN ('queued', 'running', 'waiting') THEN NULL
 		                       ELSE finished_at END,
 		    updated_at = $1
