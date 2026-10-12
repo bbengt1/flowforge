@@ -50,7 +50,11 @@ func TestMemorySettleMissingWorkflowFailsDeleted(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, step := range steps {
-		if code, _ := step.Error["code"].(string); code != ReasonWorkflowDeleted {
+		if step.Status == ExecutionSkipped {
+			if step.SkipReason != SkipWorkflowDeleted {
+				t.Fatalf("%s skip reason = %q", step.NodeID, step.SkipReason)
+			}
+		} else if code, _ := step.Error["code"].(string); code != ReasonWorkflowDeleted {
 			t.Fatalf("%s error = %+v", step.NodeID, step.Error)
 		}
 		if port, _ := step.Output["port"].(string); port == "expired" {

@@ -364,6 +364,11 @@ func (p *Postgres) CancelExecution(ctx context.Context, scope isolation.Scope, n
 	`, executionID).Scan(&queued); err != nil {
 		return Execution{}, mapDBErr(err)
 	}
+	// #660: never-run steps (pending/queued) end skipped/run_cancelled via
+	// the close-out in applyExecutionStatusTx; started work is canceled.
+	if err := closeOutTx(ctx, tx, scope, executionID, SkipRunCancelled, now); err != nil {
+		return Execution{}, err
+	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE execution_jobs
 		SET status = 'canceled', updated_at = $1
@@ -374,11 +379,11 @@ func (p *Postgres) CancelExecution(ctx context.Context, scope isolation.Scope, n
 	if _, err := tx.Exec(ctx, `
 		UPDATE execution_steps
 		SET status = 'canceled', finished_at = COALESCE(finished_at, $1), updated_at = $1
-		WHERE execution_id = $2::uuid AND status IN ('pending', 'queued', 'running', 'waiting')
+		WHERE execution_id = $2::uuid AND status IN ('running', 'waiting')
 	`, now, executionID); err != nil {
 		return Execution{}, mapDBErr(err)
 	}
-	if err := applyExecutionStatusTx(ctx, tx, executionID, ExecutionCanceled, now); err != nil {
+	if err := applyExecutionStatusTx(ctx, tx, scope, executionID, ExecutionCanceled, now); err != nil {
 		return Execution{}, err
 	}
 	closed, err := closePendingApprovalsTx(ctx, tx, executionID, ReasonRunCanceled, now)
@@ -539,7 +544,7 @@ func (p *Postgres) EmergencyStop(ctx context.Context, scope isolation.Scope, now
 		}
 		return EmergencyStopResult{}, ErrEmergencyStopNotApplicable
 	}
-	if err := rollupExecutionTx(ctx, tx, in.ExecutionID, now); err != nil {
+	if err := rollupExecutionTx(ctx, tx, scope, in.ExecutionID, now); err != nil {
 		return EmergencyStopResult{}, err
 	}
 	exec, err = getExecutionTx(ctx, tx, in.ExecutionID)
@@ -632,6 +637,10 @@ func (p *Postgres) RetryStep(ctx context.Context, scope isolation.Scope, now tim
 	if err != nil {
 		return RetryResult{}, err
 	}
+	// #660: the accepted retry reopens closed-out steps in this tx.
+	if err := reopenTx(ctx, tx, scope, executionID, now); err != nil {
+		return RetryResult{}, err
+	}
 	next := cloneStep(src)
 	next.ID = newID()
 	next.Attempt = src.Attempt + 1
@@ -679,7 +688,7 @@ func (p *Postgres) RetryStep(ctx context.Context, scope isolation.Scope, now tim
 		return RetryResult{}, mapDBErr(err)
 	}
 	observability.NoteJobEnqueued(ctx, 1)
-	if err := rollupExecutionTx(ctx, tx, executionID, now); err != nil {
+	if err := rollupExecutionTx(ctx, tx, scope, executionID, now); err != nil {
 		return RetryResult{}, err
 	}
 	if _, err := insertAuditTx(ctx, tx, scope, AuditWrite{
@@ -771,7 +780,7 @@ func (p *Postgres) WaitJob(ctx context.Context, scope isolation.Scope, now time.
 	if err != nil {
 		return DispatchResult{}, err
 	}
-	if err := rollupExecutionTx(ctx, tx, job.ExecutionID, now); err != nil {
+	if err := rollupExecutionTx(ctx, tx, scope, job.ExecutionID, now); err != nil {
 		return DispatchResult{}, err
 	}
 	if err := ensureParkedApprovalTx(ctx, tx, scope, in, avail, job.ExecutionID, step.NodeType); err != nil {
@@ -949,7 +958,7 @@ func (p *Postgres) ResumeWait(ctx context.Context, scope isolation.Scope, now ti
 			return DispatchResult{}, err
 		}
 	}
-	if err := rollupExecutionTx(ctx, tx, job.ExecutionID, now); err != nil {
+	if err := rollupExecutionTx(ctx, tx, scope, job.ExecutionID, now); err != nil {
 		return DispatchResult{}, err
 	}
 	if _, err := insertAuditTx(ctx, tx, scope, AuditWrite{
@@ -1202,7 +1211,7 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 			return DispatchResult{}, err
 		}
 	}
-	if err := rollupExecutionTx(ctx, tx, job.ExecutionID, now); err != nil {
+	if err := rollupExecutionTx(ctx, tx, scope, job.ExecutionID, now); err != nil {
 		return DispatchResult{}, err
 	}
 	if _, err := insertAuditTx(ctx, tx, scope, AuditWrite{
@@ -1784,7 +1793,7 @@ func finishRecoverPairs(ctx context.Context, tx pgx.Tx, scope isolation.Scope, n
 			continue
 		}
 		seen[p.exec] = struct{}{}
-		if err := rollupExecutionTx(ctx, tx, p.exec, now); err != nil {
+		if err := rollupExecutionTx(ctx, tx, scope, p.exec, now); err != nil {
 			return err
 		}
 		if _, err := insertAuditTx(ctx, tx, scope, AuditWrite{
@@ -1800,7 +1809,7 @@ func finishRecoverPairs(ctx context.Context, tx pgx.Tx, scope isolation.Scope, n
 	return nil
 }
 
-func rollupExecutionTx(ctx context.Context, tx pgx.Tx, executionID string, now time.Time) error {
+func rollupExecutionTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, executionID string, now time.Time) error {
 	exec, err := getExecutionTx(ctx, tx, executionID)
 	if err != nil {
 		return err
@@ -1829,10 +1838,17 @@ func rollupExecutionTx(ctx context.Context, tx pgx.Tx, executionID string, now t
 		return err
 	}
 	next := guardCanceledRollup(exec.Status, rollupExecutionStatus(jobs, steps))
-	return applyExecutionStatusTx(ctx, tx, executionID, next, now)
+	return applyExecutionStatusTx(ctx, tx, scope, executionID, next, now)
 }
 
-func applyExecutionStatusTx(ctx context.Context, tx pgx.Tx, executionID, status string, now time.Time) error {
+// applyExecutionStatusTx sets the run status. A terminal status first
+// closes out never-run steps in the same transaction (#660).
+func applyExecutionStatusTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, executionID, status string, now time.Time) error {
+	if isTerminalExecution(status) && status != ExecutionPinned {
+		if err := closeOutTx(ctx, tx, scope, executionID, closeOutReason(status), now); err != nil {
+			return err
+		}
+	}
 	_, err := tx.Exec(ctx, `
 		UPDATE executions
 		SET status = $2,
@@ -1847,7 +1863,7 @@ func applyExecutionStatusTx(ctx context.Context, tx pgx.Tx, executionID, status 
 }
 
 func touchExecutionRunningTx(ctx context.Context, tx pgx.Tx, executionID string, now time.Time) error {
-	return applyExecutionStatusTx(ctx, tx, executionID, ExecutionRunning, now)
+	return applyExecutionStatusTx(ctx, tx, isolation.Scope{}, executionID, ExecutionRunning, now)
 }
 
 func getExecutionTx(ctx context.Context, tx pgx.Tx, executionID string) (Execution, error) {

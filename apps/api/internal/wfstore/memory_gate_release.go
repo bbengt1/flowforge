@@ -70,7 +70,7 @@ func (m *Memory) SettleUnresolvableGate(_ context.Context, scope isolation.Scope
 	exec.jobs[jobIdx].UpdatedAt = now
 	exec.steps[stepIdx].Error = requirementUnresolvableStepError()
 	applyStepStatus(&exec.steps[stepIdx], ExecutionFailed, now)
-	m.rollupLocked(&exec, now)
+	m.rollupLocked(scope, &exec, now)
 	m.executions[executionID] = exec
 	m.appendAuditLocked(scope, AuditWrite{
 		Action:       "job.fail",

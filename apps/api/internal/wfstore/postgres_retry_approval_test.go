@@ -166,7 +166,8 @@ func TestPostgresRetryAndApprovalClose(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		assertNode(t, ctx, store, scope, exec.ID, "next", ExecutionPending, JobBlocked)
+		assertNode(t, ctx, store, scope, exec.ID, "next", ExecutionSkipped, JobSkipped)
+		assertSkipReason(t, ctx, store, scope, exec.ID, "next", SkipUpstreamFailed)
 		retried, err := store.RetryStep(ctx, scope, now(), exec.ID, seedClaim.Step.ID)
 		if err != nil {
 			t.Fatal(err)
@@ -231,7 +232,8 @@ func TestPostgresRetryAndApprovalClose(t *testing.T) {
 		if resolved || satisfied {
 			t.Fatalf("failed edge resolved=%v satisfied=%v", resolved, satisfied)
 		}
-		assertNode(t, ctx, store, scope, live.ID, "next", ExecutionPending, JobBlocked)
+		assertNode(t, ctx, store, scope, live.ID, "next", ExecutionSkipped, JobSkipped)
+		assertSkipReason(t, ctx, store, scope, live.ID, "next", SkipUpstreamFailed)
 	})
 
 	t.Run("cancel races resume and complete", func(t *testing.T) {

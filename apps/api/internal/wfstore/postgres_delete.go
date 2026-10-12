@@ -66,7 +66,7 @@ func (p *Postgres) Delete(ctx context.Context, scope isolation.Scope, id string)
 		}
 	}
 	for _, executionID := range finished {
-		if err := rollupExecutionTx(ctx, tx, executionID, now); err != nil {
+		if err := rollupExecutionTx(ctx, tx, scope, executionID, now); err != nil {
 			return DeleteResult{}, err
 		}
 	}
@@ -220,6 +220,10 @@ func closeParkedRunTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now
 	if err != nil {
 		return ErrInvalid
 	}
+	// #660: never-run steps end skipped/workflow_deleted, not canceled.
+	if err := closeOutTx(ctx, tx, scope, executionID, SkipWorkflowDeleted, now); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE execution_jobs
 		SET status = 'canceled',
@@ -243,7 +247,7 @@ func closeParkedRunTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now
 	`, executionID, errRaw, now); err != nil {
 		return mapDBErr(err)
 	}
-	if err := applyExecutionStatusTx(ctx, tx, executionID, ExecutionFailed, now); err != nil {
+	if err := applyExecutionStatusTx(ctx, tx, scope, executionID, ExecutionFailed, now); err != nil {
 		return err
 	}
 	closed, err := closePendingApprovalsTx(ctx, tx, executionID, ReasonWorkflowDeleted, now)
@@ -304,6 +308,10 @@ func stopExecutionWorkflowDeletedTx(ctx context.Context, tx pgx.Tx, scope isolat
 	if err != nil {
 		return ErrInvalid
 	}
+	// #660: never-run steps end skipped/workflow_deleted (was: failed).
+	if err := closeOutTx(ctx, tx, scope, executionID, SkipWorkflowDeleted, now); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE execution_jobs
 		SET status = 'failed', updated_at = $2
@@ -323,7 +331,7 @@ func stopExecutionWorkflowDeletedTx(ctx context.Context, tx pgx.Tx, scope isolat
 	`, executionID, errRaw, now); err != nil {
 		return mapDBErr(err)
 	}
-	if err := applyExecutionStatusTx(ctx, tx, executionID, ExecutionFailed, now); err != nil {
+	if err := applyExecutionStatusTx(ctx, tx, scope, executionID, ExecutionFailed, now); err != nil {
 		return err
 	}
 	closed, err := closePendingApprovalsTx(ctx, tx, executionID, ReasonWorkflowDeleted, now)
