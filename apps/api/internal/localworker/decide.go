@@ -23,6 +23,10 @@ func Decide(step wfstore.ExecutionStep, job wfstore.ExecutionJob, inputs map[str
 	if job.Status == wfstore.JobWaiting || step.NodeType == "flow.approval" {
 		return Decision{Skip: true, Reason: "waiting"}
 	}
+	if workflow.IsTestNode(step.NodeType) {
+		// Only reachable in -tags fftest builds (#651 fixturesuite).
+		return decisionFromOutcome(workflow.EvaluateTestStep(step.NodeType, step.Input, step.Attempt))
+	}
 	if !workflow.IsCoreNeutral(step.NodeType) {
 		return unsupported("Compose local worker cannot execute provider nodes. Deploy an isolated production worker.")
 	}

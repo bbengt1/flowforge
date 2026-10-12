@@ -132,7 +132,7 @@ func snapshotDigest(v map[string]any) string {
 
 func retryPolicy(nodeType string) (safe bool, maxRetries int) {
 	nodeType = strings.TrimSpace(nodeType)
-	if strings.HasPrefix(nodeType, "data.") || strings.HasPrefix(nodeType, "flow.") {
+	if strings.HasPrefix(nodeType, "data.") || strings.HasPrefix(nodeType, "flow.") || workflow.IsTestNode(nodeType) {
 		return true, DefaultRetrySafeMax
 	}
 	if nodeType == ssh.NodeSSHRun {

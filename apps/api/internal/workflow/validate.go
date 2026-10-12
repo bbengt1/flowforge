@@ -380,6 +380,11 @@ func validateNode(n Node, path string) ErrorList {
 		errs = append(errs, fieldError(path+".join", n.pos.Line, n.pos.Column, CodeInvalidType, `join must be "all" or "any".`))
 	}
 	nt, ok := lookupNode(n.Type)
+	if !ok && strings.HasPrefix(n.Type, "test.") {
+		// Test-only nodes exist only in -tags fftest builds.
+		errs = append(errs, fieldError(path+".type", n.pos.Line, n.pos.Column, CodeUnsupportedNode, fmt.Sprintf("Node type %q is not enabled in this build.", n.Type)))
+		return errs
+	}
 	if !ok {
 		errs = append(errs, fieldError(path+".type", n.pos.Line, n.pos.Column, CodeUnknownNodeType, fmt.Sprintf("Unknown node type %q.", n.Type)))
 		return errs
@@ -420,7 +425,9 @@ func validateNode(n Node, path string) ErrorList {
 			errs = append(errs, fieldError(path+".inputs."+k, n.pos.Line, n.pos.Column, CodeInvalidPort, fmt.Sprintf("Node type %q has no input port %q.", n.Type, k)))
 		}
 	}
-	if isCoreNeutral(n.Type) {
+	if tn, ok := testNodes[n.Type]; ok {
+		errs = append(errs, tn.validate(n, path)...)
+	} else if isCoreNeutral(n.Type) {
 		errs = append(errs, validateCoreNeutralNode(n, path)...)
 	} else {
 		errs = append(errs, validateAllowedWith(n, nt, path)...)
