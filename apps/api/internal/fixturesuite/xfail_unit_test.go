@@ -174,3 +174,31 @@ func TestEvaluatedKeysAreNotPending(t *testing.T) {
 		t.Fatalf("itemCount should stay pending: %v", p)
 	}
 }
+
+// Terry's M1: a harness gap is never a product failure.
+func TestHarnessPendingNeverSatisfiesXFail(t *testing.T) {
+	x := &XFail{Part: "all", Reason: "later", Issue: "#650", Drivers: []string{"all"}}
+	pend := []string{"steps.a (extended keys)"}
+	cases := []struct {
+		x     *XFail
+		fails []string
+		want  Outcome
+	}{
+		{x, nil, OutcomePending},             // xfail resting on the gap alone
+		{x, []string{"boom"}, OutcomeXFail},  // real product failure too
+		{nil, nil, OutcomeFail},              // pass with unchecked keys
+		{nil, []string{"boom"}, OutcomeFail}, // plain fail
+	}
+	for _, c := range cases {
+		got, _ := VerdictPending("f", "compose", c.x, c.fails, pend)
+		if got != c.want {
+			t.Fatalf("VerdictPending(%v,%v) = %s, want %s", c.x != nil, c.fails, got, c.want)
+		}
+		if got.Failing() != (c.want != OutcomeXFail) {
+			t.Fatalf("%s failing = %v", got, got.Failing())
+		}
+	}
+	if got, _ := VerdictPending("f", "compose", x, []string{"boom"}, nil); got != OutcomeXFail {
+		t.Fatalf("no pending: %s", got)
+	}
+}

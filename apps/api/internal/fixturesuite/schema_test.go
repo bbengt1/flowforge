@@ -160,7 +160,7 @@ type Block struct {
 	SecretInPin        any               `yaml:"secretInPin"`
 	ResumeRoute        string            `yaml:"resumeRoute"`
 	WrongToken         any               `yaml:"wrongToken"`
-	Import             any               `yaml:"import"`
+	Import             *ImportExpect     `yaml:"import"`
 	Export             any               `yaml:"export"`
 	Unsupported        any               `yaml:"unsupported"`
 }
@@ -181,8 +181,9 @@ func (b Block) pendingKeys() []string {
 	add(b.PayloadMaxBytes > 0, "payloadMaxBytes")
 	add(b.NoInputEcho, "noInputEcho")
 	add(b.TestVersion != nil || b.ProdPublish != nil || b.SecretInPin != nil, "pinData checks")
-	add(b.ResumeRoute != "" || b.WrongToken != nil, "resume route")
-	add(b.Import != nil || b.Export != nil || b.Unsupported != nil, "import/export")
+	// resume route and import/export are pending only once reached
+	// (see evaluate): until the product can publish/import the subject,
+	// the part fails on that real refusal first.
 	add(b.Run != nil && b.Run.Outcome != "", "run.outcome")
 	for id, s := range b.Steps {
 		add(s.Items != nil || s.ItemCount != 0 ||
@@ -335,4 +336,16 @@ func LoadFixtures(root string) ([]Fixture, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
+}
+
+// ImportExpect is the target import: POST the fixture file `from` to
+// `path` and expect `status`. equivalentTo/ignore are pending until the
+// importer's response shape exists (#654); they are reported as
+// harness-pending only once the import itself answers status.
+type ImportExpect struct {
+	Path         string   `yaml:"path"`
+	From         string   `yaml:"from"`
+	Status       int      `yaml:"status"`
+	EquivalentTo string   `yaml:"equivalentTo"`
+	Ignore       []string `yaml:"ignore"`
 }

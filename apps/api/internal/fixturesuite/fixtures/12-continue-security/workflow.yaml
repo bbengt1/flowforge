@@ -1,0 +1,17 @@
+apiVersion: flowforge/v1
+kind: Workflow
+# S3 (#651): a security failure under onError: continue is never routed.
+# boom stands in for a step whose job fails with a security code; each case
+# patches with.code (routing decides on error.code alone, routing.go #667).
+metadata:
+  name: e0-12-continue-security
+spec:
+  triggers:
+    - {id: manual, type: manual}
+  nodes:
+    - {id: seed, type: data.set, name: Seed, with: {value: {env: staging}}}
+    - {id: boom, type: flow.fail, name: Boom, onError: continue, with: {code: egress-denied, message: planned security failure}}
+    - {id: next, type: flow.stop, name: Next, with: {status: success}}
+  edges:
+    - {from: seed.result, to: boom.input}
+    - {from: boom.result, to: next.input}

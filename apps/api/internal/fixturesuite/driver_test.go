@@ -47,7 +47,7 @@ func (composeDriver) Drive(t *testing.T, w *Workspace) error {
 	if err != nil || res.Skipped != "" || res.UserID == "" {
 		return fmt.Errorf("bind compose worker: %+v %v", res, err)
 	}
-	srv := httptest.NewServer(w.env.h)
+	srv := httptest.NewServer(w.env.handler())
 	defer srv.Close()
 	id := fmt.Sprintf("fixturesuite-%s-g%d", w.Tenant.Slug, w.gen)
 	client := localworker.NewHTTP(localworker.HTTPConfig{

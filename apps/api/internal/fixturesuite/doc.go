@@ -15,4 +15,13 @@
 // and run only under `go test -tags fftest`; `build: default` parts run
 // only untagged. Scripted parts list `actions` (start, drive, retry, ...);
 // see keys_test.go.
+//
+// Keys the harness accepts but cannot evaluate yet are harness-pending:
+// never a product failure, never enough to satisfy an xfail (an xfail
+// part whose only failures are pending fails CI as HARNESS-PENDING).
+//
+// S3 security specs live in security/<id>.yaml (security_*_test.go):
+// RLS cross-tenant, RBAC refusal matrix and CSRF, exact audit counts,
+// drafts never run, and the API/DB secret canary scan. Each check names
+// a kind; a key its kind does not evaluate fails lint.
 package fixturesuite

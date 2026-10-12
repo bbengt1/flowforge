@@ -35,6 +35,7 @@ cases:
     xfail:
       - {part: delay-compose, reason: "compose worker has no flow.delay (6 of 18 node types)", issue: "#655", drivers: [compose]}
   - name: resume-by-webhook     # n8n "Wait: on webhook call"
+    file: resume.workflow.yaml  # subject: a webhook-resumed wait (S3: was the delay workflow)
     target: {resumeRoute: "POST resume URL", run: {status: [succeeded]}, wrongToken: {status: 404}}
     xfail:
       - {part: resume-by-webhook, reason: "no resume-by-webhook wait mode", issue: "#652", drivers: [all]}

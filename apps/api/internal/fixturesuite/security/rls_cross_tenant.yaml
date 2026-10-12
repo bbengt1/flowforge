@@ -1,0 +1,35 @@
+id: rls_cross_tenant
+source: terry/epic0-fixtures/security/rls_cross_tenant.yaml (DESIGN-650 T1)
+description: >
+  Tenant B's owner (admin of B only) asks for tenant A's resources by id.
+  Every answer is 404 (never 403, which would confirm existence) with no
+  side effect, and the app role with B's workspace sees 0 of A's rows.
+drivers: [compose, runner]
+checks:
+  - {name: workflow-get, kind: http, as: B.owner, method: GET, path: "/api/v1/workflows/{A.workflow}", status: 404, code: not-found, neverStatus: [403]}
+  - {name: execution-get, kind: http, as: B.owner, method: GET, path: "/api/v1/executions/{A.execution}", status: 404, code: not-found, neverStatus: [403]}
+  - {name: execution-steps, kind: http, as: B.owner, method: GET, path: "/api/v1/executions/{A.execution}/steps", status: 404, neverStatus: [403]}
+  - {name: credential-get, kind: http, as: B.owner, method: GET, path: "/api/v1/credentials/{A.credential}", status: 404, neverStatus: [403]}
+  - {name: approval-get, kind: http, as: B.owner, method: GET, path: "/api/v1/approvals/{A.approval}", status: 404, neverStatus: [403]}
+  - name: approval-decide          # spec path /decision; the route is /decide
+    kind: http
+    as: B.owner
+    method: POST
+    path: "/api/v1/approvals/{A.approval}/decide"
+    body: {decision: approve}
+    status: 404
+    neverStatus: [403]
+    sideEffects: {approval_events: 0, "audit:job.resume": 0, "audit:approval.decided_by_admin_override": 0}
+  - name: execution-retry          # A's failed run (a succeeded run is not retryable at all)
+    kind: http
+    as: B.owner
+    method: POST
+    path: "/api/v1/executions/{A.failedExecution}/retry"
+    status: 404
+    neverStatus: [403]
+    sideEffects: {executions: 0, "audit:execution.retry": 0}
+  - name: sql-app-role
+    kind: sql-rows
+    as: B.owner
+    tables: [workflows, executions, execution_steps, credentials, approvals, audit_events]
+    rows: 0

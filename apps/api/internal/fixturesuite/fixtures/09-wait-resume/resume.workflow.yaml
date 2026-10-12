@@ -1,0 +1,16 @@
+apiVersion: flowforge/v1
+kind: Workflow
+# FUTURE SHAPE (#652): n8n "Wait: on webhook call" (n8n Wait node `resume: webhook`).
+# The with key is a placeholder until #652 names it; today it is refused at save.
+metadata:
+  name: e0-09-resume-by-webhook
+spec:
+  triggers:
+    - {id: manual, type: manual}
+  nodes:
+    - {id: seed, type: data.set, name: Seed, with: {value: {env: staging}}}
+    - {id: wait, type: flow.delay, name: Wait for webhook, with: {resume: webhook}}
+    - {id: done, type: flow.stop, name: Done, with: {status: success, message: resumed}}
+  edges:
+    - {from: seed.result, to: wait.input}
+    - {from: wait.result, to: done.input}
