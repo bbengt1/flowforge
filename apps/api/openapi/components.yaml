@@ -3539,8 +3539,12 @@ components:
         attempt: {type: integer}
         status:
           type: string
-          description: "pending: incoming edges have not all resolved. queued: eligible for a worker. running: a worker holds the step. waiting: parked on an approval or delay. succeeded: the step finished and emitted its ports. failed: the step failed and did not release downstream edges. canceled: the run or step was canceled. indeterminate: the lease was lost after work may have started. skipped: an incoming edge resolved unsatisfied under the default AND join, or every incoming edge resolved unsatisfied under join any. skipped is finished and does not fail the run."
+          description: "pending: incoming edges have not all resolved. queued: eligible for a worker. running: a worker holds the step. waiting: parked on an approval or delay. succeeded: the step finished and emitted its ports. failed: the step failed and did not release downstream edges. canceled: a step that had started was stopped by a run cancel or workflow delete. Older runs may also show canceled on steps that never ran; that is legacy, and new runs report those as skipped with a skipReason. indeterminate: the lease was lost after work may have started. skipped: the step finished without running and does not fail the run; skipReason says why."
           enum: [pending, queued, running, waiting, succeeded, failed, canceled, indeterminate, skipped]
+        skipReason:
+          type: string
+          description: "Present exactly when status is skipped. branch_not_taken: an incoming edge resolved unsatisfied under the default AND join, or every incoming edge did under join any. upstream_failed: the run ended failed before this step ran. upstream_indeterminate: the run ended indeterminate before this step ran. run_canceled: the run was canceled before this step ran. workflow_deleted: the workflow was deleted before this step ran. Accepting a retry returns upstream_failed and upstream_indeterminate steps to pending (or queued when nothing upstream is unresolved) with no skipReason. branch_not_taken, run_canceled and workflow_deleted are final."
+          enum: [branch_not_taken, upstream_failed, upstream_indeterminate, run_canceled, workflow_deleted]
         leaseId: {type: string}
         fencingToken: {type: integer}
         idempotencyKey: {type: string}

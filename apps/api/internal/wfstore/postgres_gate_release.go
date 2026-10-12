@@ -126,7 +126,7 @@ func settleUnresolvableGate(ctx context.Context, tx pgx.Tx, scope isolation.Scop
 	`, now, errRaw, stepID); err != nil {
 		return mapDBErr(err)
 	}
-	if err := rollupExecutionTx(ctx, tx, executionID, now); err != nil {
+	if err := rollupExecutionTx(ctx, tx, scope, executionID, now); err != nil {
 		return err
 	}
 	_, err = insertAuditTx(ctx, tx, scope, AuditWrite{

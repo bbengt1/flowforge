@@ -180,6 +180,7 @@ func persistRunDiff(ctx context.Context, tx pgx.Tx, beforeEdges, edges []execEdg
 		}
 		if beforeSteps[i].Status == steps[i].Status &&
 			beforeSteps[i].UnresolvedIncoming == steps[i].UnresolvedIncoming &&
+			beforeSteps[i].SkipReason == steps[i].SkipReason &&
 			sameTime(beforeSteps[i].FinishedAt, steps[i].FinishedAt) {
 			continue
 		}
@@ -192,9 +193,10 @@ func persistRunDiff(ctx context.Context, tx pgx.Tx, beforeEdges, edges []execEdg
 			SET status = $2,
 			    unresolved_incoming = $3,
 			    finished_at = $4,
-			    updated_at = $5
+			    updated_at = $5,
+			    skip_reason = NULLIF($6, '')
 			WHERE id = $1::uuid
-		`, steps[i].ID, steps[i].Status, steps[i].UnresolvedIncoming, finished, steps[i].UpdatedAt); err != nil {
+		`, steps[i].ID, steps[i].Status, steps[i].UnresolvedIncoming, finished, steps[i].UpdatedAt, steps[i].SkipReason); err != nil {
 			return mapDBErr(err)
 		}
 	}

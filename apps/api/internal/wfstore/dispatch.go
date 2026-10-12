@@ -468,6 +468,10 @@ func applyExecutionStatus(exec *Execution, status string, now time.Time) {
 
 func applyStepStatus(step *ExecutionStep, status string, now time.Time) {
 	step.Status = status
+	if status != ExecutionSkipped {
+		// skip_reason is set iff skipped (#660 CHECK).
+		step.SkipReason = ""
+	}
 	step.UpdatedAt = now
 	if status == ExecutionRunning && step.StartedAt == nil {
 		started := now

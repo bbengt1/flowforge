@@ -80,7 +80,10 @@ func TestPostgresDeleteClosesParkedRuns(t *testing.T) {
 		}
 		assertExec(t, ctx, store, scope, exec.ID, wfstore.ExecutionFailed)
 		assertStepJob(t, ctx, store, scope, exec.ID, "gate", wfstore.ExecutionCanceled, wfstore.JobCanceled)
-		assertStepJob(t, ctx, store, scope, exec.ID, "after", wfstore.ExecutionCanceled, wfstore.JobCanceled)
+		assertStepJob(t, ctx, store, scope, exec.ID, "after", wfstore.ExecutionSkipped, wfstore.JobSkipped)
+		if s := stepAndJobMust(t, ctx, store, scope, exec.ID, "after"); s.SkipReason != wfstore.SkipWorkflowDeleted {
+			t.Fatalf("after skip reason = %q", s.SkipReason)
+		}
 		got, err := approvals.Get(ctx, scope, rec.ID)
 		if err != nil {
 			t.Fatal(err)
@@ -659,8 +662,9 @@ func insertRejectedRunning(t *testing.T, ctx context.Context, admin *pgxpool.Poo
 		var id string
 		if err := admin.QueryRow(ctx, `
 			INSERT INTO execution_steps (
-				workspace_id, execution_id, node_id, node_type, attempt, status, output_redacted
-			) VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7::jsonb)
+				workspace_id, execution_id, node_id, node_type, attempt, status, output_redacted, skip_reason
+			) VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::text, $7::jsonb,
+			          CASE WHEN $6::text = 'skipped' THEN 'branch_not_taken' END)
 			RETURNING id::text
 		`, ws, execID, node, typ, attempt, status, output).Scan(&id); err != nil {
 			t.Fatal(err)

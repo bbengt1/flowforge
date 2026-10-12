@@ -127,7 +127,7 @@ func (m *Memory) ClaimJob(ctx context.Context, scope isolation.Scope, now time.T
 			applyStepStatus(&step, ExecutionFailed, now)
 			chosen.steps[stepIdx] = step
 		}
-		m.rollupLocked(chosen, now)
+		m.rollupLocked(scope, chosen, now)
 		m.executions[chosen.record.ID] = *chosen
 		m.appendAuditLocked(scope, AuditWrite{
 			Action:        "job.fail",
@@ -345,6 +345,10 @@ func (m *Memory) CancelExecution(ctx context.Context, scope isolation.Scope, now
 		if exec.jobs[i].Status == JobQueued {
 			queued++
 		}
+	}
+	// #660: never-run steps end skipped/run_canceled.
+	m.closeOutLocked(scope, &exec, SkipRunCanceled, now)
+	for i := range exec.jobs {
 		if jobIsOpen(exec.jobs[i].Status) {
 			exec.jobs[i].Status = JobCanceled
 			exec.jobs[i].UpdatedAt = now
@@ -354,7 +358,7 @@ func (m *Memory) CancelExecution(ctx context.Context, scope isolation.Scope, now
 	observability.NoteExecutionOutcome(ctx, "canceled")
 	for i := range exec.steps {
 		switch exec.steps[i].Status {
-		case ExecutionPending, ExecutionQueued, ExecutionRunning, ExecutionWaiting:
+		case ExecutionRunning, ExecutionWaiting:
 			applyStepStatus(&exec.steps[i], ExecutionCanceled, now)
 		}
 	}
@@ -454,7 +458,7 @@ func (m *Memory) EmergencyStop(_ context.Context, scope isolation.Scope, now tim
 		}
 		return EmergencyStopResult{}, ErrEmergencyStopNotApplicable
 	}
-	m.rollupLocked(&exec, now)
+	m.rollupLocked(scope, &exec, now)
 	m.executions[in.ExecutionID] = exec
 	outcome := exec.record.Status
 	if uncertain {
@@ -523,6 +527,8 @@ func (m *Memory) RetryStep(ctx context.Context, scope isolation.Scope, now time.
 	if err != nil {
 		return RetryResult{}, err
 	}
+	// #660: the accepted retry reopens closed-out steps.
+	m.reopenLocked(scope, &exec, now)
 	next := cloneStep(src)
 	next.ID = newID()
 	next.Attempt = src.Attempt + 1
@@ -552,7 +558,7 @@ func (m *Memory) RetryStep(ctx context.Context, scope isolation.Scope, now time.
 	observability.NoteJobEnqueued(ctx, 1)
 	exec.steps = append(exec.steps, next)
 	exec.jobs = append(exec.jobs, job)
-	m.rollupLocked(&exec, now)
+	m.rollupLocked(scope, &exec, now)
 	m.executions[executionID] = exec
 	m.appendAuditLocked(scope, AuditWrite{
 		Action:        "execution.retry",
@@ -748,7 +754,7 @@ func (m *Memory) mutateWait(scope isolation.Scope, now time.Time, jobID string, 
 	}
 	exec.jobs[jobIdx] = job
 	exec.steps[stepIdx] = step
-	m.rollupLocked(&exec, now)
+	m.rollupLocked(scope, &exec, now)
 	m.executions[execID] = exec
 	m.appendAuditLocked(scope, AuditWrite{
 		Action:        action,
@@ -804,7 +810,7 @@ func (m *Memory) mutateJob(scope isolation.Scope, now time.Time, in JobActionInp
 	}
 	exec.jobs[jobIdx] = job
 	exec.steps[stepIdx] = step
-	m.rollupLocked(&exec, now)
+	m.rollupLocked(scope, &exec, now)
 	m.executions[execID] = exec
 	m.appendAuditLocked(scope, AuditWrite{
 		Action:        action,
@@ -944,7 +950,7 @@ func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope
 			expiredLeases++
 		}
 		if changed {
-			m.rollupLocked(&exec, now)
+			m.rollupLocked(scope, &exec, now)
 			m.executions[id] = exec
 			m.appendAuditLocked(scope, AuditWrite{
 				Action:        "job.recover",
@@ -1135,11 +1141,14 @@ func (m *Memory) failApprovalPastLimit(ctx context.Context, scope isolation.Scop
 	}, "job.fail", "failed")
 }
 
-func (m *Memory) rollupLocked(exec *memExecution, now time.Time) {
+func (m *Memory) rollupLocked(scope isolation.Scope, exec *memExecution, now time.Time) {
 	if exec.record.Status == ExecutionCanceled {
 		return
 	}
 	next := guardCanceledRollup(exec.record.Status, rollupExecutionStatus(exec.jobs, exec.steps))
+	if isTerminalExecution(next) && next != ExecutionPinned {
+		m.closeOutLocked(scope, exec, closeOutReason(next), now)
+	}
 	applyExecutionStatus(&exec.record, next, now)
 }
 

@@ -424,7 +424,8 @@ func TestPostgresUpstreamEdges(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		assertNode(t, ctx, store, scope, exec.ID, "next", ExecutionPending, JobBlocked)
+		assertNode(t, ctx, store, scope, exec.ID, "next", ExecutionSkipped, JobSkipped)
+		assertSkipReason(t, ctx, store, scope, exec.ID, "next", SkipUpstreamFailed)
 		retried, err := store.RetryStep(ctx, scope, now(), exec.ID, seedClaim.Step.ID)
 		if err != nil {
 			t.Fatal(err)
