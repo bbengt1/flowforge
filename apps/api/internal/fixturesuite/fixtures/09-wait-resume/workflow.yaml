@@ -1,0 +1,15 @@
+apiVersion: flowforge/v1
+kind: Workflow
+# Valid today. flow.delay runs on the production runner (WaitJob); compose fails closed.
+metadata:
+  name: e0-09-wait-resume
+spec:
+  triggers:
+    - {id: manual, type: manual}
+  nodes:
+    - {id: seed, type: data.set, name: Seed, with: {value: {env: staging}}}
+    - {id: wait, type: flow.delay, name: Wait 2s, with: {duration: PT2S}}
+    - {id: done, type: flow.stop, name: Done, with: {status: success, message: resumed}}
+  edges:
+    - {from: seed.result, to: wait.input}
+    - {from: wait.result, to: done.input}

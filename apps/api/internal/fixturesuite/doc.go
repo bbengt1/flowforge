@@ -8,5 +8,11 @@
 //
 // Expected-fail is strict: a fixture (or one driver of it) tagged xfail
 // that passes fails the suite until the tag is removed. Every xfail tag
-// needs a reason and an issue ref (#NNN).
+// needs a reason and an issue ref (#NNN), and its part must name a case
+// (or all); a tag that matches no case fails lint.
+//
+// Parts marked `build: fftest` use the test-only node test.flaky (#658)
+// and run only under `go test -tags fftest`; `build: default` parts run
+// only untagged. Scripted parts list `actions` (start, drive, retry, ...);
+// see keys_test.go.
 package fixturesuite

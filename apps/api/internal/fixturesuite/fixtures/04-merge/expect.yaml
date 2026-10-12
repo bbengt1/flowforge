@@ -1,0 +1,20 @@
+id: 04-merge
+drivers: [compose, runner]
+status: partial
+cases:
+  - name: dup-edge-refused      # workflow.yaml, guard, green today
+    publish: {status: 400, code: invalid-workflow, errors: [{path: "spec.edges[1].to", code: duplicate-edge}]}
+    executionsDelta: 0          # a refused save never reaches start
+  - name: data-merge-append     # future.workflow.yaml
+    file: future.workflow.yaml
+    today: {publish: {status: 400, code: invalid-workflow}}   # guard while xfail
+    # errors[] list awaits jonny's real-parser run; expected to contain unsupported-node for data.merge:
+    #   errors: [{path: "spec.nodes[2].type", code: unsupported-node}, ...]
+    target:
+      run: {status: [succeeded]}
+      steps:
+        merge: {status: succeeded, dispatchedAfter: [a, b], jobCount: 1, items: [{id: 1, x: a1}, {id: 2, x: a2}, {id: 1, y: b1}, {id: 3, y: b3}]}
+        done:  {status: succeeded}
+      audit: {execution.start: 1, job.claim: 4, job.complete: 4, job.fail: 0}
+    xfail:
+      - {part: data-merge-append, reason: "data.merge registry-disabled (PhaseNext)", issue: "#650 E3.4", drivers: [all]}

@@ -1,0 +1,43 @@
+id: 06-error-output
+drivers: [compose, runner]
+cases:
+  - name: today-fail-stops      # baseline guard, green today
+    file: workflow.yaml
+    today:                      # guard, green today
+      run: {status: [failed]}
+      steps:
+        seed:  {status: succeeded}
+        boom:  {status: failed, error: {code: fixture.boom, message: planned failure}}   # message in error field, not output
+        after: {status: blocked}  # TODAY; bug #660
+      audit: {execution.start: 1, job.claim: 2, job.complete: 1, job.fail: 1, job.recover: 0}
+    target:                     # #660: finished run leaves no pending/blocked steps
+      run: {status: [failed]}
+      steps:
+        seed:  {status: succeeded}
+        boom:  {status: failed}
+        after: {status: skipped, skipReason: upstream_failed}
+      noStepStatusIn: [pending, blocked]
+      audit: {execution.start: 1, job.claim: 2, job.complete: 1, job.fail: 1, job.recover: 0}
+    xfail:
+      - {part: today-fail-stops, reason: "finished run leaves downstream step blocked instead of skipped (upstream_failed)", issue: "#660", drivers: [all]}
+  - name: error-output-and-continue
+    file: target.workflow.yaml
+    today:
+      publish: {status: 400, code: invalid-workflow, errors: [
+        {path: "spec.nodes[1].onError", code: unknown-field},
+        {path: "spec.nodes[3].onError", code: unknown-field}]}
+    target:
+      run: {status: [succeededWithErrors]}          # Gracie Q1; never fires the error workflow
+      steps:
+        boom:       {status: failed, routed: error, error: {code: fixture.boom}}
+        handled:    {status: succeeded, input: {code: fixture.boom, nodeId: boom, attempt: 1, keys: [code, message, nodeId, attempt, failedAt]}}
+        cont:       {status: failed, routed: continue}
+        after-cont: {status: succeeded, input: {}}  # Gracie Q2: continue sends {}
+      audit: {execution.start: 1, job.fail: 2, execution.error_workflow.fired: 0}   # no step.* actions exist; #649 S2 may add one
+      payloadMaxBytes: 16384
+      noInputEcho: true
+      publishGuards:                                 # #649 S1 save refusals (each a separate patch)
+      - {patch: {"spec.nodes[1].onError": bogus}, code: invalid-with}
+      - {patch: {drop-edge: boom.error}, note: "errorOutput without error edge -> 400"}
+    xfail:
+      - {part: error-output-and-continue, reason: "no onError / error port; flow.fail always stops", issue: "#649 S1+S2", drivers: [all]}

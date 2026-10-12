@@ -1,0 +1,15 @@
+apiVersion: flowforge/v1
+kind: Workflow
+# Valid today: node-bound timeout via approval expiry (expired port).
+metadata:
+  name: e0-10-timeout-node
+spec:
+  triggers:
+    - {id: manual, type: manual}
+  nodes:
+    - {id: gate, type: flow.approval, name: Gate, with: {approverRole: approver, expiresIn: PT2S}}
+    - {id: ok, type: flow.stop, name: Approved, with: {status: success}}
+    - {id: timed-out, type: flow.stop, name: Timed out, with: {status: failure, message: approval expired}}
+  edges:
+    - {from: gate.approved, to: ok.input}
+    - {from: gate.expired, to: timed-out.input}

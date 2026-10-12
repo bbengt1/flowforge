@@ -1,0 +1,23 @@
+id: 02-if
+drivers: [compose, runner]
+publish: {status: 201}
+cases:
+  - name: true-branch          # as written (env: staging)
+    run: {status: [succeeded]}
+    steps:
+      check:    {status: succeeded}
+      on-true:  {status: succeeded, output: {result: {status: success, message: took true}}}
+      on-false: {status: skipped}      # step row created at start, ends skipped; no job
+  - name: false-branch         # harness rewrites seed.with.value.env to "prod" before publish
+    patch: {"spec.nodes[0].with.value.env": prod}
+    run: {status: [succeeded]}
+    steps:
+      on-true:  {status: skipped}
+      on-false: {status: succeeded, output: {result: {status: success, message: took false}}}
+audit: {execution.start: 1, job.claim: 3, job.complete: 3, job.fail: 0}  # job.heartbeat not checked  # skipped branch: no claim
+# item-splitting (#650 E3.1/E3.3): Terry's xfail tag named a part with no
+# case, so it never applied (lint now rejects that). It needs a case with a
+# workflow and expectations from Terry before it can be tagged again:
+#   reason: "single-object ports only; per-item routing needs the item kind + FFX"
+#   assert: "seed emits [{env: staging},{env: prod}] -> on-true gets 1 item, on-false gets 1 item"
+xfail: []

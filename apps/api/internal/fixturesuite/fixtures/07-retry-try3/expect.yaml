@@ -1,0 +1,53 @@
+id: 07-retry-try3
+drivers: [compose, runner]
+status: partial
+cases:
+  - name: operator-retry        # green on runner today (Chloe S2); flow.fail never succeeds
+    file: workflow.yaml
+    drivers: [runner, compose]  # compose: "untested by Terry; expected same as runner. Not xfail: failure here is a bug"
+    actions: [start, drive, retry, drive, retry, drive]   # POST /executions/{id}/retry (RetryStep) as operator
+    run: {status: [failed]}
+    steps:
+      flaky: {status: failed, attempts: 3, attemptStatuses: [failed, failed, failed], error: {code: fixture.flaky}}
+      seed:  {status: succeeded, attempts: 1}             # upstream not re-run
+    http: {retry: 201, retryAsViewer: {status: 403, code: forbidden}}
+    audit: {execution.start: 1, execution.retry: 2, job.fail: 3, job.complete: 1}
+  - name: flaky-untagged-guard   # green in normal builds (no fftest)
+    file: flaky.workflow.yaml
+    build: default             # untagged binaries only
+    publish: {status: 400, code: invalid-workflow, errors: [{path: "spec.nodes[0].type", code: unsupported-node}]}
+  - name: flaky-try3-operator    # needs -tags fftest; operator retries until attempt 3
+    file: flaky.workflow.yaml
+    build: fftest              # needs -tags fftest (#658 test.flaky)
+    drivers: [runner, compose]
+    actions: [start, drive, retry, drive, retry, drive]   # RetryStep via execution.retry; no auto-retry today
+    run: {status: [succeeded]}
+    steps:
+      flaky: {status: succeeded, attempts: 3, attemptStatuses: [failed, failed, succeeded], output: {result: {attempt: 3}},
+              attemptErrors: [{code: test-flaky-failure}, {code: test-flaky-failure}]}
+      done:  {status: succeeded}
+    audit: {execution.start: 1, execution.retry: 2, job.fail: 2, job.complete: 2}
+  - name: flaky-always-fail      # needs -tags fftest
+    file: flaky.workflow.yaml
+    build: fftest              # needs -tags fftest (#658 test.flaky)
+    patch: {"spec.nodes[0].with": {mode: alwaysFail}}
+    actions: [start, drive, retry, drive]
+    run: {status: [failed]}
+    steps: {flaky: {status: failed, attempts: 2, error: {code: test-flaky-failure}}}
+    audit: {execution.start: 1, execution.retry: 1, job.fail: 2}
+  - name: flaky-with-guards      # needs -tags fftest; save refusals
+    file: flaky.workflow.yaml
+    build: fftest              # needs -tags fftest (#658 test.flaky)
+    publishGuards:
+      - {patch: {"spec.nodes[0].with": {failTimes: 11}}, status: 400}
+      - {patch: {"spec.nodes[0].with": {failTimes: 1, mode: alwaysFail}}, status: 400}   # exactly one
+      - {patch: {"spec.nodes[0].with": {}}, status: 400}
+  - name: auto-retry-try3
+    file: target.workflow.yaml
+    build: fftest              # needs -tags fftest (#658 test.flaky)
+    target:
+      run: {status: [succeeded]}
+      steps: {flaky: {status: succeeded, attempts: 3, minGapSeconds: 1, output: {result: {attempt: 3}}}, done: {status: succeeded}}
+      audit: {execution.start: 1, execution.retry: 0, job.fail: 2, job.complete: 2}
+    xfail:
+      - {part: auto-retry-try3, reason: "no per-node auto retry (retryPolicy.waitSeconds) on test.flaky", issue: "#649 S4", drivers: [all]}

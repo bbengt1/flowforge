@@ -1,0 +1,12 @@
+id: 11-n8n-roundtrip
+drivers: [compose, runner]
+today:
+  workflowYamlPublish: {status: 201}       # sanity: saves and publishes
+  importRoute: {path: /api/v1/imports/n8n, status: 404}   # no importer (path chosen by Chloe; #654 decides the real one)
+target:
+  import: {from: n8n.json, status: 201, equivalentTo: workflow.yaml, ignore: [metadata, name]}
+  run: {status: [succeeded], steps: {yes: succeeded, no: skipped}}
+  export: {roundTrip: "import(export(import(n8n.json))) == import(n8n.json)"}
+  unsupported: {note: "unknown n8n node types -> 400 with per-node errors, never silent drop"}
+xfail:
+  - {part: all, reason: "no n8n importer/exporter", issue: "#654", drivers: [all]}

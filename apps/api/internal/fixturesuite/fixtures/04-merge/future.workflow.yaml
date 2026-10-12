@@ -1,0 +1,18 @@
+apiVersion: flowforge/v1
+kind: Workflow
+# FUTURE SHAPE (#650 E3.4, DESIGN-650): data.merge with two input ports (left/right), join: all, mode: append.
+# Today: save refused, data.merge is unsupported-node. Exact errors[] TBD from jonny's real-parser run.
+metadata:
+  name: e0-04-merge-data
+spec:
+  triggers:
+    - {id: manual, type: manual}
+  nodes:
+    - {id: a, type: data.set, name: A, with: {value: {items: [{id: 1, x: a1}, {id: 2, x: a2}]}}}
+    - {id: b, type: data.set, name: B, with: {value: {items: [{id: 1, y: b1}, {id: 3, y: b3}]}}}
+    - {id: merge, type: data.merge, name: Append, join: all, with: {mode: append}}
+    - {id: done, type: flow.stop, name: Done, with: {status: success}}
+  edges:
+    - {from: a.result, to: merge.left}
+    - {from: b.result, to: merge.right}
+    - {from: merge.result, to: done.input}

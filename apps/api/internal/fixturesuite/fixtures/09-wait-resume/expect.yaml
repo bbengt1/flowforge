@@ -1,0 +1,27 @@
+id: 09-wait-resume
+drivers: [compose, runner]
+cases:
+  - name: delay-restart
+    drivers: [runner]
+    actions: [start, drive-until-waiting, kill-runner, advance-clock: 3s, new-runner, drive]
+    midRun: {status: [waiting, running], steps: {seed: {status: succeeded}, wait: {status: [waiting]}, done: {status: pending}}}   # done pending pre-resume
+    run: {status: [succeeded]}
+    steps:
+      wait: {status: succeeded, attempts: 1, output: {result: {env: staging}}}
+      done: {status: succeeded}
+    jobs: {wait: {count: 1}}            # no duplicate dispatch after restart
+    audit: {execution.start: 1, job.claim: 3, job.complete: 3, job.wait: 1, job.resume: 1, job.fail: 0}
+    auditDetails: {job.resume: {outcome: result}}   # the resumed port is the row's outcome (Terry wrote port: result)
+  - name: delay-compose
+    drivers: [compose]
+    today:                      # guard: compose fails closed on flow.delay
+      run: {status: [failed]}
+      steps: {wait: {status: failed}, done: {status: pending}}
+    target:                     # same run result as the runner
+      run: {status: [succeeded]}
+    xfail:
+      - {part: delay-compose, reason: "compose worker has no flow.delay (6 of 18 node types)", issue: "#655", drivers: [compose]}
+  - name: resume-by-webhook     # n8n "Wait: on webhook call"
+    target: {resumeRoute: "POST resume URL", run: {status: [succeeded]}, wrongToken: {status: 404}}
+    xfail:
+      - {part: resume-by-webhook, reason: "no resume-by-webhook wait mode", issue: "#652", drivers: [all]}
