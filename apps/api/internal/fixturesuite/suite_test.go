@@ -52,6 +52,9 @@ func TestFixtures(t *testing.T) {
 		for _, p := range Parts(fx.Expect) {
 			fx, p := fx, p
 			t.Run(fx.ID+"/"+p.Name+"/"+p.Driver, func(t *testing.T) {
+				if !driverSelected(p.Driver) {
+					t.Skipf("driver %s not in FIXTURESUITE_DRIVERS", p.Driver)
+				}
 				if !buildRuns(p.Block.Build) {
 					t.Skipf("build: %s part (this binary fftest=%v)", p.Block.Build, fftestBuild)
 				}
@@ -62,6 +65,11 @@ func TestFixtures(t *testing.T) {
 				}
 				outcome, msg := VerdictPending(fx.ID+"/"+p.Name, p.Driver, p.XFail, fails, pending)
 				t.Logf("%s %s/%s/%s %v pending=%v", outcome, fx.ID, p.Name, p.Driver, fails, pending)
+				r := Result{Suite: "fixtures", ID: fx.ID, Part: p.Name, Driver: p.Driver, Outcome: outcome, Failures: append(guard, fails...), Pending: pending}
+				if p.XFail != nil {
+					r.XFail = p.XFail.Issue
+				}
+				recordResult(t, r)
 				if outcome.Failing() {
 					t.Error(msg)
 				}
@@ -267,6 +275,16 @@ func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Pa
 			if res.Status != retryWant {
 				failf("retry = %d %s, want %d", res.Status, res.Body, retryWant)
 			}
+		case "claim-and-die":
+			claimed, err := d.ClaimAndDie(t, w)
+			if err != nil {
+				return append(fails, "claim-and-die: "+err.Error()), reached
+			}
+			if !claimed {
+				return append(fails, "claim-and-die: no job to claim"), reached
+			}
+			killed = true
+			w.gen++
 		case "kill-runner":
 			killed = true
 			w.gen++

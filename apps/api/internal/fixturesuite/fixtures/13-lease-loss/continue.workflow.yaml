@@ -1,0 +1,37 @@
+apiVersion: flowforge/v1
+kind: Workflow
+# S4 variant (#651): seed has onError continue. Publishable only after #649 S2 (#667).
+metadata:
+  name: e0-13-lease-loss-continue
+spec:
+  description: Epic 0 fixture 13 (S4), lease loss on the first step of the linear data.set -> data.map -> flow.stop.
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: seed
+      type: data.set
+      name: Seed
+      onError: continue
+      with:
+        value:
+          env: staging
+          count: 3
+    - id: shape
+      type: data.map
+      name: Shape
+      with:
+        mapping:
+          target.env: env
+          target.count: count
+    - id: done
+      type: flow.stop
+      name: Done
+      with:
+        status: success
+        message: linear fixture finished
+  edges:
+    - from: seed.result
+      to: shape.input
+    - from: shape.result
+      to: done.input
