@@ -2795,6 +2795,10 @@ components:
                 type: string
                 enum: [all, any]
                 description: "Omitted and all are AND. any is OR and requires at least two incoming edges."
+              onError:
+                type: string
+                enum: [stop, continue, errorOutput]
+                description: "Failure mode after retries (#649). Omitted is stop. errorOutput requires an edge from port error; not allowed on flow.approval or triggers. Publish codes: invalid-on-error, on-error-not-allowed, error-edge-missing, error-edge-without-error-output."
         edges:
           type: array
           items:

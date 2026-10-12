@@ -277,14 +277,28 @@ const (
 
 // Node is a typed action with ports.
 type Node struct {
-	ID     string
-	Type   string
-	Name   string
-	Join   string
-	With   map[string]any
-	Inputs map[string]any
-	pos    loc
+	ID   string
+	Type string
+	Name string
+	Join string
+	// OnError is the #649 failure mode: "" or OnErrorStop (default),
+	// OnErrorContinue, or OnErrorOutput. S1 validates it only; the engine
+	// does not act on it yet.
+	OnError string
+	With    map[string]any
+	Inputs  map[string]any
+	pos     loc
 }
+
+// onError modes (#649).
+const (
+	OnErrorStop     = "stop"
+	OnErrorContinue = "continue"
+	OnErrorOutput   = "errorOutput"
+	// ErrorPortName is the synthetic output port released when a node with
+	// onError: errorOutput fails.
+	ErrorPortName = "error"
+)
 
 // Edge connects an output port to a compatible input port.
 type Edge struct {
@@ -338,10 +352,11 @@ type TriggerSummary struct {
 
 // NodeSummary is the catalog-facing node projection.
 type NodeSummary struct {
-	ID   string `json:"id"`
-	Type string `json:"type"`
-	Name string `json:"name"`
-	Join string `json:"join,omitempty"`
+	ID      string `json:"id"`
+	Type    string `json:"type"`
+	Name    string `json:"name"`
+	Join    string `json:"join,omitempty"`
+	OnError string `json:"onError,omitempty"`
 }
 
 // EdgeSummary is the catalog-facing edge projection.
@@ -391,7 +406,7 @@ func (d *Document) Summary() Summary {
 		s.Triggers = append(s.Triggers, TriggerSummary{ID: t.ID, Type: t.Type})
 	}
 	for _, n := range d.Spec.Nodes {
-		s.Nodes = append(s.Nodes, NodeSummary{ID: n.ID, Type: n.Type, Name: n.Name, Join: n.Join})
+		s.Nodes = append(s.Nodes, NodeSummary{ID: n.ID, Type: n.Type, Name: n.Name, Join: n.Join, OnError: n.OnError})
 	}
 	for _, e := range d.Spec.Edges {
 		s.Edges = append(s.Edges, EdgeSummary{From: e.From, To: e.To})
@@ -443,12 +458,13 @@ func (d *Document) ExecutionGraph() ExecutionGraph {
 	}
 	for i, n := range d.Spec.Nodes {
 		g.Nodes[i] = Node{
-			ID:     n.ID,
-			Type:   n.Type,
-			Name:   n.Name,
-			Join:   n.Join,
-			With:   cloneAnyMap(n.With),
-			Inputs: cloneAnyMap(n.Inputs),
+			ID:      n.ID,
+			Type:    n.Type,
+			Name:    n.Name,
+			Join:    n.Join,
+			OnError: n.OnError,
+			With:    cloneAnyMap(n.With),
+			Inputs:  cloneAnyMap(n.Inputs),
 		}
 	}
 	for i := range g.Triggers {

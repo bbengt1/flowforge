@@ -231,6 +231,7 @@ func validate(doc *Document) ErrorList {
 		}
 	}
 	errs = append(errs, validateJoinModes(doc)...)
+	errs = append(errs, validateErrorEdges(doc)...)
 
 	seenOutputs := map[string]int{}
 	for i, o := range doc.Spec.Outputs {
@@ -268,6 +269,9 @@ func validate(doc *Document) ErrorList {
 
 func validateTrigger(t Trigger, path string) ErrorList {
 	var errs ErrorList
+	if _, ok := t.With["onError"]; ok {
+		errs = append(errs, fieldError(path+".onError", t.pos.Line, t.pos.Column, CodeOnErrorNotAllowed, "Triggers cannot set onError; it applies only to steps."))
+	}
 	tt, ok := lookupTrigger(t.Type)
 	if !ok {
 		errs = append(errs, fieldError(path+".type", t.pos.Line, t.pos.Column, CodeUnknownTriggerType, fmt.Sprintf("Unknown trigger type %q.", t.Type)))
@@ -378,6 +382,14 @@ func validateNode(n Node, path string) ErrorList {
 	case "", JoinAll, JoinAny:
 	default:
 		errs = append(errs, fieldError(path+".join", n.pos.Line, n.pos.Column, CodeInvalidType, `join must be "all" or "any".`))
+	}
+	switch n.OnError {
+	case "", OnErrorStop, OnErrorContinue, OnErrorOutput:
+		if n.OnError != "" && n.Type == "flow.approval" {
+			errs = append(errs, fieldError(path+".onError", n.pos.Line, n.pos.Column, CodeOnErrorNotAllowed, "flow.approval cannot set onError; use its rejected and expired ports instead."))
+		}
+	default:
+		errs = append(errs, fieldError(path+".onError", n.pos.Line, n.pos.Column, CodeInvalidOnError, `onError must be "stop", "continue" or "errorOutput".`))
 	}
 	nt, ok := lookupNode(n.Type)
 	if !ok {
@@ -713,8 +725,17 @@ func validateEdgePorts(doc *Document, e Edge, from, to PortRef, path string) Err
 	if !fromKnown || !toKnown || fromType.Phase != PhaseCore || toType.Phase != PhaseCore {
 		return errs
 	}
-	out, ok := fromType.outputPort(from.Port)
-	if !ok {
+	fromNode := doc.Spec.Nodes[fromIdx]
+	var out Port
+	if from.Port == ErrorPortName {
+		if fromNode.OnError != OnErrorOutput {
+			errs = append(errs, fieldError(path+".from", e.pos.Line, e.pos.Column, CodeErrorEdgeWithoutHandler, fmt.Sprintf("Step %q has an error edge but does not set onError: errorOutput.", from.NodeID)))
+			return errs
+		}
+		out = errorPort()
+	} else if p, ok := fromType.outputPort(from.Port); ok {
+		out = p
+	} else {
 		errs = append(errs, fieldError(path+".from", e.pos.Line, e.pos.Column, CodeInvalidPort, fmt.Sprintf("Node type %q has no output port %q.", fromType.Type, from.Port)))
 		return errs
 	}
@@ -725,6 +746,30 @@ func validateEdgePorts(doc *Document, e Edge, from, to PortRef, path string) Err
 	}
 	if !Compatible(out, in) {
 		errs = append(errs, fieldError(path, e.pos.Line, e.pos.Column, CodeIncompatiblePorts, fmt.Sprintf("Port %s (%s) is not compatible with %s (%s).", e.From, out.Kind, e.To, in.Kind)))
+	}
+	return errs
+}
+
+// errorPort is the synthetic output of a step with onError: errorOutput. It
+// carries one redacted error object and never step input data (#649).
+func errorPort() Port {
+	return Port{Name: ErrorPortName, Kind: PortObject, Classification: ClassPublic, MaxBytes: MaxPortBytes, Description: "Redacted error for a failed step (onError: errorOutput)."}
+}
+
+// validateErrorEdges requires an error edge for every onError: errorOutput
+// step. The reverse (error edge without errorOutput) is in validateEdgePorts.
+func validateErrorEdges(doc *Document) ErrorList {
+	hasErrorEdge := map[string]bool{}
+	for _, e := range doc.Spec.Edges {
+		if from, ok := parsePortRef(e.From); ok && from.Port == ErrorPortName {
+			hasErrorEdge[from.NodeID] = true
+		}
+	}
+	var errs ErrorList
+	for i, n := range doc.Spec.Nodes {
+		if n.OnError == OnErrorOutput && n.Type != "flow.approval" && !hasErrorEdge[n.ID] {
+			errs = append(errs, fieldError(fmt.Sprintf("spec.nodes[%d].onError", i), n.pos.Line, n.pos.Column, CodeErrorEdgeMissing, fmt.Sprintf("Step %q sets onError: errorOutput but nothing is connected to its error port.", n.ID)))
+		}
 	}
 	return errs
 }

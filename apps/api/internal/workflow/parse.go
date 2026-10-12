@@ -54,12 +54,13 @@ var specKeys = map[string]bool{
 }
 
 var nodeKeys = map[string]bool{
-	"id":     true,
-	"type":   true,
-	"name":   true,
-	"join":   true,
-	"with":   true,
-	"inputs": true,
+	"id":      true,
+	"type":    true,
+	"name":    true,
+	"join":    true,
+	"onError": true,
+	"with":    true,
+	"inputs":  true,
 }
 
 var triggerKeys = map[string]bool{
@@ -471,6 +472,15 @@ func decodeNode(n *yaml.Node, path string) (Node, ErrorList) {
 			errs = append(errs, *err)
 		} else {
 			node.Join = s
+		}
+	}
+	if v, ok := mappingValue(n, "onError"); ok {
+		if s, err := scalarString(v, path+".onError"); err != nil {
+			errs = append(errs, *err)
+		} else if s == "" {
+			errs = append(errs, fieldError(path+".onError", v.Line, v.Column, CodeInvalidOnError, `onError must be "stop", "continue" or "errorOutput".`))
+		} else {
+			node.OnError = s
 		}
 	}
 	if v, ok := mappingValue(n, "with"); ok {

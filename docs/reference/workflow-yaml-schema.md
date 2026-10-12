@@ -142,11 +142,14 @@ id: unique-node-id
 type: provider.action
 name: Human-readable label
 join: all                 # optional; all (default) or any
+onError: stop             # optional; stop (default), continue or errorOutput
 with: {}                  # node-specific, policy-validated configuration
 inputs: {}                # optional defaults or literal typed inputs
 ```
 
 `join` selects how a node's incoming edges combine. Omitted and `all` are AND: the step runs only when every incoming edge has resolved satisfied. If any incoming edge resolves unsatisfied, the step is skipped, and that skip resolves the step's outgoing edges as unsatisfied. `any` is OR: once every incoming edge has resolved, the step runs if at least one was satisfied and is skipped if none were. `any` is valid only on a node with at least two incoming edges. Any other value fails validation. `flow.join` stays registry-disabled; there is no separate merge node.
+
+`onError` (#649) sets what happens when a step fails after its retries are exhausted. Omitted and `stop` keep today's behavior. `continue` lets the run proceed and sends an empty object `{}` on the step's `main` output. `errorOutput` releases a synthetic `error` output port (one redacted error object, never step input data) and requires at least one edge from `<node>.error`. Publish validation fails closed with these codes: `invalid-on-error` (any other value, including empty), `error-edge-missing` (`errorOutput` without an edge from `error`), `error-edge-without-error-output` (an edge from `error` on a step that does not set `errorOutput`), and `on-error-not-allowed` (on `flow.approval`, which already has `rejected`/`expired` ports, or on a trigger). Error edges are part of the graph, so the acyclic check covers them. Slice S1 validates the field only; the engine acts on it from S2.
 
 An edge expresses object composition, not an implementation-specific callback:
 
