@@ -300,8 +300,11 @@ func runRunEndedSuite(t *testing.T, h *runEndedHarness) {
 		}
 	})
 
-	// A certain emergency stop is a plain failure of m: like deviation 2,
-	// the rollup keeps the run waiting on the gate and nothing closes.
+	// A certain emergency stop is a definite failure of that one script
+	// step, not a stop of the whole run, so it follows the deviation-2 rule:
+	// the run stays waiting, the approval stays pending, and deciding the
+	// gate then closes the run failed. If a whole-run stop is ever added,
+	// it must close the run's approvals the way cancel does.
 	t.Run("certain emergency stop beside a waiting gate keeps the run waiting", func(t *testing.T) {
 		h.t = t
 		h.script = true
