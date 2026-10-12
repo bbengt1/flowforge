@@ -63,8 +63,10 @@ func recordResult(t *testing.T, r Result) {
 		t.Errorf("results: %v", err)
 		return
 	}
-	defer f.Close()
 	if _, err := f.Write(append(line, '\n')); err != nil {
+		t.Errorf("results: %v", err)
+	}
+	if err := f.Close(); err != nil {
 		t.Errorf("results: %v", err)
 	}
 }
