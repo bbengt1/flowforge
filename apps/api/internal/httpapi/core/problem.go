@@ -68,6 +68,8 @@ const (
 	CodeStepAttemptSuperseded = "step_attempt_superseded"
 	// CodeApprovalClosed refuses a decision on an approval closed with the run.
 	CodeApprovalClosed = "approval_closed"
+	// CodeRunFinished (#668) refuses a decision because the run already ended.
+	CodeRunFinished = "run_finished"
 	// CodeApprovalRequirementUnavailable is the retryable decide failure when
 	// rebuilding the pinned requirement hits a database, network, or timeout
 	// error. The approval is unchanged and nothing is recorded.

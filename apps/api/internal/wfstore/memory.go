@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
@@ -49,7 +48,7 @@ type memGrant struct {
 
 // Memory is an in-process Store used by HTTP unit tests.
 type Memory struct {
-	mu                   sync.Mutex
+	mu                   hookMutex
 	workflows            map[string]memWorkflow  // id -> row
 	folders              map[string]memFolder    // id -> row
 	versions             map[string][]Version    // workflow id -> versions
@@ -59,6 +58,7 @@ type Memory struct {
 	audits               []memAudit
 	approvalPending      func(executionID, nodeID string) (time.Time, bool)
 	approvalUnresolvable func(executionID, nodeID string, now time.Time)
+	approvalRunEnded     func(workspaceID, executionID string, now time.Time) int
 	approvalDecider      ApprovalDecider
 	// ActorDisplayName optionally resolves the actor name for audit rows
 	// (Postgres reads users.display_name in the publish transaction).
@@ -1083,4 +1083,16 @@ func newID() string {
 	b[6] = (b[6] & 0x0f) | 0x40
 	b[8] = (b[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+}
+
+// SetApprovalRunEnded closes a run's pending approvals with run_ended and
+// returns how many it closed (#668). A run-ending rollup calls it right
+// after it drops the workflow lock.
+func (m *Memory) SetApprovalRunEnded(fn func(workspaceID, executionID string, now time.Time) int) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.approvalRunEnded = fn
 }

@@ -320,8 +320,10 @@ func newServer(d Deps) *API {
 	if wfMem, ok := workflows.(*wfstore.Memory); ok {
 		if apMem, ok := approvalStore.(*approval.Memory); ok {
 			apMem.SetGateWaiting(wfMem.ApprovalGateWaiting)
+			apMem.SetRunEnded(wfMem.RunEndedForApprovals)
 			wfMem.SetApprovalPending(apMem.PendingExpiry)
 			wfMem.SetApprovalUnresolvable(apMem.CancelUnresolvableGate)
+			wfMem.SetApprovalRunEnded(apMem.CloseRunEnded)
 		}
 	}
 	if apMem, ok := approvalStore.(*approval.Memory); ok {

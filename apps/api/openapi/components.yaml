@@ -1273,8 +1273,8 @@ components:
         status: {type: string, enum: [pending, approved, rejected, expired, invalidated, canceled]}
         closeReason:
           type: string
-          description: Set only when status is canceled. run_canceled, workflow_deleted, or requirement_unresolvable. No decider is recorded.
-          enum: [run_canceled, workflow_deleted, requirement_unresolvable]
+          description: Set only when status is canceled. run_canceled, workflow_deleted, requirement_unresolvable, or run_ended (the run reached another terminal status, such as failed or indeterminate, while the gate was still waiting; the gate step ends failed with error code run_ended). No decider is recorded.
+          enum: [run_canceled, workflow_deleted, requirement_unresolvable, run_ended]
         closeReasonDetails:
           $ref: "#/components/schemas/StatusReasonDetails"
           description: Set with closeReason requirement_unresolvable when the cause is known (no_eligible_decider).
@@ -1727,6 +1727,7 @@ components:
             - execution_not_retryable
             - step_attempt_superseded
             - approval_closed
+            - run_finished
             - approval_requirement_unavailable
             - group_name_taken
             - group_member_not_in_workspace

@@ -247,11 +247,14 @@ func closeParkedRunTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now
 	`, executionID, errRaw, now); err != nil {
 		return mapDBErr(err)
 	}
-	if err := applyExecutionStatusTx(ctx, tx, scope, executionID, ExecutionFailed, now); err != nil {
-		return err
-	}
+	// #668: approvals close with workflow_deleted (locked last, in id
+	// order, inside the function) before the run status is applied, so
+	// the run-end close-out finds nothing left for run_ended.
 	closed, err := closePendingApprovalsTx(ctx, tx, executionID, ReasonWorkflowDeleted, now)
 	if err != nil {
+		return err
+	}
+	if err := applyExecutionStatusTx(ctx, tx, scope, executionID, ExecutionFailed, now); err != nil {
 		return err
 	}
 	_, err = insertAuditTx(ctx, tx, scope, AuditWrite{
@@ -331,11 +334,14 @@ func stopExecutionWorkflowDeletedTx(ctx context.Context, tx pgx.Tx, scope isolat
 	`, executionID, errRaw, now); err != nil {
 		return mapDBErr(err)
 	}
-	if err := applyExecutionStatusTx(ctx, tx, scope, executionID, ExecutionFailed, now); err != nil {
-		return err
-	}
+	// #668: approvals close with workflow_deleted (locked last, in id
+	// order, inside the function) before the run status is applied, so
+	// the run-end close-out finds nothing left for run_ended.
 	closed, err := closePendingApprovalsTx(ctx, tx, executionID, ReasonWorkflowDeleted, now)
 	if err != nil {
+		return err
+	}
+	if err := applyExecutionStatusTx(ctx, tx, scope, executionID, ExecutionFailed, now); err != nil {
 		return err
 	}
 	_, err = insertAuditTx(ctx, tx, scope, AuditWrite{
