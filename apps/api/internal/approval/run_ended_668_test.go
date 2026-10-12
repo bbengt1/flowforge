@@ -18,7 +18,30 @@ import (
 // Terry's repro: seed -> gate (approval) -> after, plus a parallel m
 // whose lease expires. Recovery makes the run indeterminate while the gate
 // is still waiting.
-func runEndedSrc(n int64) string {
+func runEndedSrc(n int64, script bool) string {
+	m := `    - id: m
+      type: ssh.run
+      name: M
+      with:
+        sshTargetId: 11111111-1111-4111-8111-111111111111
+        commandProfileId: 22222222-2222-4222-8222-222222222222
+`
+	mPort := "parameters"
+	if script {
+		mPort = "input"
+		// Emergency stop applies only to script nodes.
+		m = `    - id: m
+      type: script.python
+      name: M
+      with:
+        source: |
+          print("{}")
+        entrypoint: main.py
+        runtimeProfileId: 33333333-3333-4333-8333-333333333333
+        timeoutSeconds: 30
+        memoryMiB: 128
+`
+	}
 	return `apiVersion: flowforge/v1
 kind: Workflow
 metadata:
@@ -45,19 +68,13 @@ spec:
       name: After
       with:
         status: success
-    - id: m
-      type: ssh.run
-      name: M
-      with:
-        sshTargetId: 11111111-1111-4111-8111-111111111111
-        commandProfileId: 22222222-2222-4222-8222-222222222222
-  edges:
+` + m + `  edges:
     - from: seed.result
       to: gate.request
     - from: gate.approved
       to: after.input
     - from: seed.result
-      to: m.parameters
+      to: m.` + mPort + `
 `
 }
 
@@ -72,6 +89,8 @@ type runEndedHarness struct {
 	base       time.Time
 	seq        int64
 	workflowID string
+	// script makes m a script.python node (emergency stop).
+	script bool
 	// fresh returns new stores and scopes for one case (Memory) or new
 	// scopes in a new workspace (Postgres).
 	fresh func(n int64) (wfstore.Store, Store, isolation.Scope, isolation.Scope)
@@ -90,7 +109,7 @@ func (h *runEndedHarness) start() runEndedRun {
 	h.seq++
 	h.base = time.Now().UTC().Add(time.Second)
 	h.wf, h.ap, h.scope, h.approver = h.fresh(h.seq)
-	parsed, errs := workflow.ParseAndNormalize([]byte(runEndedSrc(time.Now().UnixNano() + h.seq)))
+	parsed, errs := workflow.ParseAndNormalize([]byte(runEndedSrc(time.Now().UnixNano()+h.seq, h.script)))
 	if len(errs) > 0 {
 		t.Fatalf("parse: %+v", errs)
 	}
@@ -259,6 +278,46 @@ func runRunEndedSuite(t *testing.T, h *runEndedHarness) {
 		}
 	})
 
+	// Deviation 3: emergency stop ends the run through the same close-out.
+	// An uncertain stop makes the run indeterminate while the gate waits.
+	t.Run("emergency stop ends the run and closes the gate with run_ended", func(t *testing.T) {
+		h.t = t
+		h.script = true
+		defer func() { h.script = false }()
+		run := h.start()
+		if _, err := h.wf.EmergencyStop(h.ctx, h.scope, h.base, wfstore.EmergencyStopInput{ExecutionID: run.exec.ID, Uncertain: true}); err != nil {
+			t.Fatal(err)
+		}
+		if got := h.status(run.exec.ID); got != wfstore.ExecutionIndeterminate {
+			t.Fatalf("run = %s", got)
+		}
+		h.assertRunEnded(run)
+		if err := h.decide(run.rec); !errors.Is(err, ErrRunFinished) {
+			t.Fatalf("approve after emergency stop = %v, want ErrRunFinished", err)
+		}
+		if got := h.approval(run.rec.ID); got.Status != StatusCanceled || got.CloseReason != ReasonRunEnded || got.DecidedBy != "" {
+			t.Fatalf("approval after refused decide = %+v", got)
+		}
+	})
+
+	// A certain emergency stop is a plain failure of m: like deviation 2,
+	// the rollup keeps the run waiting on the gate and nothing closes.
+	t.Run("certain emergency stop beside a waiting gate keeps the run waiting", func(t *testing.T) {
+		h.t = t
+		h.script = true
+		defer func() { h.script = false }()
+		run := h.start()
+		if _, err := h.wf.EmergencyStop(h.ctx, h.scope, h.base, wfstore.EmergencyStopInput{ExecutionID: run.exec.ID}); err != nil {
+			t.Fatal(err)
+		}
+		if got := h.status(run.exec.ID); got != wfstore.ExecutionWaiting {
+			t.Fatalf("run = %s", got)
+		}
+		if got := h.approval(run.rec.ID); got.Status != StatusPending {
+			t.Fatalf("approval = %s %q", got.Status, got.CloseReason)
+		}
+	})
+
 	t.Run("cancel closes the approval with run_canceled", func(t *testing.T) {
 		h.t = t
 		run := h.start()
@@ -389,6 +448,7 @@ func TestMemoryRunEndedClosesApprovals668(t *testing.T) {
 		ap.SetGateWaiting(wf.ApprovalGateWaiting)
 		ap.SetRunEnded(wf.RunEndedForApprovals)
 		wf.SetApprovalPending(ap.PendingExpiry)
+		wf.SetApprovalRunEnded(ap.CloseRunEnded)
 		owner, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
 		if err != nil {
 			t.Fatal(err)

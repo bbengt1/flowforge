@@ -323,6 +323,7 @@ func newServer(d Deps) *API {
 			apMem.SetRunEnded(wfMem.RunEndedForApprovals)
 			wfMem.SetApprovalPending(apMem.PendingExpiry)
 			wfMem.SetApprovalUnresolvable(apMem.CancelUnresolvableGate)
+			wfMem.SetApprovalRunEnded(apMem.CloseRunEnded)
 		}
 	}
 	if apMem, ok := approvalStore.(*approval.Memory); ok {

@@ -321,28 +321,31 @@ func (p *Postgres) Decide(ctx context.Context, scope isolation.Scope, id string,
 	if rec.ExecutionID != "" {
 		// Locks the execution row first (#668 backstop), so a decision and
 		// a run's close-out serialize.
+		// refuseClosedRunTx returns ErrRunFinished only together with
+		// closed == true, and any other error only with closed == false
+		// (L3), so the three cases below are exhaustive.
 		closed, err := refuseClosedRunTx(ctx, tx, rec.ExecutionID, rec.NodeID, now)
-		if err != nil && !errors.Is(err, ErrRunFinished) {
-			return Record{}, err
-		}
-		if closed {
-			if errors.Is(err, ErrRunFinished) {
-				// run_finished only when this approval was (or is now)
-				// closed by the run ending; an approval that already
-				// expired or was decided stays approval_closed.
-				var reason *string
-				if qerr := tx.QueryRow(ctx, `SELECT close_reason FROM approvals WHERE id = $1::uuid`, id).Scan(&reason); qerr != nil {
-					return Record{}, mapDBErr(qerr)
-				}
-				if reason == nil || *reason != ReasonRunEnded {
-					err = ErrClosed
-				}
+		switch {
+		case errors.Is(err, ErrRunFinished):
+			// run_finished only when this approval was (or is now)
+			// closed by the run ending; an approval that already
+			// expired or was decided stays approval_closed.
+			var reason *string
+			if qerr := tx.QueryRow(ctx, `SELECT close_reason FROM approvals WHERE id = $1::uuid`, id).Scan(&reason); qerr != nil {
+				return Record{}, mapDBErr(qerr)
+			}
+			if reason == nil || *reason != ReasonRunEnded {
+				err = ErrClosed
 			}
 			if cerr := tx.Commit(ctx); cerr != nil {
 				return Record{}, mapDBErr(cerr)
 			}
-			if err != nil {
-				return Record{}, err
+			return Record{}, err
+		case err != nil:
+			return Record{}, err
+		case closed:
+			if cerr := tx.Commit(ctx); cerr != nil {
+				return Record{}, mapDBErr(cerr)
 			}
 			return Record{}, ErrClosed
 		}

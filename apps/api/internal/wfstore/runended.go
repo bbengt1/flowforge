@@ -117,10 +117,12 @@ func gatesEndedAudit(executionID string, gates, approvals int) AuditWrite {
 	}
 }
 
-// endWaitingGatesLocked is the Memory twin. Memory approvals live in a
-// separate store; it closes pending rows of runs that ended with
-// run_ended when it next reads them (see approval.Memory.SetRunEnded),
-// so this only fails the gate steps and jobs. The caller holds m.mu.
+// endWaitingGatesLocked is the Memory twin. It fails the waiting gate
+// steps and jobs under m.mu. Memory approvals live in a separate store,
+// so the run's pending approvals are closed with run_ended eagerly right
+// after m.mu is released (the closeUnresolvable pattern), and the
+// counts-only gates_ended row is written then with the real
+// approvalsClosed count and the rollup's time. The caller holds m.mu.
 func (m *Memory) endWaitingGatesLocked(scope isolation.Scope, exec *memExecution, now time.Time) {
 	gates := 0
 	for i := range exec.steps {
@@ -142,9 +144,32 @@ func (m *Memory) endWaitingGatesLocked(scope isolation.Scope, exec *memExecution
 			}
 		}
 	}
-	if gates > 0 {
-		m.appendAuditLocked(scope, gatesEndedAudit(exec.record.ID, gates, 0), now)
-	}
+	fn := m.approvalRunEnded
+	executionID := exec.record.ID
+	m.mu.afterUnlock(func() {
+		// Close only if the ended status was stored and the workflow was
+		// not deleted (delete closes with workflow_deleted on its own path).
+		m.mu.Lock()
+		ex, ok := m.executions[executionID]
+		ended := ok && endsGates(ex.record.Status)
+		if wf, found := m.workflows[ex.record.WorkflowID]; ended && found && wf.deletedAt != nil {
+			ended = false
+		}
+		m.mu.Unlock()
+		if !ended {
+			return
+		}
+		closed := 0
+		if fn != nil {
+			closed = fn(scope.WorkspaceID(), executionID, now)
+		}
+		if gates == 0 && closed == 0 {
+			return
+		}
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		m.appendAuditLocked(scope, gatesEndedAudit(executionID, gates, closed), now)
+	})
 }
 
 // RunEndedForApprovals reports whether a run ended while the node's
