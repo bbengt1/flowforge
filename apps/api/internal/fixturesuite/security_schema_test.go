@@ -55,9 +55,9 @@ type SecCheck struct {
 	AuditDetails          map[string]map[string]any `yaml:"auditDetails"`
 	DetailsKeys           map[string][]string       `yaml:"detailsKeys"`
 	DetailsMustNotContain map[string][]string       `yaml:"detailsMustNotContain"`
-	// DetailsScopeKeys are keys a row may carry besides detailsKeys only
-	// when they equal the run/workflow's own tenant or workspace id
-	// (tenantId, workspaceId).
+	// DetailsScopeKeys are required keys besides detailsKeys that must
+	// equal the run/workflow's own tenant or workspace id (tenantId,
+	// workspaceId). Missing or foreign values fail (S4 L1).
 	DetailsScopeKeys    map[string][]string `yaml:"detailsScopeKeys"`
 	NoActionPrefix      []string            `yaml:"noActionPrefix"`
 	ApprovalEvents      *int                `yaml:"approvalEvents"`

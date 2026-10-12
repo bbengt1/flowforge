@@ -163,6 +163,11 @@ func (w *secWorld) runAudit(t *testing.T, c SecCheck, failf func(string, ...any)
 				}
 				have = append(have, k)
 			}
+			for _, k := range c.DetailsScopeKeys[action] {
+				if _, ok := got[k]; !ok {
+					failf("detailsKeys %s[%d] lacks required scope key %s", action, i, k)
+				}
+			}
 			sort.Strings(have)
 			if fmt.Sprint(have) != fmt.Sprint(want) {
 				failf("detailsKeys %s[%d] = %v, want exactly %v", action, i, have, want)

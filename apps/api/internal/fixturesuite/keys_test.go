@@ -58,6 +58,8 @@ func (a *Action) UnmarshalYAML(n *yaml.Node) error {
 //	retry               POST /executions/{id}/retry (RetryStep) as owner
 //	kill-runner         drop the current worker; the next drive uses a new
 //	new-runner          worker identity (must follow kill-runner)
+//	claim-and-die       the current worker claims one job and is killed
+//	                    holding its lease (implies kill-runner)
 //	advance-clock: D    move the fake clock forward by D
 //	set-now: +D         same, written as an offset from now
 //	tick-recover        run the API's lease/approval-expiry sweep once
@@ -66,7 +68,7 @@ func (a *Action) UnmarshalYAML(n *yaml.Node) error {
 //	                    the next version; the started run stays on v1
 var actionArgs = map[string]bool{
 	"start": false, "drive": false, "drive-until-waiting": false, "retry": false,
-	"kill-runner": false, "new-runner": false, "tick-recover": false, "retry-refused": false,
+	"kill-runner": false, "new-runner": false, "claim-and-die": false, "tick-recover": false, "retry-refused": false,
 	"advance-clock": true, "set-now": true, "publish-v2": true,
 }
 

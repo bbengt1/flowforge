@@ -45,6 +45,9 @@ func TestSecurity(t *testing.T) {
 		for _, dname := range spec.Drivers {
 			spec, d := spec, all[dname]
 			t.Run(spec.ID+"/"+dname, func(t *testing.T) {
+				if !driverSelected(dname) {
+					t.Skipf("driver %s not in FIXTURESUITE_DRIVERS", dname)
+				}
 				stop := env.Capture()
 				w := newSecWorld(t, env, d)
 				for _, c := range spec.Checks {
@@ -56,6 +59,11 @@ func TestSecurity(t *testing.T) {
 						x := spec.xfailFor(c.Name, dname)
 						outcome, msg := Verdict(spec.ID+"/"+c.Name, dname, x, fails)
 						t.Logf("%s %s/%s/%s %v", outcome, spec.ID, c.Name, dname, fails)
+						r := Result{Suite: "security", ID: spec.ID, Part: c.Name, Driver: dname, Outcome: outcome, Failures: fails}
+						if x != nil {
+							r.XFail = x.Issue
+						}
+						recordResult(t, r)
 						if outcome.Failing() {
 							t.Error(msg)
 						}

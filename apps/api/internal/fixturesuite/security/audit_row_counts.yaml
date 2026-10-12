@@ -33,7 +33,7 @@ checks:
     scenario: publish
     audit: {workflow.publish: 1}
     detailsKeys: {workflow.publish: [actorDisplayName, actorId, workflowId, versionId, versionNumber, digest, note]}
-    detailsScopeKeys: {workflow.publish: [tenantId, workspaceId]}   # only as the workflow's own tenant/workspace
+    detailsScopeKeys: {workflow.publish: [tenantId, workspaceId]}   # required, and only as the workflow's own tenant/workspace (S4 L1)
     detailsMustNotContain: {workflow.publish: [spec, definitionYaml, normalizedYaml]}
   - name: delete-published
     kind: audit

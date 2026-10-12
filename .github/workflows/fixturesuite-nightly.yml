@@ -1,0 +1,97 @@
+name: fixturesuite nightly
+
+# Epic 0 S4 (#651): nightly fixture suite on the compose driver (the
+# localworker over HTTP against the in-process API, as compose runs it),
+# untagged and with -tags fftest (test-only nodes, #658), plus the S3
+# security checks. Uploads a JSON-lines evidence artifact with every part's
+# outcome (PASS / XFAIL / FAIL / XPASS / HARNESS-PENDING). It also runs on
+# pull requests that change this workflow, so edits are checked.
+on:
+  schedule:
+    - cron: "17 7 * * *" # 07:17 UTC daily
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/fixturesuite-nightly.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fixturesuite-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compose:
+    name: Fixture suite (compose driver, nightly)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: flowforge
+          POSTGRES_PASSWORD: flowforge
+          POSTGRES_DB: flowforge
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flowforge -d flowforge"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://flowforge:flowforge@127.0.0.1:5432/flowforge?sslmode=disable
+      FIXTURESUITE_DRIVERS: compose
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.x"
+          check-latest: true
+          cache-dependency-path: apps/api/go.sum
+      - name: Fixture suite + security checks (untagged)
+        env:
+          FIXTURESUITE_RESULTS: ${{ runner.temp }}/fixturesuite/default.jsonl
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$FIXTURESUITE_RESULTS")"
+          go test -p 1 -count=1 -v ./internal/fixturesuite -run 'TestFixtures$|TestFixtureTagsAreValid|TestSecurity$|TestSecuritySpecsAreValid'
+      - name: Fixture suite + security checks (fftest)
+        env:
+          FIXTURESUITE_RESULTS: ${{ runner.temp }}/fixturesuite/fftest.jsonl
+        run: go test -tags fftest -p 1 -count=1 -v ./internal/fixturesuite -run 'TestFixtures$|TestFixtureTagsAreValid|TestSecurity$|TestSecuritySpecsAreValid'
+      - name: Evidence summary
+        if: always()
+        env:
+          RESULTS_DIR: ${{ runner.temp }}/fixturesuite
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import collections, glob, json, os
+          rows = [json.loads(l) for f in sorted(glob.glob(os.path.join(os.environ["RESULTS_DIR"], "*.jsonl"))) for l in open(f) if l.strip()]
+          print("## fixturesuite nightly (compose)\n")
+          if not rows:
+              print("No results recorded.")
+          for build in ("default", "fftest"):
+              c = collections.Counter(r["outcome"] for r in rows if r["build"] == build)
+              print(f"- {build}: " + ", ".join(f"{k} {v}" for k, v in sorted(c.items())))
+          bad = [r for r in rows if r["outcome"] not in ("PASS", "XFAIL")]
+          for r in bad:
+              print(f"- **{r['outcome']}** {r['suite']} {r['id']}/{r['part']} ({r['build']})")
+          PY
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fixturesuite-nightly
+          path: ${{ runner.temp }}/fixturesuite/
+          if-no-files-found: error
+          retention-days: 30

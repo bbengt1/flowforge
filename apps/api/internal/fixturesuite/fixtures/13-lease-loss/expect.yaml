@@ -1,0 +1,15 @@
+id: 13-lease-loss
+drivers: [compose, runner]
+# S4 (#651): the worker claims seed and is killed holding the lease. Per the
+# current product (#664, Terry's #660 smoke on b6300b1): a lost lease means
+# the step's effect is unknown, so the run ends indeterminate (final, never
+# resumed), every step downstream is skipped upstream_indeterminate, one
+# job.recover and one counts-only execution.steps_closed row are written, and
+# retry is refused (409) on an indeterminate run.
+actions: [start, claim-and-die, advance-clock: 1m, tick-recover, new-runner, drive, retry-refused]
+run: {status: [indeterminate]}
+steps:
+  shape: {status: skipped, skipReason: upstream_indeterminate}
+  done:  {status: skipped, skipReason: upstream_indeterminate}
+noStepStatusIn: [pending, blocked]
+audit: {execution.start: 1, job.claim: 1, job.complete: 0, job.recover: 1, execution.steps_closed: 1}
