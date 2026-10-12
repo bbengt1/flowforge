@@ -37,7 +37,20 @@ type Env struct {
 	root  identity.User
 	n     int64
 	seq   atomic.Int64
+	// skew is the fake clock's offset (ns) from real time, shared by the
+	// API (Deps.Now) and the runner driver (runner.Config.Now). The clock
+	// keeps ticking with real time so rows stamped by Postgres now() are
+	// never ahead of it; Advance only ever moves it forward.
+	skew   atomic.Int64
+	jobKey []byte
+	api    *httpapi.API
 }
+
+// Now is the suite's fake clock.
+func (e *Env) Now() time.Time { return time.Now().Add(time.Duration(e.skew.Load())).UTC() }
+
+// Advance moves the fake clock forward.
+func (e *Env) Advance(d time.Duration) { e.skew.Add(int64(d)) }
 
 // Workspace is one throwaway tenant + workspace with its role users.
 type Workspace struct {
@@ -69,6 +82,7 @@ func newEnv(t *testing.T) *Env {
 	t.Cleanup(admin.Close)
 	n := time.Now().UnixNano()
 	root := identity.User{Issuer: testIssuer, ExternalSubject: fmt.Sprintf("fx-root-%d", n), DisplayName: "Fixture owner"}
+	env := &Env{ctx: ctx, app: app, admin: admin, root: root, n: n, jobKey: wfstore.NewJobBindingKey()}
 	d := httpapi.Deps{
 		Store:            identity.NewPostgres(app),
 		Scoped:           isolation.NewPostgres(app),
@@ -76,13 +90,20 @@ func newEnv(t *testing.T) *Env {
 		Ops:              opsconfig.NewPostgres(app),
 		Approvals:        approval.NewPostgres(app),
 		PlatformAdmins:   []authz.PrincipalRef{{Issuer: root.Issuer, Subject: root.ExternalSubject}},
-		JobBindingKey:    wfstore.NewJobBindingKey(),
+		JobBindingKey:    env.jobKey,
+		Now:              env.Now,
 		Quota:            quota.Unlimited(),
 		ScriptSigningKey: scripts.NewSigningKey(),
 	}
 	// Test-only: trust identity headers, as the httpapi tests do.
 	d.Security.TrustIdentityHeaders = true
-	return &Env{ctx: ctx, h: httpapi.NewWithDeps(d), app: app, admin: admin, root: root, n: n}
+	env.h = httpapi.NewWithDeps(d)
+	api, ok := env.h.(*httpapi.API)
+	if !ok {
+		t.Fatalf("handler is %T, want *httpapi.API", env.h)
+	}
+	env.api = api
+	return env
 }
 
 // Response is one recorded HTTP answer.

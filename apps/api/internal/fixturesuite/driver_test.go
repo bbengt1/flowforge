@@ -1,8 +1,9 @@
 package fixturesuite
 
 import (
-	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -11,6 +12,10 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/localseed"
 	"github.com/bbengt1/flowforge/apps/api/internal/localworker"
+	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
+	"github.com/bbengt1/flowforge/apps/api/internal/runner"
+	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
+	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
 
 // Driver drives a started execution to a terminal (or parked) state.
@@ -19,10 +24,6 @@ type Driver interface {
 	// Drive runs queued jobs for the workspace until none are left.
 	Drive(t *testing.T, w *Workspace) error
 }
-
-// errDriverUnavailable means the driver cannot run here yet. It counts as a
-// failure, so a fixture that lists the driver must tag it xfail.
-var errDriverUnavailable = errors.New("driver not available")
 
 func drivers() map[string]Driver {
 	return map[string]Driver{"compose": composeDriver{}, "runner": runnerDriver{}}
@@ -51,15 +52,65 @@ func (composeDriver) Drive(t *testing.T, w *Workspace) error {
 	return err
 }
 
-// runnerDriver will drive the production runner (internal/runner)
-// in-process. TODO(#651 S2): implement once runner Config.Now (optional
-// clock, falls back to time.Now; jonny's separate API PR) lands, so
-// flow.delay fixtures can advance time. Until then every fixture tags
-// runner as xfail and strict xfail keeps that honest.
+// runnerDriver drives the production runner (internal/runner) in-process
+// with the suite's fake clock (runner.Config.Now, #656). After each drain
+// it advances the clock past any flow.delay / approval deadline and runs
+// the API's lease/approval-expiry sweep (TickRecover), then drains again,
+// until a round claims nothing.
 type runnerDriver struct{}
 
 func (runnerDriver) Name() string { return "runner" }
 
-func (runnerDriver) Drive(*testing.T, *Workspace) error {
-	return fmt.Errorf("%w: production runner driver waits for runner Config.Now", errDriverUnavailable)
+// runnerStep is how far each idle round advances the fake clock. It is
+// longer than any delay or approval expiry the fixtures use.
+const (
+	runnerStep   = 25 * time.Hour
+	runnerRounds = 8
+)
+
+func (runnerDriver) Drive(t *testing.T, w *Workspace) error {
+	t.Helper()
+	e := w.env
+	ref := authz.PrincipalRef{Issuer: localworker.DefaultIssuer, Subject: fmt.Sprintf("fixturesuite-runner-%s", w.Tenant.Slug)}
+	res, err := localseed.EnsureWorkerIn(e.ctx, localseed.WorkerInput{Store: identity.NewPostgres(e.app), Worker: ref}, w.Tenant.Slug, w.WS.WorkbenchKey)
+	if err != nil || res.Skipped != "" || res.UserID == "" {
+		return fmt.Errorf("bind runner principal: %+v %v", res, err)
+	}
+	id := "fixturesuite-runner-" + w.Tenant.Slug
+	queue := &runner.StoreQueue{
+		Workflows: wfstore.NewPostgres(e.app),
+		Identity:  identity.NewPostgres(e.app),
+		JobKey:    e.jobKey,
+		WorkerID:  id,
+		UserID:    res.UserID,
+		Issuer:    ref.Issuer,
+		Subject:   ref.Subject,
+		Lease:     30 * time.Second,
+	}
+	disp := &runner.Dispatcher{
+		Ops:     opsconfig.NewPostgres(e.app),
+		Scripts: scripts.NewPostgres(e.app),
+	}
+	r := runner.NewRunner(queue, disp, runner.Config{
+		WorkerID: id,
+		Now:      e.Now,
+		Log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if _, err := r.Drain(e.ctx); err != nil {
+		return err
+	}
+	for i := 0; i < runnerRounds; i++ {
+		e.Advance(runnerStep)
+		if err := e.api.TickRecover(e.ctx); err != nil {
+			return fmt.Errorf("tick recover: %w", err)
+		}
+		n, err := r.Drain(e.ctx)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return nil
+		}
+	}
+	return fmt.Errorf("runner still claiming after %d clock rounds", runnerRounds)
 }

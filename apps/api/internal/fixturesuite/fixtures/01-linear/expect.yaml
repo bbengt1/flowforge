@@ -1,6 +1,5 @@
 # Acceptance fixture 1 (BUILD-PLAN P1/P4), from Terry's draft
-# (/workspace/terry/epic0-fixtures/01-linear). Runner is xfail only because
-# the S1 runner driver is a stub.
+# (/workspace/terry/epic0-fixtures/01-linear).
 id: 01-linear
 drivers: [compose, runner]
 publish: {status: 201}
@@ -13,8 +12,3 @@ steps:
   shape: {status: succeeded, attempt: 1, output: {result: {target: {env: staging, count: 3}}}}
   done:  {status: succeeded, attempt: 1, output: {result: {status: success, message: linear fixture finished}}}
 audit: {execution.start: 1, job.claim: 3, job.complete: 3, job.fail: 0}
-xfail:
-  - part: all
-    reason: "runner driver is a stub until runner Config.Now (jonny, separate API PR) lands"
-    issue: "#651 S2"
-    drivers: [runner]
