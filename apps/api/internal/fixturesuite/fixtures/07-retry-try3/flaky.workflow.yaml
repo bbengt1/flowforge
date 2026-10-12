@@ -1,0 +1,15 @@
+apiVersion: flowforge/v1
+kind: Workflow
+# Requires an API/worker built with -tags fftest (test.flaky from #658). Untagged builds refuse it at save.
+# test.flaky with: exactly one of {failTimes: 0..10} or {mode: alwaysFail}.
+# Fails with code test-flaky-failure; on success emits {attempt: N} on port result.
+metadata:
+  name: e0-07-retry-flaky
+spec:
+  triggers:
+    - {id: manual, type: manual}
+  nodes:
+    - {id: flaky, type: test.flaky, name: Flaky, with: {failTimes: 2}}
+    - {id: done, type: flow.stop, name: Done, with: {status: success}}
+  edges:
+    - {from: flaky.result, to: done.input}

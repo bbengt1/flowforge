@@ -1,0 +1,38 @@
+apiVersion: flowforge/v1
+kind: Workflow
+# FUTURE SHAPE. flow.switch is PhaseNext today, so publish returns 400 unsupported-node.
+# The with-schema below is a proposal for E3.4 and is not validated yet.
+metadata:
+  name: e0-03-switch4
+spec:
+  description: Epic 0 fixture 03, switch with four outputs.
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: seed
+      type: data.set
+      name: Seed
+      with:
+        value:
+          tier: gold
+    - id: route
+      type: flow.switch
+      name: Route by tier
+      with:
+        path: tier
+        cases:
+          - {name: bronze, op: eq, compare: bronze}
+          - {name: silver, op: eq, compare: silver}
+          - {name: gold, op: eq, compare: gold}
+        default: other
+    - {id: out-bronze, type: flow.stop, name: Bronze, with: {status: success, message: bronze}}
+    - {id: out-silver, type: flow.stop, name: Silver, with: {status: success, message: silver}}
+    - {id: out-gold, type: flow.stop, name: Gold, with: {status: success, message: gold}}
+    - {id: out-other, type: flow.stop, name: Other, with: {status: success, message: other}}
+  edges:
+    - {from: seed.result, to: route.value}
+    - {from: route.bronze, to: out-bronze.input}
+    - {from: route.silver, to: out-silver.input}
+    - {from: route.gold, to: out-gold.input}
+    - {from: route.other, to: out-other.input}

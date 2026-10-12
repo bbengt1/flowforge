@@ -65,8 +65,9 @@ type RunExpect struct {
 	Steps map[string]StringSet `yaml:"steps"`
 }
 
-// StepExpect is one node's expectation. Keys after Output are accepted for
-// Terry's later fixtures but not evaluated yet (see pendingKeys).
+// StepExpect is one node's expectation. Input is matched exactly. Attempts, AttemptStatuses, Port,
+// Error, AttemptErrors and SkipReason are evaluated (S2); the other
+// extended keys are accepted but not evaluated yet (see pendingKeys).
 type StepExpect struct {
 	Status          StringSet      `yaml:"status"`
 	Attempt         int            `yaml:"attempt"`
@@ -82,6 +83,14 @@ type StepExpect struct {
 	JobCount        *int           `yaml:"jobCount"`
 	DispatchedAfter []string       `yaml:"dispatchedAfter"`
 	MinGapSeconds   int            `yaml:"minGapSeconds"`
+	// S2: evaluated.
+	Error         *StepError  `yaml:"error"`
+	AttemptErrors []StepError `yaml:"attemptErrors"`
+	SkipReason    string      `yaml:"skipReason"`
+	NoOutput      bool        `yaml:"noOutput"` // output must be empty
+	// ErrorHandling is the step's reported onError mode; "none" means the
+	// API reports none (#649 S2).
+	ErrorHandling string `yaml:"errorHandling"`
 }
 
 // XFail marks a part of a fixture as expected to fail. Strict: a part that
@@ -112,6 +121,7 @@ type Block struct {
 	File        string                `yaml:"file"`
 	Drivers     []string              `yaml:"drivers"`
 	Patch       Patch                 `yaml:"patch"`
+	Save        *HTTPExpect           `yaml:"save"` // create only (see evaluate)
 	Publish     *HTTPExpect           `yaml:"publish"`
 	Start       *HTTPExpect           `yaml:"start"`
 	Run         *RunExpect            `yaml:"run"`
@@ -122,27 +132,37 @@ type Block struct {
 	Target      *Block                `yaml:"target"`
 	XFail       []XFail               `yaml:"xfail"`
 
-	// accepted, not evaluated in S1
-	Actions             []any             `yaml:"actions"`
-	HTTP                map[string]any    `yaml:"http"`
-	Jobs                map[string]any    `yaml:"jobs"`
-	MidRun              any               `yaml:"midRun"`
-	Expect              map[string]string `yaml:"expect"`
-	Caps                any               `yaml:"caps"`
-	PublishGuards       []any             `yaml:"publishGuards"`
-	PayloadMaxBytes     int               `yaml:"payloadMaxBytes"`
-	NoInputEcho         bool              `yaml:"noInputEcho"`
-	ErrorWorkflowFires  *bool             `yaml:"errorWorkflowFires"`
-	TestVersion         any               `yaml:"testVersion"`
-	ProdPublish         any               `yaml:"prodPublish"`
-	SecretInPin         any               `yaml:"secretInPin"`
-	ResumeRoute         string            `yaml:"resumeRoute"`
-	WrongToken          any               `yaml:"wrongToken"`
-	WorkflowYamlPublish *HTTPExpect       `yaml:"workflowYamlPublish"`
-	ImportRoute         *HTTPExpect       `yaml:"importRoute"`
-	Import              any               `yaml:"import"`
-	Export              any               `yaml:"export"`
-	Unsupported         any               `yaml:"unsupported"`
+	// S2: evaluated (see keys_test.go).
+	Build           string                    `yaml:"build"` // "" | fftest | default
+	Actions         []Action                  `yaml:"actions"`
+	HTTP            *HTTPChecks               `yaml:"http"`
+	Jobs            map[string]JobExpect      `yaml:"jobs"`
+	MidRun          *MidRun                   `yaml:"midRun"`
+	PublishGuards   []PublishGuard            `yaml:"publishGuards"`
+	ExecutionsDelta *int                      `yaml:"executionsDelta"`
+	AuditDetails    map[string]map[string]any `yaml:"auditDetails"`
+	NoStepStatusIn  []string                  `yaml:"noStepStatusIn"`
+	// WorkflowYamlPublish is the publish answer for workflow.yaml (an
+	// alias of publish for fixtures whose subject is another file).
+	WorkflowYamlPublish *HTTPExpect `yaml:"workflowYamlPublish"`
+	// ImportRoute POSTs the fixture's n8n.json to path and expects the
+	// answer (404 while no importer exists, #654).
+	ImportRoute *RouteExpect `yaml:"importRoute"`
+
+	// accepted, not evaluated yet
+	Expect             map[string]string `yaml:"expect"`
+	Caps               any               `yaml:"caps"`
+	PayloadMaxBytes    int               `yaml:"payloadMaxBytes"`
+	NoInputEcho        bool              `yaml:"noInputEcho"`
+	ErrorWorkflowFires *bool             `yaml:"errorWorkflowFires"`
+	TestVersion        any               `yaml:"testVersion"`
+	ProdPublish        any               `yaml:"prodPublish"`
+	SecretInPin        any               `yaml:"secretInPin"`
+	ResumeRoute        string            `yaml:"resumeRoute"`
+	WrongToken         any               `yaml:"wrongToken"`
+	Import             any               `yaml:"import"`
+	Export             any               `yaml:"export"`
+	Unsupported        any               `yaml:"unsupported"`
 }
 
 // pendingKeys lists the accepted-but-unevaluated keys a block uses. A block
@@ -155,23 +175,18 @@ func (b Block) pendingKeys() []string {
 			out = append(out, k)
 		}
 	}
-	add(len(b.Actions) > 0, "actions")
-	add(len(b.HTTP) > 0, "http")
-	add(len(b.Jobs) > 0, "jobs")
-	add(b.MidRun != nil, "midRun")
+	add(len(b.Cases) > 0, "cases (nested in today/target)")
 	add(len(b.Expect) > 0, "expect")
 	add(b.Caps != nil, "caps")
-	add(len(b.PublishGuards) > 0, "publishGuards")
 	add(b.PayloadMaxBytes > 0, "payloadMaxBytes")
 	add(b.NoInputEcho, "noInputEcho")
-	add(b.ErrorWorkflowFires != nil, "errorWorkflowFires")
 	add(b.TestVersion != nil || b.ProdPublish != nil || b.SecretInPin != nil, "pinData checks")
 	add(b.ResumeRoute != "" || b.WrongToken != nil, "resume route")
-	add(b.WorkflowYamlPublish != nil || b.ImportRoute != nil || b.Import != nil || b.Export != nil || b.Unsupported != nil, "import/export")
+	add(b.Import != nil || b.Export != nil || b.Unsupported != nil, "import/export")
 	add(b.Run != nil && b.Run.Outcome != "", "run.outcome")
 	for id, s := range b.Steps {
-		add(s.Attempts != 0 || len(s.AttemptStatuses) > 0 || s.Input != nil || s.Items != nil || s.ItemCount != 0 ||
-			s.BodyRuns != 0 || s.Routed != "" || s.Port != "" || s.JobCount != nil || len(s.DispatchedAfter) > 0 || s.MinGapSeconds != 0,
+		add(s.Items != nil || s.ItemCount != 0 ||
+			s.BodyRuns != 0 || s.Routed != "" || s.JobCount != nil || len(s.DispatchedAfter) > 0 || s.MinGapSeconds != 0,
 			"steps."+id+" (extended keys)")
 	}
 	sort.Strings(out)
@@ -199,6 +214,16 @@ func (b Block) Validate(top bool) error {
 	for _, d := range b.Drivers {
 		if !knownDrivers[d] {
 			return fmt.Errorf("drivers: unknown driver %q", d)
+		}
+	}
+	switch b.Build {
+	case "", buildFFTest, buildDefault:
+	default:
+		return fmt.Errorf("build: want %q or %q, got %q", buildFFTest, buildDefault, b.Build)
+	}
+	for i, a := range b.Actions {
+		if err := a.validate(); err != nil {
+			return fmt.Errorf("actions[%d]: %w", i, err)
 		}
 	}
 	for i, x := range b.XFail {
@@ -246,7 +271,43 @@ func DecodeExpect(raw []byte) (Block, error) {
 	if err := dec.Decode(&b); err != nil {
 		return b, err
 	}
-	return b, b.Validate(true)
+	if err := b.Validate(true); err != nil {
+		return b, err
+	}
+	return b, b.LintXFailParts()
+}
+
+// LintXFailParts fails a tag whose part names no case: a top-level tag
+// must be "all" or a case name (only "all" when the fixture has no
+// cases), and a tag inside a case must be "all" or that case's name. A
+// tag that matches nothing would silently never apply.
+func (b Block) LintXFailParts() error {
+	names := map[string]bool{}
+	for _, c := range b.Cases {
+		names[c.Name] = true
+	}
+	for i, x := range b.XFail {
+		if x.Part != "all" && !names[x.Part] {
+			return fmt.Errorf("xfail[%d]: part %q matches no case (have %v); use a case name or all", i, x.Part, sortedKeys(names))
+		}
+	}
+	for _, c := range b.Cases {
+		for i, x := range c.XFail {
+			if x.Part != "all" && x.Part != c.Name {
+				return fmt.Errorf("cases %s xfail[%d]: part %q is not this case; use %q or all", c.Name, i, x.Part, c.Name)
+			}
+		}
+	}
+	return nil
+}
+
+func sortedKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // LoadFixtures reads every fixtures/<id>/ directory with an expect.yaml.

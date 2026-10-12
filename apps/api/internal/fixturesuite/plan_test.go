@@ -35,6 +35,9 @@ func Parts(top Block) []Part {
 		if len(b.Drivers) == 0 {
 			b.Drivers = top.Drivers
 		}
+		if b.Build == "" {
+			b.Build = top.Build
+		}
 		if b.Publish == nil {
 			b.Publish = top.Publish
 		}

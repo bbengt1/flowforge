@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
+	"strings"
 	"testing"
 )
 
@@ -50,6 +52,9 @@ func TestFixtures(t *testing.T) {
 		for _, p := range Parts(fx.Expect) {
 			fx, p := fx, p
 			t.Run(fx.ID+"/"+p.Name+"/"+p.Driver, func(t *testing.T) {
+				if !buildRuns(p.Block.Build) {
+					t.Skipf("build: %s part (this binary fftest=%v)", p.Block.Build, fftestBuild)
+				}
 				guard, fails := runPart(t, env, fx, p, all[p.Driver])
 				if len(guard) > 0 {
 					// today: guards must hold even while a part is xfail.
@@ -109,7 +114,34 @@ func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Pa
 	}
 	w := env.NewWorkspace(t, fx.ID)
 	owner := w.Users["owner"]
+	defer func() {
+		if b.ExecutionsDelta != nil {
+			if got := w.Executions(t); got != *b.ExecutionsDelta {
+				failf("executionsDelta = %d, want %d", got, *b.ExecutionsDelta)
+			}
+		}
+	}()
+	for i, g := range b.PublishGuards {
+		checkGuard(failf, w, fmt.Sprintf("publishGuards[%d]", i), src, g)
+	}
+	if b.ImportRoute != nil {
+		body, err := os.ReadFile(filepath.Join(fx.Dir, "n8n.json"))
+		if err != nil {
+			return append(fails, "importRoute: "+err.Error())
+		}
+		r := b.ImportRoute
+		if !strings.HasPrefix(r.Path, "/api/v1/") {
+			return append(fails, "importRoute: path must start with /api/v1/")
+		}
+		checkHTTP(failf, "importRoute "+r.Path, HTTPExpect{Status: r.Status, Code: r.Code}, w.Do(owner, http.MethodPost, r.Path, json.RawMessage(body)))
+	}
 	want := b.Publish
+	if want == nil && b.WorkflowYamlPublish != nil {
+		if file != "workflow.yaml" {
+			return append(fails, "workflowYamlPublish on a part whose file is "+file)
+		}
+		want = b.WorkflowYamlPublish
+	}
 	if want == nil {
 		want = &HTTPExpect{Status: http.StatusCreated}
 	}
@@ -118,6 +150,13 @@ func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Pa
 	// invalid-workflow) before publish. expect.yaml `publish:` covers
 	// create + publish: a refused create is checked as the publish answer.
 	draft, res := w.Create(owner, src)
+	if b.Save != nil {
+		// save: checks the create alone; the publish is only checked
+		// (and done) when publish: or a run expectation is also set.
+		if !checkHTTP(failf, "save", *b.Save, res) || res.Status != http.StatusCreated || b.Publish == nil && !b.wantsRun() {
+			return fails
+		}
+	}
 	if res.Status != http.StatusCreated {
 		checkHTTP(failf, "publish (refused at create)", *want, res)
 		return fails
@@ -126,52 +165,123 @@ func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Pa
 	if !checkHTTP(failf, "publish", *want, res) || res.Status != http.StatusCreated {
 		return fails
 	}
-	if b.Run == nil && len(b.Steps) == 0 && b.Audit == nil && b.Start == nil {
-		return fails
+	actions := b.Actions
+	if len(actions) == 0 {
+		if !b.wantsRun() {
+			return fails
+		}
+		actions = []Action{{Verb: "start"}, {Verb: "drive"}}
 	}
-	execID, res := w.Start(owner, draft.WorkflowID, versionID, nil)
-	want = b.Start
-	if want == nil {
-		want = &HTTPExpect{Status: http.StatusCreated}
+	execID, midChecked, killed := "", false, false
+	retryWant := http.StatusCreated
+	if b.HTTP != nil && b.HTTP.Retry != 0 {
+		retryWant = b.HTTP.Retry
 	}
-	if !checkHTTP(failf, "start", *want, res) || res.Status != http.StatusCreated {
-		return fails
+	for _, a := range actions {
+		if a.Verb != "start" && execID == "" {
+			return append(fails, "action "+a.Verb+" before start")
+		}
+		switch a.Verb {
+		case "start":
+			id, res := w.Start(owner, draft.WorkflowID, versionID, nil)
+			want := b.Start
+			if want == nil {
+				want = &HTTPExpect{Status: http.StatusCreated}
+			}
+			if !checkHTTP(failf, "start", *want, res) || res.Status != http.StatusCreated {
+				return fails
+			}
+			execID = id
+		case "drive":
+			if err := d.Drive(t, w); err != nil {
+				return append(fails, "drive: "+err.Error())
+			}
+		case "drive-until-waiting":
+			if err := d.DriveOnce(t, w); err != nil {
+				return append(fails, "drive-until-waiting: "+err.Error())
+			}
+			if b.MidRun != nil && !midChecked {
+				midChecked = true
+				mid := w.Observe(t, execID)
+				checkStatus(failf, "midRun run", b.MidRun.Status, mid)
+				checkSteps(failf, "midRun ", b.MidRun.Steps, mid)
+			}
+		case "retry-refused":
+			if res := w.Retry(owner, execID); res.Status != http.StatusConflict {
+				failf("retry-refused = %d %s, want 409", res.Status, res.Body)
+			}
+		case "publish-v2":
+			raw2, err := os.ReadFile(filepath.Join(fx.Dir, a.Arg))
+			if err != nil {
+				return append(fails, "publish-v2: "+err.Error())
+			}
+			d2, res := w.SaveDraft(owner, draft, string(raw2))
+			if res.Status != http.StatusOK && res.Status != http.StatusCreated {
+				return append(fails, fmt.Sprintf("publish-v2 save = %d %s", res.Status, res.Body))
+			}
+			if _, res := w.Publish(owner, d2); res.Status != http.StatusCreated {
+				return append(fails, fmt.Sprintf("publish-v2 publish = %d %s", res.Status, res.Body))
+			}
+		case "retry":
+			res := w.Retry(owner, execID)
+			if res.Status != retryWant {
+				failf("retry = %d %s, want %d", res.Status, res.Body, retryWant)
+			}
+		case "kill-runner":
+			killed = true
+			w.gen++
+		case "new-runner":
+			if !killed {
+				failf("new-runner without kill-runner")
+			}
+			killed = false
+		case "advance-clock", "set-now":
+			dur, _ := a.duration() // validated at load
+			env.Advance(dur)
+		case "tick-recover":
+			if err := env.api.TickRecover(env.ctx); err != nil {
+				return append(fails, "tick-recover: "+err.Error())
+			}
+		}
 	}
-	if err := d.Drive(t, w); err != nil {
-		return append(fails, "drive: "+err.Error())
+	if b.MidRun != nil && !midChecked {
+		failf("midRun set but no drive-until-waiting action")
+	}
+	if b.HTTP != nil && b.HTTP.RetryAsViewer != nil {
+		checkHTTP(failf, "retry as viewer", *b.HTTP.RetryAsViewer, w.Retry(w.Users["viewer"], execID))
 	}
 	run := w.Observe(t, execID)
 	if b.Run != nil {
-		if len(b.Run.Status) > 0 && !b.Run.Status.Has(run.Status) {
-			failf("run status = %s (%s), want one of %v", run.Status, run.Reason, b.Run.Status)
-		}
+		checkStatus(failf, "run", b.Run.Status, run)
 		if b.Run.StatusReason != nil && *b.Run.StatusReason != run.Reason {
 			failf("run statusReason = %q, want %q", run.Reason, *b.Run.StatusReason)
 		}
-	}
-	if b.Run != nil {
 		for node, want := range b.Run.Steps {
 			if got, ok := run.Steps[node]; ok && !want.Has(got.Status) || !ok && !want.Has("skipped") {
 				failf("run.steps %s = %q, want one of %v", node, got.Status, want)
 			}
 		}
 	}
-	for node, want := range b.Steps {
-		got, ok := run.Steps[node]
-		switch {
-		case !ok && want.Status.Has("skipped"):
-			// A step that never dispatched may have no row (see report Q3).
-		case !ok:
-			failf("step %s: no step row", node)
-		default:
-			if len(want.Status) > 0 && !want.Status.Has(got.Status) {
-				failf("step %s = %q, want one of %v", node, got.Status, want.Status)
+	checkSteps(failf, "", b.Steps, run)
+	if b.ErrorWorkflowFires != nil {
+		// Each part has a fresh workspace: any execution besides this one
+		// is an error-workflow run.
+		fired := w.Executions(t) > 1
+		if fired != *b.ErrorWorkflowFires {
+			failf("errorWorkflowFires = %v, want %v", fired, *b.ErrorWorkflowFires)
+		}
+	}
+	for _, node := range sortedNodes(run.Steps) {
+		for _, bad := range b.NoStepStatusIn {
+			if run.Steps[node].Status == bad {
+				failf("step %s = %q, but noStepStatusIn %v", node, bad, b.NoStepStatusIn)
 			}
-			if want.Attempt != 0 && got.Attempt != want.Attempt {
-				failf("step %s attempt = %d, want %d", node, got.Attempt, want.Attempt)
-			}
-			if want.Output != nil && !subset(norm(want.Output), norm(got.Output)) {
-				failf("step %s output = %v, want ⊇ %v", node, got.Output, want.Output)
+		}
+	}
+	for node, j := range b.Jobs {
+		if j.Count != nil {
+			if got := w.JobCount(t, execID, node); got != *j.Count {
+				failf("jobs %s count = %d, want %d", node, got, *j.Count)
 			}
 		}
 	}
@@ -180,7 +290,145 @@ func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Pa
 			failf("audit %s = %d, want %d", action, got, n)
 		}
 	}
+	for action, want := range b.AuditDetails {
+		rows := run.AuditRows[action]
+		if len(rows) == 0 {
+			failf("auditDetails %s: no rows", action)
+		}
+		for i, got := range rows {
+			if !subset(norm(want), norm(got)) {
+				failf("auditDetails %s[%d] = %v, want ⊇ %v", action, i, got, want)
+			}
+		}
+	}
 	return fails
+}
+
+// wantsRun reports whether the block expects anything of a started run.
+func (b Block) wantsRun() bool {
+	return len(b.Actions) > 0 || b.Run != nil || len(b.Steps) > 0 || b.Audit != nil || b.Start != nil || len(b.Jobs) > 0 ||
+		b.AuditDetails != nil || len(b.NoStepStatusIn) > 0 || b.HTTP != nil || b.ErrorWorkflowFires != nil
+}
+
+func checkStatus(failf func(string, ...any), what string, want StringSet, run Run) {
+	if len(want) > 0 && !want.Has(run.Status) {
+		failf("%s status = %s (%s), want one of %v", what, run.Status, run.Reason, want)
+	}
+}
+
+func sortedNodes(m map[string]Step) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// checkSteps evaluates per-node expectations against the latest attempt
+// (and, for attempts/attemptStatuses/attemptErrors, every attempt).
+func checkSteps(failf func(string, ...any), prefix string, steps map[string]StepExpect, run Run) {
+	for node, want := range steps {
+		got, ok := run.Steps[node]
+		switch {
+		case !ok && want.Status.Has("skipped") && want.SkipReason == "":
+			// A step that never dispatched may have no row (see report Q3).
+		case !ok:
+			failf("%sstep %s: no step row", prefix, node)
+		default:
+			if len(want.Status) > 0 && !want.Status.Has(got.Status) {
+				failf("%sstep %s = %q, want one of %v", prefix, node, got.Status, want.Status)
+			}
+			if want.Attempt != 0 && got.Attempt != want.Attempt {
+				failf("%sstep %s attempt = %d, want %d", prefix, node, got.Attempt, want.Attempt)
+			}
+			if want.Output != nil && !subset(norm(want.Output), norm(got.Output)) {
+				failf("%sstep %s output = %v, want ⊇ %v", prefix, node, got.Output, want.Output)
+			}
+			if want.Input != nil && !reflect.DeepEqual(norm(want.Input), norm(got.Input)) {
+				failf("%sstep %s input = %v, want exactly %v", prefix, node, got.Input, want.Input)
+			}
+			if want.ErrorHandling != "" {
+				wantEH := want.ErrorHandling
+				if wantEH == "none" {
+					wantEH = ""
+				}
+				if got.ErrorHandling != wantEH {
+					failf("%sstep %s errorHandling = %q, want %q", prefix, node, got.ErrorHandling, want.ErrorHandling)
+				}
+			}
+			if want.NoOutput && len(got.Output) > 0 {
+				failf("%sstep %s output = %v, want none", prefix, node, got.Output)
+			}
+			if want.Port != "" && fmt.Sprint(got.Output["port"]) != want.Port {
+				failf("%sstep %s port = %v, want %q (output %v)", prefix, node, got.Output["port"], want.Port, got.Output)
+			}
+			if want.SkipReason != "" && got.SkipReason != want.SkipReason {
+				failf("%sstep %s skipReason = %q, want %q", prefix, node, got.SkipReason, want.SkipReason)
+			}
+			if want.Error != nil && !errorMatches(*want.Error, got.Error) {
+				failf("%sstep %s error = %v, want %+v", prefix, node, got.Error, *want.Error)
+			}
+			all := run.Attempts[node]
+			if want.Attempts != 0 && len(all) != want.Attempts {
+				failf("%sstep %s attempts = %d, want %d", prefix, node, len(all), want.Attempts)
+			}
+			if len(want.AttemptStatuses) > 0 {
+				var gs []string
+				for _, a := range all {
+					gs = append(gs, a.Status)
+				}
+				if !reflect.DeepEqual(gs, want.AttemptStatuses) {
+					failf("%sstep %s attemptStatuses = %v, want %v", prefix, node, gs, want.AttemptStatuses)
+				}
+			}
+			if len(want.AttemptErrors) > 0 {
+				var errs []map[string]any
+				for _, a := range all {
+					if len(a.Error) > 0 {
+						errs = append(errs, a.Error)
+					}
+				}
+				okAll := len(errs) == len(want.AttemptErrors)
+				for i := 0; okAll && i < len(errs); i++ {
+					okAll = errorMatches(want.AttemptErrors[i], errs[i])
+				}
+				if !okAll {
+					failf("%sstep %s attemptErrors = %v, want %+v", prefix, node, errs, want.AttemptErrors)
+				}
+			}
+		}
+	}
+}
+
+func errorMatches(want StepError, got map[string]any) bool {
+	if got == nil {
+		return false
+	}
+	if want.Code != "" && fmt.Sprint(got["code"]) != want.Code {
+		return false
+	}
+	return want.Message == "" || fmt.Sprint(got["message"]) == want.Message
+}
+
+// checkGuard applies one publish guard's patch and expects a refusal at
+// create or, when the draft saves, at publish. A guard never starts a run.
+func checkGuard(failf func(string, ...any), w *Workspace, what, src string, g PublishGuard) {
+	patched, err := ApplyPatch(src, g.Patch)
+	if err != nil {
+		failf("%s: %v", what, err)
+		return
+	}
+	want := HTTPExpect{Status: g.Status, Code: g.Code, Errors: g.Errors}
+	if want.Status == 0 {
+		want.Status = http.StatusBadRequest
+	}
+	owner := w.Users["owner"]
+	draft, res := w.Create(owner, patched)
+	if res.Status == http.StatusCreated {
+		_, res = w.Publish(owner, draft)
+	}
+	checkHTTP(failf, what, want, res)
 }
 
 func checkHTTP(failf func(string, ...any), what string, want HTTPExpect, res Response) bool {

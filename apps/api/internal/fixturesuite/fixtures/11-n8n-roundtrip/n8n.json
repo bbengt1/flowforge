@@ -1,0 +1,8 @@
+{"name":"e0-11","nodes":[
+ {"id":"1","name":"Manual","type":"n8n-nodes-base.manualTrigger","typeVersion":1,"position":[0,0],"parameters":{}},
+ {"id":"2","name":"Set","type":"n8n-nodes-base.set","typeVersion":3.4,"position":[200,0],"parameters":{"assignments":{"assignments":[{"name":"env","value":"staging","type":"string"}]}}},
+ {"id":"3","name":"If","type":"n8n-nodes-base.if","typeVersion":2,"position":[400,0],"parameters":{"conditions":{"conditions":[{"leftValue":"={{ $json.env }}","rightValue":"staging","operator":{"type":"string","operation":"equals"}}]}}},
+ {"id":"4","name":"Yes","type":"n8n-nodes-base.noOp","typeVersion":1,"position":[600,-100],"parameters":{}},
+ {"id":"5","name":"No","type":"n8n-nodes-base.noOp","typeVersion":1,"position":[600,100],"parameters":{}}],
+ "connections":{"Manual":{"main":[[{"node":"Set","type":"main","index":0}]]},"Set":{"main":[[{"node":"If","type":"main","index":0}]]},
+  "If":{"main":[[{"node":"Yes","type":"main","index":0}],[{"node":"No","type":"main","index":0}]]}}}

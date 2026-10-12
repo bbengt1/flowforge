@@ -1,0 +1,18 @@
+apiVersion: flowforge/v1
+kind: Workflow
+# Target of the import: fixture 01's graph, produced from n8n.json by the future importer.
+# Valid today as-is; the import/export path is what's missing.
+metadata:
+  name: e0-11-n8n-roundtrip
+spec:
+  triggers:
+    - {id: manual, type: manual}
+  nodes:
+    - {id: set, type: data.set, name: Set, with: {value: {env: staging}}}
+    - {id: check, type: flow.condition, name: If, with: {op: eq, path: env, compare: staging}}
+    - {id: yes, type: flow.stop, name: Yes, with: {status: success}}
+    - {id: no, type: flow.stop, name: No, with: {status: success}}
+  edges:
+    - {from: set.result, to: check.value}
+    - {from: check.true, to: yes.input}
+    - {from: check.false, to: no.input}

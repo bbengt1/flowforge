@@ -1,0 +1,25 @@
+apiVersion: flowforge/v1
+kind: Workflow
+# FUTURE SHAPE (E3.6). n8n "Loop Over Items" is a cycle; FlowForge rejects cycles (validate.go) and
+# will model it as a bounded flow.forEach container instead. Container syntax is a proposal.
+metadata:
+  name: e0-05-loop
+spec:
+  triggers:
+    - {id: manual, type: manual}
+  nodes:
+    - {id: seed, type: data.set, name: Seed, with: {value: {items: [{n: 1}, {n: 2}, {n: 3}]}}}
+    - id: each
+      type: flow.forEach
+      name: Each item
+      with:
+        itemsPath: items
+        maxItems: 10
+        concurrency: 1
+        body:
+          nodes:
+            - {id: tag, type: data.map, name: Tag, with: {mapping: {n: n, seen: n}}}
+    - {id: done, type: flow.stop, name: Done, with: {status: success}}
+  edges:
+    - {from: seed.result, to: each.input}
+    - {from: each.result, to: done.input}

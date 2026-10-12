@@ -1,0 +1,18 @@
+apiVersion: flowforge/v1
+kind: Workflow
+# FUTURE SHAPE (#649 S2): boom routes its error to the error port; the main edge never fires.
+# Today: saves (drafts may keep onError) but publish refuses on-error-not-yet-supported.
+metadata:
+  name: e0-06-error-output
+spec:
+  triggers:
+    - {id: manual, type: manual}
+  nodes:
+    - {id: seed, type: data.set, name: Seed, with: {value: {env: staging}}}
+    - {id: boom, type: flow.fail, name: Boom, onError: errorOutput, with: {code: fixture.boom, message: planned failure}}
+    - {id: handled, type: flow.stop, name: Handled, with: {status: success, message: error routed}}
+    - {id: after, type: flow.stop, name: Main edge, with: {status: success}}
+  edges:
+    - {from: seed.result, to: boom.input}
+    - {from: boom.error, to: handled.input}
+    - {from: boom.result, to: after.input}

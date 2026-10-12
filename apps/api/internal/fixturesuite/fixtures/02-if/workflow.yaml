@@ -1,0 +1,42 @@
+apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: e0-02-if
+spec:
+  description: Epic 0 fixture 02, flow.condition routes to exactly one branch.
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: seed
+      type: data.set
+      name: Seed
+      with:
+        value:
+          env: staging
+    - id: check
+      type: flow.condition
+      name: Is staging
+      with:
+        op: eq
+        path: env
+        compare: staging
+    - id: on-true
+      type: flow.stop
+      name: True branch
+      with:
+        status: success
+        message: took true
+    - id: on-false
+      type: flow.stop
+      name: False branch
+      with:
+        status: success
+        message: took false
+  edges:
+    - from: seed.result
+      to: check.value
+    - from: check.true
+      to: on-true.input
+    - from: check.false
+      to: on-false.input

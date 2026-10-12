@@ -23,6 +23,8 @@ type Driver interface {
 	Name() string
 	// Drive runs queued jobs for the workspace until none are left.
 	Drive(t *testing.T, w *Workspace) error
+	// DriveOnce drains once without moving the clock (drive-until-waiting).
+	DriveOnce(t *testing.T, w *Workspace) error
 }
 
 func drivers() map[string]Driver {
@@ -35,6 +37,9 @@ type composeDriver struct{}
 
 func (composeDriver) Name() string { return "compose" }
 
+// DriveOnce is Drive: the compose worker never moves the clock.
+func (c composeDriver) DriveOnce(t *testing.T, w *Workspace) error { return c.Drive(t, w) }
+
 func (composeDriver) Drive(t *testing.T, w *Workspace) error {
 	t.Helper()
 	ref := authz.PrincipalRef{Issuer: localworker.DefaultIssuer, Subject: fmt.Sprintf("%s-%s", localworker.DefaultSubject, w.Tenant.Slug)}
@@ -44,7 +49,7 @@ func (composeDriver) Drive(t *testing.T, w *Workspace) error {
 	}
 	srv := httptest.NewServer(w.env.h)
 	defer srv.Close()
-	id := "fixturesuite-" + w.Tenant.Slug
+	id := fmt.Sprintf("fixturesuite-%s-g%d", w.Tenant.Slug, w.gen)
 	client := localworker.NewHTTP(localworker.HTTPConfig{
 		BaseURL: srv.URL, Issuer: ref.Issuer, Subject: ref.Subject, WorkerID: id, Lease: 30 * time.Second,
 	})
@@ -68,34 +73,23 @@ const (
 	runnerRounds = 8
 )
 
-func (runnerDriver) Drive(t *testing.T, w *Workspace) error {
+func (d runnerDriver) DriveOnce(t *testing.T, w *Workspace) error {
+	t.Helper()
+	r, err := d.newRunner(w)
+	if err != nil {
+		return err
+	}
+	_, err = r.Drain(w.env.ctx)
+	return err
+}
+
+func (d runnerDriver) Drive(t *testing.T, w *Workspace) error {
 	t.Helper()
 	e := w.env
-	ref := authz.PrincipalRef{Issuer: localworker.DefaultIssuer, Subject: fmt.Sprintf("fixturesuite-runner-%s", w.Tenant.Slug)}
-	res, err := localseed.EnsureWorkerIn(e.ctx, localseed.WorkerInput{Store: identity.NewPostgres(e.app), Worker: ref}, w.Tenant.Slug, w.WS.WorkbenchKey)
-	if err != nil || res.Skipped != "" || res.UserID == "" {
-		return fmt.Errorf("bind runner principal: %+v %v", res, err)
+	r, err := d.newRunner(w)
+	if err != nil {
+		return err
 	}
-	id := "fixturesuite-runner-" + w.Tenant.Slug
-	queue := &runner.StoreQueue{
-		Workflows: wfstore.NewPostgres(e.app),
-		Identity:  identity.NewPostgres(e.app),
-		JobKey:    e.jobKey,
-		WorkerID:  id,
-		UserID:    res.UserID,
-		Issuer:    ref.Issuer,
-		Subject:   ref.Subject,
-		Lease:     30 * time.Second,
-	}
-	disp := &runner.Dispatcher{
-		Ops:     opsconfig.NewPostgres(e.app),
-		Scripts: scripts.NewPostgres(e.app),
-	}
-	r := runner.NewRunner(queue, disp, runner.Config{
-		WorkerID: id,
-		Now:      e.Now,
-		Log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
-	})
 	if _, err := r.Drain(e.ctx); err != nil {
 		return err
 	}
@@ -113,4 +107,35 @@ func (runnerDriver) Drive(t *testing.T, w *Workspace) error {
 		}
 	}
 	return fmt.Errorf("runner still claiming after %d clock rounds", runnerRounds)
+}
+
+// newRunner builds a fresh production runner for the workspace. Its
+// worker id carries w.gen, so kill-runner/new-runner gets a new identity.
+func (runnerDriver) newRunner(w *Workspace) (*runner.Runner, error) {
+	e := w.env
+	ref := authz.PrincipalRef{Issuer: localworker.DefaultIssuer, Subject: fmt.Sprintf("fixturesuite-runner-%s", w.Tenant.Slug)}
+	res, err := localseed.EnsureWorkerIn(e.ctx, localseed.WorkerInput{Store: identity.NewPostgres(e.app), Worker: ref}, w.Tenant.Slug, w.WS.WorkbenchKey)
+	if err != nil || res.Skipped != "" || res.UserID == "" {
+		return nil, fmt.Errorf("bind runner principal: %+v %v", res, err)
+	}
+	id := fmt.Sprintf("fixturesuite-runner-%s-g%d", w.Tenant.Slug, w.gen)
+	queue := &runner.StoreQueue{
+		Workflows: wfstore.NewPostgres(e.app),
+		Identity:  identity.NewPostgres(e.app),
+		JobKey:    e.jobKey,
+		WorkerID:  id,
+		UserID:    res.UserID,
+		Issuer:    ref.Issuer,
+		Subject:   ref.Subject,
+		Lease:     30 * time.Second,
+	}
+	disp := &runner.Dispatcher{
+		Ops:     opsconfig.NewPostgres(e.app),
+		Scripts: scripts.NewPostgres(e.app),
+	}
+	return runner.NewRunner(queue, disp, runner.Config{
+		WorkerID: id,
+		Now:      e.Now,
+		Log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}), nil
 }

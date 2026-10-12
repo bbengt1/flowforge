@@ -126,6 +126,10 @@ jobs:
           go test -p 1 ./internal/workflow -run TestProdBuildHasNoTestNodes -count=1
       - name: fftest-tagged tests (test.flaky)
         run: go test -tags fftest -p 1 ./internal/workflow ./internal/runner ./internal/localworker -count=1
+      # #651 S2: fixture parts gated `build: fftest` (07 test.flaky) run
+      # only here; the untagged run above covers `build: default` parts.
+      - name: Fixture suite with test-only nodes (fftest)
+        run: go test -tags fftest -p 1 ./internal/fixturesuite -count=1 -v -run 'TestFixtures$|TestFixtureTagsAreValid'
       - name: Coverage summary
         if: always()
         run: |

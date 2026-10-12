@@ -1,0 +1,14 @@
+apiVersion: flowforge/v1
+kind: Workflow
+# FUTURE SHAPE (#649 S4): spec.timeoutSeconds (bounded). Unknown spec field today.
+metadata:
+  name: e0-10-timeout-run
+spec:
+  timeoutSeconds: 2
+  triggers:
+    - {id: manual, type: manual}
+  nodes:
+    - {id: wait, type: flow.delay, name: Wait 10s, with: {duration: PT10S}}
+    - {id: done, type: flow.stop, name: Done, with: {status: success}}
+  edges:
+    - {from: wait.result, to: done.input}

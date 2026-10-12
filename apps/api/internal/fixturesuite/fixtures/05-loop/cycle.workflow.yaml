@@ -1,0 +1,14 @@
+apiVersion: flowforge/v1
+kind: Workflow
+# Negative guard, valid YAML that must stay refused: the literal n8n-style cycle.
+metadata:
+  name: e0-05-loop-cycle
+spec:
+  triggers:
+    - {id: manual, type: manual}
+  nodes:
+    - {id: a, type: data.map, name: A, with: {mapping: {n: n}}}
+    - {id: b, type: data.map, name: B, with: {mapping: {n: n}}}
+  edges:
+    - {from: a.result, to: b.input}
+    - {from: b.result, to: a.input}

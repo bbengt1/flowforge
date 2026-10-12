@@ -1,0 +1,17 @@
+id: 03-switch4
+drivers: [compose, runner]
+today:
+  publish: {status: 400, code: invalid-workflow, errors: [{path: "spec.nodes[1].type", code: unsupported-node}]}
+target:                      # asserted once the xfail flips
+  publish: {status: 201}
+  cases:
+    - {name: gold, patch: {}, expect: {out-gold: succeeded, out-bronze: skipped, out-silver: skipped, out-other: skipped}}
+    - {name: bronze, patch: {"spec.nodes[0].with.value.tier": bronze}, expect: {out-bronze: succeeded}}
+    - {name: silver, patch: {"spec.nodes[0].with.value.tier": silver}, expect: {out-silver: succeeded}}
+    - {name: default, patch: {"spec.nodes[0].with.value.tier": tin}, expect: {out-other: succeeded}}
+  run: {status: [succeeded]}
+xfail:
+  - part: all
+    reason: "flow.switch is registry-disabled (PhaseNext)"
+    issue: "#650 E3.4"
+    drivers: [all]

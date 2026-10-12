@@ -1,0 +1,17 @@
+id: 05-loop
+drivers: [compose, runner]
+cases:
+  - name: cycle-refused         # stays green forever (guard, not xfail)
+    file: cycle.workflow.yaml
+    publish: {status: 400, code: invalid-workflow, errors: [{path: spec.edges, code: cycle}]}
+  - name: forEach
+    file: workflow.yaml
+    today: {publish: {status: 400, code: invalid-workflow, errors: [{path: "spec.nodes[1].type", code: unsupported-node}]}}
+    target:
+      run: {status: [succeeded]}
+      steps:
+        each: {status: succeeded, itemCount: 3, bodyRuns: 3}
+        done: {status: succeeded}
+      caps: {maxItemsExceeded: {patch: {"spec.nodes[1].with.maxItems": 2}, run: {status: [failed]}, code: foreach_cap}}  # T9
+    xfail:
+      - {part: forEach, reason: "flow.forEach registry-disabled; cycles rejected by design", issue: "#650 E3.6", drivers: [all]}
