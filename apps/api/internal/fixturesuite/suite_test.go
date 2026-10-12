@@ -334,7 +334,7 @@ func checkSteps(failf func(string, ...any), prefix string, steps map[string]Step
 			if len(want.AttemptErrors) > 0 {
 				var errs []map[string]any
 				for _, a := range all {
-					if a.Error != nil && len(a.Error) > 0 {
+					if len(a.Error) > 0 {
 						errs = append(errs, a.Error)
 					}
 				}
