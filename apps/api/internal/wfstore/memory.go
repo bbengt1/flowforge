@@ -60,6 +60,9 @@ type Memory struct {
 	approvalPending      func(executionID, nodeID string) (time.Time, bool)
 	approvalUnresolvable func(executionID, nodeID string, now time.Time)
 	approvalDecider      ApprovalDecider
+	// ActorDisplayName optionally resolves the actor name for audit rows
+	// (Postgres reads users.display_name in the publish transaction).
+	ActorDisplayName func(userID string) string
 }
 
 // ApprovalDecider reports whether a targeted gate has anyone besides the
@@ -355,6 +358,11 @@ func (m *Memory) Publish(_ context.Context, scope isolation.Scope, workflowID st
 	row.record.UpdatedBy = scope.ActorID()
 	row.record.UpdatedAt = now
 	m.workflows[workflowID] = row
+	name := ""
+	if m.ActorDisplayName != nil && scope.ActorID() != "" {
+		name = m.ActorDisplayName(scope.ActorID())
+	}
+	m.appendAuditLocked(scope, publishAudit(scope, name, workflowID, ver), now)
 	return publicWorkflow(row), ver, nil
 }
 

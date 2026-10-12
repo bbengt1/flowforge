@@ -167,6 +167,13 @@ func actorHostContext(actor MemberActor) ([]byte, string, error) {
 	return raw, rid, nil
 }
 
+// AuditDisplayNameTx is userDisplayNameTx for other stores' audit rows: the
+// user's display name, or "" when missing or shaped like an email, URL or
+// credential.
+func AuditDisplayNameTx(ctx context.Context, tx pgx.Tx, userID string) (string, error) {
+	return userDisplayNameTx(ctx, tx, userID)
+}
+
 // userDisplayNameTx returns the user's display name for an audit row, or
 // "" when it is missing or shaped like an email, URL or credential.
 func userDisplayNameTx(ctx context.Context, tx pgx.Tx, userID string) (string, error) {
