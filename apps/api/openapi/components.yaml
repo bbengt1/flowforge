@@ -3543,8 +3543,8 @@ components:
           enum: [pending, queued, running, waiting, succeeded, failed, canceled, indeterminate, skipped]
         skipReason:
           type: string
-          description: "Present exactly when status is skipped. branch_not_taken: an incoming edge resolved unsatisfied under the default AND join, or every incoming edge did under join any. upstream_failed: the run ended failed before this step ran. upstream_indeterminate: the run ended indeterminate before this step ran. run_cancelled: the run was canceled before this step ran. workflow_deleted: the workflow was deleted before this step ran. Accepting a retry returns upstream_failed, upstream_indeterminate and run_cancelled steps to pending (or queued when nothing upstream is unresolved) with no skipReason. branch_not_taken and workflow_deleted are final."
-          enum: [branch_not_taken, upstream_failed, upstream_indeterminate, run_cancelled, workflow_deleted]
+          description: "Present exactly when status is skipped. branch_not_taken: an incoming edge resolved unsatisfied under the default AND join, or every incoming edge did under join any. upstream_failed: the run ended failed before this step ran. upstream_indeterminate: the run ended indeterminate before this step ran. run_canceled: the run was canceled before this step ran. workflow_deleted: the workflow was deleted before this step ran. Accepting a retry returns upstream_failed and upstream_indeterminate steps to pending (or queued when nothing upstream is unresolved) with no skipReason. branch_not_taken, run_canceled and workflow_deleted are final."
+          enum: [branch_not_taken, upstream_failed, upstream_indeterminate, run_canceled, workflow_deleted]
         leaseId: {type: string}
         fencingToken: {type: integer}
         idempotencyKey: {type: string}

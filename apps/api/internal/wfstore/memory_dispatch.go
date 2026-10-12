@@ -346,8 +346,8 @@ func (m *Memory) CancelExecution(ctx context.Context, scope isolation.Scope, now
 			queued++
 		}
 	}
-	// #660: never-run steps end skipped/run_cancelled.
-	m.closeOutLocked(scope, &exec, SkipRunCancelled, now)
+	// #660: never-run steps end skipped/run_canceled.
+	m.closeOutLocked(scope, &exec, SkipRunCanceled, now)
 	for i := range exec.jobs {
 		if jobIsOpen(exec.jobs[i].Status) {
 			exec.jobs[i].Status = JobCanceled

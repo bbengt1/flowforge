@@ -5,7 +5,7 @@
 --                           branch, or a join that received nothing)
 --   upstream_failed         the run ended failed before the step ran
 --   upstream_indeterminate  the run ended indeterminate before the step ran
---   run_cancelled           the run was cancelled before the step ran
+--   run_canceled            the run was canceled before the step ran
 --   workflow_deleted        the workflow was deleted before the step ran
 --
 -- Backfill: on main before this migration, Go wrote 'skipped' only through
@@ -37,7 +37,7 @@ BEGIN
            SET skip_reason = CASE
                    WHEN 'failed' = ANY(up.statuses) THEN 'upstream_failed'
                    WHEN 'indeterminate' = ANY(up.statuses) THEN 'upstream_indeterminate'
-                   ELSE 'run_cancelled'
+                   ELSE 'run_canceled'
                END
           FROM (
                 SELECT t.id, array_agg(DISTINCT u.status) AS statuses
@@ -84,7 +84,7 @@ BEGIN
                        AND t.status = 'skipped'
                        AND t.skip_reason IS NULL
                        AND u.status = 'skipped'
-                       AND u.skip_reason IN ('upstream_failed', 'upstream_indeterminate', 'run_cancelled')
+                       AND u.skip_reason IN ('upstream_failed', 'upstream_indeterminate', 'run_canceled')
                      ORDER BY t.id,
                               CASE u.skip_reason WHEN 'upstream_failed' THEN 0
                                                  WHEN 'upstream_indeterminate' THEN 1
@@ -112,7 +112,7 @@ ALTER TABLE execution_steps
     ADD CONSTRAINT execution_steps_skip_reason_valid
         CHECK (skip_reason IS NULL OR skip_reason IN (
             'branch_not_taken', 'upstream_failed', 'upstream_indeterminate',
-            'run_cancelled', 'workflow_deleted')),
+            'run_canceled', 'workflow_deleted')),
     ADD CONSTRAINT execution_steps_skip_reason_iff_skipped
         CHECK ((status = 'skipped') = (skip_reason IS NOT NULL));
 

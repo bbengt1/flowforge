@@ -364,9 +364,9 @@ func (p *Postgres) CancelExecution(ctx context.Context, scope isolation.Scope, n
 	`, executionID).Scan(&queued); err != nil {
 		return Execution{}, mapDBErr(err)
 	}
-	// #660: never-run steps (pending/queued) end skipped/run_cancelled via
+	// #660: never-run steps (pending/queued) end skipped/run_canceled via
 	// the close-out in applyExecutionStatusTx; started work is canceled.
-	if err := closeOutTx(ctx, tx, scope, executionID, SkipRunCancelled, now); err != nil {
+	if err := closeOutTx(ctx, tx, scope, executionID, SkipRunCanceled, now); err != nil {
 		return Execution{}, err
 	}
 	if _, err := tx.Exec(ctx, `

@@ -154,7 +154,7 @@ func TestPostgresCloseOut(t *testing.T) {
 		assertRun(t, ctx, store, scope, exec.ID, ExecutionSucceeded)
 	})
 
-	t.Run("cancel closes never-run steps as run_cancelled", func(t *testing.T) {
+	t.Run("cancel closes never-run steps as run_canceled", func(t *testing.T) {
 		exec := startGraph(t, ctx, store, scope, gateThenStopYAML)
 		seed := claimNode(t, ctx, store, scope, now(), "seed")
 		completeJob(t, ctx, store, scope, now(), seed, map[string]any{"result": map[string]any{"ticket": "CHG-1"}})
@@ -170,7 +170,7 @@ func TestPostgresCloseOut(t *testing.T) {
 		assertNode(t, ctx, store, scope, exec.ID, "gate", ExecutionCanceled, JobCanceled)
 		assertSkipReason(t, ctx, store, scope, exec.ID, "gate", "")
 		assertNode(t, ctx, store, scope, exec.ID, "after", ExecutionSkipped, JobSkipped)
-		assertSkipReason(t, ctx, store, scope, exec.ID, "after", SkipRunCancelled)
+		assertSkipReason(t, ctx, store, scope, exec.ID, "after", SkipRunCanceled)
 	})
 
 	t.Run("delete closes parked run as workflow_deleted and never reopens", func(t *testing.T) {
@@ -266,7 +266,7 @@ func TestPostgresCloseOut(t *testing.T) {
 		if _, err := store.CancelExecution(ctx, scope, now(), exec.ID); err != nil {
 			t.Fatal(err)
 		}
-		assertSkipReason(t, ctx, store, scope, exec.ID, "join", SkipRunCancelled)
+		assertSkipReason(t, ctx, store, scope, exec.ID, "join", SkipRunCanceled)
 	})
 
 	t.Run("forced audit failure rolls back the whole transaction", func(t *testing.T) {
@@ -439,7 +439,7 @@ func TestMemoryCloseOut(t *testing.T) {
 		}
 		for _, node := range []string{"seed", "next"} {
 			s, j := step(exec.ID, node)
-			if s.Status != ExecutionSkipped || s.SkipReason != SkipRunCancelled || j.Status != JobSkipped {
+			if s.Status != ExecutionSkipped || s.SkipReason != SkipRunCanceled || j.Status != JobSkipped {
 				t.Fatalf("%s = %s %q %s", node, s.Status, s.SkipReason, j.Status)
 			}
 		}
