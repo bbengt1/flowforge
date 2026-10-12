@@ -664,8 +664,9 @@ describe("approval decide 403", () => {
     if (outcome.kind === "closed") {
       assert.equal(
         outcome.message,
-        "This run has already ended, so this approval is closed",
+        "This run has already ended, so this approval is closed.",
       );
+      assert.equal(outcome.hideControls, true);
       assert.equal(outcome.message, APPROVAL_RUN_FINISHED_MESSAGE);
       assert.equal(outcome.refetch, true);
     }

@@ -1179,7 +1179,8 @@ export type ApprovalDecideOutcome =
   | {
       kind: "closed";
       message: string;
-      hideControls: false;
+      /** True for `run_finished`: the run ended, so nothing can be decided. */
+      hideControls: boolean;
       refetch: true;
     }
   | {
@@ -1216,7 +1217,7 @@ export function approvalDecideOutcome(
     return {
       kind: "closed",
       message: APPROVAL_RUN_FINISHED_MESSAGE,
-      hideControls: false,
+      hideControls: true,
       refetch: true,
     };
   }
