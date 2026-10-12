@@ -221,6 +221,9 @@ func lookupTrigger(typ string) (TriggerType, bool) {
 }
 
 func lookupNode(typ string) (NodeType, bool) {
+	if tn, ok := testNodes[typ]; ok {
+		return tn.contract, true
+	}
 	for _, n := range coreNodeTypes() {
 		if n.Type == typ {
 			return n, true

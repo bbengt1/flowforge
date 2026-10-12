@@ -68,6 +68,10 @@ func (d *Dispatcher) Execute(ctx context.Context, scope isolation.Scope, perms [
 	if job.Job.Status == wfstore.JobWaiting || job.Step.NodeType == "flow.approval" {
 		return Decision{Skip: true, Reason: "waiting"}
 	}
+	if workflow.IsTestNode(job.Step.NodeType) {
+		// Only reachable in -tags fftest builds (#651 fixturesuite).
+		return decisionFromOutcome(workflow.EvaluateTestStep(job.Step.NodeType, job.Step.Input, job.Step.Attempt))
+	}
 	if workflow.IsCoreNeutral(job.Step.NodeType) {
 		return decideCore(job.Step, job.Inputs, job.SkippedInputs)
 	}
