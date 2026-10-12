@@ -53,10 +53,12 @@ func approvalOperation(rt Route) (*yaml.Node, bool, error) {
 			"Requires workflow.edit. Returns users and groups a gate may name in with.approvers.",
 			"users are active workspace members who are people, never machine principals, whose roles grant approval.decide and meet role (exact role or admin). groups are every workspace group, including empty ones; membership is checked live when a gate is decided, and machine members never count.",
 			"Display name and UUID only. No emails, no role details, no member lists. role must be a known role key; otherwise 400 invalid-request with errors[].path role.",
+			"q narrows users and groups to those whose display name contains q, case-insensitively. It never matches email or username. q is trimmed; an empty q is no filter. It is matched literally, so %, _ and \\ are ordinary characters. Over 100 characters is 400 invalid-request with errors[].path q and errors[].code invalid-query. q only narrows what the caller could already see. Results are ordered by display name, then UUID.",
 			"An embed session is refused with 403 forbidden.",
 		)
 		b.WriteString("parameters:\n")
 		b.WriteString("  - name: role\n    in: query\n    required: true\n    description: The gate's approverRole.\n    schema: {type: string}\n")
+		b.WriteString("  - name: q\n    in: query\n    required: false\n    description: Case-insensitive literal substring of the display name. Trimmed; at most 100 characters.\n    schema: {type: string, maxLength: 100}\n")
 		b.WriteString("responses:\n  \"200\":\n    description: Candidates.\n    content:\n      application/json:\n        schema:\n          $ref: \"#/components/schemas/ApproverCandidateList\"\n")
 		b.WriteString("  \"400\":\n    $ref: \"#/components/responses/InvalidRequest\"\n")
 		tail("  \"403\":\n    $ref: \"#/components/responses/Forbidden\"\n")
