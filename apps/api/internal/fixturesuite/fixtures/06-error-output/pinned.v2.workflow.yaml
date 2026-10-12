@@ -1,0 +1,17 @@
+apiVersion: flowforge/v1
+kind: Workflow
+# v2 of the pinned-version case: same graph, onError: stop.
+metadata:
+  name: e0-06-error-output
+spec:
+  triggers:
+    - {id: manual, type: manual}
+  nodes:
+    - {id: seed, type: data.set, name: Seed, with: {value: {env: staging}}}
+    - {id: boom, type: flow.fail, name: Boom, onError: stop, with: {code: fixture.boom, message: planned failure}}
+    - {id: handled, type: flow.stop, name: Handled, with: {status: success, message: error routed}}
+    - {id: after, type: flow.stop, name: Main edge, with: {status: success}}
+  edges:
+    - {from: seed.result, to: boom.input}
+    - {from: boom.error, to: handled.input}
+    - {from: boom.result, to: after.input}

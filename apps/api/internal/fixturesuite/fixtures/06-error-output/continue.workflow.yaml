@@ -1,0 +1,15 @@
+apiVersion: flowforge/v1
+kind: Workflow
+# FUTURE SHAPE (#649 S2): boom continues; the next step gets {} and no error edge exists (an error edge requires onError: errorOutput at save).
+metadata:
+  name: e0-06-continue
+spec:
+  triggers:
+    - {id: manual, type: manual}
+  nodes:
+    - {id: seed, type: data.set, name: Seed, with: {value: {env: staging}}}
+    - {id: boom, type: flow.fail, name: Boom, onError: continue, with: {code: fixture.cont, message: planned failure}}
+    - {id: next, type: flow.stop, name: Next, with: {status: success}}
+  edges:
+    - {from: seed.result, to: boom.input}
+    - {from: boom.result, to: next.input}

@@ -206,6 +206,22 @@ func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Pa
 				checkStatus(failf, "midRun run", b.MidRun.Status, mid)
 				checkSteps(failf, "midRun ", b.MidRun.Steps, mid)
 			}
+		case "retry-refused":
+			if res := w.Retry(owner, execID); res.Status != http.StatusConflict {
+				failf("retry-refused = %d %s, want 409", res.Status, res.Body)
+			}
+		case "publish-v2":
+			raw2, err := os.ReadFile(filepath.Join(fx.Dir, a.Arg))
+			if err != nil {
+				return append(fails, "publish-v2: "+err.Error())
+			}
+			d2, res := w.SaveDraft(owner, draft, string(raw2))
+			if res.Status != http.StatusOK && res.Status != http.StatusCreated {
+				return append(fails, fmt.Sprintf("publish-v2 save = %d %s", res.Status, res.Body))
+			}
+			if _, res := w.Publish(owner, d2); res.Status != http.StatusCreated {
+				return append(fails, fmt.Sprintf("publish-v2 publish = %d %s", res.Status, res.Body))
+			}
 		case "retry":
 			res := w.Retry(owner, execID)
 			if res.Status != retryWant {
@@ -247,6 +263,14 @@ func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Pa
 		}
 	}
 	checkSteps(failf, "", b.Steps, run)
+	if b.ErrorWorkflowFires != nil {
+		// Each part has a fresh workspace: any execution besides this one
+		// is an error-workflow run.
+		fired := w.Executions(t) > 1
+		if fired != *b.ErrorWorkflowFires {
+			failf("errorWorkflowFires = %v, want %v", fired, *b.ErrorWorkflowFires)
+		}
+	}
 	for _, node := range sortedNodes(run.Steps) {
 		for _, bad := range b.NoStepStatusIn {
 			if run.Steps[node].Status == bad {
@@ -283,7 +307,7 @@ func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Pa
 // wantsRun reports whether the block expects anything of a started run.
 func (b Block) wantsRun() bool {
 	return len(b.Actions) > 0 || b.Run != nil || len(b.Steps) > 0 || b.Audit != nil || b.Start != nil || len(b.Jobs) > 0 ||
-		b.AuditDetails != nil || len(b.NoStepStatusIn) > 0 || b.HTTP != nil
+		b.AuditDetails != nil || len(b.NoStepStatusIn) > 0 || b.HTTP != nil || b.ErrorWorkflowFires != nil
 }
 
 func checkStatus(failf func(string, ...any), what string, want StringSet, run Run) {
@@ -320,6 +344,18 @@ func checkSteps(failf func(string, ...any), prefix string, steps map[string]Step
 			}
 			if want.Output != nil && !subset(norm(want.Output), norm(got.Output)) {
 				failf("%sstep %s output = %v, want ⊇ %v", prefix, node, got.Output, want.Output)
+			}
+			if want.Input != nil && !reflect.DeepEqual(norm(want.Input), norm(got.Input)) {
+				failf("%sstep %s input = %v, want exactly %v", prefix, node, got.Input, want.Input)
+			}
+			if want.ErrorHandling != "" {
+				wantEH := want.ErrorHandling
+				if wantEH == "none" {
+					wantEH = ""
+				}
+				if got.ErrorHandling != wantEH {
+					failf("%sstep %s errorHandling = %q, want %q", prefix, node, got.ErrorHandling, want.ErrorHandling)
+				}
 			}
 			if want.NoOutput && len(got.Output) > 0 {
 				failf("%sstep %s output = %v, want none", prefix, node, got.Output)

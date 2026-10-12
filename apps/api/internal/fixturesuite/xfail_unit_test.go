@@ -148,6 +148,12 @@ func TestActionsAndBuildParse(t *testing.T) {
 			t.Fatalf("%s: accepted", name)
 		}
 	}
+	if _, err := DecodeExpect([]byte("id: x\ndrivers: [runner]\nactions: [start, {publish-v2: v2.workflow.yaml}, drive, retry-refused]\nerrorWorkflowFires: false\nsteps: {a: {errorHandling: none, input: {}}}\n")); err != nil {
+		t.Fatalf("publish-v2/retry-refused: %v", err)
+	}
+	if _, err := DecodeExpect([]byte("id: x\ndrivers: [runner]\nactions: [publish-v2]\n")); err == nil {
+		t.Fatal("publish-v2 without a file accepted")
+	}
 	if buildRuns(buildFFTest) != fftestBuild || buildRuns(buildDefault) == fftestBuild || !buildRuns("") {
 		t.Fatal("buildRuns gating")
 	}

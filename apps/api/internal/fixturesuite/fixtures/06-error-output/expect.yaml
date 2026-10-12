@@ -10,24 +10,53 @@ cases:
       after: {status: skipped, skipReason: upstream_failed}   # #660 (#664)
     noStepStatusIn: [pending, blocked]
     audit: {execution.start: 1, job.claim: 2, job.complete: 1, job.fail: 1, job.recover: 0}
-  - name: error-output-and-continue
-    file: target.workflow.yaml
-    today:
+  - name: guard-plain-fail      # green today: plain flow.fail, no onError
+    file: workflow.yaml
+    run: {status: [failed]}
+    steps:
+      boom:  {status: failed, errorHandling: none}
+      after: {status: skipped, skipReason: upstream_failed}
+    noStepStatusIn: [pending, blocked]
+  - name: error-output
+    file: errout.workflow.yaml
+    today:                      # removed when #649 S2 lands
       save: {status: 201}       # drafts may keep onError
-      publishGuards:            # publish refuses it; paths/lines not asserted (#666)
+      publishGuards:            # paths/lines not asserted (#666)
         - {patch: {}, status: 400, code: invalid-workflow, errors: [{code: on-error-not-yet-supported}]}
     target:
-      run: {status: [succeededWithErrors]}          # Gracie Q1; never fires the error workflow
+      actions: [start, drive, retry-refused]
+      run: {status: [succeededWithErrors]}
       steps:
-        boom:       {status: failed, routed: error, error: {code: fixture.boom}}
-        handled:    {status: succeeded, input: {code: fixture.boom, nodeId: boom, attempt: 1, keys: [code, message, nodeId, attempt, failedAt]}}
-        cont:       {status: failed, routed: continue}
-        after-cont: {status: succeeded, input: {}}  # Gracie Q2: continue sends {}
-      audit: {execution.start: 1, job.fail: 2, execution.error_workflow.fired: 0}   # no step.* actions exist; #649 S2 may add one
-      payloadMaxBytes: 16384
-      noInputEcho: true
-      publishGuards:                                 # #649 S1 save refusals (each a separate patch)
-      - {patch: {"spec.nodes[1].onError": bogus}, code: invalid-with}
-      - {patch: {drop-edge: boom.error}, note: "errorOutput without error edge -> 400"}
+        boom:    {status: failed, errorHandling: errorOutput, error: {code: fixture.boom, message: planned failure}}
+        handled: {status: succeeded, input: {code: fixture.boom, message: planned failure, nodeId: boom, attempt: 1}}
+        after:   {status: skipped, skipReason: branch_not_taken}
+      noStepStatusIn: [pending, blocked]
+      errorWorkflowFires: false
+      audit: {execution.start: 1, job.fail: 1, step.error_routed: 1}
     xfail:
-      - {part: error-output-and-continue, reason: "no onError / error port; flow.fail always stops", issue: "#649 S1+S2", drivers: [all]}
+      - {part: error-output, reason: "no onError errorOutput / error port in the engine yet", issue: "#649 S2", drivers: [all]}
+  - name: continue
+    file: continue.workflow.yaml
+    today:
+      save: {status: 201}
+      publishGuards:
+        - {patch: {}, status: 400, code: invalid-workflow, errors: [{code: on-error-not-yet-supported}]}
+    target:
+      actions: [start, drive, retry-refused]
+      run: {status: [succeededWithErrors]}
+      steps:
+        boom:     {status: failed, errorHandling: continue, error: {code: fixture.cont}}
+        next:     {status: succeeded, input: {}}
+      noStepStatusIn: [pending, blocked]
+      errorWorkflowFires: false
+      audit: {execution.start: 1, job.fail: 1, step.error_routed: 1}
+    xfail:
+      - {part: continue, reason: "no onError continue in the engine yet", issue: "#649 S2", drivers: [all]}
+  - name: pinned-version         # a run keeps v1's onError after v2 is published
+    file: errout.workflow.yaml
+    actions: [start, publish-v2: pinned.v2.workflow.yaml, drive]
+    run: {status: [succeededWithErrors]}
+    steps:
+      boom: {status: failed, errorHandling: errorOutput}
+    xfail:
+      - {part: pinned-version, reason: "onError is not publishable yet; run-pinned errorHandling needs #649 S2", issue: "#649 S2", drivers: [all]}

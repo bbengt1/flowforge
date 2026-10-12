@@ -65,7 +65,7 @@ type RunExpect struct {
 	Steps map[string]StringSet `yaml:"steps"`
 }
 
-// StepExpect is one node's expectation. Attempts, AttemptStatuses, Port,
+// StepExpect is one node's expectation. Input is matched exactly. Attempts, AttemptStatuses, Port,
 // Error, AttemptErrors and SkipReason are evaluated (S2); the other
 // extended keys are accepted but not evaluated yet (see pendingKeys).
 type StepExpect struct {
@@ -88,6 +88,9 @@ type StepExpect struct {
 	AttemptErrors []StepError `yaml:"attemptErrors"`
 	SkipReason    string      `yaml:"skipReason"`
 	NoOutput      bool        `yaml:"noOutput"` // output must be empty
+	// ErrorHandling is the step's reported onError mode; "none" means the
+	// API reports none (#649 S2).
+	ErrorHandling string `yaml:"errorHandling"`
 }
 
 // XFail marks a part of a fixture as expected to fail. Strict: a part that
@@ -177,13 +180,12 @@ func (b Block) pendingKeys() []string {
 	add(b.Caps != nil, "caps")
 	add(b.PayloadMaxBytes > 0, "payloadMaxBytes")
 	add(b.NoInputEcho, "noInputEcho")
-	add(b.ErrorWorkflowFires != nil, "errorWorkflowFires")
 	add(b.TestVersion != nil || b.ProdPublish != nil || b.SecretInPin != nil, "pinData checks")
 	add(b.ResumeRoute != "" || b.WrongToken != nil, "resume route")
 	add(b.Import != nil || b.Export != nil || b.Unsupported != nil, "import/export")
 	add(b.Run != nil && b.Run.Outcome != "", "run.outcome")
 	for id, s := range b.Steps {
-		add(s.Input != nil || s.Items != nil || s.ItemCount != 0 ||
+		add(s.Items != nil || s.ItemCount != 0 ||
 			s.BodyRuns != 0 || s.Routed != "" || s.JobCount != nil || len(s.DispatchedAfter) > 0 || s.MinGapSeconds != 0,
 			"steps."+id+" (extended keys)")
 	}

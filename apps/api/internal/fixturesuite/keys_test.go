@@ -61,10 +61,13 @@ func (a *Action) UnmarshalYAML(n *yaml.Node) error {
 //	advance-clock: D    move the fake clock forward by D
 //	set-now: +D         same, written as an offset from now
 //	tick-recover        run the API's lease/approval-expiry sweep once
+//	retry-refused       POST /executions/{id}/retry as owner must answer 409
+//	publish-v2: FILE    save FILE (same dir) as the draft and publish it as
+//	                    the next version; the started run stays on v1
 var actionArgs = map[string]bool{
 	"start": false, "drive": false, "drive-until-waiting": false, "retry": false,
-	"kill-runner": false, "new-runner": false, "tick-recover": false,
-	"advance-clock": true, "set-now": true,
+	"kill-runner": false, "new-runner": false, "tick-recover": false, "retry-refused": false,
+	"advance-clock": true, "set-now": true, "publish-v2": true,
 }
 
 func (a Action) duration() (time.Duration, error) {
@@ -83,7 +86,7 @@ func (a Action) validate() error {
 	if needs != (a.Arg != "") {
 		return fmt.Errorf("action %q: argument mismatch", a.Verb)
 	}
-	if needs {
+	if needs && a.Verb != "publish-v2" {
 		if _, err := a.duration(); err != nil {
 			return fmt.Errorf("action %s: %q: %w", a.Verb, a.Arg, err)
 		}

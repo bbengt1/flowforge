@@ -258,7 +258,12 @@ type Run struct {
 }
 
 // Step is a step row as the run API returns it (skipReason is #660).
-type Step = wfstore.ExecutionStep
+// ErrorHandling is the step's onError mode as the run API reports it
+// (#649 S2); it is empty until the API sends it.
+type Step struct {
+	wfstore.ExecutionStep
+	ErrorHandling string `json:"errorHandling"`
+}
 
 // Observe reads the execution, its steps, and its audit rows.
 func (w *Workspace) Observe(t *testing.T, execID string) Run {
@@ -348,6 +353,24 @@ SELECT count(*) FROM execution_jobs j
 		t.Fatalf("count jobs: %v", err)
 	}
 	return n
+}
+
+// SaveDraft replaces the workflow's draft with src and returns the new
+// draft revision.
+func (w *Workspace) SaveDraft(user identity.User, d Draft, src string) (Draft, Response) {
+	res := w.Do(user, http.MethodPut, "/api/v1/workflows/"+d.WorkflowID+"/draft", map[string]any{"revision": d.Revision, "definitionYaml": src})
+	var out struct {
+		Revision int64 `json:"revision"`
+		Draft    struct {
+			Revision int64 `json:"revision"`
+		} `json:"draft"`
+	}
+	_ = json.Unmarshal(res.Body, &out)
+	rev := out.Draft.Revision
+	if rev == 0 {
+		rev = out.Revision
+	}
+	return Draft{WorkflowID: d.WorkflowID, Revision: rev}, res
 }
 
 // Retry retries the execution's latest retryable step as user.
