@@ -53,9 +53,9 @@ describe("runActionFailure (#630)", () => {
     }
   });
 
-  it("reads the server's CSRF rejection (403 forbidden) as a session check", () => {
-    // core/session.go answers a CSRF mismatch with code `forbidden`.
-    const csrf = problem(403, "forbidden", "CSRF validation failed.");
+  it("reads the server's CSRF rejection (403 csrf-invalid) as a session check", () => {
+    // core/session.go answers a CSRF mismatch with code `csrf-invalid` (#643).
+    const csrf = problem(403, "csrf-invalid", "CSRF validation failed.");
     const failure = runActionFailure(csrf, 403);
     assert.equal(failure.roleRefused, false);
     assert.equal(failure.pageProblem, null);
@@ -63,8 +63,14 @@ describe("runActionFailure (#630)", () => {
   });
 
   it("counts the response status for CSRF when the body status is missing", () => {
-    const csrf = { ...problem(0, "forbidden", "CSRF validation failed."), status: 0 };
+    const csrf = { ...problem(0, "csrf-invalid", "CSRF validation failed."), status: 0 };
     assert.equal(runActionFailure(csrf, 403).actionProblem, csrf);
+  });
+
+  it("reads 403 forbidden with CSRF wording as a role refusal, not a session check", () => {
+    const failure = runActionFailure(problem(403, "forbidden", "CSRF validation failed."), 403);
+    assert.equal(failure.roleRefused, true);
+    assert.equal(failure.actionProblem, null);
   });
 
   it("reads MFA and password-change by code only, not message text", () => {
