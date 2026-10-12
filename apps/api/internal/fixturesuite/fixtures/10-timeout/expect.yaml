@@ -13,7 +13,7 @@ cases:
     steps:
       gate: {status: succeeded, port: expired}
       ok: {status: skipped}
-      timed-out: {status: succeeded, output: {result: {status: failure}}}
+      timed-out: {status: failed, noOutput: true, error: {code: failure}}   # flow.stop failure fails its step (workflow/step.go:72-79)
   - name: workflow-level
     file: target.workflow.yaml
     today: {publish: {status: 400, code: invalid-workflow, errors: [{path: spec.timeoutSeconds, code: unknown-field}]}}

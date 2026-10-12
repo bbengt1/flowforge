@@ -257,12 +257,8 @@ type Run struct {
 	AuditRows map[string][]map[string]any
 }
 
-// Step is a step row as the run API returns it. SkipReason is read from
-// the API's skipReason field (#660); it is empty until the API sends it.
-type Step struct {
-	wfstore.ExecutionStep
-	SkipReason string `json:"skipReason"`
-}
+// Step is a step row as the run API returns it (skipReason is #660).
+type Step = wfstore.ExecutionStep
 
 // Observe reads the execution, its steps, and its audit rows.
 func (w *Workspace) Observe(t *testing.T, execID string) Run {

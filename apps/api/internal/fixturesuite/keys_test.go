@@ -119,7 +119,10 @@ type PublishGuard struct {
 	Patch  Patch  `yaml:"patch"`
 	Status int    `yaml:"status"`
 	Code   string `yaml:"code"`
-	Note   string `yaml:"note"`
+	// Errors are errors[] codes the answer must contain. Paths are not
+	// asserted when empty (#666: publish paths index the stored draft).
+	Errors []ErrorExpect `yaml:"errors"`
+	Note   string        `yaml:"note"`
 }
 
 // StepError is a step's error document (code, message), never output.

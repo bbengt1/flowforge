@@ -150,6 +150,13 @@ func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Pa
 	// invalid-workflow) before publish. expect.yaml `publish:` covers
 	// create + publish: a refused create is checked as the publish answer.
 	draft, res := w.Create(owner, src)
+	if b.Save != nil {
+		// save: checks the create alone; the publish is only checked
+		// (and done) when publish: or a run expectation is also set.
+		if !checkHTTP(failf, "save", *b.Save, res) || res.Status != http.StatusCreated || b.Publish == nil && !b.wantsRun() {
+			return fails
+		}
+	}
 	if res.Status != http.StatusCreated {
 		checkHTTP(failf, "publish (refused at create)", *want, res)
 		return fails
@@ -160,8 +167,7 @@ func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Pa
 	}
 	actions := b.Actions
 	if len(actions) == 0 {
-		if b.Run == nil && len(b.Steps) == 0 && b.Audit == nil && b.Start == nil && len(b.Jobs) == 0 &&
-			b.AuditDetails == nil && len(b.NoStepStatusIn) == 0 && b.HTTP == nil {
+		if !b.wantsRun() {
 			return fails
 		}
 		actions = []Action{{Verb: "start"}, {Verb: "drive"}}
@@ -274,6 +280,12 @@ func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Pa
 	return fails
 }
 
+// wantsRun reports whether the block expects anything of a started run.
+func (b Block) wantsRun() bool {
+	return len(b.Actions) > 0 || b.Run != nil || len(b.Steps) > 0 || b.Audit != nil || b.Start != nil || len(b.Jobs) > 0 ||
+		b.AuditDetails != nil || len(b.NoStepStatusIn) > 0 || b.HTTP != nil
+}
+
 func checkStatus(failf func(string, ...any), what string, want StringSet, run Run) {
 	if len(want) > 0 && !want.Has(run.Status) {
 		failf("%s status = %s (%s), want one of %v", what, run.Status, run.Reason, want)
@@ -308,6 +320,9 @@ func checkSteps(failf func(string, ...any), prefix string, steps map[string]Step
 			}
 			if want.Output != nil && !subset(norm(want.Output), norm(got.Output)) {
 				failf("%sstep %s output = %v, want ⊇ %v", prefix, node, got.Output, want.Output)
+			}
+			if want.NoOutput && len(got.Output) > 0 {
+				failf("%sstep %s output = %v, want none", prefix, node, got.Output)
 			}
 			if want.Port != "" && fmt.Sprint(got.Output["port"]) != want.Port {
 				failf("%sstep %s port = %v, want %q (output %v)", prefix, node, got.Output["port"], want.Port, got.Output)
@@ -368,7 +383,7 @@ func checkGuard(failf func(string, ...any), w *Workspace, what, src string, g Pu
 		failf("%s: %v", what, err)
 		return
 	}
-	want := HTTPExpect{Status: g.Status, Code: g.Code}
+	want := HTTPExpect{Status: g.Status, Code: g.Code, Errors: g.Errors}
 	if want.Status == 0 {
 		want.Status = http.StatusBadRequest
 	}

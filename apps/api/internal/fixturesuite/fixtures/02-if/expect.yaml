@@ -7,12 +7,12 @@ cases:
     steps:
       check:    {status: succeeded}
       on-true:  {status: succeeded, output: {result: {status: success, message: took true}}}
-      on-false: {status: skipped}      # step row created at start, ends skipped; no job
+      on-false: {status: skipped, skipReason: branch_not_taken}      # step row created at start; no job
   - name: false-branch         # harness rewrites seed.with.value.env to "prod" before publish
     patch: {"spec.nodes[0].with.value.env": prod}
     run: {status: [succeeded]}
     steps:
-      on-true:  {status: skipped}
+      on-true:  {status: skipped, skipReason: branch_not_taken}
       on-false: {status: succeeded, output: {result: {status: success, message: took false}}}
 audit: {execution.start: 1, job.claim: 3, job.complete: 3, job.fail: 0}  # job.heartbeat not checked  # skipped branch: no claim
 # item-splitting (#650 E3.1/E3.3): Terry's xfail tag named a part with no

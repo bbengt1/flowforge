@@ -87,6 +87,7 @@ type StepExpect struct {
 	Error         *StepError  `yaml:"error"`
 	AttemptErrors []StepError `yaml:"attemptErrors"`
 	SkipReason    string      `yaml:"skipReason"`
+	NoOutput      bool        `yaml:"noOutput"` // output must be empty
 }
 
 // XFail marks a part of a fixture as expected to fail. Strict: a part that
@@ -117,6 +118,7 @@ type Block struct {
 	File        string                `yaml:"file"`
 	Drivers     []string              `yaml:"drivers"`
 	Patch       Patch                 `yaml:"patch"`
+	Save        *HTTPExpect           `yaml:"save"` // create only (see evaluate)
 	Publish     *HTTPExpect           `yaml:"publish"`
 	Start       *HTTPExpect           `yaml:"start"`
 	Run         *RunExpect            `yaml:"run"`
