@@ -2701,6 +2701,12 @@ components:
                 type: array
                 items:
                   $ref: "#/components/schemas/WorkflowPort"
+              primaryOutput:
+                type: string
+                description: >-
+                  Name of the single success output port that onError continue
+                  releases. Omitted for branching or multi-output node types,
+                  which cannot use onError continue.
               requiredWith:
                 type: array
                 items:

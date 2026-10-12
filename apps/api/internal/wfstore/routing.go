@@ -43,7 +43,13 @@ func nodeOnError(yamlDoc, nodeID string) string {
 	for _, n := range res.Document.Spec.Nodes {
 		if n.ID == nodeID {
 			switch n.OnError {
-			case workflow.OnErrorContinue, workflow.OnErrorOutput:
+			case workflow.OnErrorContinue:
+				// Fail closed: continue needs a primary output.
+				if workflow.PrimaryOutput(n.Type) == "" {
+					return ""
+				}
+				return n.OnError
+			case workflow.OnErrorOutput:
 				return n.OnError
 			}
 			return ""
@@ -62,16 +68,6 @@ func routableFailure(errObj map[string]any) bool {
 		return false
 	}
 	return true
-}
-
-// mainPort is the node type's first declared output port.
-func mainPort(nodeType string) string {
-	for _, name := range workflow.OutputPortNames(nodeType) {
-		if name != "" && name != workflow.ErrorPortName {
-			return name
-		}
-	}
-	return ""
 }
 
 // errorPortPayload is the object on the error port: code, safe message,
@@ -93,10 +89,7 @@ func errorPortPayload(step ExecutionStep, errObj map[string]any) map[string]any 
 func routeFailure(mode string, step ExecutionStep, errObj map[string]any) (map[string]any, map[string]struct{}) {
 	switch mode {
 	case ErrorHandlingContinue:
-		port := mainPort(step.NodeType)
-		if port == "" {
-			return map[string]any{}, map[string]struct{}{}
-		}
+		port := workflow.PrimaryOutput(step.NodeType)
 		return map[string]any{port: map[string]any{}}, map[string]struct{}{port: {}}
 	case ErrorHandlingOutput:
 		return map[string]any{workflow.ErrorPortName: errorPortPayload(step, errObj)}, map[string]struct{}{workflow.ErrorPortName: {}}
@@ -149,7 +142,7 @@ func withErrorHandling(errObj map[string]any, mode string) map[string]any {
 func errorRoutedAudit(executionID string, step ExecutionStep, mode string) AuditWrite {
 	port := workflow.ErrorPortName
 	if mode == ErrorHandlingContinue {
-		port = mainPort(step.NodeType)
+		port = workflow.PrimaryOutput(step.NodeType)
 	}
 	return AuditWrite{
 		Action:       ActionStepErrorRouted,

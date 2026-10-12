@@ -168,6 +168,32 @@ func triggerTypes() []TriggerType {
 }
 
 func coreNodeTypes() []NodeType {
+	types := declaredNodeTypes()
+	for i := range types {
+		types[i] = withPrimaryOutput(types[i])
+	}
+	return types
+}
+
+// withPrimaryOutput sets PrimaryOutput to "result" for types whose only
+// output is result. Branching and multi-output types get none.
+func withPrimaryOutput(n NodeType) NodeType {
+	if len(n.Outputs) == 1 && n.Outputs[0].Name == "result" {
+		n.PrimaryOutput = "result"
+	}
+	return n
+}
+
+// PrimaryOutput returns the node type's primary output port, or "".
+func PrimaryOutput(nodeType string) string {
+	n, ok := lookupNode(nodeType)
+	if !ok {
+		return ""
+	}
+	return n.PrimaryOutput
+}
+
+func declaredNodeTypes() []NodeType {
 	neutral := coreNeutralTypes()
 	return []NodeType{
 		neutral["flow.stop"],
@@ -222,7 +248,7 @@ func lookupTrigger(typ string) (TriggerType, bool) {
 
 func lookupNode(typ string) (NodeType, bool) {
 	if tn, ok := testNodes[typ]; ok {
-		return tn.contract, true
+		return withPrimaryOutput(tn.contract), true
 	}
 	for _, n := range coreNodeTypes() {
 		if n.Type == typ {

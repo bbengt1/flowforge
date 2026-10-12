@@ -149,6 +149,57 @@ func (h routeHarness) audits(execID, action string) int {
 	return len(got)
 }
 
+const branchErrorOutputYAML = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: route-branch-error-output
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: seed
+      type: data.set
+      name: Seed
+      with:
+        value:
+          status: ready
+    - id: gate
+      type: flow.condition
+      name: Gate
+      onError: errorOutput
+      with:
+        op: eq
+        path: status
+        compare: ready
+    - id: yes
+      type: data.map
+      name: Yes
+      with:
+        mapping:
+          status: status
+    - id: no
+      type: data.map
+      name: No
+      with:
+        mapping:
+          status: status
+    - id: handled
+      type: flow.stop
+      name: Handled
+      with:
+        status: success
+  edges:
+    - from: seed.result
+      to: gate.value
+    - from: gate.true
+      to: yes.input
+    - from: gate.false
+      to: no.input
+    - from: gate.error
+      to: handled.input
+`
+
 func runRoutingSuite(t *testing.T, h routeHarness) {
 	t.Run("errorOutput routes only the error port", func(t *testing.T) {
 		h.t = t
@@ -324,6 +375,29 @@ func runRoutingSuite(t *testing.T, h routeHarness) {
 		}
 	})
 
+	t.Run("errorOutput on a branching node skips every non-error branch", func(t *testing.T) {
+		h.t = t
+		if h.fresh != nil {
+			h.store = h.fresh()
+		}
+		exec, _ := h.start(branchErrorOutputYAML)
+		h.complete(h.claim("seed"), map[string]any{"result": map[string]any{"status": "ready"}})
+		h.fail(h.claim("gate"))
+		for _, node := range []string{"yes", "no"} {
+			st, _ := h.step(exec.ID, node)
+			if st.Status != ExecutionSkipped || st.SkipReason != SkipBranchNotTaken {
+				t.Fatalf("%s = %s %q", node, st.Status, st.SkipReason)
+			}
+		}
+		if gate, _ := h.step(exec.ID, "gate"); gate.Status != ExecutionFailed || gate.ErrorHandling != ErrorHandlingOutput {
+			t.Fatalf("gate = %s %q", gate.Status, gate.ErrorHandling)
+		}
+		h.complete(h.claim("handled"), map[string]any{"result": map[string]any{"status": "success"}})
+		if got := h.run(exec.ID); got.Status != ExecutionSucceededWithErrors {
+			t.Fatalf("run = %s", got.Status)
+		}
+	})
+
 	t.Run("never-routed failures write no step.error_routed", func(t *testing.T) {
 		h.t = t
 		if h.fresh != nil {
@@ -441,7 +515,9 @@ func TestPostgresErrorRouting(t *testing.T) {
 	runRoutingSuite(t, routeHarness{t: t, ctx: ctx, store: store, scope: scope})
 
 	t.Run("indeterminate is never routed", func(t *testing.T) {
-		src := strings.Replace(sshThenStopYAML, "      type: ssh.run\n      name: Run\n", "      type: ssh.run\n      name: Run\n      onError: continue\n", 1)
+		src := strings.Replace(sshThenStopYAML, "      type: ssh.run\n      name: Run\n", "      type: ssh.run\n      name: Run\n      onError: errorOutput\n", 1)
+		src = strings.Replace(src, "      to: next.input\n", "      to: next.input\n    - from: run.error\n      to: handled.input\n", 1)
+		src = strings.Replace(src, "  edges:\n", "    - id: handled\n      type: flow.stop\n      name: Handled\n      with:\n        status: success\n  edges:\n", 1)
 		exec := startGraph(t, ctx, store, scope, src)
 		claimNode(t, ctx, store, scope, time.Now().UTC().Add(time.Second), "run")
 		if n, err := store.RecoverExpiredLeases(ctx, scope, time.Now().UTC().Add(2*time.Minute)); err != nil || n < 1 {

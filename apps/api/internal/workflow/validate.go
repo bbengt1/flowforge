@@ -401,6 +401,9 @@ func validateNode(n Node, path string) ErrorList {
 		errs = append(errs, fieldError(path+".type", n.pos.Line, n.pos.Column, CodeUnknownNodeType, fmt.Sprintf("Unknown node type %q.", n.Type)))
 		return errs
 	}
+	if n.OnError == OnErrorContinue && nt.PrimaryOutput == "" {
+		errs = append(errs, fieldError(path+".onError", n.pos.Line, n.pos.Column, CodeOnErrorContinueNoPrimary, fmt.Sprintf("Node %q (%s) has no primary output, so onError: continue has nowhere to go. Use onError: errorOutput or stop.", n.ID, n.Type)))
+	}
 	if nt.Phase != PhaseCore {
 		errs = append(errs, fieldError(path+".type", n.pos.Line, n.pos.Column, CodeUnsupportedNode, fmt.Sprintf("Node type %q is not enabled in MVP.", n.Type)))
 		return errs

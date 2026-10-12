@@ -64,6 +64,9 @@ const (
 	CodeOnErrorNotAllowed       = "on-error-not-allowed"
 	CodeErrorEdgeMissing        = "error-edge-missing"
 	CodeErrorEdgeWithoutHandler = "error-edge-without-error-output"
+	// CodeOnErrorContinueNoPrimary refuses onError: continue on a node
+	// type without a primaryOutput (branching or multi-output).
+	CodeOnErrorContinueNoPrimary = "on-error-continue-without-primary-output"
 )
 
 func fieldError(path string, line, column int, code, message string) FieldError {
