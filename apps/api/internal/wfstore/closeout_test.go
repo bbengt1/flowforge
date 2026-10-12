@@ -3,11 +3,13 @@ package wfstore
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
+	"github.com/bbengt1/flowforge/apps/api/migrations"
 )
 
 const failWithParkedGateYAML = `apiVersion: flowforge/v1
@@ -169,6 +171,13 @@ func TestPostgresCloseOut(t *testing.T) {
 		// The parked step had started: it keeps the legacy canceled status.
 		assertNode(t, ctx, store, scope, exec.ID, "gate", ExecutionCanceled, JobCanceled)
 		assertSkipReason(t, ctx, store, scope, exec.ID, "gate", "")
+		assertNode(t, ctx, store, scope, exec.ID, "after", ExecutionSkipped, JobSkipped)
+		assertSkipReason(t, ctx, store, scope, exec.ID, "after", SkipRunCanceled)
+		// Retry on a canceled run stays refused, and run_canceled never reopens.
+		if _, err := store.RetryStep(ctx, scope, now(), exec.ID, gate.Step.ID); err == nil {
+			t.Fatal("retry on canceled run accepted")
+		}
+		reopenDirect(t, ctx, app, scope, exec.ID)
 		assertNode(t, ctx, store, scope, exec.ID, "after", ExecutionSkipped, JobSkipped)
 		assertSkipReason(t, ctx, store, scope, exec.ID, "after", SkipRunCanceled)
 	})
@@ -475,4 +484,103 @@ func TestMemoryCloseOut(t *testing.T) {
 			t.Skip("run removed with workflow")
 		}
 	})
+}
+
+// TestPostgresSkipReasonBackfill runs the 000047 backfill function body on
+// a seeded mix of pre-skip-reason rows (constraint dropped inside a
+// rolled-back transaction) and asserts the reasons it assigns.
+func TestPostgresSkipReasonBackfill(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	dsn := testDatabaseURL(t)
+	admin, err := postgres.OpenAdmin(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	app, err := postgres.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+	store := NewPostgres(app)
+	ws, _, userID := seedWorkflowWorkspaces(t, ctx, admin)
+	scope, err := isolation.Authorize(ws, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := migrations.SQL.ReadFile("000047_step_skip_reason.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(raw)
+	start := strings.Index(src, "CREATE OR REPLACE FUNCTION app.backfill_step_skip_reason()")
+	if start < 0 {
+		t.Fatal("backfill function not found in 000047")
+	}
+	end := strings.Index(src[start:], "\n$$;")
+	if end < 0 {
+		t.Fatal("backfill function end not found")
+	}
+	fn := src[start : start+end+4]
+
+	failed := startGraph(t, ctx, store, scope, retryChainYAML)
+	cascade := startGraph(t, ctx, store, scope, gateCascadeYAML)
+	branch := startGraph(t, ctx, store, scope, retryChainYAML)
+	canceled := startGraph(t, ctx, store, scope, retryChainYAML)
+	legacy := startGraph(t, ctx, store, scope, retryChainYAML)
+
+	tx, err := admin.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	if _, err := tx.Exec(ctx, `ALTER TABLE execution_steps DROP CONSTRAINT execution_steps_skip_reason_iff_skipped`); err != nil {
+		t.Fatal(err)
+	}
+	set := func(execID, node, status string) {
+		t.Helper()
+		if _, err := tx.Exec(ctx, `UPDATE execution_steps SET status = $3, skip_reason = NULL WHERE execution_id = $1::uuid AND node_id = $2`, execID, node, status); err != nil {
+			t.Fatal(err)
+		}
+	}
+	set(failed.ID, "seed", ExecutionFailed)
+	set(failed.ID, "next", ExecutionSkipped)
+	set(cascade.ID, "seed", ExecutionSucceeded)
+	set(cascade.ID, "gate", ExecutionIndeterminate)
+	set(cascade.ID, "after", ExecutionSkipped)
+	set(cascade.ID, "tail", ExecutionSkipped)
+	set(branch.ID, "seed", ExecutionSucceeded)
+	set(branch.ID, "next", ExecutionSkipped)
+	set(canceled.ID, "seed", ExecutionCanceled)
+	set(canceled.ID, "next", ExecutionSkipped)
+	set(legacy.ID, "seed", ExecutionCanceled)
+	set(legacy.ID, "next", ExecutionCanceled)
+	if _, err := tx.Exec(ctx, fn); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `SELECT app.backfill_step_skip_reason()`); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ exec, node, status, reason string }{
+		{failed.ID, "next", ExecutionSkipped, SkipUpstreamFailed},
+		{cascade.ID, "after", ExecutionSkipped, SkipUpstreamIndeterminate},
+		{cascade.ID, "tail", ExecutionSkipped, SkipUpstreamIndeterminate},
+		{branch.ID, "next", ExecutionSkipped, SkipBranchNotTaken},
+		{canceled.ID, "next", ExecutionSkipped, SkipRunCanceled},
+		{legacy.ID, "next", ExecutionCanceled, ""},
+		{legacy.ID, "seed", ExecutionCanceled, ""},
+	} {
+		var status, reason string
+		if err := tx.QueryRow(ctx, `SELECT status, COALESCE(skip_reason, '') FROM execution_steps WHERE execution_id = $1::uuid AND node_id = $2`, c.exec, c.node).Scan(&status, &reason); err != nil {
+			t.Fatal(err)
+		}
+		if status != c.status || reason != c.reason {
+			t.Fatalf("%s: %s %q, want %s %q", c.node, status, reason, c.status, c.reason)
+		}
+	}
+	// The constraint re-adds cleanly over every backfilled row.
+	if _, err := tx.Exec(ctx, `ALTER TABLE execution_steps ADD CONSTRAINT execution_steps_skip_reason_iff_skipped CHECK ((status = 'skipped') = (skip_reason IS NOT NULL))`); err != nil {
+		t.Fatalf("constraint after backfill: %v", err)
+	}
 }
