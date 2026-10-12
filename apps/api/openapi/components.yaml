@@ -2798,7 +2798,7 @@ components:
               onError:
                 type: string
                 enum: [stop, continue, errorOutput]
-                description: "Failure mode after retries (#649). Omitted is stop. errorOutput requires an edge from port error; not allowed on flow.approval or triggers. Publish codes: invalid-on-error, on-error-not-allowed, error-edge-missing, error-edge-without-error-output."
+                description: "Failure mode after retries (#649). Omitted is stop. errorOutput requires an edge from port error; not allowed on flow.approval or triggers. Publish codes: invalid-on-error, on-error-not-allowed, error-edge-missing, error-edge-without-error-output. Publish-only until the engine path ships: continue/errorOutput return on-error-not-yet-supported."
         edges:
           type: array
           items:

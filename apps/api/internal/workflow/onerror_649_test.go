@@ -165,3 +165,50 @@ spec:
 		t.Fatalf("want on-error-not-allowed, got %+v", errs)
 	}
 }
+
+func gateCodes(src string) map[string]bool {
+	out := map[string]bool{}
+	for _, e := range PublishGate([]byte(src)) {
+		out[e.Code] = true
+	}
+	return out
+}
+
+func TestOnError649PublishGate(t *testing.T) {
+	if got := gateCodes(onErrorDoc("", "", mainEdge, "")); len(got) != 0 {
+		t.Fatalf("omitted: %v", got)
+	}
+	if got := gateCodes(onErrorDoc("      onError: stop", "", mainEdge, "")); len(got) != 0 {
+		t.Fatalf("stop must publish: %v", got)
+	}
+	for _, mode := range []string{"continue", "errorOutput"} {
+		edges := mainEdge
+		if mode == "errorOutput" {
+			edges = errorEdge
+		}
+		got := gateCodes(onErrorDoc("      onError: "+mode, "", edges, ""))
+		if len(got) != 1 || !got[CodeOnErrorNotYetSupported] {
+			t.Fatalf("%s: %v", mode, got)
+		}
+	}
+}
+
+func TestOnError649PublishGateKeepsOtherCodes(t *testing.T) {
+	// errorOutput without an error edge: both codes in one response.
+	got := gateCodes(onErrorDoc("      onError: errorOutput", "", mainEdge, ""))
+	if !got[CodeErrorEdgeMissing] || !got[CodeOnErrorNotYetSupported] {
+		t.Fatalf("want error-edge-missing + gate, got %v", got)
+	}
+	got = gateCodes(onErrorDoc("      onError: continue", "", errorEdge, ""))
+	if !got[CodeErrorEdgeWithoutHandler] || !got[CodeOnErrorNotYetSupported] {
+		t.Fatalf("want error-edge-without-error-output + gate, got %v", got)
+	}
+	got = gateCodes(onErrorDoc("      onError: bogus", "", mainEdge, ""))
+	if !got[CodeInvalidOnError] || got[CodeOnErrorNotYetSupported] {
+		t.Fatalf("unknown value: %v", got)
+	}
+	got = gateCodes(onErrorDoc("", "", mainEdge, "      onError: continue"))
+	if !got[CodeOnErrorNotAllowed] {
+		t.Fatalf("trigger: %v", got)
+	}
+}
