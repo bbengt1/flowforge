@@ -55,13 +55,13 @@ func TestFixtures(t *testing.T) {
 				if !buildRuns(p.Block.Build) {
 					t.Skipf("build: %s part (this binary fftest=%v)", p.Block.Build, fftestBuild)
 				}
-				guard, fails := runPart(t, env, fx, p, all[p.Driver])
+				guard, fails, pending := runPart(t, env, fx, p, all[p.Driver])
 				if len(guard) > 0 {
 					// today: guards must hold even while a part is xfail.
 					t.Errorf("%s/%s/%s today guard failed: %v", fx.ID, p.Name, p.Driver, guard)
 				}
-				outcome, msg := Verdict(fx.ID+"/"+p.Name, p.Driver, p.XFail, fails)
-				t.Logf("%s %s/%s/%s %v", outcome, fx.ID, p.Name, p.Driver, fails)
+				outcome, msg := VerdictPending(fx.ID+"/"+p.Name, p.Driver, p.XFail, fails, pending)
+				t.Logf("%s %s/%s/%s %v pending=%v", outcome, fx.ID, p.Name, p.Driver, fails, pending)
 				if outcome.Failing() {
 					t.Error(msg)
 				}
@@ -73,44 +73,57 @@ func TestFixtures(t *testing.T) {
 // runPart returns today-guard failures and the failures strict xfail
 // judges. A part with today/target asserts today as a guard and judges
 // target; otherwise it judges the block itself.
-func runPart(t *testing.T, env *Env, fx Fixture, p Part, d Driver) (guard, fails []string) {
+//
+// pending lists harness-pending keys (accepted but not evaluated) of the
+// judged block. They are not failures: VerdictPending decides. Pending
+// keys in a today guard are guard failures (a guard must be fully
+// checked).
+func runPart(t *testing.T, env *Env, fx Fixture, p Part, d Driver) (guard, fails, pending []string) {
 	t.Helper()
 	b := p.Block
 	if b.Today != nil || b.Target != nil {
 		if b.Today != nil {
-			guard = evaluate(t, env, fx, *b.Today, b.File, b.Patch, d)
+			if pend := b.Today.pendingKeys(); len(pend) > 0 {
+				guard = append(guard, fmt.Sprintf("today: not evaluated by the harness yet: %v", pend))
+			}
+			gf, gp := evaluate(t, env, fx, *b.Today, b.File, b.Patch, d)
+			guard = append(guard, gf...)
+			for _, k := range gp {
+				guard = append(guard, "today: not evaluated by the harness yet: "+k)
+			}
 		}
 		if b.Target == nil {
-			return guard, []string{"no target block"}
+			return guard, []string{"no target block"}, nil
 		}
 		tgt := *b.Target
 		if tgt.File == "" {
 			tgt.File = b.File
 		}
-		return guard, evaluate(t, env, fx, tgt, tgt.File, b.Patch, d)
+		f, reached := evaluate(t, env, fx, tgt, tgt.File, b.Patch, d)
+		return guard, f, append(tgt.pendingKeys(), reached...)
 	}
-	return nil, evaluate(t, env, fx, b, b.File, b.Patch, d)
+	f, reached := evaluate(t, env, fx, b, b.File, b.Patch, d)
+	return nil, f, append(b.pendingKeys(), reached...)
 }
 
 // evaluate seeds a throwaway workspace and checks one block. It returns
-// failures instead of failing the test so strict xfail can judge them.
-func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Patch, d Driver) []string {
+// failures instead of failing the test so strict xfail can judge them,
+// plus "reached" harness-pending keys: keys the harness cannot evaluate
+// yet that the part got far enough to need (import equivalence, resume
+// route). They go to VerdictPending, never to failures.
+func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Patch, d Driver) (fails, reached []string) {
 	t.Helper()
-	var fails []string
 	failf := func(f string, a ...any) { fails = append(fails, fmt.Sprintf(f, a...)) }
-	if pend := b.pendingKeys(); len(pend) > 0 {
-		failf("not evaluated by the harness yet: %v", pend)
-	}
 	if file == "" {
 		file = "workflow.yaml"
 	}
 	raw, err := os.ReadFile(filepath.Join(fx.Dir, file))
 	if err != nil {
-		return append(fails, err.Error())
+		return append(fails, err.Error()), reached
 	}
 	src, err := ApplyPatch(string(raw), patch)
 	if err != nil {
-		return append(fails, err.Error())
+		return append(fails, err.Error()), reached
 	}
 	w := env.NewWorkspace(t, fx.ID)
 	owner := w.Users["owner"]
@@ -127,18 +140,40 @@ func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Pa
 	if b.ImportRoute != nil {
 		body, err := os.ReadFile(filepath.Join(fx.Dir, "n8n.json"))
 		if err != nil {
-			return append(fails, "importRoute: "+err.Error())
+			return append(fails, "importRoute: "+err.Error()), reached
 		}
 		r := b.ImportRoute
 		if !strings.HasPrefix(r.Path, "/api/v1/") {
-			return append(fails, "importRoute: path must start with /api/v1/")
+			return append(fails, "importRoute: path must start with /api/v1/"), reached
 		}
 		checkHTTP(failf, "importRoute "+r.Path, HTTPExpect{Status: r.Status, Code: r.Code}, w.Do(owner, http.MethodPost, r.Path, json.RawMessage(body)))
+	}
+	if b.Import != nil {
+		im := b.Import
+		raw, err := os.ReadFile(filepath.Join(fx.Dir, im.From))
+		if err != nil || !strings.HasPrefix(im.Path, "/api/v1/") {
+			return append(fails, fmt.Sprintf("import: need a fixture file and an /api/v1/ path (%v)", err)), reached
+		}
+		res := w.Do(owner, http.MethodPost, im.Path, json.RawMessage(raw))
+		if !checkHTTP(failf, "import "+im.Path, HTTPExpect{Status: im.Status}, res) {
+			return fails, reached
+		}
+		// The importer answers: what it produced is not checkable yet.
+		if im.EquivalentTo != "" {
+			reached = append(reached, "import.equivalentTo")
+		}
+		if b.Export != nil {
+			reached = append(reached, "export")
+		}
+		if b.Unsupported != nil {
+			reached = append(reached, "unsupported")
+		}
+		return fails, reached
 	}
 	want := b.Publish
 	if want == nil && b.WorkflowYamlPublish != nil {
 		if file != "workflow.yaml" {
-			return append(fails, "workflowYamlPublish on a part whose file is "+file)
+			return append(fails, "workflowYamlPublish on a part whose file is "+file), reached
 		}
 		want = b.WorkflowYamlPublish
 	}
@@ -154,21 +189,26 @@ func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Pa
 		// save: checks the create alone; the publish is only checked
 		// (and done) when publish: or a run expectation is also set.
 		if !checkHTTP(failf, "save", *b.Save, res) || res.Status != http.StatusCreated || b.Publish == nil && !b.wantsRun() {
-			return fails
+			return fails, reached
 		}
 	}
 	if res.Status != http.StatusCreated {
 		checkHTTP(failf, "publish (refused at create)", *want, res)
-		return fails
+		return fails, reached
 	}
 	versionID, res := w.Publish(owner, draft)
 	if !checkHTTP(failf, "publish", *want, res) || res.Status != http.StatusCreated {
-		return fails
+		return fails, reached
+	}
+	if b.ResumeRoute != "" || b.WrongToken != nil {
+		// The subject published: the resume route itself is not
+		// evaluated yet (#652 defines the resume URL).
+		reached = append(reached, "resume route")
 	}
 	actions := b.Actions
 	if len(actions) == 0 {
 		if !b.wantsRun() {
-			return fails
+			return fails, reached
 		}
 		actions = []Action{{Verb: "start"}, {Verb: "drive"}}
 	}
@@ -179,7 +219,7 @@ func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Pa
 	}
 	for _, a := range actions {
 		if a.Verb != "start" && execID == "" {
-			return append(fails, "action "+a.Verb+" before start")
+			return append(fails, "action "+a.Verb+" before start"), reached
 		}
 		switch a.Verb {
 		case "start":
@@ -189,16 +229,16 @@ func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Pa
 				want = &HTTPExpect{Status: http.StatusCreated}
 			}
 			if !checkHTTP(failf, "start", *want, res) || res.Status != http.StatusCreated {
-				return fails
+				return fails, reached
 			}
 			execID = id
 		case "drive":
 			if err := d.Drive(t, w); err != nil {
-				return append(fails, "drive: "+err.Error())
+				return append(fails, "drive: "+err.Error()), reached
 			}
 		case "drive-until-waiting":
 			if err := d.DriveOnce(t, w); err != nil {
-				return append(fails, "drive-until-waiting: "+err.Error())
+				return append(fails, "drive-until-waiting: "+err.Error()), reached
 			}
 			if b.MidRun != nil && !midChecked {
 				midChecked = true
@@ -213,14 +253,14 @@ func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Pa
 		case "publish-v2":
 			raw2, err := os.ReadFile(filepath.Join(fx.Dir, a.Arg))
 			if err != nil {
-				return append(fails, "publish-v2: "+err.Error())
+				return append(fails, "publish-v2: "+err.Error()), reached
 			}
 			d2, res := w.SaveDraft(owner, draft, string(raw2))
 			if res.Status != http.StatusOK && res.Status != http.StatusCreated {
-				return append(fails, fmt.Sprintf("publish-v2 save = %d %s", res.Status, res.Body))
+				return append(fails, fmt.Sprintf("publish-v2 save = %d %s", res.Status, res.Body)), reached
 			}
 			if _, res := w.Publish(owner, d2); res.Status != http.StatusCreated {
-				return append(fails, fmt.Sprintf("publish-v2 publish = %d %s", res.Status, res.Body))
+				return append(fails, fmt.Sprintf("publish-v2 publish = %d %s", res.Status, res.Body)), reached
 			}
 		case "retry":
 			res := w.Retry(owner, execID)
@@ -240,7 +280,7 @@ func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Pa
 			env.Advance(dur)
 		case "tick-recover":
 			if err := env.api.TickRecover(env.ctx); err != nil {
-				return append(fails, "tick-recover: "+err.Error())
+				return append(fails, "tick-recover: "+err.Error()), reached
 			}
 		}
 	}
@@ -301,7 +341,7 @@ func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Pa
 			}
 		}
 	}
-	return fails
+	return fails, reached
 }
 
 // wantsRun reports whether the block expects anything of a started run.

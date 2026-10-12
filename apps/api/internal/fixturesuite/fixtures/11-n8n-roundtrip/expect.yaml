@@ -4,7 +4,7 @@ today:
   workflowYamlPublish: {status: 201}       # sanity: saves and publishes
   importRoute: {path: /api/v1/imports/n8n, status: 404}   # no importer (path chosen by Chloe; #654 decides the real one)
 target:
-  import: {from: n8n.json, status: 201, equivalentTo: workflow.yaml, ignore: [metadata, name]}
+  import: {path: /api/v1/imports/n8n, from: n8n.json, status: 201, equivalentTo: workflow.yaml, ignore: [metadata, name]}
   run: {status: [succeeded], steps: {yes: succeeded, no: skipped}}
   steps: {no: {status: skipped, skipReason: branch_not_taken}}
   export: {roundTrip: "import(export(import(n8n.json))) == import(n8n.json)"}
