@@ -39,7 +39,10 @@ import {
   approvalValidityBannerState,
   failClosedProblemTitle,
 } from "./approval.ts";
-import { APPROVAL_CLOSED_MESSAGE } from "./execution-retry.ts";
+import {
+  APPROVAL_CLOSED_MESSAGE,
+  APPROVAL_RUN_FINISHED_MESSAGE,
+} from "./execution-retry.ts";
 import {
   APPROVAL_PROBLEM_CODES,
   APPROVAL_RESUME_VIA_DECIDE_HELP,
@@ -652,6 +655,19 @@ describe("approval decide 403", () => {
       assert.equal(closed.message, APPROVAL_CLOSED_MESSAGE);
       assert.equal(closed.hideControls, false);
       assert.equal(closed.refetch, true);
+    }
+  });
+
+  it("maps decide 409 run_finished to the run-ended closed sentence (#668)", () => {
+    const outcome = approvalDecideOutcome(problem(409, "run_finished"));
+    assert.equal(outcome.kind, "closed");
+    if (outcome.kind === "closed") {
+      assert.equal(
+        outcome.message,
+        "This run has already ended, so this approval is closed",
+      );
+      assert.equal(outcome.message, APPROVAL_RUN_FINISHED_MESSAGE);
+      assert.equal(outcome.refetch, true);
     }
   });
 
