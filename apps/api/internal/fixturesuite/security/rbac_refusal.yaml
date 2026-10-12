@@ -45,7 +45,7 @@ checks:
     status: 403
     code: forbidden
     sideEffects: {approval_events: 0, "audit:job.resume": 0}
-  - name: decide-own-request       # spec row says editor; editor cannot start runs, so the requester is an operator+approver member
+  - name: decide-own-request       # operator+approver member who started the run (editors cannot start runs)
     kind: http
     as: requester
     method: POST
@@ -53,7 +53,7 @@ checks:
     body: {decision: approve}
     status: 403
     code: forbidden
-    sideEffects: {approval_events: 0, "audit:job.resume": 0}
+    sideEffects: {approval_events: 0, approval_decisions: 0, "audit:job.resume": 0}   # refused and no decision row
   - name: machine-decide           # #620: a machine principal with the approver role never decides
     kind: http
     as: machine
@@ -86,7 +86,7 @@ checks:
     path: "/api/v1/workflows/{A.workflow}/executions"
     body: {workflowVersionId: "{A.version}"}
     status: 403
-    code: csrf-required
+    code: csrf-invalid          # #636: both CSRF paths answer csrf-invalid (Terry/Gracie)
     sideEffects: {executions: 0}
   - name: csrf-session-bad-token
     kind: csrf
@@ -97,5 +97,13 @@ checks:
     status: 403
     code: csrf-invalid
     sideEffects: {executions: 0}
-xfail:
-  - {part: csrf-session-no-header, reason: "spec expects csrf-required for a missing header; #636 answers csrf-invalid on both CSRF paths and has no csrf-required code. Spec vs product: Terry/Gracie to confirm", issue: "#636", drivers: [all]}
+  - name: csrf-valid-token-role-refusal   # CSRF passes, the role still refuses
+    kind: csrf
+    as: viewer
+    session: valid
+    method: POST
+    path: "/api/v1/workflows/{A.workflow}/executions"
+    body: {workflowVersionId: "{A.version}"}
+    status: 403
+    code: forbidden
+    sideEffects: {executions: 0}

@@ -33,15 +33,10 @@ checks:
     scenario: publish
     audit: {workflow.publish: 1}
     detailsKeys: {workflow.publish: [actorDisplayName, actorId, workflowId, versionId, versionNumber, digest, note]}
-    detailsMustNotContain: {workflow.publish: [spec]}
+    detailsScopeKeys: {workflow.publish: [tenantId, workspaceId]}   # only as the workflow's own tenant/workspace
+    detailsMustNotContain: {workflow.publish: [spec, definitionYaml, normalizedYaml]}
   - name: delete-published
     kind: audit
     scenario: delete
     audit: {workflow.deleted: 1}
     auditDetails: {workflow.deleted: {published: true}}
-xfail:
-  # Terry's tag said "no publish audit row today (#659)"; on 6e91c96 the
-  # workflow.publish row exists (count passes). What fails is the exact key
-  # set: the row also carries tenantId and workspaceId. Spec vs product
-  # mismatch reported to Terry; sameTx is not checked by the harness.
-  - {part: publish, reason: "workflow.publish details carry tenantId and workspaceId beyond the #661 key list (spec vs product, to confirm)", issue: "#659", drivers: [all]}

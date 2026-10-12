@@ -310,12 +310,16 @@ func (w *secWorld) count(t *testing.T, key string) int {
 	switch {
 	case key == "executions":
 		q, args = `SELECT count(*) FROM executions WHERE workspace_id = $1::uuid`, []any{w.A.WS.ID}
+	case key == "approval_decisions":
+		// decision rows: approved/rejected events plus approvals marked decided
+		q, args = `SELECT (SELECT count(*) FROM approval_events WHERE workspace_id = $1::uuid AND event_type IN ('approved', 'rejected'))
+		            + (SELECT count(*) FROM approvals WHERE workspace_id = $1::uuid AND decided_by IS NOT NULL)`, []any{w.A.WS.ID}
 	case key == "approval_events":
 		q, args = `SELECT count(*) FROM approval_events WHERE workspace_id = $1::uuid`, []any{w.A.WS.ID}
 	case strings.HasPrefix(key, "audit:"):
 		q, args = `SELECT count(*) FROM audit_events WHERE workspace_id = $1::uuid AND action = $2`, []any{w.A.WS.ID, strings.TrimPrefix(key, "audit:")}
 	default:
-		t.Fatalf("unknown sideEffects key %q (executions, approval_events, audit:<action>)", key)
+		t.Fatalf("unknown sideEffects key %q (executions, approval_events, approval_decisions, audit:<action>)", key)
 	}
 	var n int
 	if err := w.env.admin.QueryRow(w.env.ctx, q, args...).Scan(&n); err != nil {
@@ -392,7 +396,11 @@ func (w *secWorld) run(t *testing.T, c SecCheck, failf func(string, ...any), sto
 
 func (w *secWorld) runCSRF(t *testing.T, c SecCheck, failf func(string, ...any)) {
 	t.Helper()
-	owner := w.users["owner"]
+	as := c.As
+	if as == "" {
+		as = "owner"
+	}
+	owner := w.users[as]
 	req := newReq(http.MethodPost, "/api/v1/session", map[string]string{
 		"issuer": owner.Issuer, "external_subject": owner.ExternalSubject, "display_name": owner.DisplayName,
 	}, owner)
@@ -429,8 +437,11 @@ func (w *secWorld) runCSRF(t *testing.T, c SecCheck, failf func(string, ...any))
 		r.Header.Set(core.HeaderWorkbenchKey, w.A.WS.WorkbenchKey)
 		r.AddCookie(&http.Cookie{Name: session.CookieName, Value: token})
 		r.AddCookie(&http.Cookie{Name: session.CSRFCookieName, Value: csrf})
-		if c.Session == "bad-token" {
+		switch c.Session {
+		case "bad-token":
 			r.Header.Set(session.CSRFHeader, "bad-"+csrf)
+		case "valid":
+			r.Header.Set(session.CSRFHeader, csrf)
 		}
 		checkHTTP(failf, "csrf "+c.Session, HTTPExpect{Status: c.Status, Code: c.Code}, w.env.serve(r))
 	})
@@ -614,7 +625,7 @@ func (w *secWorld) runCanary(t *testing.T, c SecCheck, failf func(string, ...any
 SELECT 'execution_steps (whole row: input/output/error redacted)', row_to_json(s)::text FROM execution_steps s WHERE workspace_id = $1::uuid
 UNION ALL SELECT 'execution_jobs (whole row)', row_to_json(j)::text FROM execution_jobs j WHERE workspace_id = $1::uuid
 UNION ALL SELECT 'audit_events.details_redacted', coalesce(details_redacted::text, '') FROM audit_events WHERE workspace_id = $1::uuid
-UNION ALL SELECT 'executions (whole row; there is no status_reason column)', row_to_json(e)::text FROM executions e WHERE workspace_id = $1::uuid`, w.A.WS.ID)
+UNION ALL SELECT 'executions (whole row)', row_to_json(e)::text FROM executions e WHERE workspace_id = $1::uuid`, w.A.WS.ID)
 			if err != nil {
 				failf("db scan: %v", err)
 				continue

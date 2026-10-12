@@ -149,9 +149,18 @@ func (w *secWorld) runAudit(t *testing.T, c SecCheck, failf func(string, ...any)
 		}
 		want := append([]string(nil), keys...)
 		sort.Strings(want)
+		scope := map[string]string{"tenantId": w.A.Tenant.ID, "workspaceId": w.A.WS.ID}
+		allowedScope := boolSet(c.DetailsScopeKeys[action])
 		for i, got := range rows {
 			var have []string
-			for k := range got {
+			for k, v := range got {
+				if allowedScope[k] {
+					// Accepted only as the row's own tenant/workspace.
+					if own, ok := scope[k]; !ok || fmt.Sprint(v) != own {
+						failf("detailsKeys %s[%d] %s = %v, want the run's own %s %q", action, i, k, v, k, own)
+					}
+					continue
+				}
 				have = append(have, k)
 			}
 			sort.Strings(have)

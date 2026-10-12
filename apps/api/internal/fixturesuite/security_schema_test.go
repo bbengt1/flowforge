@@ -43,7 +43,7 @@ type SecCheck struct {
 	Code        string         `yaml:"code"`
 	NeverStatus []int          `yaml:"neverStatus"`
 	SideEffects map[string]int `yaml:"sideEffects"`
-	Session     string         `yaml:"session"` // csrf: no-header | bad-token
+	Session     string         `yaml:"session"` // csrf: no-header | bad-token | valid
 
 	// sql-rows
 	Tables []string `yaml:"tables"`
@@ -55,9 +55,13 @@ type SecCheck struct {
 	AuditDetails          map[string]map[string]any `yaml:"auditDetails"`
 	DetailsKeys           map[string][]string       `yaml:"detailsKeys"`
 	DetailsMustNotContain map[string][]string       `yaml:"detailsMustNotContain"`
-	NoActionPrefix        []string                  `yaml:"noActionPrefix"`
-	ApprovalEvents        *int                      `yaml:"approvalEvents"`
-	SkippedNodeJobAudit   map[string]int            `yaml:"skippedNodeJobAudit"` // node -> job.* audit rows
+	// DetailsScopeKeys are keys a row may carry besides detailsKeys only
+	// when they equal the run/workflow's own tenant or workspace id
+	// (tenantId, workspaceId).
+	DetailsScopeKeys    map[string][]string `yaml:"detailsScopeKeys"`
+	NoActionPrefix      []string            `yaml:"noActionPrefix"`
+	ApprovalEvents      *int                `yaml:"approvalEvents"`
+	SkippedNodeJobAudit map[string]int      `yaml:"skippedNodeJobAudit"` // node -> job.* audit rows
 
 	// canary-scan
 	Canaries []string `yaml:"canaries"`
@@ -81,9 +85,9 @@ type SecCheck struct {
 // note). Any other set key fails lint.
 var secKindKeys = map[string][]string{
 	"http":         {"as", "method", "path", "body", "status", "code", "neverStatus", "sideEffects"},
-	"csrf":         {"method", "path", "body", "status", "code", "session", "sideEffects"},
+	"csrf":         {"as", "method", "path", "body", "status", "code", "session", "sideEffects"},
 	"sql-rows":     {"as", "tables", "rows"},
-	"audit":        {"scenario", "audit", "auditDetails", "detailsKeys", "detailsMustNotContain", "noActionPrefix", "approvalEvents", "skippedNodeJobAudit"},
+	"audit":        {"scenario", "audit", "auditDetails", "detailsKeys", "detailsMustNotContain", "detailsScopeKeys", "noActionPrefix", "approvalEvents", "skippedNodeJobAudit"},
 	"canary-scan":  {"canaries", "scan", "forms", "hits"},
 	"guard":        {"fixture", "patch", "status", "code", "errors", "workflowsDelta"},
 	"start":        {"as", "body", "status", "code", "executionsDelta"},
@@ -124,6 +128,7 @@ func (c SecCheck) setKeys() []string {
 	add(c.AuditDetails != nil, "auditDetails")
 	add(c.DetailsKeys != nil, "detailsKeys")
 	add(c.DetailsMustNotContain != nil, "detailsMustNotContain")
+	add(c.DetailsScopeKeys != nil, "detailsScopeKeys")
 	add(len(c.NoActionPrefix) > 0, "noActionPrefix")
 	add(c.ApprovalEvents != nil, "approvalEvents")
 	add(c.SkippedNodeJobAudit != nil, "skippedNodeJobAudit")
@@ -174,8 +179,8 @@ func (s SecuritySpec) Validate() error {
 		if c.Kind == "audit" && !secScenarios[c.Scenario] {
 			return fmt.Errorf("checks[%d] %s: unknown scenario %q", i, c.Name, c.Scenario)
 		}
-		if c.Kind == "csrf" && c.Session != "no-header" && c.Session != "bad-token" {
-			return fmt.Errorf("checks[%d] %s: session must be no-header or bad-token", i, c.Name)
+		if c.Kind == "csrf" && c.Session != "no-header" && c.Session != "bad-token" && c.Session != "valid" {
+			return fmt.Errorf("checks[%d] %s: session must be no-header, bad-token or valid", i, c.Name)
 		}
 		if (c.Kind == "http" || c.Kind == "csrf" || c.Kind == "route-absent") && (c.Method == "" || !strings.HasPrefix(c.Path, "/api/v1/") || c.Status == 0) {
 			return fmt.Errorf("checks[%d] %s: method, /api/v1/ path and status are required", i, c.Name)
