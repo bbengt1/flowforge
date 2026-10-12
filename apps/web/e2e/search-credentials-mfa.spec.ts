@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Request } from "@playwright/test";
-import { installOperatorApi } from "./operator-api";
+import { CREDENTIAL_PICKER_MFA_ACTION, CREDENTIAL_PICKER_MFA_HINT } from "../src/lib/config-plain-copy.ts";
+import { installOperatorApi, OPERATOR_WORKFLOW_ID } from "./operator-api";
 
 /**
  * The search bar lists credentials in the background on every page. For
@@ -68,6 +69,25 @@ test.describe("search bar credentials and MFA step-up", () => {
       await expect(page.getByRole("alert").filter({ hasText: /credential/i })).toHaveCount(0);
     });
   }
+
+  test("the workflow editor reads credentials once and stays quiet on load (#634 F5)", async ({
+    page,
+  }) => {
+    await installOperatorApi(page);
+    const credentials = await requireMfaForCredentials(page);
+    await page.goto(`/workflows/${OPERATOR_WORKFLOW_ID}`);
+    const hint = page.locator("[data-credential-picker-state='mfa-required']");
+    await expect(hint).toContainText(CREDENTIAL_PICKER_MFA_HINT);
+    // Let the search bar's background reads finish too.
+    await page.waitForLoadState("networkidle");
+    expect(credentials.count()).toBe(1);
+    await expect(stepUpDialog(page)).toHaveCount(0);
+
+    // Step-up opens only when the person asks for the list.
+    await hint.getByRole("button", { name: CREDENTIAL_PICKER_MFA_ACTION }).click();
+    await expect(stepUpDialog(page)).toBeVisible();
+    expect(credentials.count()).toBe(2);
+  });
 
   test("opening the credentials page still asks for step-up", async ({ page }) => {
     await installOperatorApi(page);

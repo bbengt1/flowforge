@@ -95,6 +95,11 @@ export const CREDENTIAL_PICKER_HELP =
   "Credentials are listed by name and id only. Kubeconfigs and other secrets are never shown or stored here.";
 
 /** Shown when the credential list for a picker didn't load. */
+/** Shown in a credential picker when the list needs MFA step-up first (#634 F5). */
+export const CREDENTIAL_PICKER_MFA_HINT =
+  "Verify it's you with multi-factor authentication to see credentials here.";
+export const CREDENTIAL_PICKER_MFA_ACTION = "Verify and load credentials";
+
 export const CREDENTIAL_PICKER_PROBLEM =
   "The credential list couldn't be loaded, so none can be picked. Check your access, then refresh.";
 

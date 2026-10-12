@@ -1,5 +1,6 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useEmbedMode } from "@/components/embed/EmbedMode";
@@ -8,7 +9,7 @@ import { maybeEmbedDeepLink } from "@/lib/embed-tenancy-contract";
 import { workspaceLookupKey } from "@/lib/identity-headers";
 import { listAlerts } from "@/lib/alert-client";
 import { canSeeAlertsNav } from "@/lib/alert";
-import { listCredentials } from "@/lib/credential-client";
+import { fetchSharedCredentialList } from "@/lib/credential-list-query";
 import { canSeeExecutionsNav } from "@/lib/execution";
 import { listExecutions } from "@/lib/execution-client";
 import { fetchWorkflowCatalog, listWorkflows } from "@/lib/workflow-client";
@@ -44,6 +45,7 @@ function GlobalSearchSession({ swaggerUrl }: GlobalSearchProps) {
   const router = useRouter();
   const embed = useEmbedMode();
   const { identity, ready, permissions } = useWorkspace();
+  const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [workflows, setWorkflows] = useState<WorkflowRecord[]>([]);
@@ -77,7 +79,8 @@ function GlobalSearchSession({ swaggerUrl }: GlobalSearchProps) {
         // Background read on every page: an admin who hasn't stepped up
         // just gets no credentials results, with no step-up prompt and no
         // error. Opening the credentials page still asks for step-up.
-        const result = await listCredentials(identity, {}, { quietMfa: true });
+        // Shared with the credential pickers, so the page reads it once.
+        const result = await fetchSharedCredentialList(queryClient, identity);
         if (!cancelled && result.ok) {
           setCredentials(result.items);
         }
@@ -99,7 +102,7 @@ function GlobalSearchSession({ swaggerUrl }: GlobalSearchProps) {
     return () => {
       cancelled = true;
     };
-  }, [ready, identity, permissions]);
+  }, [ready, identity, permissions, queryClient]);
 
   const hits = useMemo<SearchHit[]>(() => {
     const index = buildSearchIndex(
