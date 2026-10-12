@@ -2,14 +2,53 @@ id: 13-lease-loss
 drivers: [compose, runner]
 # S4 (#651): the worker claims seed and is killed holding the lease. Per the
 # current product (#664, Terry's #660 smoke on b6300b1): a lost lease means
-# the step's effect is unknown, so the run ends indeterminate (final, never
-# resumed), every step downstream is skipped upstream_indeterminate, one
-# job.recover and one counts-only execution.steps_closed row are written, and
-# retry is refused (409) on an indeterminate run.
-actions: [start, claim-and-die, advance-clock: 1m, tick-recover, new-runner, drive, retry-refused]
-run: {status: [indeterminate]}
-steps:
-  shape: {status: skipped, skipReason: upstream_indeterminate}
-  done:  {status: skipped, skipReason: upstream_indeterminate}
-noStepStatusIn: [pending, blocked]
-audit: {execution.start: 1, job.claim: 1, job.complete: 0, job.recover: 1, execution.steps_closed: 1}
+# the step's effect is unknown, so the claimed step and the run end
+# indeterminate (final, never resumed), every step downstream is skipped
+# upstream_indeterminate, one job.recover and one counts-only
+# execution.steps_closed row are written, and retry is refused (409) on an
+# indeterminate run. The job is never claimed again: after more clock and
+# recovery ticks there is still one seed job, one claim and attempt 1.
+cases:
+  - name: base
+    file: workflow.yaml
+    actions: [start, claim-and-die, advance-clock: 1m, tick-recover, new-runner, drive, advance-clock: 5m, tick-recover, drive, retry-refused]
+    run: {status: [indeterminate]}
+    steps:
+      seed:  {status: indeterminate, attempt: 1, attempts: 1, noOutput: true}
+      shape: {status: skipped, skipReason: upstream_indeterminate}
+      done:  {status: skipped, skipReason: upstream_indeterminate}
+    jobs: {seed: {count: 1}}
+    noStepStatusIn: [pending, blocked]
+    audit: {execution.start: 1, job.claim: 1, job.complete: 0, job.recover: 1, execution.steps_closed: 1}
+
+  # Gracie's H1 / #667: a lease loss is not a step failure, so onError must
+  # not route it. Only the lease-loss facts above are asserted; nothing else.
+  - name: continue
+    file: continue.workflow.yaml
+    today:                      # onError is not publishable until #649 S2 (#667)
+      save: {status: 201}
+      publishGuards:
+        - {patch: {}, status: 400, code: invalid-workflow, errors: [{code: on-error-not-yet-supported}]}
+    target:
+      actions: [start, claim-and-die, advance-clock: 1m, tick-recover, new-runner, drive, advance-clock: 5m, tick-recover, drive]
+      steps:
+        seed: {status: indeterminate, errorHandling: continue, attempt: 1, attempts: 1, noOutput: true}
+      jobs: {seed: {count: 1}}
+      audit: {job.claim: 1, job.recover: 1, step.error_routed: 0}
+    xfail:
+      - {part: continue, reason: "onError continue is not publishable before #649 S2 (#667): publish refuses on-error-not-yet-supported", issue: "#649 S2", drivers: [all]}
+
+  - name: error-output
+    file: errout.workflow.yaml
+    today:
+      save: {status: 201}
+      publishGuards:
+        - {patch: {}, status: 400, code: invalid-workflow, errors: [{code: on-error-not-yet-supported}]}
+    target:
+      actions: [start, claim-and-die, advance-clock: 1m, tick-recover, new-runner, drive, advance-clock: 5m, tick-recover, drive]
+      steps:
+        seed: {status: indeterminate, errorHandling: errorOutput, attempt: 1, attempts: 1, noOutput: true}
+      jobs: {seed: {count: 1}}
+      audit: {job.claim: 1, job.recover: 1, step.error_routed: 0}
+    xfail:
+      - {part: error-output, reason: "onError errorOutput is not publishable before #649 S2 (#667): publish refuses on-error-not-yet-supported", issue: "#649 S2", drivers: [all]}
