@@ -3,10 +3,9 @@
  * artifact download, compare) keeps the run page in place. Only a 403 on
  * loading the run itself replaces the page with the forbidden view.
  *
- * Refusals are told apart by HTTP status and problem code. The one
- * exception is CSRF: the server answers a CSRF mismatch with 403
- * `forbidden` and the detail "CSRF validation failed.", so it is read
- * through the shared `isCsrfProblem`, which falls back to that text.
+ * Refusals are told apart by HTTP status and problem code only. CSRF is
+ * 403 `csrf-invalid` (or the proxy's `csrf-required`), read through the
+ * shared `isCsrfProblem`.
  */
 
 import { EXECUTION_PROBLEM_CODES } from "./execution-contract.ts";

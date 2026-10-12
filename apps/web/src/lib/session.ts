@@ -278,18 +278,16 @@ export function passwordChangeUnauthenticatedKeepsSession(
   return path === SESSION_PASSWORD_PATH;
 }
 
+/**
+ * A CSRF refusal, by code only, never message text: `csrf-invalid` (the
+ * API sends it with 403 on both CSRF paths since #643) or `csrf-required`
+ * (the web client's own refusal when no token could be sent).
+ */
 export function isCsrfProblem(problem: ProblemDetails): boolean {
-  if (
+  return (
     problem.code === SESSION_PROBLEM_CODES.csrfRequired ||
     problem.code === SESSION_PROBLEM_CODES.csrfInvalid
-  ) {
-    return true;
-  }
-  if (problem.status !== 403) {
-    return false;
-  }
-  const haystack = `${problem.title} ${problem.detail} ${problem.code}`.toLowerCase();
-  return haystack.includes("csrf");
+  );
 }
 
 export function csrfRequiredProblem(

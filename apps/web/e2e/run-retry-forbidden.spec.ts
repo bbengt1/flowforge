@@ -147,12 +147,12 @@ test("the server's CSRF rejection on retry is a session notice, not a role refus
   page,
 }) => {
   await installOperatorApi(page, { permissions: PERMISSIONS });
-  // Shaped like core/session.go: 403, code forbidden, this exact detail.
+  // Shaped like core/session.go since #643: 403, code csrf-invalid.
   await refuse(
     page,
     "POST",
     (path) => path === `${RUN_PATH}/retry`,
-    "forbidden",
+    "csrf-invalid",
     "CSRF validation failed.",
   );
   const main = await openRun(page);
