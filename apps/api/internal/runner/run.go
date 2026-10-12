@@ -22,6 +22,14 @@ type Config struct {
 	// budget does not cap a claim while the process is still running.
 	DrainTimeout time.Duration
 	Log          *slog.Logger
+	// Now is a TEST-ONLY clock hook (#651 fixturesuite). It is settable
+	// only from Go code: there is deliberately no env var, flag, YAML or
+	// config-file path to it, and cmd/runner never sets it. Nil means
+	// real time. Every deadline read in Runner (delay, approval expiry,
+	// job binding) goes through it, always as UTC. When set, it is also
+	// handed to a *StoreQueue and Dispatcher whose own Now is nil, so the
+	// store sees the same clock. The poll ticker and drain timer stay real.
+	Now func() time.Time
 }
 
 // Runner claims jobs and dispatches them through Dispatcher.
@@ -63,7 +71,8 @@ func (b *bindingLog) observe(log *slog.Logger, view BindingView) {
 	)
 }
 
-// NewRunner returns a poll loop. now defaults to time.Now.
+// NewRunner returns a poll loop. now is cfg.Now when set, else time.Now;
+// both are normalized to UTC.
 func NewRunner(queue Queue, disp *Dispatcher, cfg Config) *Runner {
 	log := cfg.Log
 	if log == nil {
@@ -74,12 +83,23 @@ func NewRunner(queue Queue, disp *Dispatcher, cfg Config) *Runner {
 		interval = time.Second
 	}
 	cfg.PollInterval = interval
+	now := func() time.Time { return time.Now().UTC() }
+	if cfg.Now != nil {
+		fake := cfg.Now
+		now = func() time.Time { return fake().UTC() }
+		if q, ok := queue.(*StoreQueue); ok && q != nil && q.Now == nil {
+			q.Now = now
+		}
+		if disp != nil && disp.Now == nil {
+			disp.Now = now
+		}
+	}
 	return &Runner{
 		queue: queue,
 		disp:  disp,
 		cfg:   cfg,
 		log:   log,
-		now:   func() time.Time { return time.Now().UTC() },
+		now:   now,
 	}
 }
 
