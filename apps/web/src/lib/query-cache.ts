@@ -402,6 +402,21 @@ export function scimTokensListQueryKey(
   return key;
 }
 
+/**
+ * Workspace credential list (metadata only: display name, type, status).
+ * Shared by the search bar and every credential picker on a page, so one
+ * page load reads GET /credentials once (#634 F5).
+ */
+export function credentialListQueryKey(
+  scope: string,
+): readonly ["flowforge", string, "credentials", "list"] | null {
+  const key = ["flowforge", scope, "credentials", "list"] as const;
+  if (queryKeyHasSecret(key)) {
+    return null;
+  }
+  return key;
+}
+
 /** Roots reserved for the remaining god-component splits. */
 export const REMAINING_GOD_COMPONENT_QUERY_ROOTS = {
   workflowHome: ["flowforge", "workflow-home"] as const,

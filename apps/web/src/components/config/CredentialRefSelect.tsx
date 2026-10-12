@@ -1,6 +1,11 @@
 "use client";
 
-import { listCredentials } from "@/lib/credential-client";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  credentialListNeedsStepUp,
+  fetchSharedCredentialList,
+  type CredentialListResult,
+} from "@/lib/credential-list-query";
 import type { CredentialRecord, CredentialType } from "@/lib/credential-types";
 import type { DevIdentity } from "@/lib/identity-headers";
 import type { ProblemDetails } from "@/lib/problem";
@@ -11,6 +16,8 @@ import {
 import {
   CREDENTIAL_PICKER_HELP,
   CREDENTIAL_PICKER_KUBERNETES_HELP,
+  CREDENTIAL_PICKER_MFA_ACTION,
+  CREDENTIAL_PICKER_MFA_HINT,
   CREDENTIAL_PICKER_PROBLEM,
   CREDENTIAL_PICKER_SSH_HELP,
 } from "@/lib/config-plain-copy";
@@ -37,6 +44,8 @@ export function CredentialRefSelect({
   pendingItem = null,
   onChange,
 }: CredentialRefSelectProps) {
+  const queryClient = useQueryClient();
+  const [loudNonce, setLoudNonce] = useState(0);
   const [items, setItems] = useState<CredentialRecord[]>([]);
   const [problem, setProblem] = useState<ProblemDetails | null>(null);
   const [strippedKeys, setStrippedKeys] = useState<string[]>([]);
@@ -50,7 +59,12 @@ export function CredentialRefSelect({
     }
     let cancelled = false;
     const allowed = new Set(allowedKey ? allowedKey.split(",") : []);
-    void listCredentials(identity).then((result) => {
+    // Page loads read quietly and share one request; only the person's
+    // own "Verify and load" (loudNonce) may open MFA step-up.
+    void fetchSharedCredentialList(queryClient, identity, {
+      loud: loudNonce > 0,
+      fresh: refreshNonce > 0,
+    }).then((result: CredentialListResult) => {
       if (cancelled) {
         return;
       }
@@ -77,7 +91,8 @@ export function CredentialRefSelect({
     return () => {
       cancelled = true;
     };
-  }, [ready, identity, allowedKey, refreshNonce]);
+  }, [ready, identity, allowedKey, refreshNonce, loudNonce, queryClient]);
+  const needsStepUp = credentialListNeedsStepUp(problem);
 
   const visibleItems =
     pendingItem && !items.some((item) => item.id === pendingItem.id)
@@ -137,7 +152,18 @@ export function CredentialRefSelect({
             ? CREDENTIAL_PICKER_SSH_HELP
             : CREDENTIAL_PICKER_HELP}
       </span>
-      {problem ? (
+      {needsStepUp ? (
+        <span className="mt-1 block text-sm text-fg" data-credential-picker-state="mfa-required">
+          {CREDENTIAL_PICKER_MFA_HINT}{" "}
+          <button
+            type="button"
+            onClick={() => setLoudNonce((n) => n + 1)}
+            className="font-medium underline underline-offset-2"
+          >
+            {CREDENTIAL_PICKER_MFA_ACTION}
+          </button>
+        </span>
+      ) : problem ? (
         <span className="mt-1 block text-sm text-fg">
           {CREDENTIAL_PICKER_PROBLEM}
         </span>
