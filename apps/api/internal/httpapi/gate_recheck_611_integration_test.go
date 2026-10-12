@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -103,9 +104,13 @@ func (g *g611) prepare(requester identity.User, users, groups []string) string {
 	return startExecution(g.t, g.h, requester, g.w.tenant, g.w.ws, wf.Workflow.ID, pub.Version.ID).ID
 }
 
+// g611ClaimSeq numbers claim worker ids. Claims run concurrently in
+// TestGateRecheckNoDeadlock, so this cannot share the harness's seq.
+var g611ClaimSeq atomic.Int64
+
 func (g *g611) claim(actor identity.User) int {
-	g.th.seq++
-	return g.do(actor, http.MethodPost, "/api/v1/jobs/claim", fmt.Sprintf(`{"workerId":"g611-%d","leaseSeconds":5}`, g.th.seq)).Code
+	n := g611ClaimSeq.Add(1)
+	return g.do(actor, http.MethodPost, "/api/v1/jobs/claim", fmt.Sprintf(`{"workerId":"g611-%d","leaseSeconds":5}`, n)).Code
 }
 
 // park prepares and claims a gate, which must start waiting.

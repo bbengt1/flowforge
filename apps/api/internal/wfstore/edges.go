@@ -226,6 +226,7 @@ func markStepQueued(step *ExecutionStep, jobs []ExecutionJob, now time.Time) {
 
 func markStepSkipped(step *ExecutionStep, jobs []ExecutionJob, now time.Time) {
 	applyStepStatus(step, ExecutionSkipped, now)
+	step.SkipReason = SkipBranchNotTaken
 	jidx := jobIndexForStep(jobs, step.ID)
 	if jidx < 0 {
 		return

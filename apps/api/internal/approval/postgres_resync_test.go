@@ -165,7 +165,7 @@ func TestPostgresResyncCorrectsClosesAndFreesSlot(t *testing.T) {
 		t.Fatalf("gate took expired port: %+v", gateStep.Output)
 	}
 	lateStep, lateJob := stepAndJob(t, ctx, store, scope, exec2.ID, "late")
-	if lateStep.Status != wfstore.ExecutionPending || lateJob.Status != wfstore.JobBlocked || lateStep.StartedAt != nil {
+	if lateStep.Status != wfstore.ExecutionSkipped || lateStep.SkipReason != wfstore.SkipUpstreamFailed || lateJob.Status != wfstore.JobSkipped || lateStep.StartedAt != nil {
 		t.Fatalf("late step=%s job=%s started=%v", lateStep.Status, lateJob.Status, lateStep.StartedAt)
 	}
 	if code, _ := lateStep.Error["code"].(string); code != "" {
@@ -187,7 +187,7 @@ func TestPostgresResyncCorrectsClosesAndFreesSlot(t *testing.T) {
 		t.Fatalf("third = %+v %v", third, err)
 	}
 	stillLate, stillLateJob := stepAndJob(t, ctx, store, scope, exec2.ID, "late")
-	if stillLate.Status != wfstore.ExecutionPending || stillLateJob.Status != wfstore.JobBlocked {
+	if stillLate.Status != wfstore.ExecutionSkipped || stillLate.SkipReason != wfstore.SkipUpstreamFailed || stillLateJob.Status != wfstore.JobSkipped {
 		t.Fatalf("second pass released late step=%s job=%s", stillLate.Status, stillLateJob.Status)
 	}
 }
@@ -304,7 +304,7 @@ func TestPostgresResyncRollsUpAfterSiblingFinishes(t *testing.T) {
 		t.Fatal(code)
 	}
 	lateStep, lateJob = stepAndJob(t, ctx, store, scope, exec.ID, "late")
-	if lateStep.Status != wfstore.ExecutionPending || lateJob.Status != wfstore.JobBlocked || lateStep.StartedAt != nil {
+	if lateStep.Status != wfstore.ExecutionSkipped || lateStep.SkipReason != wfstore.SkipUpstreamFailed || lateJob.Status != wfstore.JobSkipped || lateStep.StartedAt != nil {
 		t.Fatalf("late after sibling step=%s job=%s", lateStep.Status, lateJob.Status)
 	}
 	if err := admin.QueryRow(ctx, `

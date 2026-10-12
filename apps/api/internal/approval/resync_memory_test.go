@@ -70,7 +70,7 @@ func TestMemoryResyncFailsUnresolvableRun(t *testing.T) {
 		t.Fatalf("gate took expired port: %+v", gateStep.Output)
 	}
 	lateStep, lateJob := memoryStepJob(t, ctx, workflows, scope, exec.ID, "late")
-	if lateStep.Status != wfstore.ExecutionPending || lateJob.Status != wfstore.JobBlocked || lateStep.StartedAt != nil {
+	if lateStep.Status != wfstore.ExecutionSkipped || lateStep.SkipReason != wfstore.SkipUpstreamFailed || lateJob.Status != wfstore.JobSkipped || lateStep.StartedAt != nil {
 		t.Fatalf("late step=%s job=%s started=%v", lateStep.Status, lateJob.Status, lateStep.StartedAt)
 	}
 	if _, err := workflows.StartExecution(ctx, scope, ver.WorkflowID, wfstore.StartInput{VersionID: ver.ID, MaxOpen: 1}); err != nil {
@@ -85,7 +85,7 @@ func TestMemoryResyncFailsUnresolvableRun(t *testing.T) {
 		t.Fatalf("second pass changed %+v", still)
 	}
 	stillLate, _ := memoryStepJob(t, ctx, workflows, scope, exec.ID, "late")
-	if stillLate.Status != wfstore.ExecutionPending {
+	if stillLate.Status != wfstore.ExecutionSkipped || stillLate.SkipReason != wfstore.SkipUpstreamFailed {
 		t.Fatalf("second pass released late %s", stillLate.Status)
 	}
 }
@@ -176,7 +176,7 @@ func TestMemoryResyncRollsUpAfterSiblingFinishes(t *testing.T) {
 		t.Fatalf("gate error = %+v", gateStep.Error)
 	}
 	lateStep, lateJob := memoryStepJob(t, ctx, workflows, scope, exec.ID, "late")
-	if lateStep.Status != wfstore.ExecutionPending || lateJob.Status != wfstore.JobBlocked || lateStep.StartedAt != nil {
+	if lateStep.Status != wfstore.ExecutionSkipped || lateStep.SkipReason != wfstore.SkipUpstreamFailed || lateJob.Status != wfstore.JobSkipped || lateStep.StartedAt != nil {
 		t.Fatalf("late step=%s job=%s", lateStep.Status, lateJob.Status)
 	}
 	if _, err := workflows.StartExecution(ctx, scope, ver.WorkflowID, wfstore.StartInput{VersionID: ver.ID, MaxOpen: 1}); err != nil {

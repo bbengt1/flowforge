@@ -33,7 +33,7 @@ func (m *Memory) Delete(ctx context.Context, scope isolation.Scope, id string) (
 		}
 	}
 	for _, executionID := range finished {
-		m.rollupFinishedLocked(now, executionID)
+		m.rollupFinishedLocked(scope, now, executionID)
 	}
 	published := row.record.Status == StatusPublished
 	row.record.Status = StatusDraft
@@ -140,7 +140,7 @@ func (m *Memory) ApprovalGateWaiting(executionID, nodeID string) (found, waiting
 	return true, step.Status == ExecutionWaiting && jobStatus == JobWaiting
 }
 
-func (m *Memory) rollupFinishedLocked(now time.Time, executionID string) {
+func (m *Memory) rollupFinishedLocked(scope isolation.Scope, now time.Time, executionID string) {
 	exec, ok := m.executions[executionID]
 	if !ok {
 		return
@@ -148,6 +148,9 @@ func (m *Memory) rollupFinishedLocked(now time.Time, executionID string) {
 	next := rollupExecutionStatus(exec.jobs, exec.steps)
 	if !isTerminalExecution(next) {
 		return
+	}
+	if next != ExecutionPinned {
+		m.closeOutLocked(scope, &exec, closeOutReason(next), now)
 	}
 	applyExecutionStatus(&exec.record, next, now)
 	m.executions[executionID] = exec
@@ -162,6 +165,8 @@ func (m *Memory) closeParkedLocked(scope isolation.Scope, now time.Time, executi
 		return nil
 	}
 	errBody := workflowDeletedStepError()
+	// #660: never-run steps end skipped/workflow_deleted.
+	m.closeOutLocked(scope, &exec, SkipWorkflowDeleted, now)
 	for i := range exec.jobs {
 		switch exec.jobs[i].Status {
 		case JobWaiting, JobBlocked:
@@ -174,7 +179,7 @@ func (m *Memory) closeParkedLocked(scope isolation.Scope, now time.Time, executi
 	}
 	for i := range exec.steps {
 		switch exec.steps[i].Status {
-		case ExecutionWaiting, ExecutionPending:
+		case ExecutionWaiting:
 			exec.steps[i].Error = errBody
 			applyStepStatus(&exec.steps[i], ExecutionCanceled, now)
 		}
@@ -216,6 +221,8 @@ func (m *Memory) stopExecutionLocked(scope isolation.Scope, now time.Time, execu
 		return nil
 	}
 	errBody := workflowDeletedStepError()
+	// #660: never-run steps end skipped/workflow_deleted.
+	m.closeOutLocked(scope, &exec, SkipWorkflowDeleted, now)
 	for i := range exec.jobs {
 		if jobIsOpen(exec.jobs[i].Status) {
 			exec.jobs[i].Status = JobFailed
@@ -224,7 +231,7 @@ func (m *Memory) stopExecutionLocked(scope isolation.Scope, now time.Time, execu
 	}
 	for i := range exec.steps {
 		switch exec.steps[i].Status {
-		case ExecutionPending, ExecutionQueued, ExecutionRunning, ExecutionWaiting:
+		case ExecutionRunning, ExecutionWaiting:
 			exec.steps[i].Error = errBody
 			applyStepStatus(&exec.steps[i], ExecutionFailed, now)
 		}

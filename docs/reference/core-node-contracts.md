@@ -110,9 +110,9 @@ E3.1 fixtures `mapping: {a: b}` remain valid.
 
 | | |
 | --- | --- |
-| Ports | in `input` (any, not copied to output) → out `result` `{status, message?}` (public) |
+| Ports | in `input` (any, not copied to output) → out `result` `{status, message?}` (public), emitted **only** for `status: success` |
 | `allowedWith` | `status` (`success`\|`failure`\|`canceled`, default `success`), `message` (≤256 bytes, no secrets/stack traces) |
-| Behavior | Ends **this path only**. Not a cancel-other-execution API. |
+| Behavior | Ends **this path only**. Not a cancel-other-execution API. `success` finishes the step and emits `result`. `failure` and `canceled` fail the step: its `error.code` is the stable code `failure` or `canceled`, and `error.message` is the safe `message` (empty when unset). A failed step releases no downstream edges, so `result` is not delivered and the run rolls up as failed. |
 
 ### `flow.fail`
 

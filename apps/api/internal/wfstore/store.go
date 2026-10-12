@@ -271,6 +271,9 @@ type ExecutionStep struct {
 	StartedAt       *time.Time     `json:"startedAt,omitempty"`
 	FinishedAt      *time.Time     `json:"finishedAt,omitempty"`
 	UpdatedAt       time.Time      `json:"updatedAt"`
+	// SkipReason is set exactly when Status is skipped (#660): one of
+	// SkipReasons.
+	SkipReason string `json:"skipReason,omitempty"`
 	// UnresolvedIncoming is the number of incoming edges that have not
 	// resolved yet. It is a claim backstop, not an API field.
 	UnresolvedIncoming int                    `json:"-"`
