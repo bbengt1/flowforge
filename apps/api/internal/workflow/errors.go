@@ -59,6 +59,13 @@ const (
 	CodeInvalidSource         = "invalid-source"
 	CodeInvalidRuntimeProfile = "invalid-runtime-profile"
 	CodeInvalidVerification   = "invalid-verification"
+	// #649 S1 onError publish validation.
+	CodeInvalidOnError          = "invalid-on-error"
+	CodeOnErrorNotAllowed       = "on-error-not-allowed"
+	CodeErrorEdgeMissing        = "error-edge-missing"
+	CodeErrorEdgeWithoutHandler = "error-edge-without-error-output"
+	// Publish-only until #649 S2 enables the engine path.
+	CodeOnErrorNotYetSupported = "on-error-not-yet-supported"
 )
 
 func fieldError(path string, line, column int, code, message string) FieldError {
