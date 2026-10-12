@@ -18,6 +18,7 @@ import {
   type NdvRunIoContextSource,
 } from "@/lib/editor-ndv-run-io";
 import { INDETERMINATE_STATUS_HELP } from "@/lib/execution-contract";
+import { EXECUTION_INBOX_OPEN_HINT } from "@/lib/execution-inbox";
 import {
   isSshRunType,
   parseSshRetryResult,
@@ -188,7 +189,7 @@ export function LastRunIoPanel({
               </Link>
               <span className="text-xs text-fg">
                 {" "}
-                — /executions/{"{id}"}
+                — {EXECUTION_INBOX_OPEN_HINT}
               </span>
             </p>
           ) : null}

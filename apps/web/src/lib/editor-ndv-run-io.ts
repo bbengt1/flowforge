@@ -105,8 +105,16 @@ export const EDITOR_NDV_RUN_IO = {
   migrateInPlace: true,
 } as const;
 
-export const NDV_RUN_IO_OPERATE_HELP =
+/**
+ * Contract note for route checks. Not UI copy: never render it. Last-run
+ * step I/O is redacted, shown at operate density, and full run detail
+ * stays on /executions/{id}.
+ */
+export const NDV_RUN_IO_CONTRACT_NOTE =
   "Redacted last-run step I/O for this node at operate density. Context is the overlay-selected run or the latest published run. Failures jump to the node. Full run detail stays on /executions/{id}. Drafts never run.";
+
+export const NDV_RUN_IO_OPERATE_HELP =
+  "What this step took in and put out on the last run, with secrets hidden. It shows the run you picked in Runs, or the latest published run. Failed steps jump to the node. The full run is on its run page. Drafts never run.";
 
 export const NDV_RUN_IO_LATEST_HELP =
   "Showing the latest published run. Select a run in Runs to overlay it on this canvas.";
@@ -120,8 +128,12 @@ export const NDV_RUN_IO_NO_RUN_HELP =
 export const NDV_RUN_IO_JUMP_HELP =
   "Failures and indeterminate steps jump to the node on this canvas.";
 
-export const NDV_RUN_IO_PAYLOAD_GAP_HELP =
+/** Contract note for route checks. Not UI copy: never render it. */
+export const NDV_RUN_IO_PAYLOAD_GAP_CONTRACT_NOTE =
   "This step has no redacted input, output, or error on GET /executions/{id}. Do not invent a step payload shape. jonny standby.";
+
+export const NDV_RUN_IO_PAYLOAD_GAP_HELP =
+  "This step has no input, output, or error to show for this run.";
 
 export const NDV_RUN_IO_JUMP_LABEL = "Jump to node";
 
@@ -372,7 +384,7 @@ export function ndvRunIoAnnouncement(input: {
   if (input.view.io.indeterminate) {
     return `${head} Last run step is indeterminate. ${INDETERMINATE_STATUS_HELP}`;
   }
-  return `${head} Inspector shows redacted last-run step I/O at operate density.`;
+  return `${head} Inspector shows what this step took in and put out on the last run, with secrets hidden.`;
 }
 
 export function ndvRunIoIndeterminateIsLoud(status = "indeterminate"): boolean {

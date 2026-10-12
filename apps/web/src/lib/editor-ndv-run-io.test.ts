@@ -13,9 +13,11 @@ import {
   NDV_RUN_IO_LATEST_LIST_LIMIT,
   NDV_RUN_IO_LOGS_PATH,
   NDV_RUN_IO_NO_RUN_HELP,
+  NDV_RUN_IO_CONTRACT_NOTE,
   NDV_RUN_IO_OPERATE_HELP,
   NDV_RUN_IO_OVERLAY_HELP,
   NDV_RUN_IO_PANEL,
+  NDV_RUN_IO_PAYLOAD_GAP_CONTRACT_NOTE,
   NDV_RUN_IO_PAYLOAD_GAP_HELP,
   NDV_RUN_IO_RAIL_SOURCES,
   NDV_RUN_IO_REPLAY_GRAPH_SOURCE,
@@ -129,8 +131,11 @@ describe("R4.3 NDV last-run I/O operate density", () => {
     assert.equal(R4_GUARDRAILS.overlayStaysEditorOnly, true);
     assert.match(R4_LATER_STORY_NOTES.r43, /#256/);
     assert.equal(NDV_RUN_IO_PANEL, "last-run");
-    assert.match(NDV_RUN_IO_OPERATE_HELP, /operate density/);
-    assert.match(NDV_RUN_IO_OPERATE_HELP, /\/executions\/\{id\}/);
+    assert.match(NDV_RUN_IO_CONTRACT_NOTE, /\/executions\/\{id\}/);
+    assert.doesNotMatch(
+      NDV_RUN_IO_OPERATE_HELP,
+      /operate density|\/executions|I\/O|redacted/i,
+    );
     assert.match(NDV_RUN_IO_JUMP_HELP, /jump to the node/);
   });
 
@@ -219,7 +224,7 @@ describe("R4.3 NDV last-run I/O operate density", () => {
         nodeType: "kubernetes.apply",
         view,
       }),
-      /operate density/,
+      /what this step took in and put out/,
     );
 
     const missing = ndvRunIoView({ detail: failed, nodeId: "plan", source: "latest" });
@@ -239,14 +244,15 @@ describe("R4.3 NDV last-run I/O operate density", () => {
     assert.equal(ndvRunIoStepPayloadGap(null), false);
     const view = ndvRunIoView({ detail: gap, nodeId: "apply", source: "latest" });
     assert.equal(view.payloadGap, true);
-    assert.match(NDV_RUN_IO_PAYLOAD_GAP_HELP, /jonny standby/);
+    assert.match(NDV_RUN_IO_PAYLOAD_GAP_CONTRACT_NOTE, /jonny standby/);
+    assert.doesNotMatch(NDV_RUN_IO_PAYLOAD_GAP_HELP, /jonny|GET |\/executions|redacted/i);
     assert.equal(EDITOR_NDV_RUN_IO.noInventedStepPayloadShapes, true);
     assert.equal(EDITOR_NDV_RUN_IO.jonnyNeededForStepIo, false);
     assert.equal(ndvRunIoDocumentsPayloadGap(detail()), true);
     assert.equal(ndvRunIoDocumentsPayloadGap(gap), true);
     assert.match(
       ndvRunIoAnnouncement({ nodeId: "apply", view }),
-      /jonny standby/,
+      new RegExp(NDV_RUN_IO_PAYLOAD_GAP_HELP),
     );
   });
 

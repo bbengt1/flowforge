@@ -5,6 +5,7 @@ import {
   OPERATOR_FAILED_EXECUTION_ID,
   OPERATOR_WORKFLOW_ID,
 } from "./operator-api";
+import { MANUAL_START_INPUT_HELP } from "../src/lib/manual-start-contract.ts";
 
 /**
  * The runs inbox, the run page, and the Start panel say things in plain
@@ -144,10 +145,17 @@ test.describe("runs inbox", () => {
     const main = page.locator("main");
     await expect(main.getByText(INBOX_HELP)).toBeVisible();
     await expect(
-      page.getByRole("listbox", { name: "Workspace executions" }).getByRole("option", { name: /Deploy/ }),
+      page
+        .getByRole("list", { name: "Workspace executions" })
+        .getByRole("listitem")
+        .filter({ hasText: "Deploy" }),
     ).toBeVisible();
     await expectNoDeveloperText(main);
     await expect(main.locator("code")).toHaveCount(0);
+    // Rows carry buttons, so the inbox is a plain list, not a listbox (#634 F3).
+    const listbox = page.getByRole("list", { name: "Workspace executions" });
+    await expect(page.getByRole("listbox")).toHaveCount(0);
+    await expect(listbox).not.toContainText("/executions/{id}");
     await expectNoBlockingAxeViolations(page);
   });
 
@@ -163,6 +171,49 @@ test.describe("runs inbox", () => {
     await expectNoTitles(main);
     await expectNoBlockingAxeViolations(page);
   });
+});
+
+test("runs inbox rows that show Cancel, Retry and Approve have no axe violations (#634 F3)", async ({ page }) => {
+  await installOperatorApi(page, { permissions: PERMISSIONS });
+  const base = {
+    workflowId: OPERATOR_WORKFLOW_ID,
+    workflowName: "Deploy",
+    workflowSlug: "deploy",
+    workflowVersionId: VERSION_ID,
+    workflowVersionNumber: 1,
+    createdAt: "2026-09-01T12:00:00.000Z",
+    updatedAt: "2026-09-01T12:01:00.000Z",
+    startedAt: "2026-09-01T12:00:00.000Z",
+    permittedActions: ["view"],
+  };
+  const RUNNING_ID = "77777777-7777-4777-8777-777777777771";
+  const WAITING_ID = "77777777-7777-4777-8777-777777777772";
+  await fulfillJson(page, (path) =>
+    path === "/executions"
+      ? {
+          items: [
+            { ...base, id: RUNNING_ID, status: "running" },
+            { ...base, id: WAITING_ID, status: "waiting" },
+            {
+              ...base,
+              id: OPERATOR_FAILED_EXECUTION_ID,
+              status: "failed",
+              finishedAt: "2026-09-01T12:01:00.000Z",
+            },
+          ],
+        }
+      : undefined,
+  );
+  await page.goto("/executions");
+  const listbox = page.getByRole("list", { name: "Workspace executions" });
+  await expect(listbox.getByRole("listitem")).toHaveCount(3);
+  const actions = listbox.locator("[data-execution-operate-action], [data-execution-decide-action], li button");
+  await expect(listbox.getByRole("button", { name: "Cancel" }).first()).toBeVisible();
+  await expect(listbox.getByRole("button", { name: /^Retry/ }).first()).toBeVisible();
+  await expect(listbox.getByRole("button", { name: /Approve/ }).first()).toBeVisible();
+  expect(await actions.count()).toBeGreaterThan(0);
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await expectNoBlockingAxeViolations(page);
 });
 
 test("the run page and its retry conflict are plain", async ({ page }) => {
@@ -186,6 +237,8 @@ test("the run page and its retry conflict are plain", async ({ page }) => {
       "Worker jobs for this run, with their lease and heartbeat details when available. Worker secrets are never shown.",
     ),
   ).toBeVisible();
+  // Landmarks are named once each (#634 F4).
+  await expect(page.getByRole("region", { name: "Graph replay" })).toHaveCount(1);
   await expectNoDeveloperText(main);
   await expect(main.locator("code")).toHaveCount(0);
   await expectNoBlockingAxeViolations(page);
@@ -233,6 +286,8 @@ test("the Start panel's conflict message is plain", async ({ page }) => {
   }
   const start = panel.getByRole("button", { name: "Start", exact: true });
   await expect(start).toBeEnabled();
+  // The input hint shows once (#634 L-b).
+  await expect(panel.getByText(MANUAL_START_INPUT_HELP)).toHaveCount(1);
   await expectNoDeveloperText(panel);
   await expectNoTitles(panel);
   await start.click();
