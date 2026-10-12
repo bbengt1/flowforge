@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"sort"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -23,6 +24,8 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/quota"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
+	"github.com/bbengt1/flowforge/apps/api/internal/vault"
+	"github.com/bbengt1/flowforge/apps/api/internal/webhook"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -45,6 +48,9 @@ type Env struct {
 	skew   atomic.Int64
 	jobKey []byte
 	api    *httpapi.API
+	// capture records every response (S3 secret scan) when set.
+	capMu   sync.Mutex
+	capture *[]Response
 }
 
 // Now is the suite's fake clock.
@@ -96,6 +102,9 @@ func newEnv(t *testing.T) *Env {
 		Now:              env.Now,
 		Quota:            quota.Unlimited(),
 		ScriptSigningKey: scripts.NewSigningKey(),
+		// S3: credentials and webhook secrets (canary seeds, cross-tenant).
+		Vault: vault.NewPostgres(app, vault.TestKeys(), nil),
+		Hooks: webhook.NewPostgres(app),
 	}
 	// Test-only: trust identity headers, as the httpapi tests do.
 	d.Security.TrustIdentityHeaders = true
@@ -112,6 +121,7 @@ func newEnv(t *testing.T) *Env {
 type Response struct {
 	Status int
 	Body   []byte
+	Header http.Header
 }
 
 // Problem is the subset of a problem document the suite checks.
@@ -132,8 +142,48 @@ func (r Response) problem() Problem {
 
 func (e *Env) serve(req *http.Request) Response {
 	rec := httptest.NewRecorder()
-	e.h.ServeHTTP(rec, req)
-	return Response{Status: rec.Code, Body: rec.Body.Bytes()}
+	e.handler().ServeHTTP(rec, req)
+	return Response{Status: rec.Code, Body: rec.Body.Bytes(), Header: rec.Header()}
+}
+
+// handler is the API handler; while a capture is on it records every
+// response (suite calls and compose worker traffic) for the secret scan.
+func (e *Env) handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		e.capMu.Lock()
+		on := e.capture != nil
+		e.capMu.Unlock()
+		if !on {
+			e.h.ServeHTTP(w, r)
+			return
+		}
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, r)
+		e.capMu.Lock()
+		if e.capture != nil {
+			*e.capture = append(*e.capture, Response{Status: rec.Code, Body: append([]byte(nil), rec.Body.Bytes()...), Header: rec.Header().Clone()})
+		}
+		e.capMu.Unlock()
+		for k, v := range rec.Header() {
+			w.Header()[k] = v
+		}
+		w.WriteHeader(rec.Code)
+		_, _ = w.Write(rec.Body.Bytes())
+	})
+}
+
+// Capture starts recording responses; stop returns them.
+func (e *Env) Capture() (stop func() []Response) {
+	var got []Response
+	e.capMu.Lock()
+	e.capture = &got
+	e.capMu.Unlock()
+	return func() []Response {
+		e.capMu.Lock()
+		defer e.capMu.Unlock()
+		e.capture = nil
+		return got
+	}
 }
 
 func newReq(method, path string, body any, user identity.User) *http.Request {

@@ -1,0 +1,101 @@
+id: rbac_refusal
+source: terry/epic0-fixtures/security/rbac_refusal.yaml
+description: Role refusals assert status + code only, never message text, with no side effect.
+drivers: [compose, runner]
+checks:
+  - name: viewer-save
+    kind: http
+    as: viewer
+    method: POST
+    path: /api/v1/workflows
+    body: {definitionYaml: "{fixture:01-linear/workflow.yaml}"}
+    status: 403
+    code: forbidden
+  - name: viewer-publish
+    kind: http
+    as: viewer
+    method: POST
+    path: "/api/v1/workflows/{A.draftOnly}/publish"
+    body: {revision: "{A.draftRevision}", note: s3}
+    status: 403
+    code: forbidden
+  - name: viewer-start
+    kind: http
+    as: viewer
+    method: POST
+    path: "/api/v1/workflows/{A.workflow}/executions"
+    body: {workflowVersionId: "{A.version}"}
+    status: 403
+    code: forbidden
+    sideEffects: {executions: 0, "audit:execution.start": 0}
+  - name: viewer-retry
+    kind: http
+    as: viewer
+    method: POST
+    path: "/api/v1/executions/{A.failedExecution}/retry"
+    status: 403
+    code: forbidden
+    sideEffects: {executions: 0, "audit:execution.retry": 0}
+  - name: viewer-decide
+    kind: http
+    as: viewer
+    method: POST
+    path: "/api/v1/approvals/{A.approval}/decide"
+    body: {decision: approve}
+    status: 403
+    code: forbidden
+    sideEffects: {approval_events: 0, "audit:job.resume": 0}
+  - name: decide-own-request       # spec row says editor; editor cannot start runs, so the requester is an operator+approver member
+    kind: http
+    as: requester
+    method: POST
+    path: "/api/v1/approvals/{A.approval}/decide"
+    body: {decision: approve}
+    status: 403
+    code: forbidden
+    sideEffects: {approval_events: 0, "audit:job.resume": 0}
+  - name: machine-decide           # #620: a machine principal with the approver role never decides
+    kind: http
+    as: machine
+    method: POST
+    path: "/api/v1/approvals/{A.approval}/decide"
+    body: {decision: approve}
+    status: 403
+    code: forbidden
+    sideEffects: {approval_events: 0, "audit:job.resume": 0}
+  - name: operator-start           # control row
+    kind: http
+    as: operator
+    method: POST
+    path: "/api/v1/workflows/{A.workflow}/executions"
+    body: {workflowVersionId: "{A.version}"}
+    status: 201
+    sideEffects: {executions: 1, "audit:execution.start": 1}
+  - name: none-start
+    kind: http
+    as: none
+    method: POST
+    path: "/api/v1/workflows/{A.workflow}/executions"
+    body: {workflowVersionId: "{A.version}"}
+    status: 401
+    sideEffects: {executions: 0, "audit:execution.start": 0}
+  - name: csrf-session-no-header
+    kind: csrf
+    session: no-header
+    method: POST
+    path: "/api/v1/workflows/{A.workflow}/executions"
+    body: {workflowVersionId: "{A.version}"}
+    status: 403
+    code: csrf-required
+    sideEffects: {executions: 0}
+  - name: csrf-session-bad-token
+    kind: csrf
+    session: bad-token
+    method: POST
+    path: "/api/v1/workflows/{A.workflow}/executions"
+    body: {workflowVersionId: "{A.version}"}
+    status: 403
+    code: csrf-invalid
+    sideEffects: {executions: 0}
+xfail:
+  - {part: csrf-session-no-header, reason: "spec expects csrf-required for a missing header; #636 answers csrf-invalid on both CSRF paths and has no csrf-required code. Spec vs product: Terry/Gracie to confirm", issue: "#636", drivers: [all]}
