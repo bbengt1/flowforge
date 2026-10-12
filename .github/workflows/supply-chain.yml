@@ -111,6 +111,21 @@ jobs:
       # map 42501 to "not found".
       - name: Test with coverage
         run: go test -p 1 ./... -coverprofile=coverage.out -covermode=atomic
+      # #651: test-only nodes (test.flaky) exist only with -tags fftest.
+      - name: Test-only nodes stay out of production builds
+        run: |
+          set -euo pipefail
+          # Untagged builds must not compile any fftest file into the
+          # workflow registry, and no release build may set the tag.
+          if go list -f '{{join .GoFiles " "}}' ./internal/workflow | grep -q fftest; then
+            echo "fftest file compiled into untagged workflow package" >&2; exit 1
+          fi
+          if grep -rn "fftest" Dockerfile* ../../.github/workflows/*release* 2>/dev/null; then
+            echo "release build references the fftest tag" >&2; exit 1
+          fi
+          go test -p 1 ./internal/workflow -run TestProdBuildHasNoTestNodes -count=1
+      - name: fftest-tagged tests (test.flaky)
+        run: go test -tags fftest -p 1 ./internal/workflow ./internal/runner ./internal/localworker -count=1
       - name: Coverage summary
         if: always()
         run: |

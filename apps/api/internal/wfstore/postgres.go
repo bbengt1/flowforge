@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
+	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/page"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
@@ -530,6 +531,16 @@ func (p *Postgres) Publish(ctx context.Context, scope isolation.Scope, workflowI
 
 	wf, err := scanWorkflow(tx.QueryRow(ctx, getWorkflowSQL, workflowID))
 	if err != nil {
+		return Workflow{}, Version{}, err
+	}
+	// Same transaction as the version insert: no audit, no publish.
+	name := ""
+	if actor := scope.ActorID(); actor != "" {
+		if name, err = identity.AuditDisplayNameTx(ctx, tx, actor); err != nil {
+			return Workflow{}, Version{}, err
+		}
+	}
+	if _, err := insertAuditTx(ctx, tx, scope, publishAudit(scope, name, workflowID, ver)); err != nil {
 		return Workflow{}, Version{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
