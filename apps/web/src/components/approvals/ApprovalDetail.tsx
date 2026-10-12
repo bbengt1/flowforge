@@ -153,6 +153,7 @@ export function ApprovalDetail({ approvalId }: ApprovalDetailProps) {
           {approval.validity.currentBinding ? (
             <ApprovalBindingSnapshot
               binding={approval.validity.currentBinding}
+              scope="after the recheck"
               caption="What's current now, after the recheck. It no longer matches what this request covers."
             />
           ) : null}

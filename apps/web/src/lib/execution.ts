@@ -452,6 +452,32 @@ export function executionStatusReasonSentence(reason: unknown): string | null {
   return EXECUTION_STATUS_REASON_SENTENCES[known];
 }
 
+/**
+ * An audit event's details for the run page. A reason that has its own
+ * plain sentence (missing_actor) shows as that sentence and is dropped
+ * from the JSON block; every other key stays as the redacted diagnostic.
+ */
+export function auditEventDetailsDisplay(details: unknown): {
+  sentence: string | null;
+  details: unknown;
+} {
+  if (!details || typeof details !== "object" || Array.isArray(details)) {
+    return { sentence: null, details };
+  }
+  const record = details as Record<string, unknown>;
+  const reason = record.reason;
+  if (typeof reason !== "string" || !SENTENCE_ONLY_STATUS_REASONS.has(reason)) {
+    return { sentence: null, details };
+  }
+  const sentence = executionStatusReasonSentence(reason);
+  if (!sentence) {
+    return { sentence: null, details };
+  }
+  const rest = { ...record };
+  delete rest.reason;
+  return { sentence, details: Object.keys(rest).length > 0 ? rest : null };
+}
+
 /** error.details.cause on a failed step, or empty when unknown. */
 function readStepErrorCause(error: unknown): "no_eligible_decider" | "" {
   let cleaned: unknown;

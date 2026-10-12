@@ -5,14 +5,19 @@ import type { ApprovalBinding } from "@/lib/approval-types";
 type ApprovalBindingSnapshotProps = {
   binding: ApprovalBinding;
   caption?: string;
+  /** Tells this snapshot apart from others on the page. Defaults to the step name. */
+  scope?: string;
 };
 
 export function ApprovalBindingSnapshot({
   binding,
   caption = "It no longer applies if the policy, target, or workflow version changes.",
+  scope,
 }: ApprovalBindingSnapshotProps) {
   // Detail pages and run panels can show more than one snapshot.
   const headingId = useId();
+  // Landmarks of one kind need unique names, so say which step this is.
+  const where = scope ?? (binding.nodeName || binding.nodeId);
   return (
     <section
       aria-labelledby={headingId}
@@ -20,6 +25,7 @@ export function ApprovalBindingSnapshot({
     >
       <h3 id={headingId} className="text-sm font-semibold">
         What this approval covers
+        {where ? <span className="sr-only">: {where}</span> : null}
       </h3>
       <p className="mt-1 text-sm text-fg">{caption}</p>
       <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">

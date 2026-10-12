@@ -376,7 +376,10 @@ export function ManualStartPanel({
             onFieldValues={setFieldValues}
             onJsonText={setJsonText}
           />
-          <p className="text-xs text-fg">{MANUAL_START_INPUT_HELP}</p>
+          {/* The untyped JSON box already carries this hint; show it once. */}
+          {schema.fields.length > 0 ? (
+            <p className="text-xs text-fg">{MANUAL_START_INPUT_HELP}</p>
+          ) : null}
           {preview.confirmation ? (
             <section
               aria-labelledby="manual-start-confirm-heading"

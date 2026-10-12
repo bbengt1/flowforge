@@ -40,6 +40,7 @@ import { manualStartHref } from "@/lib/manual-start-contract";
 import { useExecutionDetailQuery } from "@/components/executions/useExecutionDetailQuery";
 import { closedApprovalGateLines } from "@/lib/approval";
 import {
+  auditEventDetailsDisplay,
   boundRedactedDisplay,
   canCancelExecution,
   downloadGrantFailureMessage,
@@ -1182,11 +1183,21 @@ export function ExecutionDetail({
                       {event.occurredAt || "—"}
                       {event.correlationId ? ` · ${event.correlationId}` : ""}
                     </p>
-                    {event.details != null ? (
-                      <pre className={`mt-2 overflow-auto rounded-lg p-3 font-mono text-xs ${FF_INBOX_PANEL_CLASS}`}>
-                        {boundRedactedDisplay(event.details).text}
-                      </pre>
-                    ) : null}
+                    {(() => {
+                      const shown = auditEventDetailsDisplay(event.details);
+                      return (
+                        <>
+                          {shown.sentence ? (
+                            <p className="mt-2 text-sm">{shown.sentence}</p>
+                          ) : null}
+                          {shown.details != null ? (
+                            <pre className={`mt-2 overflow-auto rounded-lg p-3 font-mono text-xs ${FF_INBOX_PANEL_CLASS}`}>
+                              {boundRedactedDisplay(shown.details).text}
+                            </pre>
+                          ) : null}
+                        </>
+                      );
+                    })()}
                   </li>
                 ))}
               </ul>
