@@ -36,3 +36,15 @@ func TestCanaryFormsCoverEncodings(t *testing.T) {
 		}
 	}
 }
+
+func TestSecuritySchemaS3Followup(t *testing.T) {
+	ok := "id: x\ndrivers: [compose]\nchecks:\n  - {name: a, kind: csrf, as: viewer, session: valid, method: POST, path: /api/v1/workflows, status: 403}\n" +
+		"  - {name: b, kind: audit, scenario: publish, detailsKeys: {workflow.publish: [a]}, detailsScopeKeys: {workflow.publish: [tenantId]}}\n"
+	if _, err := DecodeSecuritySpec([]byte(ok)); err != nil {
+		t.Fatal(err)
+	}
+	bad := strings.Replace(ok, "session: valid", "session: maybe", 1)
+	if _, err := DecodeSecuritySpec([]byte(bad)); err == nil {
+		t.Fatal("unknown session mode accepted")
+	}
+}
