@@ -160,6 +160,10 @@ func errorRoutedAudit(executionID string, step ExecutionStep, mode string) Audit
 	}
 }
 
+// Routing happens on the failing FailJob. The store has no automatic
+// retries today; if automatic retries are added, routing must wait for
+// the last attempt so onError never preempts a retry.
+//
 // routeFailureTx applies onError from the run's pinned version to a step
 // that just failed (Postgres). stop leaves the step unchanged.
 func routeFailureTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, exec Execution, step ExecutionStep, errObj map[string]any, now time.Time) (ExecutionStep, error) {

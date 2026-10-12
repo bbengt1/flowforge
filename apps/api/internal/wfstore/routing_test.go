@@ -175,8 +175,14 @@ func runRoutingSuite(t *testing.T, h routeHarness) {
 			t.Fatalf("after = %s %q %s", after.Status, after.SkipReason, aj.Status)
 		}
 		handled := h.claim("handled")
-		if in, _ := handled.Inputs["input"].(map[string]any); in == nil || in["code"] != "fixture.boom" || in["nodeId"] != "boom" {
+		in, _ := handled.Inputs["input"].(map[string]any)
+		if len(in) != 4 || in["code"] != "fixture.boom" || in["message"] != "planned failure" || in["nodeId"] != "boom" || num(in["attempt"]) != 1 {
 			t.Fatalf("handled inputs = %+v", handled.Inputs)
+		}
+		for _, k := range []string{"handling", "errorHandling"} {
+			if _, leaked := in[k]; leaked {
+				t.Fatalf("%s leaked into the error payload: %+v", k, in)
+			}
 		}
 		h.complete(handled, map[string]any{"result": map[string]any{"status": "success"}})
 		if got := h.run(exec.ID); got.Status != ExecutionSucceededWithErrors {
@@ -296,8 +302,62 @@ func runRoutingSuite(t *testing.T, h routeHarness) {
 		if !errors.As(err, &refused) || refused.Reason != ReasonStepErrorHandled {
 			t.Fatalf("retry handled = %v", err)
 		}
+		tail, _ := h.step(exec.ID, "tail")
+		if tail.Status != ExecutionSkipped || tail.SkipReason != SkipUpstreamFailed {
+			t.Fatalf("tail before retry = %s %q", tail.Status, tail.SkipReason)
+		}
 		if _, err := h.store.RetryStep(h.ctx, h.scope, h.now(), exec.ID, claimed["hard"].Step.ID); err != nil {
 			t.Fatalf("retry plain = %v", err)
+		}
+		// The accepted retry reopens upstream_failed steps; the routed step stays failed.
+		tail, tj := h.step(exec.ID, "tail")
+		if tail.Status != ExecutionPending || tail.SkipReason != "" || tj.Status != JobBlocked {
+			t.Fatalf("tail after retry = %s %q %s", tail.Status, tail.SkipReason, tj.Status)
+		}
+		if soft, _ := h.step(exec.ID, "soft"); soft.Status != ExecutionFailed || soft.ErrorHandling != ErrorHandlingContinue {
+			t.Fatalf("soft after retry = %s %q", soft.Status, soft.ErrorHandling)
+		}
+		h.complete(h.claim("hard"), map[string]any{"result": map[string]any{"status": "failure", "code": "hard.fail"}})
+		h.complete(h.claim("tail"), map[string]any{"result": map[string]any{"status": "success"}})
+		if got := h.run(exec.ID); got.Status != ExecutionSucceededWithErrors {
+			t.Fatalf("run after retry = %s", got.Status)
+		}
+	})
+
+	t.Run("never-routed failures write no step.error_routed", func(t *testing.T) {
+		h.t = t
+		if h.fresh != nil {
+			h.store = h.fresh()
+		}
+		for _, code := range []string{"policy-denied", "emergency-stop-denied", ReasonWorkflowDeleted, ReasonRequirementUnresolvable} {
+			exec, _ := h.start(routeYAML("continue"))
+			h.complete(h.claim("seed"), map[string]any{"result": map[string]any{"env": "staging"}})
+			boom := h.claim("boom")
+			if _, err := h.store.FailJob(h.ctx, h.scope, h.now(), JobActionInput{
+				JobID: boom.Job.ID, WorkerID: "route-worker", FencingToken: boom.Job.FencingToken,
+				Error: map[string]any{"code": code, "message": "refused"},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if s, _ := h.step(exec.ID, "boom"); s.ErrorHandling != "" {
+				t.Fatalf("%s routed: %q", code, s.ErrorHandling)
+			}
+			if got := h.run(exec.ID); got.Status != ExecutionFailed {
+				t.Fatalf("%s run = %s", code, got.Status)
+			}
+			if n := h.audits(exec.ID, ActionStepErrorRouted); n != 0 {
+				t.Fatalf("%s routed audits = %d", code, n)
+			}
+		}
+		// Cancel while the routed node runs.
+		exec, _ := h.start(routeYAML("continue"))
+		h.complete(h.claim("seed"), map[string]any{"result": map[string]any{"env": "staging"}})
+		h.claim("boom")
+		if _, err := h.store.CancelExecution(h.ctx, h.scope, h.now(), exec.ID); err != nil {
+			t.Fatal(err)
+		}
+		if n := h.audits(exec.ID, ActionStepErrorRouted); n != 0 {
+			t.Fatalf("cancel routed audits = %d", n)
 		}
 	})
 }
@@ -393,5 +453,8 @@ func TestPostgresErrorRouting(t *testing.T) {
 			t.Fatalf("run step = %s %q", run.Status, run.ErrorHandling)
 		}
 		assertSkipReason(t, ctx, store, scope, exec.ID, "next", SkipUpstreamIndeterminate)
+		if n := len(closeAudits(t, ctx, store, scope, ActionStepErrorRouted, exec.ID)); n != 0 {
+			t.Fatalf("lease loss routed audits = %d", n)
+		}
 	})
 }
