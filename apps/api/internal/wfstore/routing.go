@@ -138,7 +138,7 @@ func liftErrorHandling(step *ExecutionStep) {
 }
 
 func withErrorHandling(errObj map[string]any, mode string) map[string]any {
-	out := make(map[string]any, len(errObj)+1)
+	out := map[string]any{}
 	for k, v := range errObj {
 		out[k] = v
 	}
