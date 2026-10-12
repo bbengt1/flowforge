@@ -15,14 +15,17 @@ import (
 
 // Persistence errors.
 var (
-	ErrNotFound          = errors.New("not found")
-	ErrConflict          = errors.New("conflict")
-	ErrInvalid           = errors.New("invalid")
-	ErrNoScope           = errors.New("workspace scope is not set")
-	ErrStoreUnavailable  = errors.New("approval store is unavailable")
-	ErrSelfApproval      = errors.New("requester cannot decide their own approval")
-	ErrNotPending        = errors.New("approval is not pending")
-	ErrClosed            = errors.New("approval is closed")
+	ErrNotFound         = errors.New("not found")
+	ErrConflict         = errors.New("conflict")
+	ErrInvalid          = errors.New("invalid")
+	ErrNoScope          = errors.New("workspace scope is not set")
+	ErrStoreUnavailable = errors.New("approval store is unavailable")
+	ErrSelfApproval     = errors.New("requester cannot decide their own approval")
+	ErrNotPending       = errors.New("approval is not pending")
+	ErrClosed           = errors.New("approval is closed")
+	// ErrRunFinished (#668) refuses a decision because the run already
+	// ended. The approval is (or is now) closed with run_ended.
+	ErrRunFinished       = errors.New("run has finished")
 	ErrExpired           = errors.New("approval has expired")
 	ErrInvalidated       = errors.New("approval binding is no longer valid")
 	ErrStaleAuth         = errors.New("authorization is no longer valid")
@@ -53,6 +56,9 @@ const (
 	ReasonRunCanceled             = "run_canceled"
 	ReasonWorkflowDeleted         = "workflow_deleted"
 	ReasonRequirementUnresolvable = "requirement_unresolvable"
+	// ReasonRunEnded (#668): the run reached a terminal status other than
+	// cancel or workflow delete while the gate was still waiting.
+	ReasonRunEnded = "run_ended"
 )
 
 // Decision values accepted by Decide.

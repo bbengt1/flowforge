@@ -39,14 +39,15 @@ type memExecutionPin struct {
 }
 
 type Memory struct {
-	mu      sync.Mutex
-	rows    map[string]memRow
-	events  map[string][]Event
-	runPins map[string]memExecutionPin
-	gate    GateWaiting
-	failRun UnresolvableRun
-	groups  GroupMembership
-	decider DeciderCheck
+	mu       sync.Mutex
+	rows     map[string]memRow
+	events   map[string][]Event
+	runPins  map[string]memExecutionPin
+	gate     GateWaiting
+	runEnded RunEnded
+	failRun  UnresolvableRun
+	groups   GroupMembership
+	decider  DeciderCheck
 }
 
 // DeciderCheck reports whether userID is an enabled person who may
@@ -118,6 +119,48 @@ func (m *Memory) TargetsCaller(ctx context.Context, scope isolation.Scope, recs 
 		}
 	}
 	return out, nil
+}
+
+// RunEnded reports whether a run ended with a terminal status that closes
+// its pending approvals with run_ended (#668). Memory's workflow store
+// has no shared transaction with this store, so pending rows of such a
+// run are closed here when they are next read or decided.
+type RunEnded func(executionID, nodeID string) bool
+
+// SetRunEnded installs the #668 run-ended check.
+func (m *Memory) SetRunEnded(fn RunEnded) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.runEnded = fn
+}
+
+// closeRunEndedLocked closes a pending row whose run ended with
+// run_ended. It reports whether the row is (now) closed that way.
+func (m *Memory) closeRunEndedLocked(id string, now time.Time) bool {
+	row, ok := m.rows[id]
+	if !ok {
+		return false
+	}
+	rec := row.record
+	if rec.Status == StatusCanceled && rec.CloseReason == ReasonRunEnded {
+		return true
+	}
+	if rec.Status != StatusPending || rec.ExecutionID == "" || m.runEnded == nil || !m.runEnded(rec.ExecutionID, rec.NodeID) {
+		return false
+	}
+	rec.Status = StatusCanceled
+	rec.CloseReason = ReasonRunEnded
+	rec.DecidedBy = ""
+	rec.DecidedAt = nil
+	rec.UpdatedAt = now
+	m.rows[id] = memRow{workspaceID: row.workspaceID, record: rec}
+	if scope, err := isolation.AuthorizeSystem(row.workspaceID); err == nil {
+		m.appendEventLocked(scope, rec.ID, EventCanceled, "", map[string]any{"reason": ReasonRunEnded})
+	}
+	return true
 }
 
 // SetGateWaiting installs the check Decide uses before it accepts a decision.
@@ -329,9 +372,13 @@ func (m *Memory) List(ctx context.Context, scope isolation.Scope, filter Filter)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []Record
-	for _, row := range m.rows {
+	now := time.Now().UTC()
+	for id, row := range m.rows {
 		if row.workspaceID != scope.WorkspaceID() {
 			continue
+		}
+		if m.closeRunEndedLocked(id, now) {
+			row = m.rows[id]
 		}
 		if !matchFilter(row.record, filter) {
 			continue
@@ -378,6 +425,9 @@ func (m *Memory) Get(_ context.Context, scope isolation.Scope, id string) (Recor
 	if !ok || row.workspaceID != scope.WorkspaceID() {
 		return Record{}, ErrNotFound
 	}
+	if m.closeRunEndedLocked(id, time.Now().UTC()) {
+		row = m.rows[id]
+	}
 	return cloneRecord(row.record), nil
 }
 
@@ -404,6 +454,9 @@ func (m *Memory) Decide(ctx context.Context, scope isolation.Scope, id string, i
 	if !ok || row.workspaceID != scope.WorkspaceID() {
 		return Record{}, ErrNotFound
 	}
+	if m.closeRunEndedLocked(id, now) {
+		return Record{}, ErrRunFinished
+	}
 	rec := row.record
 	if rec.Status == StatusCanceled || rec.Status == StatusExpired {
 		return Record{}, ErrClosed
@@ -411,6 +464,10 @@ func (m *Memory) Decide(ctx context.Context, scope isolation.Scope, id string, i
 	if rec.ExecutionID != "" && rec.NodeID != "" && m.gate != nil {
 		found, waiting := m.gate(rec.ExecutionID, rec.NodeID)
 		if found && !waiting {
+			// The run may have ended between the check above and this one.
+			if m.closeRunEndedLocked(id, now) {
+				return Record{}, ErrRunFinished
+			}
 			if rec.Status == StatusPending {
 				rec.Status = StatusExpired
 				rec.DecidedBy = ""
@@ -491,7 +548,7 @@ func (m *Memory) ClosePendingForExecution(_ context.Context, scope isolation.Sco
 	if !authz.ValidUUID(executionID) {
 		return nil
 	}
-	if reason != ReasonRunCanceled && reason != ReasonWorkflowDeleted {
+	if reason != ReasonRunCanceled && reason != ReasonWorkflowDeleted && reason != ReasonRunEnded {
 		return ErrInvalid
 	}
 	if now.IsZero() {

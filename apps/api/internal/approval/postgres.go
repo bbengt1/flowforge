@@ -313,16 +313,36 @@ func (p *Postgres) Decide(ctx context.Context, scope isolation.Scope, id string,
 		return Record{}, err
 	}
 	if rec.Status == StatusCanceled {
+		if rec.CloseReason == ReasonRunEnded {
+			return Record{}, ErrRunFinished
+		}
 		return Record{}, ErrClosed
 	}
 	if rec.ExecutionID != "" {
-		closed, err := refuseClosedRunTx(ctx, tx, rec.ExecutionID, now)
-		if err != nil {
+		// Locks the execution row first (#668 backstop), so a decision and
+		// a run's close-out serialize.
+		closed, err := refuseClosedRunTx(ctx, tx, rec.ExecutionID, rec.NodeID, now)
+		if err != nil && !errors.Is(err, ErrRunFinished) {
 			return Record{}, err
 		}
 		if closed {
-			if err := tx.Commit(ctx); err != nil {
-				return Record{}, mapDBErr(err)
+			if errors.Is(err, ErrRunFinished) {
+				// run_finished only when this approval was (or is now)
+				// closed by the run ending; an approval that already
+				// expired or was decided stays approval_closed.
+				var reason *string
+				if qerr := tx.QueryRow(ctx, `SELECT close_reason FROM approvals WHERE id = $1::uuid`, id).Scan(&reason); qerr != nil {
+					return Record{}, mapDBErr(qerr)
+				}
+				if reason == nil || *reason != ReasonRunEnded {
+					err = ErrClosed
+				}
+			}
+			if cerr := tx.Commit(ctx); cerr != nil {
+				return Record{}, mapDBErr(cerr)
+			}
+			if err != nil {
+				return Record{}, err
 			}
 			return Record{}, ErrClosed
 		}
@@ -450,7 +470,7 @@ func (p *Postgres) ClosePendingForExecution(ctx context.Context, scope isolation
 	if !authz.ValidUUID(executionID) {
 		return nil
 	}
-	if reason != ReasonRunCanceled && reason != ReasonWorkflowDeleted {
+	if reason != ReasonRunCanceled && reason != ReasonWorkflowDeleted && reason != ReasonRunEnded {
 		return ErrInvalid
 	}
 	if now.IsZero() {
@@ -725,9 +745,20 @@ func recordDest(rec *Record) []any {
 // refuseClosedRunTx locks the execution, then closes a still-pending
 // approval when the run was canceled or the workflow was deleted.
 // A failed run that was not deleted is refused without a new close reason.
-func refuseClosedRunTx(ctx context.Context, tx pgx.Tx, executionID string, now time.Time) (bool, error) {
+func refuseClosedRunTx(ctx context.Context, tx pgx.Tx, executionID, nodeID string, now time.Time) (bool, error) {
 	var status string
 	var deleted, stopped bool
+	// Lock the execution row first, then read in a fresh statement: under
+	// READ COMMITTED a locking join would recheck only the locked row and
+	// could see a stale workflow row after waiting on a concurrent delete
+	// or close-out (#668).
+	var locked string
+	if err := tx.QueryRow(ctx, `SELECT id::text FROM executions WHERE id = $1::uuid FOR UPDATE`, executionID).Scan(&locked); err != nil {
+		if errors.Is(mapDBErr(err), ErrNotFound) {
+			return false, ErrClosed
+		}
+		return false, mapDBErr(err)
+	}
 	err := tx.QueryRow(ctx, `
 		SELECT e.status,
 		       w.deleted_at IS NOT NULL,
@@ -740,7 +771,6 @@ func refuseClosedRunTx(ctx context.Context, tx pgx.Tx, executionID string, now t
 		  FROM executions e
 		  JOIN workflows w ON w.workspace_id = e.workspace_id AND w.id = e.workflow_id
 		 WHERE e.id = $1::uuid
-		 FOR UPDATE OF e
 	`, executionID).Scan(&status, &deleted, &stopped)
 	if err != nil {
 		if errors.Is(mapDBErr(err), ErrNotFound) {
@@ -754,8 +784,30 @@ func refuseClosedRunTx(ctx context.Context, tx pgx.Tx, executionID string, now t
 		reason = ReasonRunCanceled
 	case deleted || stopped:
 		reason = ReasonWorkflowDeleted
-	case status == "failed":
-		return false, ErrClosed
+	case runEndedStatus(status):
+		// Backstop (#668): the run ended while this gate was waiting.
+		// Close-out already closed the pending approval with run_ended;
+		// close any straggler the same way. A gate that finished on its
+		// own (for example through expired) keeps the existing path.
+		var gateEnded bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS (
+			    SELECT 1 FROM execution_steps s
+			     WHERE s.execution_id = $1::uuid AND s.node_id = $2 AND s.node_type = 'flow.approval'
+			       AND (s.status = 'waiting' OR COALESCE(s.error_redacted->>'code', '') = 'run_ended'))
+		`, executionID, nodeID).Scan(&gateEnded); err != nil {
+			return false, mapDBErr(err)
+		}
+		if gateEnded {
+			if err := closePendingApprovalsTx(ctx, tx, executionID, ReasonRunEnded, now); err != nil {
+				return false, err
+			}
+			return true, ErrRunFinished
+		}
+		if status == "failed" {
+			return false, ErrClosed
+		}
+		return false, nil
 	default:
 		return false, nil
 	}
@@ -763,6 +815,16 @@ func refuseClosedRunTx(ctx context.Context, tx pgx.Tx, executionID string, now t
 		return false, err
 	}
 	return true, nil
+}
+
+// runEndedStatus is a terminal run status whose pending approvals close
+// with run_ended (#668).
+func runEndedStatus(status string) bool {
+	switch status {
+	case "failed", "indeterminate", "succeeded", "succeededWithErrors":
+		return true
+	}
+	return false
 }
 
 func closePendingApprovalsTx(ctx context.Context, tx pgx.Tx, executionID, reason string, now time.Time) error {
