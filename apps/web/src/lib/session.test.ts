@@ -246,11 +246,18 @@ describe("session problem mapping", () => {
     );
   });
 
-  it("maps csrf-required/invalid and csrf-worded 403 as CSRF fail-closed", () => {
+  it("maps 403 csrf-required/csrf-invalid by code only, never by text", () => {
     assert.equal(
       isCsrfProblem(problem({ status: 403, code: "csrf-required" })),
       true,
     );
+    assert.equal(
+      isCsrfProblem(
+        problem({ status: 403, code: "csrf-invalid", detail: "CSRF validation failed." }),
+      ),
+      true,
+    );
+    // The pre-#643 shape: 403 forbidden with CSRF wording is not CSRF.
     assert.equal(
       isCsrfProblem(
         problem({
@@ -260,7 +267,12 @@ describe("session problem mapping", () => {
           detail: "CSRF validation failed.",
         }),
       ),
-      true,
+      false,
+    );
+    // Any other 403 code with CSRF wording in its title is not CSRF either.
+    assert.equal(
+      isCsrfProblem(problem({ status: 403, code: "forbidden", title: "CSRF failed" })),
+      false,
     );
     assert.equal(
       isCsrfProblem(problem({ status: 403, code: "forbidden", detail: "not a member" })),
