@@ -14,6 +14,10 @@ type testNode struct {
 
 var testNodes = map[string]testNode{}
 
+// Referenced here so untagged lint does not flag it; callers live in
+// fftest-tagged files only.
+var _ = registerTestNode
+
 func registerTestNode(tn testNode) {
 	testNodes[tn.contract.Type] = tn
 }
