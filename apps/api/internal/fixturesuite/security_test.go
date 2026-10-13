@@ -48,6 +48,9 @@ func TestSecurity(t *testing.T) {
 				if !driverSelected(dname) {
 					t.Skipf("driver %s not in FIXTURESUITE_DRIVERS", dname)
 				}
+				if blackboxURL() != "" {
+					t.Skip("black-box (#673): S3 security specs run on the in-process nightly job only")
+				}
 				stop := env.Capture()
 				w := newSecWorld(t, env, d)
 				for _, c := range spec.Checks {

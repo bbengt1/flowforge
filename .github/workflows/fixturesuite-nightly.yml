@@ -96,11 +96,111 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  # #673: black-box smoke. Builds apps/api/Dockerfile here (no registry pull
+  # or push, no secrets), starts compose Postgres + the API container on an
+  # empty database, checks the container applied the newest migration in
+  # this checkout, then runs the non-clock fixtures with the compose worker
+  # against the container over HTTP (FIXTURESUITE_API_URL). Clock-dependent
+  # parts are skipped with their reason (see blackbox_test.go).
+  blackbox:
+    name: Fixture suite (Docker black-box smoke, nightly)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMPOSE_FILE: docker-compose.yml:${{ github.workspace }}/.ci-blackbox.compose.yml
+      COMPOSE_PROJECT_NAME: ffblackbox
+      # Throwaway CI-only database password, not a secret.
+      POSTGRES_PASSWORD: fixturesuite-ci
+      BUILD_SHA: ${{ github.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.x"
+          check-latest: true
+          cache-dependency-path: apps/api/go.sum
+      - name: Compose override (no MinIO, suite admin)
+        run: |
+          set -euo pipefail
+          cat > .ci-blackbox.compose.yml <<'YAML'
+          services:
+            api:
+              environment:
+                ARTIFACT_S3_ENDPOINT: ""
+                ARTIFACT_S3_BUCKET: ""
+                ARTIFACT_S3_REGION: ""
+                ARTIFACT_S3_ACCESS_KEY_ID: ""
+                ARTIFACT_S3_SECRET_ACCESS_KEY: ""
+                ARTIFACT_S3_USE_PATH_STYLE: ""
+                ARTIFACT_S3_CREATE_BUCKET: ""
+                ARTIFACT_STORE_DIR: /tmp/artifacts
+                PLATFORM_ADMINS: https://idp.example|fixturesuite-blackbox
+          YAML
+      - name: Build API image (apps/api/Dockerfile)
+        run: docker compose build api
+      - name: Start Postgres on an empty volume
+        run: |
+          set -euo pipefail
+          docker compose down -v --remove-orphans
+          docker compose up -d --wait postgres
+          n="$(docker compose exec -T postgres psql -U flowforge -d flowforge -tAc "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")"
+          echo "public tables before API start: $n"
+          test "$n" = "0"
+      - name: Start API container and wait for readiness
+        run: |
+          set -euo pipefail
+          docker compose up -d --no-deps api
+          for i in $(seq 1 60); do
+            state="$(docker compose ps -a api --format '{{.State}}')"
+            if [ "$state" != "running" ]; then
+              echo "::error::API container is $state (exited before ready)"
+              exit 1
+            fi
+            if curl -fsS http://127.0.0.1:8080/api/v1/readiness >/dev/null; then
+              echo "API ready after ${i} tries"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::API readiness probe timed out after 120s"
+          exit 1
+      - name: Newest migration is applied
+        run: |
+          set -euo pipefail
+          want="$(find apps/api/migrations -maxdepth 1 -name '[0-9]*_*.sql' -printf '%f\n' | sort | tail -n 1)"
+          want_v="$((10#${want%%_*}))"
+          got="$(docker compose exec -T postgres psql -U flowforge -d flowforge -tAc "SELECT version || ' ' || name FROM schema_migrations ORDER BY version DESC LIMIT 1")"
+          echo "newest file: $want (version $want_v); newest applied: $got"
+          test "${got%% *}" = "$want_v"
+      - name: Fixtures against the container (compose worker, non-clock)
+        working-directory: apps/api
+        env:
+          TEST_DATABASE_URL: postgres://flowforge:fixturesuite-ci@127.0.0.1:5432/flowforge?sslmode=disable
+          FIXTURESUITE_API_URL: http://127.0.0.1:8080
+          FIXTURESUITE_DRIVERS: compose
+          FIXTURESUITE_RESULTS: ${{ runner.temp }}/fixturesuite-blackbox/default.jsonl
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$FIXTURESUITE_RESULTS")"
+          go test -p 1 -count=1 -v ./internal/fixturesuite -run 'TestFixtures$' 2>&1 | tee "$RUNNER_TEMP/blackbox.log"
+          echo "## fixturesuite black-box (Docker)" >> "$GITHUB_STEP_SUMMARY"
+          grep -E -- '--- (PASS|FAIL|SKIP)' "$RUNNER_TEMP/blackbox.log" | sed 's/^ *//; s/^/- /' >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Container logs
+        if: failure()
+        run: docker compose logs --no-color --timestamps postgres api
+      - name: Tear down
+        if: always()
+        run: docker compose down -v --remove-orphans
+
   # #651: a failed scheduled run opens (or comments on) one tracking issue.
   # Separate job so only it gets issues: write; no checkout, gh CLI only.
   report-failure:
     name: Report nightly failure
-    needs: compose
+    needs: [compose, blackbox]
     if: failure() && github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 5
