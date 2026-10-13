@@ -56,6 +56,7 @@ import {
 import { isTerminalRunStatus } from "./execution.ts";
 import {
   APPROVAL_CLOSED_MESSAGE,
+  APPROVAL_RUN_FINISHED_MESSAGE,
   retryProblemShouldRefetch,
 } from "./execution-retry.ts";
 import type { ProblemDetails } from "./problem.ts";
@@ -1161,7 +1162,8 @@ export function problemClosesApproval(problem: ProblemDetails): boolean {
     isExpiredApprovalProblem(problem) ||
     isInvalidatedApprovalProblem(problem) ||
     isDeniedProblemCode(problem.code) ||
-    problem.code === "approval_closed"
+    problem.code === "approval_closed" ||
+    problem.code === "run_finished"
   );
 }
 
@@ -1177,7 +1179,8 @@ export type ApprovalDecideOutcome =
   | {
       kind: "closed";
       message: string;
-      hideControls: false;
+      /** True for `run_finished`: the run ended, so nothing can be decided. */
+      hideControls: boolean;
       refetch: true;
     }
   | {
@@ -1207,6 +1210,14 @@ export function approvalDecideOutcome(
       kind: "closed",
       message: APPROVAL_CLOSED_MESSAGE,
       hideControls: false,
+      refetch: true,
+    };
+  }
+  if (problem.code === "run_finished") {
+    return {
+      kind: "closed",
+      message: APPROVAL_RUN_FINISHED_MESSAGE,
+      hideControls: true,
       refetch: true,
     };
   }
@@ -1242,6 +1253,9 @@ export function failClosedProblemTitle(problem: ProblemDetails): string {
   }
   if (problem.code === "approval_closed") {
     return "Approval already closed";
+  }
+  if (problem.code === "run_finished") {
+    return "Run already ended";
   }
   if (isApproverNotTargetedProblem(problem)) {
     return "Not a named approver";
