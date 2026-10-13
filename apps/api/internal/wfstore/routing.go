@@ -2,6 +2,7 @@ package wfstore
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -58,22 +59,62 @@ func nodeOnError(yamlDoc, nodeID string) string {
 	return ""
 }
 
-// routableFailure is false for failures onError never routes: policy
-// refusals and emergency stop. Cancel, lease loss (indeterminate) and
-// unresolvable approvals do not come through FailJob routing at all.
-func routableFailure(errObj map[string]any) bool {
+// routableCodes is the allowlist (H1, fail closed) of system failure codes
+// onError may route: ordinary node and runtime failures where the step ran
+// and its target reported an error. Everything else is never routed and
+// fails the run as before: policy, authz, isolation, egress, artifact and
+// emergency-stop codes, engine-internal codes, and any code not listed
+// here (including codes added later until someone lists them on purpose).
+// Shared by both stores.
+var routableCodes = map[string]struct{}{
+	"timeout":             {}, // ssh, http, kubernetes
+	"connect-failed":      {}, // ssh.run
+	"command-failed":      {}, // ssh.run
+	"delivery-failed":     {}, // http / notify
+	"dry-run-failed":      {}, // kubernetes.*
+	"apply-failed":        {}, // kubernetes.*
+	"read-failed":         {}, // kubernetes.*
+	"rollout-failed":      {}, // kubernetes.*
+	"cluster-unreachable": {}, // kubernetes.*
+	"script-failed":       {}, // script.run, generic non-zero exit
+}
+
+// errorPortCodeMax caps the code on the error port payload (L2).
+const errorPortCodeMax = 64
+
+// routableFailure reports whether onError may route this failure. Only
+// two shapes route:
+//   - a code on routableCodes, or
+//   - a flow.fail step's own operator code: a dotted token (team.reason),
+//     equal to the step's configured with.code. Dotted tokens never collide
+//     with system codes (all DNS labels), so a flow.fail that imitates a
+//     security code (egress-denied, emergency-stopped) is never routed.
+//
+// Cancel, lease loss (indeterminate) and unresolvable approvals do not
+// come through FailJob routing at all.
+func routableFailure(step ExecutionStep, errObj map[string]any) bool {
 	code, _ := errObj["code"].(string)
-	switch code {
-	case "policy-denied", "emergency-stop-denied", ReasonRequirementUnresolvable, ReasonWorkflowDeleted:
+	if code == "" || len(code) > errorPortCodeMax {
 		return false
 	}
-	return true
+	if _, ok := routableCodes[code]; ok {
+		return true
+	}
+	if step.NodeType != "flow.fail" || !strings.Contains(code, ".") {
+		return false
+	}
+	want, _ := step.Input["code"].(string)
+	return want == code
 }
 
 // errorPortPayload is the object on the error port: code, safe message,
 // nodeId, attempt. Never step input or output.
 func errorPortPayload(step ExecutionStep, errObj map[string]any) map[string]any {
 	code, _ := errObj["code"].(string)
+	code = strings.TrimSpace(code)
+	if len(code) > errorPortCodeMax {
+		code = strings.ToValidUTF8(code[:errorPortCodeMax], "")
+	}
 	msg, _ := errObj["message"].(string)
 	msg = strings.TrimSpace(msg)
 	if len(msg) > errorPortMessageMax {
@@ -160,12 +201,9 @@ func errorRoutedAudit(executionID string, step ExecutionStep, mode string) Audit
 // routeFailureTx applies onError from the run's pinned version to a step
 // that just failed (Postgres). stop leaves the step unchanged.
 func routeFailureTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, exec Execution, step ExecutionStep, errObj map[string]any, now time.Time) (ExecutionStep, error) {
-	var yamlDoc string
-	if err := tx.QueryRow(ctx, `
-		SELECT v.normalized_yaml FROM workflow_versions v
-		 WHERE v.workspace_id = $1::uuid AND v.id = $2::uuid
-	`, scope.WorkspaceID(), exec.WorkflowVersionID).Scan(&yamlDoc); err != nil {
-		return step, mapDBErr(err)
+	yamlDoc, err := pinnedVersionYAMLTx(ctx, tx, scope, exec.WorkflowVersionID)
+	if err != nil {
+		return step, err
 	}
 	mode := nodeOnError(yamlDoc, step.NodeID)
 	if mode == "" {
@@ -198,9 +236,11 @@ func routeFailureTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, exec 
 
 // routeFailureLocked is the Memory twin. The caller holds m.mu.
 func (m *Memory) routeFailureLocked(scope isolation.Scope, exec *memExecution, step *ExecutionStep, now time.Time) {
-	if !routableFailure(step.Error) {
+	if !routableFailure(*step, step.Error) {
 		return
 	}
+	// M1: the pinned Version.DefinitionYAML in both stores (Postgres reads
+	// the same field via pinnedVersionYAMLTx). A missing version is stop.
 	var yamlDoc string
 	for _, v := range m.versions[exec.record.WorkflowID] {
 		if v.ID == exec.record.WorkflowVersionID {
@@ -216,4 +256,27 @@ func (m *Memory) routeFailureLocked(scope isolation.Scope, exec *memExecution, s
 	step.Error = withErrorHandling(step.Error, mode)
 	releaseFrom(exec.steps, exec.jobs, exec.edges, step.NodeID, ports, now)
 	m.appendAuditLocked(scope, errorRoutedAudit(exec.record.ID, *step, mode), now)
+}
+
+// pinnedVersionYAMLTx returns the run's pinned Version.DefinitionYAML (the
+// workflow_versions.normalized_yaml column, the same field Memory reads).
+// A missing version row is not an error: it returns "" and the failure is
+// treated as stop, so the fail transaction still commits (M1). Only real
+// database errors are returned.
+func pinnedVersionYAMLTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, versionID string) (string, error) {
+	if versionID == "" {
+		return "", nil
+	}
+	var yamlDoc string
+	err := tx.QueryRow(ctx, `
+		SELECT v.normalized_yaml FROM workflow_versions v
+		 WHERE v.workspace_id = $1::uuid AND v.id = $2::uuid
+	`, scope.WorkspaceID(), versionID).Scan(&yamlDoc)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", mapDBErr(err)
+	}
+	return yamlDoc, nil
 }

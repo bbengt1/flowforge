@@ -21,7 +21,22 @@ func TestCatalogPrimaryOutputIsDeclared649(t *testing.T) {
 			t.Errorf("%s primaryOutput %q is not a declared output", n.Type, n.PrimaryOutput)
 		}
 	}
-	want := map[string]string{"flow.fail": "result", "data.set": "result", "flow.condition": "", "flow.approval": ""}
+	want := map[string]string{
+		"flow.fail": "result", "data.set": "result", "flow.condition": "", "flow.approval": "",
+		// Data-port types (Gracie, #667): extra outputs fire together on
+		// success, so result is primary and continue is allowed.
+		"ssh.run": "result", "kubernetes.apply": "result", "kubernetes.get": "result",
+		"kubernetes.list": "result", "kubernetes.rolloutStatus": "result",
+	}
+	seenData := 0
+	for _, n := range CoreCatalog().Nodes {
+		if _, ok := dataPortTypes[n.Type]; ok {
+			seenData++
+		}
+	}
+	if seenData != len(dataPortTypes) {
+		t.Fatalf("catalog has %d of %d data-port types", seenData, len(dataPortTypes))
+	}
 	for _, n := range CoreCatalog().Nodes {
 		if exp, ok := want[n.Type]; ok && n.PrimaryOutput != exp {
 			t.Errorf("%s primaryOutput = %q, want %q", n.Type, n.PrimaryOutput, exp)

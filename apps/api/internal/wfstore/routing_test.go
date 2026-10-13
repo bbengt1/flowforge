@@ -101,6 +101,23 @@ func (h routeHarness) claim(node string) DispatchResult {
 	return got
 }
 
+// claimFor claims until it gets node of execID; the shared Postgres
+// workspace may hold claimable jobs left by earlier subtests.
+func (h routeHarness) claimFor(execID, node string) DispatchResult {
+	h.t.Helper()
+	for i := 0; i < 50; i++ {
+		got, err := h.store.ClaimJob(h.ctx, h.scope, h.now(), ClaimInput{WorkerID: "route-worker", Lease: time.Minute})
+		if err != nil {
+			h.t.Fatalf("claim %s: %v", node, err)
+		}
+		if got.Execution.ID == execID && got.Step.NodeID == node {
+			return got
+		}
+	}
+	h.t.Fatalf("claim %s: not reached", node)
+	return DispatchResult{}
+}
+
 func (h routeHarness) complete(c DispatchResult, out map[string]any) {
 	h.t.Helper()
 	if _, err := h.store.CompleteJob(h.ctx, h.scope, h.now(), JobActionInput{JobID: c.Job.ID, WorkerID: "route-worker", FencingToken: c.Job.FencingToken, Output: out}); err != nil {
@@ -108,11 +125,17 @@ func (h routeHarness) complete(c DispatchResult, out map[string]any) {
 	}
 }
 
+// fail fails the job with a routable code: a flow.fail step's own
+// with.code, or the allowlisted runtime code timeout for other types (H1).
 func (h routeHarness) fail(c DispatchResult) {
 	h.t.Helper()
+	code := "timeout"
+	if c.Step.NodeType == "flow.fail" {
+		code, _ = c.Step.Input["code"].(string)
+	}
 	if _, err := h.store.FailJob(h.ctx, h.scope, h.now(), JobActionInput{
 		JobID: c.Job.ID, WorkerID: "route-worker", FencingToken: c.Job.FencingToken,
-		Error: map[string]any{"code": "fixture.boom", "message": "planned failure"},
+		Error: map[string]any{"code": code, "message": "planned failure"},
 	}); err != nil {
 		h.t.Fatal(err)
 	}
@@ -403,7 +426,7 @@ func runRoutingSuite(t *testing.T, h routeHarness) {
 		if h.fresh != nil {
 			h.store = h.fresh()
 		}
-		for _, code := range []string{"policy-denied", "emergency-stop-denied", ReasonWorkflowDeleted, ReasonRequirementUnresolvable} {
+		for _, code := range neverRoutedCodes {
 			exec, _ := h.start(routeYAML("continue"))
 			h.complete(h.claim("seed"), map[string]any{"result": map[string]any{"env": "staging"}})
 			boom := h.claim("boom")
@@ -423,10 +446,26 @@ func runRoutingSuite(t *testing.T, h routeHarness) {
 				t.Fatalf("%s routed audits = %d", code, n)
 			}
 		}
-		// Cancel while the routed node runs.
+		// L1: a second FailJob on the already-failed job is a no-op and
+		// never routes or audits a second time.
+		if h.fresh != nil {
+			h.store = h.fresh()
+		}
 		exec, _ := h.start(routeYAML("continue"))
-		h.complete(h.claim("seed"), map[string]any{"result": map[string]any{"env": "staging"}})
-		h.claim("boom")
+		h.complete(h.claimFor(exec.ID, "seed"), map[string]any{"result": map[string]any{"env": "staging"}})
+		boom := h.claimFor(exec.ID, "boom")
+		h.fail(boom)
+		h.fail(boom)
+		if n := h.audits(exec.ID, ActionStepErrorRouted); n != 1 {
+			t.Fatalf("double fail routed audits = %d", n)
+		}
+		// Cancel while the routed node runs.
+		if h.fresh != nil {
+			h.store = h.fresh()
+		}
+		exec, _ = h.start(routeYAML("continue"))
+		h.complete(h.claimFor(exec.ID, "seed"), map[string]any{"result": map[string]any{"env": "staging"}})
+		h.claimFor(exec.ID, "boom")
 		if _, err := h.store.CancelExecution(h.ctx, h.scope, h.now(), exec.ID); err != nil {
 			t.Fatal(err)
 		}
@@ -514,6 +553,26 @@ func TestPostgresErrorRouting(t *testing.T) {
 	store := NewPostgres(app)
 	runRoutingSuite(t, routeHarness{t: t, ctx: ctx, store: store, scope: scope})
 
+	t.Run("M1: a missing pinned version is stop, not an error", func(t *testing.T) {
+		tx, err := postgres.BeginScoped(ctx, app, scope.WorkspaceID())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback(ctx)
+		got, err := pinnedVersionYAMLTx(ctx, tx, scope, "33333333-3333-4333-8333-333333333333")
+		if err != nil || got != "" {
+			t.Fatalf("missing version = %q %v", got, err)
+		}
+		if mode := nodeOnError(got, "boom"); mode != "" {
+			t.Fatalf("mode = %q", mode)
+		}
+		// The transaction is still usable after the miss.
+		var one int
+		if err := tx.QueryRow(ctx, `SELECT 1`).Scan(&one); err != nil {
+			t.Fatal(err)
+		}
+	})
+
 	t.Run("indeterminate is never routed", func(t *testing.T) {
 		src := strings.Replace(sshThenStopYAML, "      type: ssh.run\n      name: Run\n", "      type: ssh.run\n      name: Run\n      onError: errorOutput\n", 1)
 		src = strings.Replace(src, "      to: next.input\n", "      to: next.input\n    - from: run.error\n      to: handled.input\n", 1)
@@ -533,4 +592,20 @@ func TestPostgresErrorRouting(t *testing.T) {
 			t.Fatalf("lease loss routed audits = %d", n)
 		}
 	})
+}
+
+// neverRoutedCodes (H1) fail plain under onError: continue in both stores:
+// the script re-check codes from workflowhttp/dispatch.go, other policy and
+// authz codes, the engine-internal reasons, an unknown code, a dotted code
+// that is not boom's own with.code, and an over-long code.
+var neverRoutedCodes = []string{
+	"emergency-stopped", "emergency-stop-denied",
+	"artifact-mutable", "artifact-unscanned", "artifact-unsigned", "artifact-scan-failed", "artifact-revoked",
+	"isolation-denied", "metadata-denied", "egress-denied", "permission-denied", "policy-denied",
+	"forbidden", "rbac-denied", "auth-denied", "credential-denied", "host-key-mismatch", "ssrf-denied",
+	"tenancy-denied", "handle-forbidden", "secret-forbidden", "job-binding-rejected", "draft-not-runnable",
+	"indeterminate", "canceled",
+	ReasonWorkflowDeleted, ReasonRequirementUnresolvable, ReasonRunEnded,
+	"test-flaky-failure", "brand-new-code", "", "other.reason",
+	"fixture.boom" + strings.Repeat("x", 64),
 }

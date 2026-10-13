@@ -306,8 +306,14 @@ func (m *Memory) FailJob(_ context.Context, scope isolation.Scope, now time.Time
 		if err := requireActiveLease(*job, now); err != nil {
 			return err
 		}
+		// L1: same as Postgres (prevStatus != JobFailed): a job that is
+		// already failed is never failed or routed a second time.
+		wasFailed := job.Status == JobFailed
 		job.Status = JobFailed
 		job.UpdatedAt = now
+		if wasFailed {
+			return nil
+		}
 		step.Error = redactObject(in.Error)
 		if step.Error == nil {
 			step.Error = map[string]any{}
