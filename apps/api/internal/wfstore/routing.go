@@ -34,29 +34,35 @@ const (
 )
 
 // nodeOnError returns the onError mode of nodeID in the pinned version
-// YAML. Anything but continue/errorOutput (including a parse failure) is
-// stop.
-func nodeOnError(yamlDoc, nodeID string) string {
+// YAML and, for flow.fail, its with.code when it is a literal (no template
+// or expression; "" otherwise). Anything but continue/errorOutput
+// (including a parse failure) is stop.
+func nodeOnError(yamlDoc, nodeID string) (string, string) {
 	res, errs := workflow.ParseAndNormalize([]byte(yamlDoc))
 	if len(errs) > 0 || res == nil || res.Document == nil {
-		return ""
+		return "", ""
 	}
 	for _, n := range res.Document.Spec.Nodes {
-		if n.ID == nodeID {
-			switch n.OnError {
-			case workflow.OnErrorContinue:
-				// Fail closed: continue needs a primary output.
-				if workflow.PrimaryOutput(n.Type) == "" {
-					return ""
-				}
-				return n.OnError
-			case workflow.OnErrorOutput:
-				return n.OnError
-			}
-			return ""
+		if n.ID != nodeID {
+			continue
 		}
+		literal := ""
+		if c, ok := n.With["code"].(string); ok && n.Type == "flow.fail" && workflow.LiteralFailCode(c) {
+			literal = c
+		}
+		switch n.OnError {
+		case workflow.OnErrorContinue:
+			// Fail closed: continue needs a primary output.
+			if workflow.PrimaryOutput(n.Type) == "" {
+				return "", ""
+			}
+			return n.OnError, literal
+		case workflow.OnErrorOutput:
+			return n.OnError, literal
+		}
+		return "", ""
 	}
-	return ""
+	return "", ""
 }
 
 // routableCodes is the allowlist (H1, fail closed) of system failure codes
@@ -86,13 +92,15 @@ const errorPortCodeMax = 64
 // two shapes route:
 //   - a code on routableCodes, or
 //   - a flow.fail step's own operator code: a dotted token (team.reason),
-//     equal to the step's configured with.code. Dotted tokens never collide
+//     equal to the with.code written as a LITERAL in the pinned YAML
+//     (pinnedCode). A templated with.code never routes, so run input can
+//     never choose which code routes. Dotted tokens never collide
 //     with system codes (all DNS labels), so a flow.fail that imitates a
 //     security code (egress-denied, emergency-stopped) is never routed.
 //
 // Cancel, lease loss (indeterminate) and unresolvable approvals do not
 // come through FailJob routing at all.
-func routableFailure(step ExecutionStep, errObj map[string]any) bool {
+func routableFailure(step ExecutionStep, errObj map[string]any, pinnedCode string) bool {
 	code, _ := errObj["code"].(string)
 	if code == "" || len(code) > errorPortCodeMax {
 		return false
@@ -103,8 +111,7 @@ func routableFailure(step ExecutionStep, errObj map[string]any) bool {
 	if step.NodeType != "flow.fail" || !strings.Contains(code, ".") {
 		return false
 	}
-	want, _ := step.Input["code"].(string)
-	return want == code
+	return pinnedCode != "" && pinnedCode == code
 }
 
 // errorPortPayload is the object on the error port: code, safe message,
@@ -205,8 +212,8 @@ func routeFailureTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, exec 
 	if err != nil {
 		return step, err
 	}
-	mode := nodeOnError(yamlDoc, step.NodeID)
-	if mode == "" {
+	mode, pinnedCode := nodeOnError(yamlDoc, step.NodeID)
+	if mode == "" || !routableFailure(step, errObj, pinnedCode) {
 		return step, nil
 	}
 	output, ports := routeFailure(mode, step, errObj)
@@ -236,9 +243,6 @@ func routeFailureTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, exec 
 
 // routeFailureLocked is the Memory twin. The caller holds m.mu.
 func (m *Memory) routeFailureLocked(scope isolation.Scope, exec *memExecution, step *ExecutionStep, now time.Time) {
-	if !routableFailure(*step, step.Error) {
-		return
-	}
 	// M1: the pinned Version.DefinitionYAML in both stores (Postgres reads
 	// the same field via pinnedVersionYAMLTx). A missing version is stop.
 	var yamlDoc string
@@ -247,8 +251,8 @@ func (m *Memory) routeFailureLocked(scope isolation.Scope, exec *memExecution, s
 			yamlDoc = v.DefinitionYAML
 		}
 	}
-	mode := nodeOnError(yamlDoc, step.NodeID)
-	if mode == "" {
+	mode, pinnedCode := nodeOnError(yamlDoc, step.NodeID)
+	if mode == "" || !routableFailure(*step, step.Error, pinnedCode) {
 		return
 	}
 	output, ports := routeFailure(mode, *step, step.Error)

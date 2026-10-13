@@ -1209,7 +1209,7 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 			}
 		}
 	}
-	if opts.routeOnError && opts.writeError && nextStatus == JobFailed && prevStatus != JobFailed && routableFailure(step, payload) {
+	if opts.routeOnError && opts.writeError && nextStatus == JobFailed && prevStatus != JobFailed {
 		routed, err := routeFailureTx(ctx, tx, scope, exec, step, payload, now)
 		if err != nil {
 			return DispatchResult{}, err

@@ -65,10 +65,13 @@ spec:
 
 type routeHarness struct {
 	fresh func() Store
-	t     *testing.T
-	ctx   context.Context
-	store Store
-	scope isolation.Scope
+	// templated adds a version of wfID whose pinned YAML is yamlDoc
+	// (bypassing the validator) and returns its id.
+	templated func(wfID, fromVersionID, yamlDoc string) string
+	t         *testing.T
+	ctx       context.Context
+	store     Store
+	scope     isolation.Scope
 }
 
 func (h routeHarness) now() time.Time { return time.Now().UTC().Add(time.Second) }
@@ -421,6 +424,50 @@ func runRoutingSuite(t *testing.T, h routeHarness) {
 		}
 	})
 
+	t.Run("templated flow.fail with.code never routes; literal does", func(t *testing.T) {
+		h.t = t
+		if h.fresh != nil {
+			h.store = h.fresh()
+		}
+		// Literal dotted code routes (control).
+		exec, _ := h.start(routeYAML("continue"))
+		h.complete(h.claimFor(exec.ID, "seed"), map[string]any{"result": map[string]any{"env": "staging"}})
+		h.fail(h.claimFor(exec.ID, "boom"))
+		if n := h.audits(exec.ID, ActionStepErrorRouted); n != 1 {
+			t.Fatalf("literal routed audits = %d", n)
+		}
+		// Same graph, but the pinned with.code is templated: the run-time
+		// code is still the dotted fixture.boom, yet it must fail plain.
+		exec, wfID := h.start(routeYAML("continue"))
+		_, _ = h.store.CancelExecution(h.ctx, h.scope, h.now(), exec.ID)
+		tpl := strings.Replace(routeYAML("continue"), "code: fixture.boom", `code: "{{ input.code }}"`, 1)
+		if tpl == routeYAML("continue") {
+			t.Fatal("template substitution did not apply")
+		}
+		verID := h.templated(wfID, exec.WorkflowVersionID, tpl)
+		exec, err := h.store.StartExecution(h.ctx, h.scope, wfID, StartInput{VersionID: verID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.complete(h.claimFor(exec.ID, "seed"), map[string]any{"result": map[string]any{"env": "staging"}})
+		boom := h.claimFor(exec.ID, "boom")
+		if _, err := h.store.FailJob(h.ctx, h.scope, h.now(), JobActionInput{
+			JobID: boom.Job.ID, WorkerID: "route-worker", FencingToken: boom.Job.FencingToken,
+			Error: map[string]any{"code": "fixture.boom", "message": "planned failure"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if s, _ := h.step(exec.ID, "boom"); s.ErrorHandling != "" {
+			t.Fatalf("templated routed: %q", s.ErrorHandling)
+		}
+		if got := h.run(exec.ID); got.Status != ExecutionFailed {
+			t.Fatalf("templated run = %s", got.Status)
+		}
+		if n := h.audits(exec.ID, ActionStepErrorRouted); n != 0 {
+			t.Fatalf("templated routed audits = %d", n)
+		}
+	})
+
 	t.Run("never-routed failures write no step.error_routed", func(t *testing.T) {
 		h.t = t
 		if h.fresh != nil {
@@ -528,7 +575,24 @@ func TestMemoryErrorRouting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runRoutingSuite(t, routeHarness{t: t, ctx: context.Background(), scope: scope, fresh: func() Store { return NewMemory() }})
+	var cur *Memory
+	runRoutingSuite(t, routeHarness{t: t, ctx: context.Background(), scope: scope,
+		fresh: func() Store { cur = NewMemory(); return cur },
+		templated: func(wfID, fromVersionID, yamlDoc string) string {
+			cur.mu.Lock()
+			defer cur.mu.Unlock()
+			for _, v := range cur.versions[wfID] {
+				if v.ID == fromVersionID {
+					v.ID = "44444444-4444-4444-8444-444444444444"
+					v.VersionNumber++
+					v.DefinitionYAML = yamlDoc
+					cur.versions[wfID] = append(cur.versions[wfID], v)
+					return v.ID
+				}
+			}
+			t.Fatal("version not found")
+			return ""
+		}})
 }
 
 func TestPostgresErrorRouting(t *testing.T) {
@@ -551,7 +615,22 @@ func TestPostgresErrorRouting(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := NewPostgres(app)
-	runRoutingSuite(t, routeHarness{t: t, ctx: ctx, store: store, scope: scope})
+	runRoutingSuite(t, routeHarness{t: t, ctx: ctx, store: store, scope: scope,
+		templated: func(wfID, fromVersionID, yamlDoc string) string {
+			// workflow_versions is immutable; insert a new version row
+			// directly (admin) to stand in for a templated with.code.
+			var id string
+			if err := admin.QueryRow(ctx, `
+				INSERT INTO workflow_versions (workspace_id, workflow_id, version_number, normalized_yaml, definition_digest,
+				                               parsed_definition, publish_note, published_by)
+				SELECT workspace_id, workflow_id, version_number + 100, $2, 'sha256:' || md5($2) || md5($2),
+				       parsed_definition, 'templated', published_by
+				  FROM workflow_versions WHERE id = $1::uuid
+				RETURNING id::text`, fromVersionID, yamlDoc).Scan(&id); err != nil {
+				t.Fatal(err)
+			}
+			return id
+		}})
 
 	t.Run("M1: a missing pinned version is stop, not an error", func(t *testing.T) {
 		tx, err := postgres.BeginScoped(ctx, app, scope.WorkspaceID())
@@ -563,7 +642,7 @@ func TestPostgresErrorRouting(t *testing.T) {
 		if err != nil || got != "" {
 			t.Fatalf("missing version = %q %v", got, err)
 		}
-		if mode := nodeOnError(got, "boom"); mode != "" {
+		if mode, _ := nodeOnError(got, "boom"); mode != "" {
 			t.Fatalf("mode = %q", mode)
 		}
 		// The transaction is still usable after the miss.
