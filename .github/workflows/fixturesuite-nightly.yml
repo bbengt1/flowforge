@@ -95,3 +95,30 @@ jobs:
           path: ${{ runner.temp }}/fixturesuite/
           if-no-files-found: error
           retention-days: 30
+
+  # #651: a failed scheduled run opens (or comments on) one tracking issue.
+  # Separate job so only it gets issues: write; no checkout, gh CLI only.
+  report-failure:
+    name: Report nightly failure
+    needs: compose
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Open or update nightly-failure issue
+        run: |
+          set -euo pipefail
+          existing="$(gh issue list --state open --label nightly-failure --limit 1 --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "Fixture suite nightly failed again: $RUN_URL"
+          else
+            gh label create nightly-failure --color B60205 --description "Scheduled fixture suite nightly failed" 2>/dev/null || true
+            gh issue create --title "Fixture suite nightly failing" --label nightly-failure \
+              --body "The scheduled fixture suite nightly (compose driver) failed: $RUN_URL"
+          fi
