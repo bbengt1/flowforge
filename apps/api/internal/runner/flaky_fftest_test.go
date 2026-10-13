@@ -119,9 +119,10 @@ spec:
 	}
 }
 
-// test.flaky alwaysFail with onError: errorOutput routes the failure to the
-// error port; failTimes: 1 with onError: continue routes on attempt 1 (no
-// retry) and the run ends succeededWithErrors.
+// H1 (#667): test-flaky-failure is not on the routable allowlist, so
+// test.flaky under onError: errorOutput or continue is never routed through
+// the production runner: the step fails plain on attempt 1 (no retry), the
+// handler is skipped, no step.error_routed is written, and the run fails.
 func TestFlakyOnErrorRouting(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -223,7 +224,7 @@ spec:
 			}
 		}
 		got, err := store.GetExecutionByID(ctx, scope, exec.ID)
-		if err != nil || got.Status != wfstore.ExecutionSucceededWithErrors {
+		if err != nil || got.Status != wfstore.ExecutionFailed {
 			t.Fatalf("%s run = %s %v", c.name, got.Status, err)
 		}
 		steps, err := store.ListSteps(ctx, scope, exec.ID)
@@ -233,14 +234,14 @@ spec:
 		for _, s := range steps {
 			switch s.NodeID {
 			case "flaky":
-				if s.Attempt != 1 || s.Status != wfstore.ExecutionFailed || s.ErrorHandling != c.name {
+				if s.Attempt != 1 || s.Status != wfstore.ExecutionFailed || s.ErrorHandling != "" {
 					t.Fatalf("%s flaky = attempt %d %s %q", c.name, s.Attempt, s.Status, s.ErrorHandling)
 				}
 				if code, _ := s.Error["code"].(string); code != workflow.CodeTestFlakyFailure {
 					t.Fatalf("%s error = %+v", c.name, s.Error)
 				}
 			case "handled":
-				if s.Status != wfstore.ExecutionSucceeded {
+				if s.Status != wfstore.ExecutionSkipped {
 					t.Fatalf("%s handled = %s", c.name, s.Status)
 				}
 			}
