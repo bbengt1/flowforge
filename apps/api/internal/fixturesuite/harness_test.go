@@ -90,6 +90,9 @@ func newEnv(t *testing.T) *Env {
 	t.Cleanup(admin.Close)
 	n := time.Now().UnixNano()
 	root := identity.User{Issuer: testIssuer, ExternalSubject: fmt.Sprintf("fx-root-%d", n), DisplayName: "Fixture owner"}
+	if blackboxURL() != "" {
+		root.ExternalSubject = blackboxRootSubject
+	}
 	env := &Env{ctx: ctx, app: app, admin: admin, root: root, n: n, jobKey: wfstore.NewJobBindingKey()}
 	d := httpapi.Deps{
 		Store:            identity.NewPostgres(app),
@@ -114,6 +117,13 @@ func newEnv(t *testing.T) *Env {
 		t.Fatalf("handler is %T, want *httpapi.API", env.h)
 	}
 	env.api = api
+	if raw := blackboxURL(); raw != "" {
+		h, err := blackboxHandler(raw)
+		if err != nil {
+			t.Fatalf("FIXTURESUITE_API_URL: %v", err)
+		}
+		env.h = h
+	}
 	return env
 }
 

@@ -58,6 +58,11 @@ func TestFixtures(t *testing.T) {
 				if !buildRuns(p.Block.Build) {
 					t.Skipf("build: %s part (this binary fftest=%v)", p.Block.Build, fftestBuild)
 				}
+				if blackboxURL() != "" {
+					if why := blackboxSkip(fx, p); why != "" {
+						t.Skip(why)
+					}
+				}
 				guard, fails, pending := runPart(t, env, fx, p, all[p.Driver])
 				if len(guard) > 0 {
 					// today: guards must hold even while a part is xfail.
