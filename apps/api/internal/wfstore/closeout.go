@@ -38,7 +38,7 @@ func closeOutReason(status string) string {
 		return SkipUpstreamIndeterminate
 	case ExecutionCanceled:
 		return SkipRunCanceled
-	case ExecutionSucceeded:
+	case ExecutionSucceeded, ExecutionSucceededWithErrors:
 		// A succeeded rollup has no blocked work; anything left is an
 		// untaken path.
 		return SkipBranchNotTaken

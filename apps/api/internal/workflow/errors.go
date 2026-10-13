@@ -64,8 +64,9 @@ const (
 	CodeOnErrorNotAllowed       = "on-error-not-allowed"
 	CodeErrorEdgeMissing        = "error-edge-missing"
 	CodeErrorEdgeWithoutHandler = "error-edge-without-error-output"
-	// Publish-only until #649 S2 enables the engine path.
-	CodeOnErrorNotYetSupported = "on-error-not-yet-supported"
+	// CodeOnErrorContinueNoPrimary refuses onError: continue on a node
+	// type without a primaryOutput (branching or multi-output).
+	CodeOnErrorContinueNoPrimary = "on-error-continue-without-primary-output"
 )
 
 func fieldError(path string, line, column int, code, message string) FieldError {

@@ -451,7 +451,7 @@ func (p *Postgres) PurgeExpired(ctx context.Context, scope isolation.Scope, now 
 	tag, err := tx.Exec(ctx, `
 		DELETE FROM executions e
 		WHERE e.retention_until <= $1
-		  AND e.status IN ('queued', 'pinned', 'succeeded', 'failed', 'canceled', 'indeterminate')
+		  AND e.status IN ('queued', 'pinned', 'succeeded', 'succeededWithErrors', 'failed', 'canceled', 'indeterminate')
 		  AND NOT EXISTS (
 			SELECT 1 FROM execution_artifacts a
 			WHERE a.workspace_id = e.workspace_id
@@ -630,6 +630,7 @@ func scanStep(row rowScanner) (ExecutionStep, error) {
 	step.Error = unmarshalObject(errorRaw)
 	step.StartedAt = started
 	step.FinishedAt = finished
+	liftErrorHandling(&step)
 	return step, nil
 }
 

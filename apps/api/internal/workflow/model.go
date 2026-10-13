@@ -189,17 +189,21 @@ type TriggerType struct {
 
 // NodeType describes an allowlisted action node.
 type NodeType struct {
-	Type         string           `json:"type"`
-	Phase        string           `json:"phase"`
-	Title        string           `json:"title,omitempty"`
-	Description  string           `json:"description,omitempty"`
-	Inputs       []Port           `json:"inputs"`
-	Outputs      []Port           `json:"outputs"`
-	RequiredWith []string         `json:"requiredWith,omitempty"`
-	AllowedWith  []WithField      `json:"allowedWith,omitempty"`
-	Policy       *NodePolicy      `json:"policy,omitempty"`
-	Bounds       *NodeBounds      `json:"bounds,omitempty"`
-	Redaction    *RedactionPolicy `json:"redaction,omitempty"`
+	Type        string `json:"type"`
+	Phase       string `json:"phase"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+	Inputs      []Port `json:"inputs"`
+	Outputs     []Port `json:"outputs"`
+	// PrimaryOutput is the single success port that onError: continue
+	// releases. Omitted for branching or multi-output types, which
+	// cannot use continue.
+	PrimaryOutput string           `json:"primaryOutput,omitempty"`
+	RequiredWith  []string         `json:"requiredWith,omitempty"`
+	AllowedWith   []WithField      `json:"allowedWith,omitempty"`
+	Policy        *NodePolicy      `json:"policy,omitempty"`
+	Bounds        *NodeBounds      `json:"bounds,omitempty"`
+	Redaction     *RedactionPolicy `json:"redaction,omitempty"`
 }
 
 // Catalog is the typed graph vocabulary published to the UI.

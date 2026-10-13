@@ -415,6 +415,9 @@ func checkSteps(failf func(string, ...any), prefix string, steps map[string]Step
 					failf("%sstep %s errorHandling = %q, want %q", prefix, node, got.ErrorHandling, want.ErrorHandling)
 				}
 			}
+			if want.OutputExact != nil && !reflect.DeepEqual(norm(want.OutputExact), norm(got.Output)) {
+				failf("%sstep %s output = %v, want exactly %v", prefix, node, got.Output, want.OutputExact)
+			}
 			if want.NoOutput && len(got.Output) > 0 {
 				failf("%sstep %s output = %v, want none", prefix, node, got.Output)
 			}

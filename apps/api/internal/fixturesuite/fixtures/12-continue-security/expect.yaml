@@ -8,199 +8,122 @@ drivers: [compose, runner]
 cases:
   - name: emergency-stopped
     patch: {"spec.nodes[1].with.code": emergency-stopped}
-    today:                      # onError is not publishable until #649 S2 (#667)
-      save: {status: 201}
-      publishGuards:
-        - {patch: {}, status: 400, code: invalid-workflow, errors: [{code: on-error-not-yet-supported}]}
-    target:
-      actions: [start, drive]
-      run: {status: [failed]}
-      steps:
-        boom: {status: failed, errorHandling: none, error: {code: emergency-stopped}}
-        next: {status: skipped, skipReason: upstream_failed}
-      noStepStatusIn: [pending, blocked]
-      errorWorkflowFires: false
-      audit: {job.fail: 1, step.error_routed: 0}
-    xfail:
-      - {part: emergency-stopped, reason: "onError continue is not publishable before #649 S2 (#667); at 34993b2 routableFailure still routes this code (Gracie H1)", issue: "#649 S2", drivers: [all]}
+    actions: [start, drive]
+    run: {status: [failed]}
+    steps:
+      boom: {status: failed, errorHandling: none, error: {code: emergency-stopped}}
+      next: {status: skipped, skipReason: upstream_failed}
+    noStepStatusIn: [pending, blocked]
+    errorWorkflowFires: false
+    audit: {job.fail: 1, step.error_routed: 0}
 
   - name: isolation-denied
     patch: {"spec.nodes[1].with.code": isolation-denied}
-    today:                      # onError is not publishable until #649 S2 (#667)
-      save: {status: 201}
-      publishGuards:
-        - {patch: {}, status: 400, code: invalid-workflow, errors: [{code: on-error-not-yet-supported}]}
-    target:
-      actions: [start, drive]
-      run: {status: [failed]}
-      steps:
-        boom: {status: failed, errorHandling: none, error: {code: isolation-denied}}
-        next: {status: skipped, skipReason: upstream_failed}
-      noStepStatusIn: [pending, blocked]
-      errorWorkflowFires: false
-      audit: {job.fail: 1, step.error_routed: 0}
-    xfail:
-      - {part: isolation-denied, reason: "onError continue is not publishable before #649 S2 (#667); at 34993b2 routableFailure still routes this code (Gracie H1)", issue: "#649 S2", drivers: [all]}
+    actions: [start, drive]
+    run: {status: [failed]}
+    steps:
+      boom: {status: failed, errorHandling: none, error: {code: isolation-denied}}
+      next: {status: skipped, skipReason: upstream_failed}
+    noStepStatusIn: [pending, blocked]
+    errorWorkflowFires: false
+    audit: {job.fail: 1, step.error_routed: 0}
 
   - name: metadata-denied
     patch: {"spec.nodes[1].with.code": metadata-denied}
-    today:                      # onError is not publishable until #649 S2 (#667)
-      save: {status: 201}
-      publishGuards:
-        - {patch: {}, status: 400, code: invalid-workflow, errors: [{code: on-error-not-yet-supported}]}
-    target:
-      actions: [start, drive]
-      run: {status: [failed]}
-      steps:
-        boom: {status: failed, errorHandling: none, error: {code: metadata-denied}}
-        next: {status: skipped, skipReason: upstream_failed}
-      noStepStatusIn: [pending, blocked]
-      errorWorkflowFires: false
-      audit: {job.fail: 1, step.error_routed: 0}
-    xfail:
-      - {part: metadata-denied, reason: "onError continue is not publishable before #649 S2 (#667); at 34993b2 routableFailure still routes this code (Gracie H1)", issue: "#649 S2", drivers: [all]}
+    actions: [start, drive]
+    run: {status: [failed]}
+    steps:
+      boom: {status: failed, errorHandling: none, error: {code: metadata-denied}}
+      next: {status: skipped, skipReason: upstream_failed}
+    noStepStatusIn: [pending, blocked]
+    errorWorkflowFires: false
+    audit: {job.fail: 1, step.error_routed: 0}
 
   - name: egress-denied
     patch: {"spec.nodes[1].with.code": egress-denied}
-    today:                      # onError is not publishable until #649 S2 (#667)
-      save: {status: 201}
-      publishGuards:
-        - {patch: {}, status: 400, code: invalid-workflow, errors: [{code: on-error-not-yet-supported}]}
-    target:
-      actions: [start, drive]
-      run: {status: [failed]}
-      steps:
-        boom: {status: failed, errorHandling: none, error: {code: egress-denied}}
-        next: {status: skipped, skipReason: upstream_failed}
-      noStepStatusIn: [pending, blocked]
-      errorWorkflowFires: false
-      audit: {job.fail: 1, step.error_routed: 0}
-    xfail:
-      - {part: egress-denied, reason: "onError continue is not publishable before #649 S2 (#667); at 34993b2 routableFailure still routes this code (Gracie H1)", issue: "#649 S2", drivers: [all]}
+    actions: [start, drive]
+    run: {status: [failed]}
+    steps:
+      boom: {status: failed, errorHandling: none, error: {code: egress-denied}}
+      next: {status: skipped, skipReason: upstream_failed}
+    noStepStatusIn: [pending, blocked]
+    errorWorkflowFires: false
+    audit: {job.fail: 1, step.error_routed: 0}
 
   - name: permission-denied
     patch: {"spec.nodes[1].with.code": permission-denied}
-    today:                      # onError is not publishable until #649 S2 (#667)
-      save: {status: 201}
-      publishGuards:
-        - {patch: {}, status: 400, code: invalid-workflow, errors: [{code: on-error-not-yet-supported}]}
-    target:
-      actions: [start, drive]
-      run: {status: [failed]}
-      steps:
-        boom: {status: failed, errorHandling: none, error: {code: permission-denied}}
-        next: {status: skipped, skipReason: upstream_failed}
-      noStepStatusIn: [pending, blocked]
-      errorWorkflowFires: false
-      audit: {job.fail: 1, step.error_routed: 0}
-    xfail:
-      - {part: permission-denied, reason: "onError continue is not publishable before #649 S2 (#667); at 34993b2 routableFailure still routes this code (Gracie H1)", issue: "#649 S2", drivers: [all]}
+    actions: [start, drive]
+    run: {status: [failed]}
+    steps:
+      boom: {status: failed, errorHandling: none, error: {code: permission-denied}}
+      next: {status: skipped, skipReason: upstream_failed}
+    noStepStatusIn: [pending, blocked]
+    errorWorkflowFires: false
+    audit: {job.fail: 1, step.error_routed: 0}
 
   - name: artifact-mutable
     patch: {"spec.nodes[1].with.code": artifact-mutable}
-    today:                      # onError is not publishable until #649 S2 (#667)
-      save: {status: 201}
-      publishGuards:
-        - {patch: {}, status: 400, code: invalid-workflow, errors: [{code: on-error-not-yet-supported}]}
-    target:
-      actions: [start, drive]
-      run: {status: [failed]}
-      steps:
-        boom: {status: failed, errorHandling: none, error: {code: artifact-mutable}}
-        next: {status: skipped, skipReason: upstream_failed}
-      noStepStatusIn: [pending, blocked]
-      errorWorkflowFires: false
-      audit: {job.fail: 1, step.error_routed: 0}
-    xfail:
-      - {part: artifact-mutable, reason: "onError continue is not publishable before #649 S2 (#667); at 34993b2 routableFailure still routes this code (Gracie H1)", issue: "#649 S2", drivers: [all]}
+    actions: [start, drive]
+    run: {status: [failed]}
+    steps:
+      boom: {status: failed, errorHandling: none, error: {code: artifact-mutable}}
+      next: {status: skipped, skipReason: upstream_failed}
+    noStepStatusIn: [pending, blocked]
+    errorWorkflowFires: false
+    audit: {job.fail: 1, step.error_routed: 0}
 
   - name: artifact-unscanned
     patch: {"spec.nodes[1].with.code": artifact-unscanned}
-    today:                      # onError is not publishable until #649 S2 (#667)
-      save: {status: 201}
-      publishGuards:
-        - {patch: {}, status: 400, code: invalid-workflow, errors: [{code: on-error-not-yet-supported}]}
-    target:
-      actions: [start, drive]
-      run: {status: [failed]}
-      steps:
-        boom: {status: failed, errorHandling: none, error: {code: artifact-unscanned}}
-        next: {status: skipped, skipReason: upstream_failed}
-      noStepStatusIn: [pending, blocked]
-      errorWorkflowFires: false
-      audit: {job.fail: 1, step.error_routed: 0}
-    xfail:
-      - {part: artifact-unscanned, reason: "onError continue is not publishable before #649 S2 (#667); at 34993b2 routableFailure still routes this code (Gracie H1)", issue: "#649 S2", drivers: [all]}
+    actions: [start, drive]
+    run: {status: [failed]}
+    steps:
+      boom: {status: failed, errorHandling: none, error: {code: artifact-unscanned}}
+      next: {status: skipped, skipReason: upstream_failed}
+    noStepStatusIn: [pending, blocked]
+    errorWorkflowFires: false
+    audit: {job.fail: 1, step.error_routed: 0}
 
   - name: artifact-unsigned
     patch: {"spec.nodes[1].with.code": artifact-unsigned}
-    today:                      # onError is not publishable until #649 S2 (#667)
-      save: {status: 201}
-      publishGuards:
-        - {patch: {}, status: 400, code: invalid-workflow, errors: [{code: on-error-not-yet-supported}]}
-    target:
-      actions: [start, drive]
-      run: {status: [failed]}
-      steps:
-        boom: {status: failed, errorHandling: none, error: {code: artifact-unsigned}}
-        next: {status: skipped, skipReason: upstream_failed}
-      noStepStatusIn: [pending, blocked]
-      errorWorkflowFires: false
-      audit: {job.fail: 1, step.error_routed: 0}
-    xfail:
-      - {part: artifact-unsigned, reason: "onError continue is not publishable before #649 S2 (#667); at 34993b2 routableFailure still routes this code (Gracie H1)", issue: "#649 S2", drivers: [all]}
+    actions: [start, drive]
+    run: {status: [failed]}
+    steps:
+      boom: {status: failed, errorHandling: none, error: {code: artifact-unsigned}}
+      next: {status: skipped, skipReason: upstream_failed}
+    noStepStatusIn: [pending, blocked]
+    errorWorkflowFires: false
+    audit: {job.fail: 1, step.error_routed: 0}
 
   - name: artifact-scan-failed
     patch: {"spec.nodes[1].with.code": artifact-scan-failed}
-    today:                      # onError is not publishable until #649 S2 (#667)
-      save: {status: 201}
-      publishGuards:
-        - {patch: {}, status: 400, code: invalid-workflow, errors: [{code: on-error-not-yet-supported}]}
-    target:
-      actions: [start, drive]
-      run: {status: [failed]}
-      steps:
-        boom: {status: failed, errorHandling: none, error: {code: artifact-scan-failed}}
-        next: {status: skipped, skipReason: upstream_failed}
-      noStepStatusIn: [pending, blocked]
-      errorWorkflowFires: false
-      audit: {job.fail: 1, step.error_routed: 0}
-    xfail:
-      - {part: artifact-scan-failed, reason: "onError continue is not publishable before #649 S2 (#667); at 34993b2 routableFailure still routes this code (Gracie H1)", issue: "#649 S2", drivers: [all]}
+    actions: [start, drive]
+    run: {status: [failed]}
+    steps:
+      boom: {status: failed, errorHandling: none, error: {code: artifact-scan-failed}}
+      next: {status: skipped, skipReason: upstream_failed}
+    noStepStatusIn: [pending, blocked]
+    errorWorkflowFires: false
+    audit: {job.fail: 1, step.error_routed: 0}
 
   - name: artifact-revoked
     patch: {"spec.nodes[1].with.code": artifact-revoked}
-    today:                      # onError is not publishable until #649 S2 (#667)
-      save: {status: 201}
-      publishGuards:
-        - {patch: {}, status: 400, code: invalid-workflow, errors: [{code: on-error-not-yet-supported}]}
-    target:
-      actions: [start, drive]
-      run: {status: [failed]}
-      steps:
-        boom: {status: failed, errorHandling: none, error: {code: artifact-revoked}}
-        next: {status: skipped, skipReason: upstream_failed}
-      noStepStatusIn: [pending, blocked]
-      errorWorkflowFires: false
-      audit: {job.fail: 1, step.error_routed: 0}
-    xfail:
-      - {part: artifact-revoked, reason: "onError continue is not publishable before #649 S2 (#667); at 34993b2 routableFailure still routes this code (Gracie H1)", issue: "#649 S2", drivers: [all]}
+    actions: [start, drive]
+    run: {status: [failed]}
+    steps:
+      boom: {status: failed, errorHandling: none, error: {code: artifact-revoked}}
+      next: {status: skipped, skipReason: upstream_failed}
+    noStepStatusIn: [pending, blocked]
+    errorWorkflowFires: false
+    audit: {job.fail: 1, step.error_routed: 0}
 
   - name: unknown-code
     build: fftest
     patch: {"spec.nodes[1].type": test.flaky, "spec.nodes[1].with": {mode: alwaysFail}}
-    today:                      # onError is not publishable until #649 S2 (#667)
-      save: {status: 201}
-      publishGuards:
-        - {patch: {}, status: 400, code: invalid-workflow, errors: [{code: on-error-not-yet-supported}]}
-    target:
-      actions: [start, drive]
-      run: {status: [failed]}
-      steps:
-        boom: {status: failed, errorHandling: none, error: {code: test-flaky-failure}}
-        next: {status: skipped, skipReason: upstream_failed}
-      noStepStatusIn: [pending, blocked]
-      errorWorkflowFires: false
-      audit: {job.fail: 1, step.error_routed: 0}
-    xfail:
-      - {part: unknown-code, reason: "onError continue is not publishable before #649 S2 (#667); at 34993b2 routableFailure routes any code not on its denylist (Gracie H1: allowlist)", issue: "#649 S2", drivers: [all]}
+    actions: [start, drive]
+    run: {status: [failed]}
+    steps:
+      boom: {status: failed, errorHandling: none, error: {code: test-flaky-failure}}
+      next: {status: skipped, skipReason: upstream_failed}
+    noStepStatusIn: [pending, blocked]
+    errorWorkflowFires: false
+    audit: {job.fail: 1, step.error_routed: 0}

@@ -88,6 +88,8 @@ type StepExpect struct {
 	AttemptErrors []StepError `yaml:"attemptErrors"`
 	SkipReason    string      `yaml:"skipReason"`
 	NoOutput      bool        `yaml:"noOutput"` // output must be empty
+	// OutputExact is matched exactly (unlike Output, a subset).
+	OutputExact map[string]any `yaml:"outputExact"`
 	// ErrorHandling is the step's reported onError mode; "none" means the
 	// API reports none (#649 S2).
 	ErrorHandling string `yaml:"errorHandling"`

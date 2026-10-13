@@ -1,0 +1,690 @@
+package wfstore
+
+import (
+	"context"
+	"errors"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
+)
+
+// routeYAML: seed -> boom (flow.fail) ; boom.result -> after ; boom.error -> handled (errorOutput only).
+func routeYAML(mode string) string {
+	onErr, errEdge := "", ""
+	if mode != "" {
+		onErr = "\n      onError: " + mode
+	}
+	if mode == "errorOutput" {
+		errEdge = "\n    - from: boom.error\n      to: handled.input"
+	}
+	handled := ""
+	if mode == "errorOutput" {
+		handled = `
+    - id: handled
+      type: flow.stop
+      name: Handled
+      with:
+        status: success`
+	}
+	return `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: route-` + strings.ToLower(mode) + `x
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: seed
+      type: data.set
+      name: Seed
+      with:
+        value:
+          env: staging
+    - id: boom
+      type: flow.fail
+      name: Boom` + onErr + `
+      with:
+        code: fixture.boom
+    - id: after
+      type: flow.stop
+      name: After
+      with:
+        status: success` + handled + `
+  edges:
+    - from: seed.result
+      to: boom.input
+    - from: boom.result
+      to: after.input` + errEdge + `
+`
+}
+
+type routeHarness struct {
+	fresh func() Store
+	// templated adds a version of wfID whose pinned YAML is yamlDoc
+	// (bypassing the validator) and returns its id.
+	templated func(wfID, fromVersionID, yamlDoc string) string
+	t         *testing.T
+	ctx       context.Context
+	store     Store
+	scope     isolation.Scope
+}
+
+func (h routeHarness) now() time.Time { return time.Now().UTC().Add(time.Second) }
+
+func (h routeHarness) start(src string) (Execution, string) {
+	h.t.Helper()
+	src = strings.Replace(src, "\n  name: ", "\n  name: n"+strconv.FormatInt(time.Now().UnixNano(), 36)+"-", 1)
+	n := mustNormalize(h.t, src)
+	wf, draft, err := h.store.Create(h.ctx, h.scope, CreateInput{NormalizedYAML: n.NormalizedYAML, Digest: n.Digest, Summary: n.Summary})
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	_, ver, err := h.store.Publish(h.ctx, h.scope, wf.ID, PublishInput{ExpectedRevision: draft.Revision})
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	exec, err := h.store.StartExecution(h.ctx, h.scope, wf.ID, StartInput{VersionID: ver.ID})
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return exec, wf.ID
+}
+
+func (h routeHarness) claim(node string) DispatchResult {
+	h.t.Helper()
+	got, err := h.store.ClaimJob(h.ctx, h.scope, h.now(), ClaimInput{WorkerID: "route-worker", Lease: time.Minute})
+	if err != nil || got.Step.NodeID != node {
+		h.t.Fatalf("claim %s = %q %v", node, got.Step.NodeID, err)
+	}
+	return got
+}
+
+// claimFor claims until it gets node of execID; the shared Postgres
+// workspace may hold claimable jobs left by earlier subtests.
+func (h routeHarness) claimFor(execID, node string) DispatchResult {
+	h.t.Helper()
+	for i := 0; i < 50; i++ {
+		got, err := h.store.ClaimJob(h.ctx, h.scope, h.now(), ClaimInput{WorkerID: "route-worker", Lease: time.Minute})
+		if err != nil {
+			h.t.Fatalf("claim %s: %v", node, err)
+		}
+		if got.Execution.ID == execID && got.Step.NodeID == node {
+			return got
+		}
+	}
+	h.t.Fatalf("claim %s: not reached", node)
+	return DispatchResult{}
+}
+
+func (h routeHarness) complete(c DispatchResult, out map[string]any) {
+	h.t.Helper()
+	if _, err := h.store.CompleteJob(h.ctx, h.scope, h.now(), JobActionInput{JobID: c.Job.ID, WorkerID: "route-worker", FencingToken: c.Job.FencingToken, Output: out}); err != nil {
+		h.t.Fatal(err)
+	}
+}
+
+// fail fails the job with a routable code: a flow.fail step's own
+// with.code, or the allowlisted runtime code timeout for other types (H1).
+func (h routeHarness) fail(c DispatchResult) {
+	h.t.Helper()
+	code := "timeout"
+	if c.Step.NodeType == "flow.fail" {
+		code, _ = c.Step.Input["code"].(string)
+	}
+	if _, err := h.store.FailJob(h.ctx, h.scope, h.now(), JobActionInput{
+		JobID: c.Job.ID, WorkerID: "route-worker", FencingToken: c.Job.FencingToken,
+		Error: map[string]any{"code": code, "message": "planned failure"},
+	}); err != nil {
+		h.t.Fatal(err)
+	}
+}
+
+func (h routeHarness) step(execID, node string) (ExecutionStep, ExecutionJob) {
+	h.t.Helper()
+	steps, err := h.store.ListSteps(h.ctx, h.scope, execID)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	jobs, err := h.store.ListJobs(h.ctx, h.scope, execID)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return stepByNode(h.t, steps, node), jobByNode(h.t, jobs, steps, node)
+}
+
+func (h routeHarness) run(execID string) Execution {
+	h.t.Helper()
+	got, err := h.store.GetExecutionByID(h.ctx, h.scope, execID)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return got
+}
+
+func (h routeHarness) audits(execID, action string) int {
+	h.t.Helper()
+	got, err := h.store.ListAuditEvents(h.ctx, h.scope, AuditListFilter{Action: action, ResourceID: execID})
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return len(got)
+}
+
+const branchErrorOutputYAML = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: route-branch-error-output
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: seed
+      type: data.set
+      name: Seed
+      with:
+        value:
+          status: ready
+    - id: gate
+      type: flow.condition
+      name: Gate
+      onError: errorOutput
+      with:
+        op: eq
+        path: status
+        compare: ready
+    - id: yes
+      type: data.map
+      name: Yes
+      with:
+        mapping:
+          status: status
+    - id: no
+      type: data.map
+      name: No
+      with:
+        mapping:
+          status: status
+    - id: handled
+      type: flow.stop
+      name: Handled
+      with:
+        status: success
+  edges:
+    - from: seed.result
+      to: gate.value
+    - from: gate.true
+      to: yes.input
+    - from: gate.false
+      to: no.input
+    - from: gate.error
+      to: handled.input
+`
+
+func runRoutingSuite(t *testing.T, h routeHarness) {
+	t.Run("errorOutput routes only the error port", func(t *testing.T) {
+		h.t = t
+		if h.fresh != nil {
+			h.store = h.fresh()
+		}
+		exec, _ := h.start(routeYAML("errorOutput"))
+		h.complete(h.claim("seed"), map[string]any{"result": map[string]any{"env": "staging"}})
+		boom := h.claim("boom")
+		h.fail(boom)
+		s, j := h.step(exec.ID, "boom")
+		if s.Status != ExecutionFailed || j.Status != JobFailed || s.ErrorHandling != ErrorHandlingOutput {
+			t.Fatalf("boom = %s/%s %q", s.Status, j.Status, s.ErrorHandling)
+		}
+		if _, leaked := s.Error["handling"]; leaked {
+			t.Fatalf("marker leaked into error: %+v", s.Error)
+		}
+		payload, _ := s.Output["error"].(map[string]any)
+		if len(payload) != 4 || payload["code"] != "fixture.boom" || payload["message"] != "planned failure" || payload["nodeId"] != "boom" || num(payload["attempt"]) != 1 {
+			t.Fatalf("error payload = %+v", s.Output)
+		}
+		after, aj := h.step(exec.ID, "after")
+		if after.Status != ExecutionSkipped || after.SkipReason != SkipBranchNotTaken || aj.Status != JobSkipped {
+			t.Fatalf("after = %s %q %s", after.Status, after.SkipReason, aj.Status)
+		}
+		handled := h.claim("handled")
+		in, _ := handled.Inputs["input"].(map[string]any)
+		if len(in) != 4 || in["code"] != "fixture.boom" || in["message"] != "planned failure" || in["nodeId"] != "boom" || num(in["attempt"]) != 1 {
+			t.Fatalf("handled inputs = %+v", handled.Inputs)
+		}
+		for _, k := range []string{"handling", "errorHandling"} {
+			if _, leaked := in[k]; leaked {
+				t.Fatalf("%s leaked into the error payload: %+v", k, in)
+			}
+		}
+		h.complete(handled, map[string]any{"result": map[string]any{"status": "success"}})
+		if got := h.run(exec.ID); got.Status != ExecutionSucceededWithErrors {
+			t.Fatalf("run = %s", got.Status)
+		}
+		if n := h.audits(exec.ID, "job.fail"); n != 1 {
+			t.Fatalf("job.fail audits = %d", n)
+		}
+		if n := h.audits(exec.ID, ActionStepErrorRouted); n != 1 {
+			t.Fatalf("step.error_routed audits = %d", n)
+		}
+		// Handled failure in a succeededWithErrors run is not retryable.
+		_, err := h.store.RetryStep(h.ctx, h.scope, h.now(), exec.ID, boom.Step.ID)
+		var refused *NotRetryableError
+		if !errors.As(err, &refused) || refused.Reason != ReasonRunNotFailed {
+			t.Fatalf("retry = %v", err)
+		}
+	})
+
+	t.Run("continue fires main with {}", func(t *testing.T) {
+		h.t = t
+		if h.fresh != nil {
+			h.store = h.fresh()
+		}
+		exec, _ := h.start(routeYAML("continue"))
+		h.complete(h.claim("seed"), map[string]any{"result": map[string]any{"env": "staging"}})
+		h.fail(h.claim("boom"))
+		s, _ := h.step(exec.ID, "boom")
+		if s.Status != ExecutionFailed || s.ErrorHandling != ErrorHandlingContinue {
+			t.Fatalf("boom = %s %q", s.Status, s.ErrorHandling)
+		}
+		after := h.claim("after")
+		if in, ok := after.Inputs["input"].(map[string]any); !ok || len(in) != 0 {
+			t.Fatalf("after inputs = %+v", after.Inputs)
+		}
+		h.complete(after, map[string]any{"result": map[string]any{"status": "success"}})
+		if got := h.run(exec.ID); got.Status != ExecutionSucceededWithErrors {
+			t.Fatalf("run = %s", got.Status)
+		}
+		if n := h.audits(exec.ID, "job.fail"); n != 1 {
+			t.Fatalf("job.fail audits = %d", n)
+		}
+	})
+
+	t.Run("plain flow.fail stops the run", func(t *testing.T) {
+		h.t = t
+		if h.fresh != nil {
+			h.store = h.fresh()
+		}
+		exec, _ := h.start(routeYAML(""))
+		h.complete(h.claim("seed"), map[string]any{"result": map[string]any{"env": "staging"}})
+		h.fail(h.claim("boom"))
+		s, _ := h.step(exec.ID, "boom")
+		if s.Status != ExecutionFailed || s.ErrorHandling != "" {
+			t.Fatalf("boom = %s %q", s.Status, s.ErrorHandling)
+		}
+		after, _ := h.step(exec.ID, "after")
+		if after.Status != ExecutionSkipped || after.SkipReason != SkipUpstreamFailed {
+			t.Fatalf("after = %s %q", after.Status, after.SkipReason)
+		}
+		if got := h.run(exec.ID); got.Status != ExecutionFailed {
+			t.Fatalf("run = %s", got.Status)
+		}
+		if n := h.audits(exec.ID, ActionStepErrorRouted); n != 0 {
+			t.Fatalf("routed audits = %d", n)
+		}
+	})
+
+	t.Run("pinned version decides, not the edited draft", func(t *testing.T) {
+		h.t = t
+		if h.fresh != nil {
+			h.store = h.fresh()
+		}
+		exec, wfID := h.start(routeYAML("continue"))
+		edited := mustNormalize(t, strings.Replace(routeYAML(""), "\n  name: ", "\n  name: pinned-", 1))
+		draft, err := h.store.GetDraft(h.ctx, h.scope, wfID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := h.store.SaveDraft(h.ctx, h.scope, wfID, SaveInput{ExpectedRevision: draft.Revision, NormalizedYAML: edited.NormalizedYAML, Digest: edited.Digest, Summary: edited.Summary}); err != nil {
+			t.Fatal(err)
+		}
+		h.complete(h.claim("seed"), map[string]any{"result": map[string]any{"env": "staging"}})
+		h.fail(h.claim("boom"))
+		if s, _ := h.step(exec.ID, "boom"); s.ErrorHandling != ErrorHandlingContinue {
+			t.Fatalf("boom errorHandling = %q, want pinned continue", s.ErrorHandling)
+		}
+		h.complete(h.claim("after"), map[string]any{"result": map[string]any{"status": "success"}})
+		if s, _ := h.step(exec.ID, "boom"); s.ErrorHandling != ErrorHandlingContinue {
+			t.Fatalf("after run, boom errorHandling = %q", s.ErrorHandling)
+		}
+	})
+
+	t.Run("handled step in a failed run refuses retry", func(t *testing.T) {
+		h.t = t
+		if h.fresh != nil {
+			h.store = h.fresh()
+		}
+		exec, _ := h.start(mixedYAML)
+		h.complete(h.claim("seed"), map[string]any{"result": map[string]any{"x": 1}})
+		claimed := map[string]DispatchResult{}
+		for i := 0; i < 2; i++ {
+			c, err := h.store.ClaimJob(h.ctx, h.scope, h.now(), ClaimInput{WorkerID: "route-worker", Lease: time.Minute})
+			if err != nil {
+				t.Fatal(err)
+			}
+			claimed[c.Step.NodeID] = c
+		}
+		h.fail(claimed["soft"])
+		h.fail(claimed["hard"])
+		h.complete(h.claim("next"), map[string]any{"result": map[string]any{"status": "success"}})
+		if got := h.run(exec.ID); got.Status != ExecutionFailed {
+			t.Fatalf("run = %s", got.Status)
+		}
+		_, err := h.store.RetryStep(h.ctx, h.scope, h.now(), exec.ID, claimed["soft"].Step.ID)
+		var refused *NotRetryableError
+		if !errors.As(err, &refused) || refused.Reason != ReasonStepErrorHandled {
+			t.Fatalf("retry handled = %v", err)
+		}
+		tail, _ := h.step(exec.ID, "tail")
+		if tail.Status != ExecutionSkipped || tail.SkipReason != SkipUpstreamFailed {
+			t.Fatalf("tail before retry = %s %q", tail.Status, tail.SkipReason)
+		}
+		if _, err := h.store.RetryStep(h.ctx, h.scope, h.now(), exec.ID, claimed["hard"].Step.ID); err != nil {
+			t.Fatalf("retry plain = %v", err)
+		}
+		// The accepted retry reopens upstream_failed steps; the routed step stays failed.
+		tail, tj := h.step(exec.ID, "tail")
+		if tail.Status != ExecutionPending || tail.SkipReason != "" || tj.Status != JobBlocked {
+			t.Fatalf("tail after retry = %s %q %s", tail.Status, tail.SkipReason, tj.Status)
+		}
+		if soft, _ := h.step(exec.ID, "soft"); soft.Status != ExecutionFailed || soft.ErrorHandling != ErrorHandlingContinue {
+			t.Fatalf("soft after retry = %s %q", soft.Status, soft.ErrorHandling)
+		}
+		h.complete(h.claim("hard"), map[string]any{"result": map[string]any{"status": "failure", "code": "hard.fail"}})
+		h.complete(h.claim("tail"), map[string]any{"result": map[string]any{"status": "success"}})
+		if got := h.run(exec.ID); got.Status != ExecutionSucceededWithErrors {
+			t.Fatalf("run after retry = %s", got.Status)
+		}
+	})
+
+	t.Run("errorOutput on a branching node skips every non-error branch", func(t *testing.T) {
+		h.t = t
+		if h.fresh != nil {
+			h.store = h.fresh()
+		}
+		exec, _ := h.start(branchErrorOutputYAML)
+		h.complete(h.claim("seed"), map[string]any{"result": map[string]any{"status": "ready"}})
+		h.fail(h.claim("gate"))
+		for _, node := range []string{"yes", "no"} {
+			st, _ := h.step(exec.ID, node)
+			if st.Status != ExecutionSkipped || st.SkipReason != SkipBranchNotTaken {
+				t.Fatalf("%s = %s %q", node, st.Status, st.SkipReason)
+			}
+		}
+		if gate, _ := h.step(exec.ID, "gate"); gate.Status != ExecutionFailed || gate.ErrorHandling != ErrorHandlingOutput {
+			t.Fatalf("gate = %s %q", gate.Status, gate.ErrorHandling)
+		}
+		h.complete(h.claim("handled"), map[string]any{"result": map[string]any{"status": "success"}})
+		if got := h.run(exec.ID); got.Status != ExecutionSucceededWithErrors {
+			t.Fatalf("run = %s", got.Status)
+		}
+	})
+
+	t.Run("templated flow.fail with.code never routes; literal does", func(t *testing.T) {
+		h.t = t
+		if h.fresh != nil {
+			h.store = h.fresh()
+		}
+		// Literal dotted code routes (control).
+		exec, _ := h.start(routeYAML("continue"))
+		h.complete(h.claimFor(exec.ID, "seed"), map[string]any{"result": map[string]any{"env": "staging"}})
+		h.fail(h.claimFor(exec.ID, "boom"))
+		if n := h.audits(exec.ID, ActionStepErrorRouted); n != 1 {
+			t.Fatalf("literal routed audits = %d", n)
+		}
+		// Same graph, but the pinned with.code is templated: the run-time
+		// code is still the dotted fixture.boom, yet it must fail plain.
+		exec, wfID := h.start(routeYAML("continue"))
+		_, _ = h.store.CancelExecution(h.ctx, h.scope, h.now(), exec.ID)
+		tpl := strings.Replace(routeYAML("continue"), "code: fixture.boom", `code: "{{ input.code }}"`, 1)
+		if tpl == routeYAML("continue") {
+			t.Fatal("template substitution did not apply")
+		}
+		verID := h.templated(wfID, exec.WorkflowVersionID, tpl)
+		exec, err := h.store.StartExecution(h.ctx, h.scope, wfID, StartInput{VersionID: verID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.complete(h.claimFor(exec.ID, "seed"), map[string]any{"result": map[string]any{"env": "staging"}})
+		boom := h.claimFor(exec.ID, "boom")
+		if _, err := h.store.FailJob(h.ctx, h.scope, h.now(), JobActionInput{
+			JobID: boom.Job.ID, WorkerID: "route-worker", FencingToken: boom.Job.FencingToken,
+			Error: map[string]any{"code": "fixture.boom", "message": "planned failure"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if s, _ := h.step(exec.ID, "boom"); s.ErrorHandling != "" {
+			t.Fatalf("templated routed: %q", s.ErrorHandling)
+		}
+		if got := h.run(exec.ID); got.Status != ExecutionFailed {
+			t.Fatalf("templated run = %s", got.Status)
+		}
+		if n := h.audits(exec.ID, ActionStepErrorRouted); n != 0 {
+			t.Fatalf("templated routed audits = %d", n)
+		}
+	})
+
+	t.Run("never-routed failures write no step.error_routed", func(t *testing.T) {
+		h.t = t
+		if h.fresh != nil {
+			h.store = h.fresh()
+		}
+		for _, code := range neverRoutedCodes {
+			exec, _ := h.start(routeYAML("continue"))
+			h.complete(h.claim("seed"), map[string]any{"result": map[string]any{"env": "staging"}})
+			boom := h.claim("boom")
+			if _, err := h.store.FailJob(h.ctx, h.scope, h.now(), JobActionInput{
+				JobID: boom.Job.ID, WorkerID: "route-worker", FencingToken: boom.Job.FencingToken,
+				Error: map[string]any{"code": code, "message": "refused"},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if s, _ := h.step(exec.ID, "boom"); s.ErrorHandling != "" {
+				t.Fatalf("%s routed: %q", code, s.ErrorHandling)
+			}
+			if got := h.run(exec.ID); got.Status != ExecutionFailed {
+				t.Fatalf("%s run = %s", code, got.Status)
+			}
+			if n := h.audits(exec.ID, ActionStepErrorRouted); n != 0 {
+				t.Fatalf("%s routed audits = %d", code, n)
+			}
+		}
+		// L1: a second FailJob on the already-failed job is a no-op and
+		// never routes or audits a second time.
+		if h.fresh != nil {
+			h.store = h.fresh()
+		}
+		exec, _ := h.start(routeYAML("continue"))
+		h.complete(h.claimFor(exec.ID, "seed"), map[string]any{"result": map[string]any{"env": "staging"}})
+		boom := h.claimFor(exec.ID, "boom")
+		h.fail(boom)
+		h.fail(boom)
+		if n := h.audits(exec.ID, ActionStepErrorRouted); n != 1 {
+			t.Fatalf("double fail routed audits = %d", n)
+		}
+		// Cancel while the routed node runs.
+		if h.fresh != nil {
+			h.store = h.fresh()
+		}
+		exec, _ = h.start(routeYAML("continue"))
+		h.complete(h.claimFor(exec.ID, "seed"), map[string]any{"result": map[string]any{"env": "staging"}})
+		h.claimFor(exec.ID, "boom")
+		if _, err := h.store.CancelExecution(h.ctx, h.scope, h.now(), exec.ID); err != nil {
+			t.Fatal(err)
+		}
+		if n := h.audits(exec.ID, ActionStepErrorRouted); n != 0 {
+			t.Fatalf("cancel routed audits = %d", n)
+		}
+	})
+}
+
+// mixedYAML: soft (continue) -> next ; hard (plain) alone.
+const mixedYAML = `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: route-mixed
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: seed
+      type: data.set
+      name: Seed
+      with:
+        value:
+          x: 1
+    - id: soft
+      type: flow.fail
+      name: Soft
+      onError: continue
+      with:
+        code: soft.fail
+    - id: next
+      type: flow.stop
+      name: Next
+      with:
+        status: success
+    - id: hard
+      type: flow.fail
+      name: Hard
+      with:
+        code: hard.fail
+    - id: tail
+      type: flow.stop
+      name: Tail
+      with:
+        status: success
+  edges:
+    - from: seed.result
+      to: soft.input
+    - from: seed.result
+      to: hard.input
+    - from: soft.result
+      to: next.input
+    - from: hard.result
+      to: tail.input
+`
+
+func TestMemoryErrorRouting(t *testing.T) {
+	scope, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cur *Memory
+	runRoutingSuite(t, routeHarness{t: t, ctx: context.Background(), scope: scope,
+		fresh: func() Store { cur = NewMemory(); return cur },
+		templated: func(wfID, fromVersionID, yamlDoc string) string {
+			cur.mu.Lock()
+			defer cur.mu.Unlock()
+			for _, v := range cur.versions[wfID] {
+				if v.ID == fromVersionID {
+					v.ID = "44444444-4444-4444-8444-444444444444"
+					v.VersionNumber++
+					v.DefinitionYAML = yamlDoc
+					cur.versions[wfID] = append(cur.versions[wfID], v)
+					return v.ID
+				}
+			}
+			t.Fatal("version not found")
+			return ""
+		}})
+}
+
+func TestPostgresErrorRouting(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	dsn := testDatabaseURL(t)
+	admin, err := postgres.OpenAdmin(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	app, err := postgres.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+	ws, _, userID := seedWorkflowWorkspaces(t, ctx, admin)
+	scope, err := isolation.Authorize(ws, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := NewPostgres(app)
+	runRoutingSuite(t, routeHarness{t: t, ctx: ctx, store: store, scope: scope,
+		templated: func(wfID, fromVersionID, yamlDoc string) string {
+			// workflow_versions is immutable; insert a new version row
+			// directly (admin) to stand in for a templated with.code.
+			var id string
+			if err := admin.QueryRow(ctx, `
+				INSERT INTO workflow_versions (workspace_id, workflow_id, version_number, normalized_yaml, definition_digest,
+				                               parsed_definition, publish_note, published_by)
+				SELECT workspace_id, workflow_id, version_number + 100, $2, 'sha256:' || md5($2) || md5($2),
+				       parsed_definition, 'templated', published_by
+				  FROM workflow_versions WHERE id = $1::uuid
+				RETURNING id::text`, fromVersionID, yamlDoc).Scan(&id); err != nil {
+				t.Fatal(err)
+			}
+			return id
+		}})
+
+	t.Run("M1: a missing pinned version is stop, not an error", func(t *testing.T) {
+		tx, err := postgres.BeginScoped(ctx, app, scope.WorkspaceID())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback(ctx)
+		got, err := pinnedVersionYAMLTx(ctx, tx, scope, "33333333-3333-4333-8333-333333333333")
+		if err != nil || got != "" {
+			t.Fatalf("missing version = %q %v", got, err)
+		}
+		if mode, _ := nodeOnError(got, "boom"); mode != "" {
+			t.Fatalf("mode = %q", mode)
+		}
+		// The transaction is still usable after the miss.
+		var one int
+		if err := tx.QueryRow(ctx, `SELECT 1`).Scan(&one); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("indeterminate is never routed", func(t *testing.T) {
+		src := strings.Replace(sshThenStopYAML, "      type: ssh.run\n      name: Run\n", "      type: ssh.run\n      name: Run\n      onError: errorOutput\n", 1)
+		src = strings.Replace(src, "      to: next.input\n", "      to: next.input\n    - from: run.error\n      to: handled.input\n", 1)
+		src = strings.Replace(src, "  edges:\n", "    - id: handled\n      type: flow.stop\n      name: Handled\n      with:\n        status: success\n  edges:\n", 1)
+		exec := startGraph(t, ctx, store, scope, src)
+		claimNode(t, ctx, store, scope, time.Now().UTC().Add(time.Second), "run")
+		if n, err := store.RecoverExpiredLeases(ctx, scope, time.Now().UTC().Add(2*time.Minute)); err != nil || n < 1 {
+			t.Fatalf("recover n=%d err=%v", n, err)
+		}
+		assertRun(t, ctx, store, scope, exec.ID, ExecutionIndeterminate)
+		run := stepByNode(t, listSteps(t, ctx, store, scope, exec.ID), "run")
+		if run.Status != ExecutionIndeterminate || run.ErrorHandling != "" {
+			t.Fatalf("run step = %s %q", run.Status, run.ErrorHandling)
+		}
+		assertSkipReason(t, ctx, store, scope, exec.ID, "next", SkipUpstreamIndeterminate)
+		if n := len(closeAudits(t, ctx, store, scope, ActionStepErrorRouted, exec.ID)); n != 0 {
+			t.Fatalf("lease loss routed audits = %d", n)
+		}
+	})
+}
+
+// neverRoutedCodes (H1) fail plain under onError: continue in both stores:
+// the script re-check codes from workflowhttp/dispatch.go, other policy and
+// authz codes, the engine-internal reasons, an unknown code, a dotted code
+// that is not boom's own with.code, and an over-long code.
+var neverRoutedCodes = []string{
+	"emergency-stopped", "emergency-stop-denied",
+	"artifact-mutable", "artifact-unscanned", "artifact-unsigned", "artifact-scan-failed", "artifact-revoked",
+	"isolation-denied", "metadata-denied", "egress-denied", "permission-denied", "policy-denied",
+	"forbidden", "rbac-denied", "auth-denied", "credential-denied", "host-key-mismatch", "ssrf-denied",
+	"tenancy-denied", "handle-forbidden", "secret-forbidden", "job-binding-rejected", "draft-not-runnable",
+	"indeterminate", "canceled",
+	ReasonWorkflowDeleted, ReasonRequirementUnresolvable, ReasonRunEnded,
+	"test-flaky-failure", "brand-new-code", "", "other.reason",
+	"fixture.boom" + strings.Repeat("x", 64),
+}

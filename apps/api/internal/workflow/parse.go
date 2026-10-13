@@ -126,50 +126,6 @@ func Parse(src []byte) (*Document, ErrorList) {
 	return doc, nil
 }
 
-// PublishGate re-checks a saved draft at publish time. It returns every
-// parse/validation error together with publish-only refusals, so a gate
-// never hides another code.
-//
-// TODO(#649 S2): remove the onError gate in the same PR that enables the
-// engine path for continue/errorOutput.
-func PublishGate(src []byte) ErrorList {
-	_, errs := Parse(src)
-	doc, derrs := decodeForGate(src)
-	if doc == nil {
-		if len(errs) == 0 {
-			errs = derrs
-		}
-		return errs
-	}
-	for i, n := range doc.Spec.Nodes {
-		if n.OnError == OnErrorContinue || n.OnError == OnErrorOutput {
-			errs = append(errs, fieldError(fmt.Sprintf("spec.nodes[%d].onError", i), n.pos.Line, n.pos.Column, CodeOnErrorNotYetSupported, fmt.Sprintf("onError: %s is not supported yet. Drafts can keep it, but publish needs onError: stop or no onError until the engine supports it.", n.OnError)))
-		}
-	}
-	return errs
-}
-
-// decodeForGate decodes without validation so the gate sees onError even
-// when the document has other errors.
-func decodeForGate(src []byte) (*Document, ErrorList) {
-	if len(src) > MaxDocumentBytes || len(bytes.TrimSpace(src)) == 0 {
-		return nil, nil
-	}
-	var root yaml.Node
-	if err := yaml.NewDecoder(bytes.NewReader(src)).Decode(&root); err != nil {
-		return nil, nil
-	}
-	var safeErrs ErrorList
-	if err := walkSafe(&root, "", 0, &nodeCount{}, &safeErrs); err != nil || len(safeErrs) > 0 {
-		return nil, nil
-	}
-	docNode := documentMapping(&root)
-	if docNode == nil {
-		return nil, nil
-	}
-	return decodeDocument(docNode)
-}
-
 // ParseAndNormalize parses, validates, and emits deterministic YAML plus digest.
 func ParseAndNormalize(src []byte) (*Result, ErrorList) {
 	doc, errs := Parse(src)

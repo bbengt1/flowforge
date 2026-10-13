@@ -815,7 +815,9 @@ func (m *Memory) ListSteps(_ context.Context, scope isolation.Scope, executionID
 		return nil, err
 	}
 	out := make([]ExecutionStep, len(exec.steps))
-	copy(out, exec.steps)
+	for i := range exec.steps {
+		out[i] = cloneStep(exec.steps[i])
+	}
 	return out, nil
 }
 
@@ -826,7 +828,7 @@ func (m *Memory) GetStep(_ context.Context, scope isolation.Scope, executionID, 
 	}
 	for _, step := range exec.steps {
 		if step.ID == stepID {
-			return step, nil
+			return cloneStep(step), nil
 		}
 	}
 	return ExecutionStep{}, ErrNotFound
