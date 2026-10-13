@@ -282,7 +282,7 @@ func boundObject(v map[string]any, maxBytes int) (map[string]any, bool) {
 
 func isTerminalExecution(status string) bool {
 	switch status {
-	case ExecutionSucceeded, ExecutionFailed, ExecutionCanceled, ExecutionIndeterminate, ExecutionPinned:
+	case ExecutionSucceeded, ExecutionSucceededWithErrors, ExecutionFailed, ExecutionCanceled, ExecutionIndeterminate, ExecutionPinned:
 		return true
 	default:
 		return false

@@ -886,3 +886,10 @@ func ApprovalWaitDuration(expiresIn string) (time.Duration, string) {
 	}
 	return exp, expiresIn
 }
+
+// LiteralFailCode reports whether s is a flow.fail with.code written as a
+// literal in the YAML: a DNS label or dotted token with no template or
+// expression syntax. onError routing trusts only such codes (#667).
+func LiteralFailCode(s string) bool {
+	return validFailCode(s) && !looksLikeExpression(s)
+}

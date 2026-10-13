@@ -168,6 +168,56 @@ func triggerTypes() []TriggerType {
 }
 
 func coreNodeTypes() []NodeType {
+	types := declaredNodeTypes()
+	for i := range types {
+		types[i] = withPrimaryOutput(types[i])
+	}
+	return types
+}
+
+// dataPortTypes have extra outputs that are data ports (all fire together
+// on success), not branches, so result is still their primary output and
+// onError: continue is allowed (Gracie, #667). Under continue only result
+// fires ({}); the data ports resolve unsatisfied (branch_not_taken).
+var dataPortTypes = map[string]struct{}{
+	"ssh.run":                  {},
+	"kubernetes.apply":         {},
+	"kubernetes.get":           {},
+	"kubernetes.list":          {},
+	"kubernetes.rolloutStatus": {},
+}
+
+// withPrimaryOutput sets PrimaryOutput to "result" for types whose only
+// output is result, and for dataPortTypes. Branching types get none.
+func withPrimaryOutput(n NodeType) NodeType {
+	if len(n.Outputs) == 1 && n.Outputs[0].Name == "result" {
+		n.PrimaryOutput = "result"
+	}
+	if _, ok := dataPortTypes[n.Type]; ok && hasOutput(n, "result") {
+		n.PrimaryOutput = "result"
+	}
+	return n
+}
+
+func hasOutput(n NodeType, name string) bool {
+	for _, p := range n.Outputs {
+		if p.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// PrimaryOutput returns the node type's primary output port, or "".
+func PrimaryOutput(nodeType string) string {
+	n, ok := lookupNode(nodeType)
+	if !ok {
+		return ""
+	}
+	return n.PrimaryOutput
+}
+
+func declaredNodeTypes() []NodeType {
 	neutral := coreNeutralTypes()
 	return []NodeType{
 		neutral["flow.stop"],
@@ -222,7 +272,7 @@ func lookupTrigger(typ string) (TriggerType, bool) {
 
 func lookupNode(typ string) (NodeType, bool) {
 	if tn, ok := testNodes[typ]; ok {
-		return tn.contract, true
+		return withPrimaryOutput(tn.contract), true
 	}
 	for _, n := range coreNodeTypes() {
 		if n.Type == typ {

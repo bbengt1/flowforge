@@ -394,13 +394,23 @@ func rollupExecutionStatus(jobs []ExecutionJob, steps []ExecutionStep) string {
 	if len(jobs) == 0 {
 		return ExecutionQueued
 	}
-	var sawIndet, sawFailed, sawCanceled, sawClaimed, sawQueued, sawWaiting, sawSuccess, sawSkipped, sawBlocked bool
+	handled := map[string]bool{}
+	for _, step := range steps {
+		if stepErrorHandling(step) != "" {
+			handled[step.ID] = true
+		}
+	}
+	var sawIndet, sawFailed, sawHandled, sawCanceled, sawClaimed, sawQueued, sawWaiting, sawSuccess, sawSkipped, sawBlocked bool
 	for _, job := range jobs {
 		switch job.Status {
 		case JobIndeterminate:
 			sawIndet = true
 		case JobFailed:
-			sawFailed = true
+			if handled[job.ExecutionStepID] {
+				sawHandled = true
+			} else {
+				sawFailed = true
+			}
 		case JobCanceled:
 			sawCanceled = true
 		case JobClaimed, JobRunning:
@@ -429,7 +439,7 @@ func rollupExecutionStatus(jobs []ExecutionJob, steps []ExecutionStep) string {
 	}
 	if sawQueued {
 		// Blocked downstream jobs do not promote a fresh start to running.
-		if sawSuccess || sawFailed || sawCanceled || sawSkipped {
+		if sawSuccess || sawFailed || sawHandled || sawCanceled || sawSkipped {
 			return ExecutionRunning
 		}
 		return ExecutionQueued
@@ -442,6 +452,9 @@ func rollupExecutionStatus(jobs []ExecutionJob, steps []ExecutionStep) string {
 	}
 	if sawBlocked {
 		return ExecutionRunning
+	}
+	if sawHandled {
+		return ExecutionSucceededWithErrors
 	}
 	if sawSuccess || sawSkipped {
 		return ExecutionSucceeded
@@ -592,6 +605,7 @@ func cloneStep(step ExecutionStep) ExecutionStep {
 	out.Input = cloneObject(step.Input)
 	out.Output = cloneObject(step.Output)
 	out.Error = cloneObject(step.Error)
+	liftErrorHandling(&out)
 	if step.StartedAt != nil {
 		ts := *step.StartedAt
 		out.StartedAt = &ts
