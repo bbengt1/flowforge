@@ -1855,8 +1855,19 @@ func rollupExecutionTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, ex
 // closes out never-run steps in the same transaction (#660).
 func applyExecutionStatusTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, executionID, status string, now time.Time) error {
 	if isTerminalExecution(status) && status != ExecutionPinned {
+		// #668: lock order execution (caller) -> jobs -> steps -> approvals.
+		if endsGates(status) {
+			if err := lockRunEndTx(ctx, tx, scope.WorkspaceID(), executionID); err != nil {
+				return err
+			}
+		}
 		if err := closeOutTx(ctx, tx, scope, executionID, closeOutReason(status), now); err != nil {
 			return err
+		}
+		if endsGates(status) {
+			if err := endWaitingGatesTx(ctx, tx, scope, executionID, now); err != nil {
+				return err
+			}
 		}
 	}
 	_, err := tx.Exec(ctx, `

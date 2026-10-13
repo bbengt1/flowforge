@@ -1,0 +1,14 @@
+id: 08-pindata
+drivers: [compose, runner]
+today: {publish: {status: 400, code: invalid-workflow, errors: [{path: spec.pinData, code: unknown-field}]}}
+target:
+  testVersion:
+    run: {status: [succeeded]}
+    steps:
+      fetch: {status: pinned, jobCount: 0, output: {result: {live: false}}}   # pinned_node_no_job
+      shape: {status: succeeded, output: {result: {out: false}}}
+    audit: {execution.start: 1, job.claim: 1, job.complete: 1}   # pinned fetch: no job.* rows
+  prodPublish: {status: 400, code: pindata_rejected_on_prod_publish}         # T7
+  secretInPin: {patch: {"spec.pinData.fetch[0].password": canary}, status: 400} # T5 pindata_secret_rejected
+xfail:
+  - {part: all, reason: "no pinData / test versions", issue: "#650 E3.7", drivers: [all]}

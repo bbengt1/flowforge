@@ -1149,6 +1149,9 @@ func (m *Memory) rollupLocked(scope isolation.Scope, exec *memExecution, now tim
 	next := guardCanceledRollup(exec.record.Status, rollupExecutionStatus(exec.jobs, exec.steps))
 	if isTerminalExecution(next) && next != ExecutionPinned {
 		m.closeOutLocked(scope, exec, closeOutReason(next), now)
+		if endsGates(next) {
+			m.endWaitingGatesLocked(scope, exec, now)
+		}
 	}
 	applyExecutionStatus(&exec.record, next, now)
 }

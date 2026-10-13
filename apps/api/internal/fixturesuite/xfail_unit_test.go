@@ -106,3 +106,99 @@ func TestApplyPatch(t *testing.T) {
 		t.Fatal("out-of-range index accepted")
 	}
 }
+
+func TestLintRejectsXFailPartMatchingNoCase(t *testing.T) {
+	bad := map[string]string{
+		"top part names no case": "id: x\ndrivers: [compose]\ncases: [{name: a}]\nxfail: [{part: b, reason: r, issue: \"#1\", drivers: [all]}]\n",
+		"no cases, part not all": "id: x\ndrivers: [compose]\nxfail: [{part: import+export, reason: r, issue: \"#1\", drivers: [all]}]\n",
+		"case tag names another": "id: x\ndrivers: [compose]\ncases: [{name: a, xfail: [{part: b, reason: r, issue: \"#1\", drivers: [all]}]}, {name: b}]\n",
+	}
+	for name, src := range bad {
+		if _, err := DecodeExpect([]byte(src)); err == nil || !strings.Contains(err.Error(), "part") {
+			t.Fatalf("%s: err = %v, want part lint error", name, err)
+		}
+	}
+	good := "id: x\ndrivers: [compose]\ncases: [{name: a, xfail: [{part: a, reason: r, issue: \"#1\", drivers: [all]}]}]\nxfail: [{part: all, reason: r, issue: \"#1\", drivers: [runner]}]\n"
+	if _, err := DecodeExpect([]byte(good)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestActionsAndBuildParse(t *testing.T) {
+	src := "id: x\ndrivers: [runner]\nbuild: fftest\nactions: [start, drive-until-waiting, kill-runner, {advance-clock: 3s}, new-runner, {set-now: +3s}, tick-recover, retry, drive]\n"
+	b, err := DecodeExpect([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Actions) != 9 || b.Actions[3].Verb != "advance-clock" || b.Actions[3].Arg != "3s" || b.Build != buildFFTest {
+		t.Fatalf("decoded %+v", b)
+	}
+	if d, _ := b.Actions[5].duration(); d.Seconds() != 3 {
+		t.Fatalf("set-now duration = %v", d)
+	}
+	for name, src := range map[string]string{
+		"unknown verb":  "id: x\ndrivers: [runner]\nactions: [teleport]\n",
+		"missing arg":   "id: x\ndrivers: [runner]\nactions: [advance-clock]\n",
+		"bad duration":  "id: x\ndrivers: [runner]\nactions: [{advance-clock: soon}]\n",
+		"unknown build": "id: x\ndrivers: [runner]\nbuild: debug\n",
+		"unknown key":   "id: x\ndrivers: [runner]\nmidRun: {bogus: 1}\n",
+		"step error":    "id: x\ndrivers: [runner]\nsteps: {a: {error: {code: c, bogus: 1}}}\n",
+	} {
+		if _, err := DecodeExpect([]byte(src)); err == nil {
+			t.Fatalf("%s: accepted", name)
+		}
+	}
+	if _, err := DecodeExpect([]byte("id: x\ndrivers: [runner]\nactions: [start, {publish-v2: v2.workflow.yaml}, drive, retry-refused]\nerrorWorkflowFires: false\nsteps: {a: {errorHandling: none, input: {}}}\n")); err != nil {
+		t.Fatalf("publish-v2/retry-refused: %v", err)
+	}
+	if _, err := DecodeExpect([]byte("id: x\ndrivers: [runner]\nactions: [publish-v2]\n")); err == nil {
+		t.Fatal("publish-v2 without a file accepted")
+	}
+	if buildRuns(buildFFTest) != fftestBuild || buildRuns(buildDefault) == fftestBuild || !buildRuns("") {
+		t.Fatal("buildRuns gating")
+	}
+}
+
+func TestEvaluatedKeysAreNotPending(t *testing.T) {
+	n := 0
+	b := Block{
+		Actions: []Action{{Verb: "start"}}, HTTP: &HTTPChecks{Retry: 201}, Jobs: map[string]JobExpect{"a": {Count: &n}},
+		MidRun: &MidRun{}, PublishGuards: []PublishGuard{{}}, ExecutionsDelta: &n, NoStepStatusIn: []string{"pending"},
+		AuditDetails: map[string]map[string]any{"job.resume": {"outcome": "result"}},
+		Steps:        map[string]StepExpect{"a": {Attempts: 2, AttemptStatuses: []string{"failed"}, Port: "x", Error: &StepError{Code: "c"}, AttemptErrors: []StepError{{Code: "c"}}, SkipReason: "upstream_failed"}},
+	}
+	if p := b.pendingKeys(); len(p) != 0 {
+		t.Fatalf("pending = %v", p)
+	}
+	if p := (Block{Steps: map[string]StepExpect{"a": {ItemCount: 3}}}).pendingKeys(); len(p) != 1 {
+		t.Fatalf("itemCount should stay pending: %v", p)
+	}
+}
+
+// Terry's M1: a harness gap is never a product failure.
+func TestHarnessPendingNeverSatisfiesXFail(t *testing.T) {
+	x := &XFail{Part: "all", Reason: "later", Issue: "#650", Drivers: []string{"all"}}
+	pend := []string{"steps.a (extended keys)"}
+	cases := []struct {
+		x     *XFail
+		fails []string
+		want  Outcome
+	}{
+		{x, nil, OutcomePending},             // xfail resting on the gap alone
+		{x, []string{"boom"}, OutcomeXFail},  // real product failure too
+		{nil, nil, OutcomeFail},              // pass with unchecked keys
+		{nil, []string{"boom"}, OutcomeFail}, // plain fail
+	}
+	for _, c := range cases {
+		got, _ := VerdictPending("f", "compose", c.x, c.fails, pend)
+		if got != c.want {
+			t.Fatalf("VerdictPending(%v,%v) = %s, want %s", c.x != nil, c.fails, got, c.want)
+		}
+		if got.Failing() != (c.want != OutcomeXFail) {
+			t.Fatalf("%s failing = %v", got, got.Failing())
+		}
+	}
+	if got, _ := VerdictPending("f", "compose", x, []string{"boom"}, nil); got != OutcomeXFail {
+		t.Fatalf("no pending: %s", got)
+	}
+}

@@ -151,6 +151,9 @@ func (m *Memory) rollupFinishedLocked(scope isolation.Scope, now time.Time, exec
 	}
 	if next != ExecutionPinned {
 		m.closeOutLocked(scope, &exec, closeOutReason(next), now)
+		if endsGates(next) {
+			m.endWaitingGatesLocked(scope, &exec, now)
+		}
 	}
 	applyExecutionStatus(&exec.record, next, now)
 	m.executions[executionID] = exec

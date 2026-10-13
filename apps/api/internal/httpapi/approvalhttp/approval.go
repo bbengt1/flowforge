@@ -771,6 +771,8 @@ func WriteApprovalError(w http.ResponseWriter, r *http.Request, err error) {
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeConflict, "Conflict", "Approval has expired.")
 	case errors.Is(err, approval.ErrInvalidated):
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeConflict, "Conflict", "Approval is bound to a previous workflow version, target, or policy revision.")
+	case errors.Is(err, approval.ErrRunFinished):
+		core.WriteProblem(w, r, http.StatusConflict, core.CodeRunFinished, "Conflict", "The run has already finished, so this approval can no longer be decided.")
 	case errors.Is(err, approval.ErrClosed):
 		core.WriteProblem(w, r, http.StatusConflict, core.CodeApprovalClosed, "Conflict", "This approval is closed and can no longer be decided.")
 	case errors.Is(err, approval.ErrNotPending):

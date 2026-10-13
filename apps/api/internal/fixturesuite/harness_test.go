@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sort"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,6 +24,8 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/quota"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
+	"github.com/bbengt1/flowforge/apps/api/internal/vault"
+	"github.com/bbengt1/flowforge/apps/api/internal/webhook"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -44,6 +48,9 @@ type Env struct {
 	skew   atomic.Int64
 	jobKey []byte
 	api    *httpapi.API
+	// capture records every response (S3 secret scan) when set.
+	capMu   sync.Mutex
+	capture *[]Response
 }
 
 // Now is the suite's fake clock.
@@ -58,6 +65,7 @@ type Workspace struct {
 	Tenant identity.Tenant
 	WS     identity.Workspace
 	Users  map[string]identity.User // owner, editor, viewer
+	gen    int                      // worker generation (kill-runner bumps it)
 }
 
 // newEnv opens Postgres (migrating it) and builds the API handler the way
@@ -94,6 +102,9 @@ func newEnv(t *testing.T) *Env {
 		Now:              env.Now,
 		Quota:            quota.Unlimited(),
 		ScriptSigningKey: scripts.NewSigningKey(),
+		// S3: credentials and webhook secrets (canary seeds, cross-tenant).
+		Vault: vault.NewPostgres(app, vault.TestKeys(), nil),
+		Hooks: webhook.NewPostgres(app),
 	}
 	// Test-only: trust identity headers, as the httpapi tests do.
 	d.Security.TrustIdentityHeaders = true
@@ -110,6 +121,7 @@ func newEnv(t *testing.T) *Env {
 type Response struct {
 	Status int
 	Body   []byte
+	Header http.Header
 }
 
 // Problem is the subset of a problem document the suite checks.
@@ -130,8 +142,48 @@ func (r Response) problem() Problem {
 
 func (e *Env) serve(req *http.Request) Response {
 	rec := httptest.NewRecorder()
-	e.h.ServeHTTP(rec, req)
-	return Response{Status: rec.Code, Body: rec.Body.Bytes()}
+	e.handler().ServeHTTP(rec, req)
+	return Response{Status: rec.Code, Body: rec.Body.Bytes(), Header: rec.Header()}
+}
+
+// handler is the API handler; while a capture is on it records every
+// response (suite calls and compose worker traffic) for the secret scan.
+func (e *Env) handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		e.capMu.Lock()
+		on := e.capture != nil
+		e.capMu.Unlock()
+		if !on {
+			e.h.ServeHTTP(w, r)
+			return
+		}
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, r)
+		e.capMu.Lock()
+		if e.capture != nil {
+			*e.capture = append(*e.capture, Response{Status: rec.Code, Body: append([]byte(nil), rec.Body.Bytes()...), Header: rec.Header().Clone()})
+		}
+		e.capMu.Unlock()
+		for k, v := range rec.Header() {
+			w.Header()[k] = v
+		}
+		w.WriteHeader(rec.Code)
+		_, _ = w.Write(rec.Body.Bytes())
+	})
+}
+
+// Capture starts recording responses; stop returns them.
+func (e *Env) Capture() (stop func() []Response) {
+	var got []Response
+	e.capMu.Lock()
+	e.capture = &got
+	e.capMu.Unlock()
+	return func() []Response {
+		e.capMu.Lock()
+		defer e.capMu.Unlock()
+		e.capture = nil
+		return got
+	}
 }
 
 func newReq(method, path string, body any, user identity.User) *http.Request {
@@ -246,10 +298,21 @@ func (w *Workspace) Start(user identity.User, workflowID, versionID string, inpu
 
 // Run is the observed state of one execution.
 type Run struct {
-	Status string
-	Reason string
-	Steps  map[string]wfstore.ExecutionStep // latest attempt per node
-	Audit  map[string]int                   // action -> rows for this execution
+	Status   string
+	Reason   string
+	Steps    map[string]Step   // latest attempt per node
+	Attempts map[string][]Step // every attempt per node, oldest first
+	Audit    map[string]int    // action -> rows for this execution
+	// AuditRows holds each row's details_redacted plus "outcome".
+	AuditRows map[string][]map[string]any
+}
+
+// Step is a step row as the run API returns it (skipReason is #660).
+// ErrorHandling is the step's onError mode as the run API reports it
+// (#649 S2); it is empty until the API sends it.
+type Step struct {
+	wfstore.ExecutionStep
+	ErrorHandling string `json:"errorHandling"`
 }
 
 // Observe reads the execution, its steps, and its audit rows.
@@ -270,36 +333,97 @@ func (w *Workspace) Observe(t *testing.T, execID string) Run {
 		t.Fatalf("list steps: %d %s", res.Status, res.Body)
 	}
 	var steps struct {
-		Items []wfstore.ExecutionStep `json:"items"`
+		Items []Step `json:"items"`
 	}
 	_ = json.Unmarshal(res.Body, &steps)
-	run := Run{Status: exec.Status, Reason: exec.StatusReason, Steps: map[string]wfstore.ExecutionStep{}, Audit: map[string]int{}}
+	run := Run{Status: exec.Status, Reason: exec.StatusReason, Steps: map[string]Step{}, Attempts: map[string][]Step{},
+		Audit: map[string]int{}, AuditRows: map[string][]map[string]any{}}
 	for _, s := range steps.Items {
 		if cur, ok := run.Steps[s.NodeID]; !ok || s.Attempt >= cur.Attempt {
 			run.Steps[s.NodeID] = s
 		}
+		run.Attempts[s.NodeID] = append(run.Attempts[s.NodeID], s)
+	}
+	for _, list := range run.Attempts {
+		sort.SliceStable(list, func(i, j int) bool { return list[i].Attempt < list[j].Attempt })
 	}
 	// Audit rows tied to this run: the execution itself, its steps and
 	// jobs (resource_id), or its correlation id.
 	rows, err := w.env.admin.Query(w.env.ctx, `
-SELECT action, count(*) FROM audit_events
+SELECT action, outcome, details_redacted FROM audit_events
  WHERE workspace_id = $1::uuid
    AND (resource_id = $2::uuid
         OR resource_id IN (SELECT id FROM execution_steps WHERE execution_id = $2::uuid)
         OR resource_id IN (SELECT id FROM execution_jobs WHERE execution_id = $2::uuid)
         OR details_redacted->>'executionId' = $2::text)
- GROUP BY action`, w.WS.ID, execID)
+`, w.WS.ID, execID)
 	if err != nil {
 		t.Fatalf("audit query: %v", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var action string
-		var n int
-		if err := rows.Scan(&action, &n); err != nil {
+		var action, outcome string
+		var details map[string]any
+		if err := rows.Scan(&action, &outcome, &details); err != nil {
 			t.Fatal(err)
 		}
-		run.Audit[action] = n
+		if details == nil {
+			details = map[string]any{}
+		}
+		details["outcome"] = outcome
+		run.Audit[action]++
+		run.AuditRows[action] = append(run.AuditRows[action], details)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("audit rows: %v", err)
 	}
 	return run
+}
+
+// Executions counts the workspace's executions (each part gets a fresh
+// workspace, so this is the part's executionsDelta).
+func (w *Workspace) Executions(t *testing.T) int {
+	t.Helper()
+	var n int
+	if err := w.env.admin.QueryRow(w.env.ctx, `SELECT count(*) FROM executions WHERE workspace_id = $1::uuid`, w.WS.ID).Scan(&n); err != nil {
+		t.Fatalf("count executions: %v", err)
+	}
+	return n
+}
+
+// JobCount counts execution_jobs rows for one node of an execution.
+func (w *Workspace) JobCount(t *testing.T, execID, node string) int {
+	t.Helper()
+	var n int
+	err := w.env.admin.QueryRow(w.env.ctx, `
+SELECT count(*) FROM execution_jobs j
+  JOIN execution_steps s ON s.workspace_id = j.workspace_id AND s.id = j.execution_step_id
+ WHERE j.workspace_id = $1::uuid AND j.execution_id = $2::uuid AND s.node_id = $3`, w.WS.ID, execID, node).Scan(&n)
+	if err != nil {
+		t.Fatalf("count jobs: %v", err)
+	}
+	return n
+}
+
+// SaveDraft replaces the workflow's draft with src and returns the new
+// draft revision.
+func (w *Workspace) SaveDraft(user identity.User, d Draft, src string) (Draft, Response) {
+	res := w.Do(user, http.MethodPut, "/api/v1/workflows/"+d.WorkflowID+"/draft", map[string]any{"revision": d.Revision, "definitionYaml": src})
+	var out struct {
+		Revision int64 `json:"revision"`
+		Draft    struct {
+			Revision int64 `json:"revision"`
+		} `json:"draft"`
+	}
+	_ = json.Unmarshal(res.Body, &out)
+	rev := out.Draft.Revision
+	if rev == 0 {
+		rev = out.Revision
+	}
+	return Draft{WorkflowID: d.WorkflowID, Revision: rev}, res
+}
+
+// Retry retries the execution's latest retryable step as user.
+func (w *Workspace) Retry(user identity.User, execID string) Response {
+	return w.Do(user, http.MethodPost, "/api/v1/executions/"+execID+"/retry", nil)
 }

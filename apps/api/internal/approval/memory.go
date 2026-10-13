@@ -39,14 +39,15 @@ type memExecutionPin struct {
 }
 
 type Memory struct {
-	mu      sync.Mutex
-	rows    map[string]memRow
-	events  map[string][]Event
-	runPins map[string]memExecutionPin
-	gate    GateWaiting
-	failRun UnresolvableRun
-	groups  GroupMembership
-	decider DeciderCheck
+	mu       sync.Mutex
+	rows     map[string]memRow
+	events   map[string][]Event
+	runPins  map[string]memExecutionPin
+	gate     GateWaiting
+	runEnded RunEnded
+	failRun  UnresolvableRun
+	groups   GroupMembership
+	decider  DeciderCheck
 }
 
 // DeciderCheck reports whether userID is an enabled person who may
@@ -118,6 +119,48 @@ func (m *Memory) TargetsCaller(ctx context.Context, scope isolation.Scope, recs 
 		}
 	}
 	return out, nil
+}
+
+// RunEnded reports whether a run ended with a terminal status that closes
+// its pending approvals with run_ended (#668). The workflow store closes
+// those rows eagerly through CloseRunEnded; Decide keeps this check as a
+// backstop so it answers run_finished for a row closed that way.
+type RunEnded func(executionID, nodeID string) bool
+
+// SetRunEnded installs the #668 run-ended check.
+func (m *Memory) SetRunEnded(fn RunEnded) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.runEnded = fn
+}
+
+// closeRunEndedLocked closes a pending row whose run ended with
+// run_ended. It reports whether the row is (now) closed that way.
+func (m *Memory) closeRunEndedLocked(id string, now time.Time) bool {
+	row, ok := m.rows[id]
+	if !ok {
+		return false
+	}
+	rec := row.record
+	if rec.Status == StatusCanceled && rec.CloseReason == ReasonRunEnded {
+		return true
+	}
+	if rec.Status != StatusPending || rec.ExecutionID == "" || m.runEnded == nil || !m.runEnded(rec.ExecutionID, rec.NodeID) {
+		return false
+	}
+	rec.Status = StatusCanceled
+	rec.CloseReason = ReasonRunEnded
+	rec.DecidedBy = ""
+	rec.DecidedAt = nil
+	rec.UpdatedAt = now
+	m.rows[id] = memRow{workspaceID: row.workspaceID, record: rec}
+	if scope, err := isolation.AuthorizeSystem(row.workspaceID); err == nil {
+		m.appendEventLocked(scope, rec.ID, EventCanceled, "", map[string]any{"reason": ReasonRunEnded})
+	}
+	return true
 }
 
 // SetGateWaiting installs the check Decide uses before it accepts a decision.
@@ -404,6 +447,9 @@ func (m *Memory) Decide(ctx context.Context, scope isolation.Scope, id string, i
 	if !ok || row.workspaceID != scope.WorkspaceID() {
 		return Record{}, ErrNotFound
 	}
+	if m.closeRunEndedLocked(id, now) {
+		return Record{}, ErrRunFinished
+	}
 	rec := row.record
 	if rec.Status == StatusCanceled || rec.Status == StatusExpired {
 		return Record{}, ErrClosed
@@ -411,6 +457,10 @@ func (m *Memory) Decide(ctx context.Context, scope isolation.Scope, id string, i
 	if rec.ExecutionID != "" && rec.NodeID != "" && m.gate != nil {
 		found, waiting := m.gate(rec.ExecutionID, rec.NodeID)
 		if found && !waiting {
+			// The run may have ended between the check above and this one.
+			if m.closeRunEndedLocked(id, now) {
+				return Record{}, ErrRunFinished
+			}
 			if rec.Status == StatusPending {
 				rec.Status = StatusExpired
 				rec.DecidedBy = ""
@@ -491,7 +541,7 @@ func (m *Memory) ClosePendingForExecution(_ context.Context, scope isolation.Sco
 	if !authz.ValidUUID(executionID) {
 		return nil
 	}
-	if reason != ReasonRunCanceled && reason != ReasonWorkflowDeleted {
+	if reason != ReasonRunCanceled && reason != ReasonWorkflowDeleted && reason != ReasonRunEnded {
 		return ErrInvalid
 	}
 	if now.IsZero() {
@@ -501,6 +551,14 @@ func (m *Memory) ClosePendingForExecution(_ context.Context, scope isolation.Sco
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.closePendingLocked(scope, executionID, reason, now)
+	return nil
+}
+
+// closePendingLocked cancels the run's pending rows with reason and
+// reports how many it closed. The caller holds m.mu.
+func (m *Memory) closePendingLocked(scope isolation.Scope, executionID, reason string, now time.Time) int {
+	n := 0
 	for id, row := range m.rows {
 		if row.workspaceID != scope.WorkspaceID() || row.record.ExecutionID != executionID || row.record.Status != StatusPending {
 			continue
@@ -513,8 +571,31 @@ func (m *Memory) ClosePendingForExecution(_ context.Context, scope isolation.Sco
 		rec.UpdatedAt = now
 		m.rows[id] = memRow{workspaceID: scope.WorkspaceID(), record: rec}
 		m.appendEventLocked(scope, rec.ID, EventCanceled, "", map[string]any{"reason": reason})
+		n++
 	}
-	return nil
+	return n
+}
+
+// CloseRunEnded closes a run's pending approvals with run_ended and
+// returns how many it closed (#668 M2). Memory's workflow store calls it
+// eagerly right after a run-ending rollup releases its lock, so reads
+// (HasPending, PendingExpiry, Refresh, InvalidateMatching, ResyncPending,
+// Events, TargetsCaller, List, Get) never see a finished run's approval
+// as pending.
+func (m *Memory) CloseRunEnded(workspaceID, executionID string, now time.Time) int {
+	if m == nil || !authz.ValidUUID(executionID) {
+		return 0
+	}
+	scope, err := isolation.AuthorizeSystem(workspaceID)
+	if err != nil {
+		return 0
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.closePendingLocked(scope, executionID, ReasonRunEnded, now.UTC())
 }
 
 func (m *Memory) Refresh(_ context.Context, scope isolation.Scope, id string, heads CurrentHeads, now time.Time) (Record, error) {

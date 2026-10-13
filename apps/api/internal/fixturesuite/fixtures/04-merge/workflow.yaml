@@ -1,0 +1,19 @@
+apiVersion: flowforge/v1
+kind: Workflow
+# Guard (green today): two edges into ONE input port are refused at save with duplicate-edge.
+# A join needs separate input ports, and no enabled core node has two input ports today
+# (data.merge is PhaseNext), so the real two-input merge lives in future.workflow.yaml.
+metadata:
+  name: e0-04-merge-dup-edge
+spec:
+  description: Epic 0 fixture 04 guard, two edges into both.input must be refused.
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - {id: left, type: data.set, name: Left, with: {value: {id: 1, side: left}}}
+    - {id: right, type: data.set, name: Right, with: {value: {id: 1, side: right}}}
+    - {id: both, type: flow.stop, name: Both arrived, join: all, with: {status: success}}
+  edges:
+    - {from: left.result, to: both.input}
+    - {from: right.result, to: both.input}

@@ -25,3 +25,19 @@ func TestApprovalClosedProblem(t *testing.T) {
 		t.Fatalf("code = %s body=%s", problem.Code, rec.Body.String())
 	}
 }
+
+func TestRunFinishedProblem(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/approvals/x/decide", nil)
+	WriteApprovalError(rec, req, approval.ErrRunFinished)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status %d", rec.Code)
+	}
+	var problem core.Problem
+	if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+		t.Fatal(err)
+	}
+	if problem.Code != "run_finished" {
+		t.Fatalf("code = %s body=%s", problem.Code, rec.Body.String())
+	}
+}

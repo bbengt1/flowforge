@@ -1,0 +1,41 @@
+id: 09-wait-resume
+drivers: [compose, runner]
+cases:
+  - name: delay-restart
+    drivers: [runner]
+    today:                    # as observed: the API sweep (TickRecover) ends the delay
+      actions: [start, drive-until-waiting, kill-runner, advance-clock: 3s, new-runner, drive]
+      midRun: {status: [waiting, running], steps: {seed: {status: succeeded}, wait: {status: [waiting]}, done: {status: pending}}}
+      run: {status: [succeeded]}
+      steps:
+        wait: {status: succeeded, attempts: 1, output: {port: result, decision: result}}
+        done: {status: succeeded}
+      jobs: {wait: {count: 1}}          # no duplicate dispatch after restart
+      audit: {execution.start: 1, job.claim: 3, job.complete: 2, job.wait: 1, job.recover: 1, job.resume: 0, job.fail: 0}
+      auditDetails: {job.recover: {reason: lease-expired, outcome: result}}
+    target:                   # #665: an elapsed delay resumes as job.resume, reason delay-elapsed
+      actions: [start, drive-until-waiting, kill-runner, advance-clock: 3s, new-runner, drive]
+      midRun: {status: [waiting, running], steps: {seed: {status: succeeded}, wait: {status: [waiting]}, done: {status: pending}}}
+      run: {status: [succeeded]}
+      steps:
+        wait: {status: succeeded, attempts: 1}
+        done: {status: succeeded}
+      jobs: {wait: {count: 1}}
+      audit: {execution.start: 1, job.claim: 3, job.wait: 1, job.resume: 1, job.recover: 0, job.fail: 0}
+      auditDetails: {job.resume: {reason: delay-elapsed, outcome: result}}
+    xfail:
+      - {part: delay-restart, reason: "elapsed delay is closed by the lease-expiry sweep (job.recover lease-expired), not job.resume delay-elapsed", issue: "#665", drivers: [runner]}
+  - name: delay-compose
+    drivers: [compose]
+    today:                      # guard: compose fails closed on flow.delay
+      run: {status: [failed]}
+      steps: {wait: {status: failed}, done: {status: skipped, skipReason: upstream_failed}}   # #664: leftover steps end skipped
+    target:                     # same run result as the runner
+      run: {status: [succeeded]}
+    xfail:
+      - {part: delay-compose, reason: "compose worker has no flow.delay (6 of 18 node types)", issue: "#655", drivers: [compose]}
+  - name: resume-by-webhook     # n8n "Wait: on webhook call"
+    file: resume.workflow.yaml  # subject: a webhook-resumed wait (S3: was the delay workflow)
+    target: {resumeRoute: "POST resume URL", run: {status: [succeeded]}, wrongToken: {status: 404}}
+    xfail:
+      - {part: resume-by-webhook, reason: "no resume-by-webhook wait mode", issue: "#652", drivers: [all]}

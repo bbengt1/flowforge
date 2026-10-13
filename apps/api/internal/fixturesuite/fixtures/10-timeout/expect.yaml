@@ -1,0 +1,26 @@
+id: 10-timeout
+drivers: [compose, runner]
+status: partial
+cases:
+  - name: node-bound
+    file: workflow.yaml
+    drivers: [runner, compose]   # Chloe lists runner; approval waits in the API so compose should match (untested by Terry)
+    note: "clock: runner Config.Now (#656) + api.TickRecover(ctx); expiresIn bounds PT1S..P7D"
+    actions: [start, drive-until-waiting, set-now: +3s, tick-recover, drive]
+    midRun: {status: [waiting], steps: {gate: {status: [waiting]}, ok: {status: pending}, timed-out: {status: pending}}}
+    # audit omitted (TBD): expiry rows pending fake-clock verification (#656); expect execution.start: 1, approval decision rows: 0
+    run: {status: [failed]}      # flow.stop status failure
+    steps:
+      gate: {status: succeeded, port: expired}
+      ok: {status: skipped}
+      timed-out: {status: failed, noOutput: true, error: {code: failure}}   # flow.stop failure fails its step (workflow/step.go:72-79)
+  - name: workflow-level
+    file: target.workflow.yaml
+    today: {publish: {status: 400, code: invalid-workflow, errors: [{path: spec.timeoutSeconds, code: unknown-field}]}}
+    target:
+      drivers: [runner]
+      run: {status: [failed], outcome: timedOut}
+      steps: {wait: {status: [canceled]}, done: {status: pending}}
+      errorWorkflowFires: true
+    xfail:
+      - {part: workflow-level, reason: "no whole-run timeout", issue: "#649 S4", drivers: [all]}

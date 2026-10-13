@@ -1,0 +1,17 @@
+apiVersion: flowforge/v1
+kind: Workflow
+# FUTURE SHAPE (E3.7). pinData is an unknown spec field today. Proposed: spec.pinData keyed by
+# node id, allowed only on kind: test versions (T7). Pinned nodes never dispatch a job.
+metadata:
+  name: e0-08-pindata
+spec:
+  triggers:
+    - {id: manual, type: manual}
+  nodes:
+    - {id: fetch, type: data.set, name: Pretend fetch, with: {value: {live: true}}}
+    - {id: shape, type: data.map, name: Shape, with: {mapping: {out: live}}}
+  edges:
+    - {from: fetch.result, to: shape.input}
+  pinData:
+    fetch:
+      - {live: false}

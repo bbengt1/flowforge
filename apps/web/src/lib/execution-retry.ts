@@ -30,6 +30,10 @@ export const RETRY_REASON_MESSAGE: Record<RetryCapabilityReason, string> = {
 export const STEP_ATTEMPT_SUPERSEDED_MESSAGE =
   "A newer attempt of this step already exists.";
 
+/** Decide 409 `run_finished` (#668): the run ended, so its approval closed. */
+export const APPROVAL_RUN_FINISHED_MESSAGE =
+  "This run has already ended, so this approval is closed.";
+
 export const APPROVAL_CLOSED_MESSAGE =
   "This approval is already closed. No decision was recorded.";
 

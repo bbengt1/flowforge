@@ -1,0 +1,62 @@
+id: 06-error-output
+drivers: [compose, runner]
+cases:
+  - name: today-fail-stops      # green since #664
+    file: workflow.yaml
+    run: {status: [failed]}
+    steps:
+      seed:  {status: succeeded}
+      boom:  {status: failed, error: {code: fixture.boom, message: planned failure}}   # message in error field, not output
+      after: {status: skipped, skipReason: upstream_failed}   # #660 (#664)
+    noStepStatusIn: [pending, blocked]
+    audit: {execution.start: 1, job.claim: 2, job.complete: 1, job.fail: 1, job.recover: 0}
+  - name: guard-plain-fail      # green today: plain flow.fail, no onError
+    file: workflow.yaml
+    run: {status: [failed]}
+    steps:
+      boom:  {status: failed, errorHandling: none}
+      after: {status: skipped, skipReason: upstream_failed}
+    noStepStatusIn: [pending, blocked]
+  - name: error-output
+    file: errout.workflow.yaml
+    today:                      # removed when #649 S2 lands
+      save: {status: 201}       # drafts may keep onError
+      publishGuards:            # paths/lines not asserted (#666)
+        - {patch: {}, status: 400, code: invalid-workflow, errors: [{code: on-error-not-yet-supported}]}
+    target:
+      actions: [start, drive, retry-refused]
+      run: {status: [succeededWithErrors]}
+      steps:
+        boom:    {status: failed, errorHandling: errorOutput, error: {code: fixture.boom, message: planned failure}}
+        handled: {status: succeeded, input: {code: fixture.boom, message: planned failure, nodeId: boom, attempt: 1}}
+        after:   {status: skipped, skipReason: branch_not_taken}
+      noStepStatusIn: [pending, blocked]
+      errorWorkflowFires: false
+      audit: {execution.start: 1, job.fail: 1, step.error_routed: 1}
+    xfail:
+      - {part: error-output, reason: "no onError errorOutput / error port in the engine yet", issue: "#649 S2", drivers: [all]}
+  - name: continue
+    file: continue.workflow.yaml
+    today:
+      save: {status: 201}
+      publishGuards:
+        - {patch: {}, status: 400, code: invalid-workflow, errors: [{code: on-error-not-yet-supported}]}
+    target:
+      actions: [start, drive, retry-refused]
+      run: {status: [succeededWithErrors]}
+      steps:
+        boom:     {status: failed, errorHandling: continue, error: {code: fixture.cont}}
+        next:     {status: succeeded, input: {}}
+      noStepStatusIn: [pending, blocked]
+      errorWorkflowFires: false
+      audit: {execution.start: 1, job.fail: 1, step.error_routed: 1}
+    xfail:
+      - {part: continue, reason: "no onError continue in the engine yet", issue: "#649 S2", drivers: [all]}
+  - name: pinned-version         # a run keeps v1's onError after v2 is published
+    file: errout.workflow.yaml
+    actions: [start, publish-v2: pinned.v2.workflow.yaml, drive]
+    run: {status: [succeededWithErrors]}
+    steps:
+      boom: {status: failed, errorHandling: errorOutput}
+    xfail:
+      - {part: pinned-version, reason: "onError is not publishable yet; run-pinned errorHandling needs #649 S2", issue: "#649 S2", drivers: [all]}

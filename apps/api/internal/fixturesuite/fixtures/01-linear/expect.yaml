@@ -11,4 +11,4 @@ steps:
   seed:  {status: succeeded, attempt: 1, output: {result: {env: staging, count: 3}}}
   shape: {status: succeeded, attempt: 1, output: {result: {target: {env: staging, count: 3}}}}
   done:  {status: succeeded, attempt: 1, output: {result: {status: success, message: linear fixture finished}}}
-audit: {execution.start: 1, job.claim: 3, job.complete: 3, job.fail: 0}
+audit: {execution.start: 1, job.claim: 3, job.complete: 3, job.fail: 0, job.recover: 0}

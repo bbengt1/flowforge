@@ -1,0 +1,37 @@
+id: drafts_never_run
+source: terry/epic0-fixtures/security/drafts_never_run.yaml (DESIGN-650 T10)
+description: A draft never runs; start, versions and edits all resolve to published versions.
+drivers: [compose, runner]
+checks:
+  - name: invalid-save
+    kind: guard
+    fixture: 01-linear/workflow.yaml
+    patch: {"spec.nodes[1].type": no.such.node}
+    status: 400
+    code: invalid-workflow
+    workflowsDelta: 0
+  - name: start-unpublished        # draft-only workflow, no version named
+    kind: start
+    as: owner
+    status: 400
+    executionsDelta: 0
+  - name: start-draft-revision     # a draft revision is not a version id
+    kind: start
+    as: owner
+    body: {workflowVersionId: "{A.draftRevision}"}
+    status: 400
+    executionsDelta: 0
+  - name: published-then-edited
+    kind: version-pin
+    fixture: 01-linear/workflow.yaml
+    editedFixture: 06-error-output/workflow.yaml
+    stepsMatch: published
+  - name: future-649-s3-error-workflow-draft   # route path is a placeholder until #649 S3 names it
+    kind: route-absent
+    as: owner
+    method: PUT
+    path: "/api/v1/workflows/{A.workflow}/error-workflow"
+    body: {workflowId: "{A.draftOnly}"}
+    status: 400
+xfail:
+  - {part: future-649-s3-error-workflow-draft, reason: "no error-workflow setting yet", issue: "#649 S3", drivers: [all]}

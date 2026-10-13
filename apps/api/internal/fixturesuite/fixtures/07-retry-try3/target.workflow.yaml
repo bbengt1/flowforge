@@ -1,0 +1,19 @@
+apiVersion: flowforge/v1
+kind: Workflow
+# FUTURE SHAPE (#649 S4 retryPolicy.waitSeconds on test.flaky). Requires -tags fftest (#658).
+# Today retryPolicy is refused on test.flaky; retries are operator-driven only (execution.retry).
+metadata:
+  name: e0-07-retry-try3-auto
+spec:
+  triggers:
+    - {id: manual, type: manual}
+  nodes:
+    - id: flaky
+      type: test.flaky
+      name: Flaky
+      with:
+        failTimes: 2
+        retryPolicy: {maxAttempts: 3, waitSeconds: 1}
+    - {id: done, type: flow.stop, name: Done, with: {status: success}}
+  edges:
+    - {from: flaky.result, to: done.input}

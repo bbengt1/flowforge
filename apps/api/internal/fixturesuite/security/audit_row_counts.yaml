@@ -1,0 +1,42 @@
+id: audit_row_counts
+source: terry/epic0-fixtures/security/audit_row_counts.yaml (DESIGN-650 T8)
+description: Exact audit counts per action per execution; extra or missing rows fail. No step.* actions exist.
+drivers: [compose, runner]
+checks:
+  - name: start-linear             # 01-linear: 3 dispatched steps, all succeed
+    kind: audit
+    scenario: linear
+    audit: {execution.start: 1, job.claim: 3, job.complete: 3, job.fail: 0, job.recover: 0}
+    noActionPrefix: [step.]
+  - name: retry
+    kind: audit
+    scenario: retry
+    audit: {execution.start: 1, execution.retry: 1}
+    noActionPrefix: [step.]
+  - name: skipped-has-no-jobs      # 06 plain fail: after is skipped
+    kind: audit
+    scenario: skipped
+    skippedNodeJobAudit: {after: 0}   # skippedOrPending: job.* 0 (a job row exists, status skipped)
+    audit: {job.claim: 2, job.complete: 1, job.fail: 1}
+    noActionPrefix: [step.]
+  - name: decision
+    kind: audit
+    scenario: decision
+    approvalEvents: 1
+    audit: {job.resume: 1}
+  - name: override
+    kind: audit
+    scenario: override
+    audit: {approval.decided_by_admin_override: 1, job.resume: 1}
+  - name: publish                  # per #661 field list
+    kind: audit
+    scenario: publish
+    audit: {workflow.publish: 1}
+    detailsKeys: {workflow.publish: [actorDisplayName, actorId, workflowId, versionId, versionNumber, digest, note]}
+    detailsScopeKeys: {workflow.publish: [tenantId, workspaceId]}   # required, and only as the workflow's own tenant/workspace (S4 L1)
+    detailsMustNotContain: {workflow.publish: [spec, definitionYaml, normalizedYaml]}
+  - name: delete-published
+    kind: audit
+    scenario: delete
+    audit: {workflow.deleted: 1}
+    auditDetails: {workflow.deleted: {published: true}}

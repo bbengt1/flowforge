@@ -1,0 +1,14 @@
+apiVersion: flowforge/v1
+kind: Workflow
+# Valid today: operator-retry part. flow.fail is deterministic, so each operator retry
+# makes a new attempt that fails again; the fixture asserts attempt bookkeeping, not success.
+metadata:
+  name: e0-07-retry-operator
+spec:
+  triggers:
+    - {id: manual, type: manual}
+  nodes:
+    - {id: seed, type: data.set, name: Seed, with: {value: {env: staging}}}
+    - {id: flaky, type: flow.fail, name: Flaky, with: {code: fixture.flaky}}
+  edges:
+    - {from: seed.result, to: flaky.input}

@@ -1,0 +1,16 @@
+apiVersion: flowforge/v1
+kind: Workflow
+# Valid today WITHOUT the onError line and the error edge (today: flow.fail fails the run).
+# The harness publishes target.workflow.yaml for the xfail half; it needs #649 S1+S2.
+metadata:
+  name: e0-06-error-output-today
+spec:
+  triggers:
+    - {id: manual, type: manual}
+  nodes:
+    - {id: seed, type: data.set, name: Seed, with: {value: {env: staging}}}
+    - {id: boom, type: flow.fail, name: Boom, with: {code: fixture.boom, message: planned failure}}
+    - {id: after, type: flow.stop, name: After, with: {status: success}}
+  edges:
+    - {from: seed.result, to: boom.input}
+    - {from: boom.result, to: after.input}
