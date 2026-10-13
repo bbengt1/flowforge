@@ -109,6 +109,9 @@ jobs:
     env:
       COMPOSE_FILE: docker-compose.yml:${{ github.workspace }}/.ci-blackbox.compose.yml
       COMPOSE_PROJECT_NAME: ffblackbox
+      # Compose's api DATABASE_URL reads these with no defaults.
+      POSTGRES_USER: flowforge
+      POSTGRES_DB: flowforge
       # Throwaway CI-only database password, not a secret.
       POSTGRES_PASSWORD: fixturesuite-ci
       BUILD_SHA: ${{ github.sha }}
