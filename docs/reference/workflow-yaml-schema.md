@@ -88,7 +88,7 @@ interval expression, explicit overlap policy, and bounded misfire/catch-up
 behavior. Neither trigger configuration nor inputs can override workspace,
 workflow version, target policy, credentials, approval, or node configuration.
 
-`error` (#649 S3) is a system trigger for a workspace error workflow. It takes
+`error` is a system trigger for a workspace error workflow. It takes
 no fields (`with` or any other key is `unknown-field`) and must be the
 workflow's only trigger (`error-trigger-not-alone`), checked at save,
 `/validate` and publish. Only the engine starts it: a manual or API start of
