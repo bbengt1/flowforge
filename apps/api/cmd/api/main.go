@@ -141,6 +141,7 @@ func main() {
 		DB:                   pool,
 		Keys:                 cfg.VaultKeys,
 		JobBindingKey:        cfg.JobBindingKey,
+		ItemsCursor:          cfg.ItemsCursor,
 		ScriptSigningKey:     cfg.ScriptSigningKey,
 		Objects:              objects,
 		TLSMaterials:         tlsMaterials,

@@ -494,6 +494,12 @@ export const GENERATED_PROXY_ROUTES: readonly GeneratedProxyRoute[] = [
   },
   {
     methods: ["GET"],
+    pattern: ["executions", "{executionId}", "steps", "{stepId}", "items"],
+    auth: "authenticated",
+    params: {executionId: "uuid", stepId: "uuid"},
+  },
+  {
+    methods: ["GET"],
     pattern: ["executions", "{executionId}", "steps", "{stepId}", "logs"],
     auth: "authenticated",
     params: {executionId: "uuid", stepId: "uuid"},

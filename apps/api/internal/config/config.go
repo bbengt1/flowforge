@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"github.com/bbengt1/flowforge/apps/api/internal/itemcursor"
 	"net"
 	"net/url"
 	"os"
@@ -68,6 +69,10 @@ type Config struct {
 	// JobBindingKey is the 32-byte HMAC for worker job tickets
 	// (JOB_BINDING_SECRET). Missing or malformed is a boot-fail.
 	JobBindingKey []byte
+	// ItemsCursor signs the items paging cursor (ITEMS_CURSOR_SECRET,
+	// at least 32 bytes). The API process boot-fails when it is missing
+	// or short. The runner does not load it.
+	ItemsCursor *itemcursor.Keyring
 	// ScriptSigningKey is the 32-byte HMAC for script artifact
 	// signatures (SCRIPT_SIGNING_KEY). Missing or malformed is a boot-fail.
 	ScriptSigningKey []byte
@@ -204,6 +209,13 @@ func load(skipEmbed bool) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	var itemsCursor *itemcursor.Keyring
+	if !skipEmbed {
+		itemsCursor, err = itemcursor.Load()
+		if err != nil {
+			return Config{}, err
+		}
+	}
 	s3cfg, err := artifact.ParseS3FromEnv()
 	if err != nil {
 		return Config{}, err
@@ -229,6 +241,7 @@ func load(skipEmbed bool) (Config, error) {
 		SessionIdleTimeout:        durationEnv("SESSION_IDLE_TIMEOUT", 30*time.Minute),
 		SessionAbsoluteTimeout:    durationEnv("SESSION_ABSOLUTE_TIMEOUT", 12*time.Hour),
 		JobBindingKey:             jobKey,
+		ItemsCursor:               itemsCursor,
 		ScriptSigningKey:          scriptKey,
 		ArtifactStoreDir:          strings.TrimSpace(os.Getenv("ARTIFACT_STORE_DIR")),
 		ArtifactS3:                s3cfg,

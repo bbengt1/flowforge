@@ -35,6 +35,7 @@ cd "$ROOT"
 # is a boot-fail. Do not copy these into production.
 : "${JOB_BINDING_SECRET:=Zmxvd2ZvcmdlLWxvY2FsLWRldi1qb2ItMzJieXRlcyE=}"
 : "${SCRIPT_SIGNING_KEY:=Zmxvd2ZvcmdlLWxvY2FsLWRldi1zY3ItMzJieXRlcyE=}"
+: "${ITEMS_CURSOR_SECRET:=Zmxvd2ZvcmdlLWxvY2FsLWRldi1pdG0tMzJieXRlcyE=}"
 # Production-locked boot requires an existing S3 bucket. Compose api
 # depends_on minio and creates flowforge-artifacts before /readiness.
 # ARTIFACT_S3_CREATE_BUCKET is not passed: it boot-fails when locked.
@@ -179,6 +180,7 @@ docker run -d --name "$RESTORE_API" --network "$network" \
   -e EMBED_SIGNING_KEY_ID="$EMBED_SIGNING_KEY_ID" \
   -e JOB_BINDING_SECRET="$JOB_BINDING_SECRET" \
   -e SCRIPT_SIGNING_KEY="$SCRIPT_SIGNING_KEY" \
+  -e ITEMS_CURSOR_SECRET="$ITEMS_CURSOR_SECRET" \
   -e ARTIFACT_S3_ENDPOINT="$ARTIFACT_S3_ENDPOINT" \
   -e ARTIFACT_S3_BUCKET="$ARTIFACT_S3_BUCKET" \
   -e ARTIFACT_S3_REGION="$ARTIFACT_S3_REGION" \

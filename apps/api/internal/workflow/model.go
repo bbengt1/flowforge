@@ -25,7 +25,22 @@ const (
 	PortInteger PortKind = "integer"
 	PortBoolean PortKind = "boolean"
 	PortAny     PortKind = "any"
+	// PortItems is a bounded list of objects (#650 E3.1). Each item is
+	// capped at MaxItemBytes, a port at MaxItemsPerPort, a step at
+	// MaxStepItemBytes, and a run at MaxRunItemBytes.
+	PortItems PortKind = "items"
 )
+
+// ValidPortKind reports whether k is a known port kind. Unknown kinds fail
+// closed in the catalog self-check.
+func ValidPortKind(k PortKind) bool {
+	switch k {
+	case PortObject, PortString, PortInteger, PortBoolean, PortAny, PortItems:
+		return true
+	default:
+		return false
+	}
+}
 
 // Data classification labels. Secret is never a legal port payload.
 const (

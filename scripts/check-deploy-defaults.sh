@@ -72,6 +72,7 @@ forbid "$deploy" 'sessionAffinity:'
 forbid "$deploy" 'replicas: 1'
 forbid "$deploy" 'name: JOB_BINDING_SECRET'
 forbid "$deploy" 'name: SCRIPT_SIGNING_KEY'
+forbid "$deploy" 'name: ITEMS_CURSOR_SECRET'
 forbid "$deploy" 'image:.*:latest([[:space:]]|$)'
 need "$deploy" 'image: ghcr.io/bbengt1/flowforge-api:foundation@sha256:[0-9a-f]{64}'
 forbid "$deploy" 'image: ghcr.io/bbengt1/flowforge-[A-Za-z0-9._:-]+$'
@@ -170,6 +171,7 @@ need "$ROOT/deploy/k8s/api-configmap.yaml" 'REQUIRE_TLS: "true"'
 need "$ROOT/deploy/k8s/api-configmap.yaml" 'SHUTDOWN_TIMEOUT: "25s"'
 need "$ROOT/deploy/k8s/api-secret.example.yaml" 'JOB_BINDING_SECRET:'
 need "$ROOT/deploy/k8s/api-secret.example.yaml" 'SCRIPT_SIGNING_KEY:'
+need "$ROOT/deploy/k8s/api-secret.example.yaml" 'ITEMS_CURSOR_SECRET:'
 
 for component in api web runner; do
   pdb="$ROOT/deploy/k8s/${component}-pdb.yaml"

@@ -769,6 +769,11 @@ x-flowforge-routes:
     proxy: browser
     pattern: /api/v1/executions/{executionId}/steps/{stepId}
   - method: GET
+    path: /executions/{executionId}/steps/{stepId}/items
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/executions/{executionId}/steps/{stepId}/items
+  - method: GET
     path: /executions/{executionId}/steps/{stepId}/logs
     auth: authenticated
     proxy: browser
@@ -4522,6 +4527,26 @@ paths:
       summary: GET /executions/{executionId}/steps/{stepId}
       description: |
         Generated from the route table (GET /api/v1/executions/{executionId}/steps/{stepId}).
+        Auth class: authenticated. Identity proxy: browser.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+        Vault references are display name and UUID only.
+      responses:
+        "200":
+          description: Success
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /executions/{executionId}/steps/{stepId}/items:
+    get:
+      operationId: getExecutionsExecutionIdStepsStepIdItems
+      summary: GET /executions/{executionId}/steps/{stepId}/items
+      description: |
+        Generated from the route table (GET /api/v1/executions/{executionId}/steps/{stepId}/items).
         Auth class: authenticated. Identity proxy: browser.
         Responses never include secrets, credentials, tokens, private keys, or vault material.
         Vault references are display name and UUID only.

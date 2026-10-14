@@ -26,4 +26,13 @@ const (
 	MaxSafeMessageBytes = 256
 	MaxMappingEntries   = 32
 	MaxObjectFields     = 32
+
+	// Item model caps (#650 E3.1). Breaking one fails the step with a code;
+	// item rows are never truncated. MaxStepItemBytes is distinct from the
+	// 16 KiB API output bound (wfstore.MaxStepOutputBytes). Bytes are
+	// counted after redaction.
+	MaxItemBytes     = 16 << 10
+	MaxItemsPerPort  = 1000
+	MaxStepItemBytes = 4 << 20
+	MaxRunItemBytes  = 64 << 20
 )

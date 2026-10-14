@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/bbengt1/flowforge/apps/api/internal/itemcursor"
 	"net"
 	"os"
 	"path/filepath"
@@ -27,6 +28,35 @@ func requireHMACSecrets(t *testing.T) {
 	}
 	if strings.TrimSpace(os.Getenv(scripts.EnvScriptSigningKey)) == "" {
 		t.Setenv(scripts.EnvScriptSigningKey, strings.Repeat("cd", 32))
+	}
+	if strings.TrimSpace(os.Getenv(itemcursor.EnvSecret)) == "" {
+		t.Setenv(itemcursor.EnvSecret, strings.Repeat("ef", 32))
+	}
+}
+
+// #650 E3.1: the API refuses to start without a 32-byte items cursor key;
+// the runner does not need it.
+func TestLoadItemsCursorSecretBootFail(t *testing.T) {
+	requireHMACSecrets(t)
+	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	for _, v := range []string{"", "short", strings.Repeat("ab", 15)} {
+		t.Setenv(itemcursor.EnvSecret, v)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), itemcursor.EnvSecret) {
+			t.Fatalf("%q: want boot-fail, got %v", v, err)
+		}
+	}
+	t.Setenv(itemcursor.EnvSecret, "")
+	if _, err := LoadRunner(); err != nil && strings.Contains(err.Error(), itemcursor.EnvSecret) {
+		t.Fatalf("runner must not need %s: %v", itemcursor.EnvSecret, err)
+	}
+	t.Setenv(itemcursor.EnvSecret, strings.Repeat("ab", 32))
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ItemsCursor == nil || cfg.ItemsCursor.KID() == "" {
+		t.Fatal("items cursor keyring not loaded")
 	}
 }
 
@@ -711,6 +741,7 @@ func TestLoadHMACSecretsFailClosed(t *testing.T) {
 	t.Setenv("TRUSTED_DEV_IDENTITY_HEADERS", "")
 	t.Setenv("FLOWFORGE_ENV", "")
 	t.Setenv(scripts.EnvScriptSigningKey, strings.Repeat("cd", 32))
+	t.Setenv(itemcursor.EnvSecret, strings.Repeat("ef", 32))
 
 	for _, env := range []string{"", "production", "development"} {
 		t.Setenv("APP_ENV", env)

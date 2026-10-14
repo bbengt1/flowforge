@@ -31,6 +31,12 @@ type memExecution struct {
 	edges       []execEdge
 	// operatorRetried marks a run an operator retried (#649 S3).
 	operatorRetried bool
+	// itemBytes is the run item budget (#650 E3.1), checked and updated
+	// under the store mutex like executions.item_bytes under the row lock.
+	itemBytes int64
+	// items holds redacted item rows by step id, then port. They go with
+	// the execution (purge cascade).
+	items map[string]map[string][]StepItem
 }
 
 type memAudit struct {

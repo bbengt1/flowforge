@@ -164,6 +164,8 @@ Copy these into the root `.env` (from `env-template.txt`) that compose loads. Ex
 | `KMS_PROVIDER` | empty | `aws`, `gcp`, `azure`, or `vault`. Partial `KMS_*` configuration is a boot-fail. See [KEK rotation](../../docs/operations/kek-rotation.md). |
 | `JOB_BINDING_SECRET` | **required** (boot-fail) | 32-byte HMAC key (base64 or 64 hex) for worker job tickets. Missing or malformed refuses to start — no per-process random default. Compose may default a documented local-only value — do not copy it to k8s. |
 | `SCRIPT_SIGNING_KEY` | **required** (boot-fail) | 32-byte HMAC key (base64 or 64 hex) for script artifact signatures (E9.1). Domain-separated with SHA-3. Missing or malformed refuses to start — no per-process random default. Compose may default a documented local-only value — do not copy it to k8s. |
+| `ITEMS_CURSOR_SECRET` | **required** for the API (boot-fail) | HMAC key (base64, hex, or raw; at least 32 bytes) for the opaque cursor of `GET /api/v1/executions/{executionId}/steps/{stepId}/items` (#650). Separate from `JOB_BINDING_SECRET`. Cursors carry a key id and expire after 15 minutes. The runner does not load it. Compose may default a documented local-only value — do not copy it to k8s. |
+| `ITEMS_CURSOR_SECRET_PREVIOUS` | empty | Previous items cursor key during a rotation. Cursors it signed stay valid until they expire; remove it 15 minutes after the rotation. Same format; short values are a boot-fail. |
 | `ARTIFACT_S3_ENDPOINT` | empty (compose: `http://minio:9000`) | S3-compatible origin. Empty uses the regional AWS endpoint. No userinfo, path, query, or fragment. |
 | `ARTIFACT_S3_BUCKET` | empty (compose: `flowforge-artifacts`) | Bucket for envelope-encrypted payloads. Required with the key pair. Production-locked boot-fail when unset. |
 | `ARTIFACT_S3_REGION` | `us-east-1` when S3 is enabled | Signing region. |
@@ -227,12 +229,13 @@ From `apps/api`:
 
 ```bash
 go test ./...
-# config.Load requires JOB_BINDING_SECRET and SCRIPT_SIGNING_KEY
-# (boot-fail if missing/malformed), including cmd/migrate. Use the
+# config.Load requires JOB_BINDING_SECRET, SCRIPT_SIGNING_KEY, and
+# ITEMS_CURSOR_SECRET (boot-fail if missing/malformed), including cmd/migrate. Use the
 # documented compose local-only values or `openssl rand -base64 32`.
 # Do not copy those defaults to k8s.
 export JOB_BINDING_SECRET=Zmxvd2ZvcmdlLWxvY2FsLWRldi1qb2ItMzJieXRlcyE=
 export SCRIPT_SIGNING_KEY=Zmxvd2ZvcmdlLWxvY2FsLWRldi1zY3ItMzJieXRlcyE=
+export ITEMS_CURSOR_SECRET=Zmxvd2ZvcmdlLWxvY2FsLWRldi1pdG0tMzJieXRlcyE=
 go run ./cmd/migrate
 go run ./cmd/api
 # Local/dev only (APP_ENV=development). Claims jobs against a running API.

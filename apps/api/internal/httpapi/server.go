@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"github.com/bbengt1/flowforge/apps/api/internal/itemcursor"
 	"log/slog"
 	"net/http"
 	"os"
@@ -40,20 +41,24 @@ import (
 
 // Deps configures a Server. Tests inject stores, security policy, and a clock.
 type Deps struct {
-	DB                   postgres.Checker
-	Store                identity.Store
-	Bootstrap            bootstrap.Store
-	Scoped               isolation.Store
-	Sessions             session.Store
-	Workflows            wfstore.Store
-	Vault                vault.Store
-	Hooks                webhook.Store
-	Schedules            schedule.Store
-	Ops                  opsconfig.Store
-	Approvals            approval.Store
-	Alerts               opsalert.Store
-	Keys                 vault.Keys
-	JobBindingKey        []byte
+	DB            postgres.Checker
+	Store         identity.Store
+	Bootstrap     bootstrap.Store
+	Scoped        isolation.Store
+	Sessions      session.Store
+	Workflows     wfstore.Store
+	Vault         vault.Store
+	Hooks         webhook.Store
+	Schedules     schedule.Store
+	Ops           opsconfig.Store
+	Approvals     approval.Store
+	Alerts        opsalert.Store
+	Keys          vault.Keys
+	JobBindingKey []byte
+	// ItemsCursor signs the items paging cursor. Nil falls back to
+	// ITEMS_CURSOR_SECRET; when that is unset the items route fails
+	// closed (503). cmd/api boot-fails earlier in config.Load.
+	ItemsCursor          *itemcursor.Keyring
 	ScriptSigningKey     []byte
 	Scripts              scripts.Store
 	Objects              artifact.Objects
@@ -189,6 +194,9 @@ func withHTTPTestIdentity(d Deps) Deps {
 	}
 	if len(d.ScriptSigningKey) == 0 {
 		d.ScriptSigningKey = scripts.NewSigningKey()
+	}
+	if d.ItemsCursor == nil {
+		d.ItemsCursor = itemcursor.NewRandom()
 	}
 	return d
 }
@@ -388,6 +396,12 @@ func newServer(d Deps) *API {
 			jobKey = loaded
 		}
 	}
+	itemsCursor := d.ItemsCursor
+	if itemsCursor == nil {
+		if loaded, err := itemcursor.Load(); err == nil {
+			itemsCursor = loaded
+		}
+	}
 	scriptKey := d.ScriptSigningKey
 	if len(scriptKey) == 0 {
 		if loaded, err := scripts.LoadSigningKey(); err == nil {
@@ -436,6 +450,7 @@ func newServer(d Deps) *API {
 		Alerts:           alertStore,
 		Keys:             keys,
 		JobKey:           jobKey,
+		ItemsCursor:      itemsCursor,
 		ScriptKey:        scriptKey,
 		Scripts:          &scripts.Pipeline{Store: scriptStore, Key: scriptKey},
 		Objects:          objects,
@@ -461,6 +476,14 @@ func newServer(d Deps) *API {
 	// Dedicated limiter: do not share embed's IP/principal counters.
 	s.LoginLimiter = embed.NewLimiter(embed.Limits{
 		Window:            s.LoginLimits.Window,
+		ExchangeIP:        -1,
+		ExchangePrincipal: -1,
+		MintPrincipal:     -1,
+	})
+	// Dedicated items-read limiter (#650 E3.1): per principal and per
+	// workspace, separate from the login and embed counters.
+	s.ItemsLimiter = embed.NewLimiter(embed.Limits{
+		Window:            time.Minute,
 		ExchangeIP:        -1,
 		ExchangePrincipal: -1,
 		MintPrincipal:     -1,
@@ -505,6 +528,7 @@ func newServer(d Deps) *API {
 		s.LoginLimiter.UseShared(shared)
 		s.MachineLimiter.UseShared(shared)
 		s.SetupLimiter.UseShared(shared)
+		s.ItemsLimiter.UseShared(shared)
 	}
 	if s.Quota == nil {
 		s.Quota = quota.NewMemory()
