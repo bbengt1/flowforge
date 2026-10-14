@@ -293,6 +293,27 @@ func runErrorWorkflowSuite(t *testing.T, mk func(t *testing.T) ewHarness) {
 		h.assertSkipped(exec.ID, ErrorSkipPolicyDenied)
 	})
 
+	t.Run("approval-required target is skipped and audited", func(t *testing.T) {
+		h := mk(t)
+		h.setGate(func(context.Context, pgx.Tx, isolation.Scope, Version) string { return ErrorSkipApprovalRequired })
+		target := h.setTarget()
+		exec := h.startAs(routeYAML(""), "schedule")
+		h.failBoom(exec, "fixture.boom")
+		if got := h.run(exec.ID); got.Status != ExecutionFailed {
+			t.Fatalf("parent = %s, want %s", got.Status, ExecutionFailed)
+		}
+		runs, err := h.store.ListExecutions(h.ctx, h.scope, ExecutionListFilter{WorkflowID: target.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range runs {
+			if r.ErrorParentID == exec.ID {
+				t.Fatalf("error run created: %+v", r)
+			}
+		}
+		h.assertSkipped(exec.ID, ErrorSkipApprovalRequired)
+	})
+
 	t.Run("faulty target never blocks the parent's final status", func(t *testing.T) {
 		h := mk(t)
 		target := h.setTarget()
