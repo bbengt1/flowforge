@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -25,7 +26,29 @@ const (
 	maxItemPortLen              = 128
 	maxItemLineageRefs          = workflow.MaxAggregationItems
 	maxItemSummaryPreviewBudget = 12 * 1024
+	// ItemCodeSummaryTooLarge: the items summary envelope cannot fit in
+	// MaxStepOutputBytes alongside the step's own output (L2). The step
+	// fails; the output is never dropped.
+	ItemCodeSummaryTooLarge = "item-summary-too-large"
+	// MaxItemPortsPerStep bounds the summary envelope (M1).
+	MaxItemPortsPerStep = 16
+	// ItemsSummaryKey is the reserved output_redacted key that carries the
+	// items summary (M2). Node, provider and worker output may not use it.
+	ItemsSummaryKey = "__ff_items"
 )
+
+// ErrReservedOutputKey rejects node output that sets ItemsSummaryKey. It
+// wraps ErrInvalid so callers map it to a 400-class refusal.
+var ErrReservedOutputKey = fmt.Errorf("%w: output key %s is reserved", ErrInvalid, ItemsSummaryKey)
+
+// checkNodeOutput refuses job-result or wait output carrying the reserved
+// items summary key at the top level, before anything is written.
+func checkNodeOutput(out map[string]any) error {
+	if _, ok := out[ItemsSummaryKey]; ok {
+		return ErrReservedOutputKey
+	}
+	return nil
+}
 
 // ItemCapError is a cap breach. Code is one of the ItemCode constants. The
 // message never carries item values.
@@ -139,6 +162,9 @@ func prepareItems(in PutStepItemsInput) (preparedItems, error) {
 	if !authz.ValidUUID(in.ExecutionID) || !authz.ValidUUID(in.StepID) || len(in.Ports) == 0 {
 		return out, ErrInvalid
 	}
+	if len(in.Ports) > MaxItemPortsPerStep {
+		return out, &ItemCapError{Code: ItemCodeCapExceeded}
+	}
 	seen := map[string]struct{}{}
 	for _, p := range in.Ports {
 		if !validItemPort(p.Port) {
@@ -219,26 +245,27 @@ func buildLineage(idx int, refs []ItemRef) (map[string]any, error) {
 }
 
 // buildItemsOutput merges the bounded, flagged summary into a step's
-// redacted output under "items": {<port>: {port, count, bytes, truncated,
-// preview}}. The whole serialized output stays within MaxStepOutputBytes,
-// so BoundStep and the edge SQL (000035, output_redacted->>'port') are
-// unchanged. count and bytes are exact; preview items are added in idx
-// order only while the total stays in bound.
-func buildItemsOutput(existing map[string]any, prep preparedItems) map[string]any {
+// redacted output under the reserved key "__ff_items": {<port>: {port,
+// count, bytes, truncated, preview}}. The node's own keys (including any
+// "items" field) are kept untouched. The whole serialized output must stay
+// within MaxStepOutputBytes; if even the empty-preview envelope does not
+// fit, the write fails with ItemCodeSummaryTooLarge (never drops output).
+// count and bytes are exact; preview items are added in idx order only
+// while the total stays in bound.
+func buildItemsOutput(existing map[string]any, prep preparedItems) (map[string]any, error) {
 	out := cloneObject(existing)
 	if out == nil {
 		out = map[string]any{}
 	}
 	summaries := map[string]any{}
 	type entry struct {
-		port    string
 		summary map[string]any
 		preview []any
 		items   []preparedItem
 	}
 	entries := make([]*entry, 0, len(prep.ports))
 	for _, p := range prep.ports {
-		e := &entry{port: p.port, items: p.items, preview: []any{}}
+		e := &entry{items: p.items, preview: []any{}}
 		e.summary = map[string]any{
 			"port":      p.port,
 			"count":     len(p.items),
@@ -249,7 +276,7 @@ func buildItemsOutput(existing map[string]any, prep preparedItems) map[string]an
 		summaries[p.port] = e.summary
 		entries = append(entries, e)
 	}
-	out["items"] = summaries
+	out[ItemsSummaryKey] = summaries
 	size := func() int {
 		raw, err := json.Marshal(out)
 		if err != nil {
@@ -258,12 +285,7 @@ func buildItemsOutput(existing map[string]any, prep preparedItems) map[string]an
 		return len(raw)
 	}
 	if size() > MaxStepOutputBytes {
-		// The envelope alone does not fit (many ports, or a large
-		// pre-existing output). Drop the existing payload; counts stay.
-		out = map[string]any{"items": summaries}
-		if p, ok := existing["port"].(string); ok {
-			out["port"] = p
-		}
+		return nil, &ItemCapError{Code: ItemCodeSummaryTooLarge}
 	}
 	previewBytes := 0
 	for _, e := range entries {
@@ -282,13 +304,17 @@ func buildItemsOutput(existing map[string]any, prep preparedItems) map[string]an
 		}
 		e.summary["truncated"] = len(e.preview) < len(e.items)
 	}
-	return out
+	// M1: assert the final serialized size.
+	if size() > MaxStepOutputBytes {
+		return nil, &ItemCapError{Code: ItemCodeSummaryTooLarge}
+	}
+	return out, nil
 }
 
 // itemsSummaryCount reads summary.count for port. ok is false when the
 // step has no items summary for that port.
 func itemsSummaryCount(output map[string]any, port string) (int, bool) {
-	items, _ := output["items"].(map[string]any)
+	items, _ := output[ItemsSummaryKey].(map[string]any)
 	sum, _ := items[port].(map[string]any)
 	if sum == nil {
 		return 0, false
@@ -305,11 +331,6 @@ func itemsSummaryCount(output map[string]any, port string) (int, bool) {
 		return int(v), err == nil
 	}
 	return 0, false
-}
-
-func stepHasItems(output map[string]any) bool {
-	items, _ := output["items"].(map[string]any)
-	return len(items) > 0
 }
 
 // singleItemPage is the back-compat read: a step without an items summary

@@ -123,6 +123,7 @@ func TestLoadFailsClosed(t *testing.T) {
 		"short base64": base64.StdEncoding.EncodeToString([]byte("sixteen-bytes!!!")),
 		"short hex":    "00112233445566778899aabbccdd",
 		"whitespace":   "   ",
+		"passphrase":   "this is a long plain passphrase not base64!!",
 	} {
 		t.Setenv(EnvSecret, v)
 		t.Setenv(EnvSecretPrevious, "")
@@ -144,6 +145,12 @@ func TestLoadFailsClosed(t *testing.T) {
 	t.Setenv(EnvSecret, strings.Repeat("ab", 32))
 	if _, err := Load(); err != nil {
 		t.Fatalf("valid hex: %v", err)
+	}
+	// L3: the shipped local default (compose, env-template, scripts) must
+	// decode to at least 32 bytes.
+	t.Setenv(EnvSecret, "Zmxvd2ZvcmdlLWxvY2FsLWRldi1pdG0tMzJieXRlcyE=")
+	if _, err := Load(); err != nil {
+		t.Fatalf("local default: %v", err)
 	}
 }
 

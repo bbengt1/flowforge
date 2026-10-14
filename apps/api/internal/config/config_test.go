@@ -34,29 +34,20 @@ func requireHMACSecrets(t *testing.T) {
 	}
 }
 
-// #650 E3.1: the API refuses to start without a 32-byte items cursor key;
-// the runner does not need it.
-func TestLoadItemsCursorSecretBootFail(t *testing.T) {
+// #650 E3.1 L1: config.Load (shared by cmd/api, cmd/migrate and kekrotate)
+// and LoadRunner never need ITEMS_CURSOR_SECRET; only cmd/api loads it.
+func TestLoadDoesNotNeedItemsCursorSecret(t *testing.T) {
 	requireHMACSecrets(t)
 	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
 	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
-	for _, v := range []string{"", "short", strings.Repeat("ab", 15)} {
+	for _, v := range []string{"", "short"} {
 		t.Setenv(itemcursor.EnvSecret, v)
-		if _, err := Load(); err == nil || !strings.Contains(err.Error(), itemcursor.EnvSecret) {
-			t.Fatalf("%q: want boot-fail, got %v", v, err)
+		if _, err := Load(); err != nil {
+			t.Fatalf("%q: Load must not need %s: %v", v, itemcursor.EnvSecret, err)
 		}
-	}
-	t.Setenv(itemcursor.EnvSecret, "")
-	if _, err := LoadRunner(); err != nil && strings.Contains(err.Error(), itemcursor.EnvSecret) {
-		t.Fatalf("runner must not need %s: %v", itemcursor.EnvSecret, err)
-	}
-	t.Setenv(itemcursor.EnvSecret, strings.Repeat("ab", 32))
-	cfg, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.ItemsCursor == nil || cfg.ItemsCursor.KID() == "" {
-		t.Fatal("items cursor keyring not loaded")
+		if _, err := LoadRunner(); err != nil && strings.Contains(err.Error(), itemcursor.EnvSecret) {
+			t.Fatalf("%q: runner must not need %s: %v", v, itemcursor.EnvSecret, err)
+		}
 	}
 }
 

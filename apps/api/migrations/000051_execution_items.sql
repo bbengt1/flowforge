@@ -41,3 +41,9 @@ GRANT SELECT, INSERT, DELETE ON execution_step_items TO flowforge_app;
 ALTER TABLE executions
     ADD COLUMN item_bytes bigint NOT NULL DEFAULT 0
         CHECK (item_bytes >= 0 AND item_bytes <= 67108864);
+
+-- Write-once marker for a step's items (set in the same transaction as the
+-- item rows and summary). Tracked here, not in output_redacted keys, so a
+-- node's own output fields never collide with the items summary.
+ALTER TABLE execution_steps
+    ADD COLUMN items_written_at timestamptz;

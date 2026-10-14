@@ -39,8 +39,20 @@ func (p *Postgres) PutStepItems(ctx context.Context, scope isolation.Scope, in P
 	if err != nil {
 		return PutStepItemsResult{}, err
 	}
-	if stepHasItems(step.Output) {
+	// M2: write-once is tracked in its own column, not in output keys.
+	var written bool
+	if err := tx.QueryRow(ctx, `
+		SELECT items_written_at IS NOT NULL FROM execution_steps
+		WHERE execution_id = $1::uuid AND id = $2::uuid
+	`, in.ExecutionID, in.StepID).Scan(&written); err != nil {
+		return PutStepItemsResult{}, mapDBErr(err)
+	}
+	if written {
 		return PutStepItemsResult{}, ErrConflict
+	}
+	merged, err := buildItemsOutput(step.Output, prep)
+	if err != nil {
+		return PutStepItemsResult{}, err
 	}
 	tag, err := tx.Exec(ctx, `
 		UPDATE executions
@@ -64,15 +76,17 @@ func (p *Postgres) PutStepItems(ctx context.Context, scope isolation.Scope, in P
 			}
 		}
 	}
-	outRaw, err := marshalObject(buildItemsOutput(step.Output, prep))
+	outRaw, err := marshalObject(merged)
 	if err != nil {
 		return PutStepItemsResult{}, ErrInvalid
 	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE execution_steps SET output_redacted = $3::jsonb, updated_at = now()
-		WHERE execution_id = $1::uuid AND id = $2::uuid
+	if tag, err := tx.Exec(ctx, `
+		UPDATE execution_steps SET output_redacted = $3::jsonb, items_written_at = now(), updated_at = now()
+		WHERE execution_id = $1::uuid AND id = $2::uuid AND items_written_at IS NULL
 	`, in.ExecutionID, in.StepID, outRaw); err != nil {
 		return PutStepItemsResult{}, mapDBErr(err)
+	} else if tag.RowsAffected() != 1 {
+		return PutStepItemsResult{}, ErrConflict
 	}
 	if _, err := insertAuditTx(ctx, tx, scope, itemsAudit(step, prep)); err != nil {
 		return PutStepItemsResult{}, err

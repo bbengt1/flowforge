@@ -1,9 +1,12 @@
 package wfstore
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -210,7 +213,7 @@ func runItemsSuite(t *testing.T, newH func(t *testing.T) itemsHarness) {
 		if n := len(h.itemAudits(exec.ID)); n != 0 {
 			t.Fatalf("audits = %d", n)
 		}
-		if out := h.stepOutput(exec, steps["a"]); out["items"] != nil {
+		if out := h.stepOutput(exec, steps["a"]); out[ItemsSummaryKey] != nil {
 			t.Fatalf("summary written: %v", out)
 		}
 		if page := h.list(exec, steps["a"], "main", -1, 0); len(page.Items) != 0 || page.Total != 0 {
@@ -273,7 +276,7 @@ func runItemsSuite(t *testing.T, newH func(t *testing.T) itemsHarness) {
 		if len(raw) > MaxStepOutputBytes {
 			t.Fatalf("summary %d bytes", len(raw))
 		}
-		sum := out["items"].(map[string]any)["main"].(map[string]any)
+		sum := out[ItemsSummaryKey].(map[string]any)["main"].(map[string]any)
 		if sum["truncated"] != true || num(sum["count"]) != 200 || sum["port"] != "main" {
 			t.Fatalf("summary = %v", sum["count"])
 		}
@@ -293,7 +296,7 @@ func runItemsSuite(t *testing.T, newH func(t *testing.T) itemsHarness) {
 		if _, err := h.put(exec2, steps2["a"], PortItems{Port: "main", Items: makeItems(3, 5)}); err != nil {
 			t.Fatal(err)
 		}
-		sum2 := h.stepOutput(exec2, steps2["a"])["items"].(map[string]any)["main"].(map[string]any)
+		sum2 := h.stepOutput(exec2, steps2["a"])[ItemsSummaryKey].(map[string]any)["main"].(map[string]any)
 		if sum2["truncated"] != false || len(sum2["preview"].([]any)) != 3 {
 			t.Fatalf("small summary = %v", sum2)
 		}
@@ -308,6 +311,135 @@ func runItemsSuite(t *testing.T, newH func(t *testing.T) itemsHarness) {
 		}
 		if page := h.list(exec, steps["a"], "missing", -1, 0); page.Total != 0 || len(page.Items) != 0 {
 			t.Fatalf("missing = %+v", page)
+		}
+	})
+	t.Run("T11 max_items_ports_per_step", func(t *testing.T) {
+		h := newH(t)
+		exec, steps := h.start()
+		ports := make([]PortItems, MaxItemPortsPerStep+1)
+		for i := range ports {
+			ports[i] = PortItems{Port: "p" + strconv.Itoa(i), Items: makeItems(1, 5)}
+		}
+		_, err := h.put(exec, steps["a"], ports...)
+		wantCap(t, err, ItemCodeCapExceeded)
+		// Exactly 16 ports with large previews still fits the bound.
+		ports = ports[:MaxItemPortsPerStep]
+		for i := range ports {
+			ports[i].Items = makeItems(20, 900)
+		}
+		if _, err := h.put(exec, steps["a"], ports...); err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := json.Marshal(h.stepOutput(exec, steps["a"]))
+		if len(raw) > MaxStepOutputBytes {
+			t.Fatalf("summary %d bytes > %d", len(raw), MaxStepOutputBytes)
+		}
+	})
+	t.Run("L2 summary_overflow_fails_with_cap_code", func(t *testing.T) {
+		h := newH(t)
+		exec, steps := h.start()
+		h.setOutput(exec, steps["a"], map[string]any{"result": map[string]any{"blob": strings.Repeat("z", MaxStepOutputBytes-200)}})
+		ports := make([]PortItems, MaxItemPortsPerStep)
+		for i := range ports {
+			ports[i] = PortItems{Port: "port-" + strconv.Itoa(i), Items: makeItems(1, 5)}
+		}
+		_, err := h.put(exec, steps["a"], ports...)
+		wantCap(t, err, ItemCodeSummaryTooLarge)
+		out := h.stepOutput(exec, steps["a"])
+		if out[ItemsSummaryKey] != nil || len(out["result"].(map[string]any)["blob"].(string)) != MaxStepOutputBytes-200 {
+			t.Fatal("output dropped or summary written on overflow")
+		}
+		if page := h.list(exec, steps["a"], "port-0", -1, 0); page.Total != 0 || len(page.Items) != 0 {
+			t.Fatalf("rows written on overflow: %+v", page)
+		}
+		// Not marked written: a fitting retry succeeds.
+		if _, err := h.put(exec, steps["a"], PortItems{Port: "main", Items: makeItems(1, 5)}); err != nil {
+			t.Fatalf("retry after overflow: %v", err)
+		}
+	})
+	t.Run("M2 node_items_field_kept", func(t *testing.T) {
+		h := newH(t)
+		exec, steps := h.start()
+		own := map[string]any{"items": map[string]any{"sku": "A-1"}, "result": map[string]any{"ok": true}}
+		h.setOutput(exec, steps["a"], own)
+		// Legacy read of the node's own "items" field before any write.
+		if page := h.list(exec, steps["a"], "items", -1, 0); page.Total != 1 || page.Items[0].Item["sku"] != "A-1" {
+			t.Fatalf("legacy items read = %+v", page)
+		}
+		// No false 409.
+		if _, err := h.put(exec, steps["a"], PortItems{Port: "main", Items: makeItems(2, 5)}); err != nil {
+			t.Fatalf("false conflict: %v", err)
+		}
+		out := h.stepOutput(exec, steps["a"])
+		if got, _ := out["items"].(map[string]any); got["sku"] != "A-1" {
+			t.Fatalf("node items field overwritten: %v", out["items"])
+		}
+		if page := h.list(exec, steps["a"], "items", -1, 0); page.Total != 1 || page.Items[0].Item["sku"] != "A-1" {
+			t.Fatalf("legacy items read after write = %+v", page)
+		}
+		if page := h.list(exec, steps["a"], "main", -1, 0); page.Total != 2 {
+			t.Fatalf("main = %+v", page)
+		}
+		// Write-once comes from items_written_at, not output keys.
+		if _, err := h.put(exec, steps["a"], PortItems{Port: "other", Items: makeItems(1, 5)}); !errors.Is(err, ErrConflict) {
+			t.Fatalf("second write: %v", err)
+		}
+	})
+	t.Run("M2 job_result_reserved_key_refused", func(t *testing.T) {
+		h := newH(t)
+		exec, steps := h.start()
+		now := time.Now().UTC()
+		claim, err := h.store.ClaimJob(h.ctx, h.scope, now, ClaimInput{WorkerID: "w", Lease: time.Minute})
+		if err != nil {
+			t.Fatal(err)
+		}
+		bad := map[string]any{"result": map[string]any{"ok": true}, ItemsSummaryKey: map[string]any{"main": map[string]any{"count": 999}}}
+		_, err = h.store.CompleteJob(h.ctx, h.scope, now, JobActionInput{JobID: claim.Job.ID, WorkerID: "w", FencingToken: claim.Job.FencingToken, Output: bad})
+		if !errors.Is(err, ErrReservedOutputKey) || !errors.Is(err, ErrInvalid) {
+			t.Fatalf("reserved key: %v", err)
+		}
+		out := h.stepOutput(exec, steps["a"])
+		if out[ItemsSummaryKey] != nil {
+			t.Fatal("reserved key reached output_redacted")
+		}
+		if page := h.list(exec, steps["a"], "main", -1, 0); page.Total != 0 {
+			t.Fatalf("forged summary visible: %+v", page)
+		}
+		// The fence is intact: a clean completion still succeeds.
+		if _, err := h.store.CompleteJob(h.ctx, h.scope, now, JobActionInput{JobID: claim.Job.ID, WorkerID: "w", FencingToken: claim.Job.FencingToken, Output: map[string]any{"result": map[string]any{"ok": true}}}); err != nil {
+			t.Fatalf("clean complete: %v", err)
+		}
+		if h.stepOutput(exec, steps["a"])[ItemsSummaryKey] != nil {
+			t.Fatal("reserved key present after completion")
+		}
+	})
+	t.Run("L4 item_values_never_logged", func(t *testing.T) {
+		h := newH(t)
+		exec, steps := h.start()
+		var buf bytes.Buffer
+		prevSlog := slog.Default()
+		slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+		prevOut := log.Writer()
+		log.SetOutput(&buf)
+		defer func() { slog.SetDefault(prevSlog); log.SetOutput(prevOut) }()
+		const marker = "ITEM-VALUE-MARKER-7f3a"
+		items := []map[string]any{{"v": marker}, {"v": marker + strings.Repeat("q", workflow.MaxItemBytes)}}
+		_, err := h.put(exec, steps["a"], PortItems{Port: "main", Items: items})
+		if err == nil || strings.Contains(err.Error(), marker) {
+			t.Fatalf("cap error = %v", err)
+		}
+		if _, err := h.put(exec, steps["a"], PortItems{Port: "main", Items: items[:1]}); err != nil {
+			t.Fatal(err)
+		}
+		_ = h.list(exec, steps["a"], "main", -1, 0)
+		for _, a := range h.itemAudits(exec.ID) {
+			raw, _ := json.Marshal(a)
+			if strings.Contains(string(raw), marker) {
+				t.Fatal("item value in audit")
+			}
+		}
+		if strings.Contains(buf.String(), marker) {
+			t.Fatalf("item value logged: %s", buf.String())
 		}
 	})
 	t.Run("items_redacted_before_persist", func(t *testing.T) {

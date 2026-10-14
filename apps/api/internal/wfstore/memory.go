@@ -37,6 +37,8 @@ type memExecution struct {
 	// items holds redacted item rows by step id, then port. They go with
 	// the execution (purge cascade).
 	items map[string]map[string][]StepItem
+	// itemsWritten mirrors execution_steps.items_written_at (M2).
+	itemsWritten map[string]bool
 }
 
 type memAudit struct {

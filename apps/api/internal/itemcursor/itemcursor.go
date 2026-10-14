@@ -111,8 +111,8 @@ func Load() (*Keyring, error) {
 }
 
 // parse accepts the same formats as JOB_BINDING_SECRET (standard or URL
-// base64, padded or raw, or hex), decoding to at least 32 bytes, or a raw
-// string of at least 32 bytes.
+// base64, padded or raw, or hex), decoding to at least 32 bytes. Plain
+// passphrases are refused.
 func parse(raw, name string, required bool) ([]byte, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -133,10 +133,8 @@ func parse(raw, name string, required bool) ([]byte, error) {
 			return b, nil
 		}
 	}
-	if len(raw) >= MinKeyBytes {
-		return []byte(raw), nil
-	}
-	return nil, fmt.Errorf("%w: %s must be at least 32 bytes (base64 or hex)", ErrSecret, name)
+	// L3: plain passphrases are refused; the value must decode.
+	return nil, fmt.Errorf("%w: %s must be base64 or hex decoding to at least 32 bytes", ErrSecret, name)
 }
 
 // KID returns the current key id.

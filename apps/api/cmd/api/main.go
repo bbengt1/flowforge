@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/bbengt1/flowforge/apps/api/internal/itemcursor"
 	"log/slog"
 	"net/http"
 	"os"
@@ -52,6 +53,14 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Error("load config", "error", err)
+		os.Exit(1)
+	}
+	// #650 E3.1 L1: only the API serves items cursors, so only cmd/api loads
+	// ITEMS_CURSOR_SECRET (cmd/migrate, kekrotate and the runner never block
+	// on it). Fail closed when missing or short.
+	itemsCursor, err := itemcursor.Load()
+	if err != nil {
+		log.Error("items cursor key", "error", err)
 		os.Exit(1)
 	}
 	if err := checkGateSettler(); err != nil {
@@ -141,7 +150,7 @@ func main() {
 		DB:                   pool,
 		Keys:                 cfg.VaultKeys,
 		JobBindingKey:        cfg.JobBindingKey,
-		ItemsCursor:          cfg.ItemsCursor,
+		ItemsCursor:          itemsCursor,
 		ScriptSigningKey:     cfg.ScriptSigningKey,
 		Objects:              objects,
 		TLSMaterials:         tlsMaterials,

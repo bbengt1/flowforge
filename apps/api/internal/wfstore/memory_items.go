@@ -38,8 +38,12 @@ func (m *Memory) PutStepItems(_ context.Context, scope isolation.Scope, in PutSt
 	if si < 0 {
 		return PutStepItemsResult{}, ErrNotFound
 	}
-	if stepHasItems(exec.steps[si].Output) || len(exec.items[in.StepID]) > 0 {
+	if exec.itemsWritten[in.StepID] {
 		return PutStepItemsResult{}, ErrConflict
+	}
+	merged, err := buildItemsOutput(exec.steps[si].Output, prep)
+	if err != nil {
+		return PutStepItemsResult{}, err
 	}
 	if exec.itemBytes+prep.bytes > workflow.MaxRunItemBytes {
 		return PutStepItemsResult{}, &ItemCapError{Code: ItemCodeRunBudgetExceeded}
@@ -58,7 +62,11 @@ func (m *Memory) PutStepItems(_ context.Context, scope isolation.Scope, in PutSt
 	}
 	exec.items[in.StepID] = rows
 	exec.itemBytes += prep.bytes
-	exec.steps[si].Output = buildItemsOutput(step.Output, prep)
+	if exec.itemsWritten == nil {
+		exec.itemsWritten = map[string]bool{}
+	}
+	exec.itemsWritten[in.StepID] = true
+	exec.steps[si].Output = merged
 	m.executions[in.ExecutionID] = exec
 	m.audits = append(m.audits, memAudit{workspaceID: scope.WorkspaceID(), record: newAudit(scope, itemsAudit(step, prep), time.Now().UTC())})
 	return PutStepItemsResult{Count: prep.count, Bytes: prep.bytes}, nil
