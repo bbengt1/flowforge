@@ -53,6 +53,8 @@ const (
 	ErrorSkipPolicyDenied      = "policy_denied"
 	ErrorSkipApprovalRequired  = "approval_required"
 	ErrorSkipPolicyUnavailable = "policy_unavailable"
+	ErrorSkipStartFailed       = "start_failed"
+	ErrorSkipCapReached        = "cap_reached"
 )
 
 // ErrorWorkflowGate evaluates the target version before an error run
@@ -72,6 +74,27 @@ func SetErrorWorkflowGate(g ErrorWorkflowGate) {
 		return
 	}
 	postgresErrorGate.Store(&g)
+}
+
+var errorOpenCap atomic.Int64
+
+// SetErrorWorkflowOpenCap sets the workspace open-run cap the Postgres store
+// applies to error-workflow runs (the same value CapStart applies to other
+// starts). n <= 0 means unlimited, as for StartInput.MaxOpen.
+func SetErrorWorkflowOpenCap(n int) { errorOpenCap.Store(int64(n)) }
+
+func errorWorkflowOpenCap() int { return int(errorOpenCap.Load()) }
+
+// errorFireFaultHook lets tests inject a failure mid fire path (after the
+// error run row exists) to prove the savepoint isolates the parent. Nil in
+// production.
+var errorFireFaultHook atomic.Pointer[func() error]
+
+func errorFireFault() error {
+	if h := errorFireFaultHook.Load(); h != nil {
+		return (*h)()
+	}
+	return nil
 }
 
 func currentErrorGate() ErrorWorkflowGate {
@@ -209,7 +232,6 @@ func errorWorkflowPayload(parent Execution, versionNumber int, reason string, ca
 		"nodeId":            cause.NodeID,
 		"code":              capped["code"],
 		"message":           capped["message"],
-		"actorId":           parent.RequestedBy,
 	}
 }
 

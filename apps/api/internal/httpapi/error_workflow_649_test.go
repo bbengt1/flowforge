@@ -2,12 +2,16 @@ package httpapi
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
+	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/session"
+	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 )
 
 const errorWorkflowHTTPYAML = `apiVersion: flowforge/v1
@@ -61,7 +65,7 @@ func TestWorkspaceErrorWorkflowRoutes649(t *testing.T) {
 		}
 		return rec
 	}
-	base := "/api/v1/workspaces/" + ws.ID + "/error-workflow"
+	base := "/api/v1/workspace/error-workflow"
 
 	target := createWorkflow(t, h, admin, tenant, ws, errorWorkflowHTTPYAML)
 	pub := publishWorkflow(t, h, admin, tenant, ws, target.Workflow.ID, target.Draft.Revision, "v1")
@@ -74,12 +78,6 @@ func TestWorkspaceErrorWorkflowRoutes649(t *testing.T) {
 			assertProblem(t, do(u, c[0], c[1], c[2]), http.StatusForbidden, CodeForbidden, "")
 		}
 	}
-	other := "/api/v1/workspaces/6f1c2b9e-3d4a-4e5f-8a7b-9c0d1e2f3a4b/error-workflow"
-	for _, p := range []string{other, "/api/v1/workspaces/not-a-uuid/error-workflow"} {
-		assertProblem(t, do(admin, http.MethodPut, p, put), http.StatusNotFound, CodeNotFound, "")
-		assertProblem(t, do(admin, http.MethodGet, p, ""), http.StatusNotFound, CodeNotFound, "")
-	}
-
 	if rec := do(admin, http.MethodGet, base, ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"errorWorkflow":null`) {
 		t.Fatalf("get unset = %d %s", rec.Code, rec.Body.String())
 	}
@@ -109,5 +107,53 @@ func TestWorkspaceErrorWorkflowRoutes649(t *testing.T) {
 	}
 	if rec := do(admin, http.MethodDelete, base, ""); rec.Code != http.StatusNoContent {
 		t.Fatalf("second delete = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestWorkspaceErrorWorkflowStepUp649: a workspace admin on a local
+// password session without a fresh MFA step-up may read the setting but
+// PUT and DELETE are refused with mfa-required and change nothing.
+func TestWorkspaceErrorWorkflowStepUp649(t *testing.T) {
+	store := identity.NewMemory()
+	workflows := wfstore.NewMemory()
+	h := NewWithDeps(withHTTPTestIdentity(Deps{
+		Store:     store,
+		Scoped:    isolation.NewMemory(),
+		Sessions:  session.NewMemory(),
+		Workflows: workflows,
+	}))
+	owner := identity.User{Issuer: "https://idp.example", ExternalSubject: "admin-1", DisplayName: "Admin"}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, identifiedJSON(http.MethodPost, "/api/v1/tenants", `{"slug":"acme","name":"Acme"}`, owner))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create tenant: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, identifiedJSON(http.MethodPost, "/api/v1/workspaces", `{"tenant_slug":"acme","workbench_key":"ops","name":"Ops"}`, owner))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create workspace: %d %s", rec.Code, rec.Body.String())
+	}
+	ws, tenant := currentWorkspace(t, h, owner)
+	seedLocalLogin(t, store, "https://idp.example", "ew-local-admin", "Local Admin", "correct-horse")
+	putMember(t, h, owner, tenant, ws, `{"issuer":"https://idp.example","external_subject":"ew-local-admin","display_name":"Local Admin","role_keys":["admin"]}`)
+	token, csrf := loginLocal(t, h, "ew-local-admin", "correct-horse")
+
+	const base = "/api/v1/workspace/error-workflow"
+	get := httptest.NewRecorder()
+	h.ServeHTTP(get, sessionWorkspaceRequest(http.MethodGet, base, token, csrf, tenant, ws))
+	if get.Code != http.StatusOK {
+		t.Fatalf("get without step-up = %d %s", get.Code, get.Body.String())
+	}
+	for _, method := range []string{http.MethodPut, http.MethodDelete} {
+		req := sessionWorkspaceRequest(method, base, token, csrf, tenant, ws)
+		if method == http.MethodPut {
+			req.Body = io.NopCloser(strings.NewReader(`{"workflowId":"6f1c2b9e-3d4a-4e5f-8a7b-9c0d1e2f3a4b"}`))
+			req.Header.Set("Content-Type", "application/json")
+		}
+		denied := httptest.NewRecorder()
+		h.ServeHTTP(denied, req)
+		if denied.Code != http.StatusForbidden || !strings.Contains(denied.Body.String(), CodeMFARequired) {
+			t.Fatalf("%s without step-up = %d %s", method, denied.Code, denied.Body.String())
+		}
 	}
 }

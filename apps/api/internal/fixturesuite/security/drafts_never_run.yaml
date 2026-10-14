@@ -30,7 +30,7 @@ checks:
     kind: route-absent
     as: owner
     method: PUT
-    path: "/api/v1/workspaces/{A.workspace}/error-workflow"
+    path: "/api/v1/workspace/error-workflow"
     body: {workflowId: "{A.draftOnly}"}
     status: 400
     code: invalid-request

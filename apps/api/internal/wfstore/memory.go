@@ -64,6 +64,7 @@ type Memory struct {
 	approvalDecider      ApprovalDecider
 	errorWorkflows       map[string]string // workspace id -> error workflow id (#649 S3)
 	errorGate            ErrorWorkflowGate
+	errorOpenCap         int
 	// ActorDisplayName optionally resolves the actor name for audit rows
 	// (Postgres reads users.display_name in the publish transaction).
 	ActorDisplayName func(userID string) string

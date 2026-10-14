@@ -96,10 +96,10 @@ a version with the `error` trigger is `400`, and the store refuses it from
 every other start path (schedule, webhook) too.
 
 A workspace admin names the error workflow with
-`PUT /api/v1/workspaces/{workspaceId}/error-workflow` `{workflowId}` (and
-clears it with `DELETE`, reads it with `GET`). Set and clear need
-`workspace.administer` plus MFA step-up, `{workspaceId}` must be the
-request's own workspace (any other value is `404`), and the target must be a
+`PUT /api/v1/workspace/error-workflow` `{workflowId}` (and clears it with
+`DELETE`, reads it with `GET`); the workspace is the session's own workspace.
+Set and clear need `workspace.administer` plus MFA step-up, and the target
+must be a
 published, not deleted workflow in the same workspace whose latest version's
 only trigger is `error`; otherwise `400`. Each change writes
 `workspace.error_workflow.set` / `.cleared` with the admin's display name and
@@ -124,14 +124,19 @@ deleted, a draft, archived or no longer `error`-only at fire time, nothing
 starts and `execution.error_workflow.skipped` records the reason
 (`target_deleted`, `target_unpublished`, `target_disabled`,
 `target_not_error_workflow`, `target_missing`); a failure code that is not
-eligible is skipped with `code_not_eligible`. A start writes
+eligible is skipped with `code_not_eligible`. The error run counts against
+the workspace open-run cap like any other start (`cap_reached` when full),
+passes the same pre-start policy evaluation (`policy_denied`,
+`approval_required`, `policy_unavailable`), and any other start error is
+skipped as `start_failed`. The whole start runs in a savepoint, so a skip or
+failure never changes or blocks the parent run's final status. A start writes
 `execution.error_workflow.fired` on the parent (with the parent's actor id)
 and `execution.start` on the error run.
 
 The error run's input is exactly `{reason, triggerType, executionId,
 workflowId, workflowName, workflowVersionId, workflowVersion, nodeId, code,
-message, actorId}` describing the parent run; `code` is capped at 64 bytes and
-`message` at 256 bytes. It never carries the parent's input, trigger
+message}` describing the parent run; `code` is capped at 64 bytes and
+`message` at 256 bytes. It never carries the parent's actor, input, trigger
 metadata or secrets. The error run's `errorParentId` links back to the parent.
 
 ## SSH and script node examples

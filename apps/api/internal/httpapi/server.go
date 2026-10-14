@@ -345,10 +345,14 @@ func newServer(d Deps) *API {
 		gatePins = opsStore
 	}
 	errorGate := approval.ErrorWorkflowGate(gatePins, nil)
+	// Error runs obey the same workspace open-run cap CapStart applies.
+	errorCap := quota.Normalize(d.Quota).ExecuteConcurrency
 	if wfMem, ok := workflows.(*wfstore.Memory); ok {
 		wfMem.SetErrorWorkflowGate(errorGate)
+		wfMem.SetErrorWorkflowOpenCap(errorCap)
 	} else {
 		wfstore.SetErrorWorkflowGate(errorGate)
+		wfstore.SetErrorWorkflowOpenCap(errorCap)
 	}
 	alertStore := d.Alerts
 	if alertStore == nil {

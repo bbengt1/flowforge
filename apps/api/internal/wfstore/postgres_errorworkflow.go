@@ -16,7 +16,7 @@ const latestVersionSQL = `
 SELECT id::text, workflow_id::text, version_number, normalized_yaml, definition_digest,
        parsed_definition, publish_note, COALESCE(published_by::text, ''), published_at
 FROM workflow_versions
-WHERE workflow_id = $1::uuid
+WHERE workspace_id = $1::uuid AND workflow_id = $2::uuid
 ORDER BY version_number DESC
 LIMIT 1
 `
@@ -83,7 +83,7 @@ func (p *Postgres) SetErrorWorkflow(ctx context.Context, scope isolation.Scope, 
 		return ErrorWorkflowSetting{}, mapDBErr(err)
 	}
 	var ver *Version
-	if v, verr := scanVersion(tx.QueryRow(ctx, latestVersionSQL, workflowID)); verr == nil {
+	if v, verr := scanVersion(tx.QueryRow(ctx, latestVersionSQL, scope.WorkspaceID(), workflowID)); verr == nil {
 		ver = &v
 	} else if !errors.Is(verr, ErrNotFound) {
 		return ErrorWorkflowSetting{}, verr
@@ -140,16 +140,55 @@ func (p *Postgres) ClearErrorWorkflow(ctx context.Context, scope isolation.Scope
 }
 
 // fireErrorWorkflowTx runs in the rollup transaction right after a run's
-// status moved from prev.Status to next. It starts at most one error run
-// per parent (partial unique index) and audits fired/skipped. The caller
-// holds the parent execution row lock. The target workflow row is read,
-// not locked, so the delete path's workflow -> execution lock order is
-// never inverted; a target deleted concurrently is refused at claim.
+// status moved from prev.Status to next. The whole fire path runs in a
+// savepoint: any error rolls back only the savepoint, is audited as a
+// start_failed skip, and is never returned, so the parent's final status
+// always commits. It starts at most one error run per parent (partial
+// unique index). The caller holds the parent execution row lock.
 func fireErrorWorkflowTx(ctx context.Context, tx pgx.Tx, prev Execution, next string, now time.Time) error {
 	if prev.Status == next || (next != ExecutionFailed && next != ExecutionIndeterminate) {
 		return nil
 	}
-	var ws, errorParent, target string
+	sp, err := tx.Begin(ctx)
+	if err != nil {
+		return nil // cannot isolate the fire path; never block the parent
+	}
+	ws, target, ferr := fireErrorWorkflowInTx(ctx, sp, prev, next, now)
+	if ferr == nil {
+		if ferr = sp.Commit(ctx); ferr == nil {
+			return nil
+		}
+	}
+	_ = sp.Rollback(ctx)
+	auditStartFailedTx(ctx, tx, ws, target, prev)
+	return nil
+}
+
+// auditStartFailedTx records a start_failed skip in its own savepoint; a
+// failure here is dropped so it cannot abort the parent's rollup.
+func auditStartFailedTx(ctx context.Context, tx pgx.Tx, ws, target string, prev Execution) {
+	if ws == "" {
+		return
+	}
+	sys, err := isolation.AuthorizeSystem(ws)
+	if err != nil {
+		return
+	}
+	sp, err := tx.Begin(ctx)
+	if err != nil {
+		return
+	}
+	if _, err := insertAuditTx(ctx, sp, sys, errorSkippedAudit(prev, target, ErrorSkipStartFailed)); err != nil {
+		_ = sp.Rollback(ctx)
+		return
+	}
+	_ = sp.Commit(ctx)
+}
+
+// fireErrorWorkflowInTx is the fire path proper. tx is the savepoint. It
+// returns the workspace and target it resolved so the caller can audit.
+func fireErrorWorkflowInTx(ctx context.Context, tx pgx.Tx, prev Execution, next string, now time.Time) (ws, target string, err error) {
+	var errorParent string
 	var retried, parentDeleted bool
 	if err := tx.QueryRow(ctx, `
 		SELECT e.workspace_id::text, COALESCE(e.error_parent_id::text, ''), e.operator_retried_at IS NOT NULL,
@@ -159,72 +198,78 @@ func fireErrorWorkflowTx(ctx context.Context, tx pgx.Tx, prev Execution, next st
 		  JOIN workspaces ws ON ws.id = e.workspace_id
 		 WHERE e.id = $1::uuid
 	`, prev.ID).Scan(&ws, &errorParent, &retried, &parentDeleted, &target); err != nil {
-		return mapDBErr(err)
+		return "", "", mapDBErr(err)
 	}
 	if target == "" || parentDeleted || !errorParentEligible(ExecutionTriggerType(prev), errorParent, retried) {
-		return nil
+		return ws, target, nil
 	}
 	sys, err := isolation.AuthorizeSystem(ws)
 	if err != nil {
-		return err
+		return ws, target, err
 	}
 	steps, err := loadStepsTx(ctx, tx, prev.ID)
 	if err != nil {
-		return err
+		return ws, target, err
 	}
 	var pinnedYAML string
 	var pinnedNumber int
 	if err := tx.QueryRow(ctx, `
-		SELECT normalized_yaml, version_number FROM workflow_versions WHERE id = $1::uuid
-	`, prev.WorkflowVersionID).Scan(&pinnedYAML, &pinnedNumber); err != nil {
-		return mapDBErr(err)
+		SELECT normalized_yaml, version_number FROM workflow_versions WHERE workspace_id = $1::uuid AND id = $2::uuid
+	`, ws, prev.WorkflowVersionID).Scan(&pinnedYAML, &pinnedNumber); err != nil {
+		return ws, target, mapDBErr(err)
 	}
 	fire, reason, skip, cause := errorWorkflowDecision(next, steps, pinnedYAML)
 	if !fire {
 		if skip == "" {
-			return nil
+			return ws, target, nil
 		}
 		_, err := insertAuditTx(ctx, tx, sys, errorSkippedAudit(prev, target, skip))
-		return err
+		return ws, target, err
 	}
 	var status string
 	var deleted bool
 	found := true
 	if err := tx.QueryRow(ctx, `
-		SELECT status, deleted_at IS NOT NULL FROM workflows WHERE id = $1::uuid
-	`, target).Scan(&status, &deleted); err != nil {
+		SELECT status, deleted_at IS NOT NULL FROM workflows WHERE workspace_id = $1::uuid AND id = $2::uuid
+	`, ws, target).Scan(&status, &deleted); err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
-			return mapDBErr(err)
+			return ws, target, mapDBErr(err)
 		}
 		found = false
 	}
 	var ver *Version
 	if found {
-		if v, verr := scanVersion(tx.QueryRow(ctx, latestVersionSQL, target)); verr == nil {
+		if v, verr := scanVersion(tx.QueryRow(ctx, latestVersionSQL, ws, target)); verr == nil {
 			ver = &v
 		} else if !errors.Is(verr, ErrNotFound) {
-			return verr
+			return ws, target, verr
 		}
 	}
 	if skip := errorTargetSkip(found, deleted, status, ver); skip != "" {
 		_, err := insertAuditTx(ctx, tx, sys, errorSkippedAudit(prev, target, skip))
-		return err
+		return ws, target, err
 	}
 	if skip := gateErrorRunTx(ctx, tx, sys, *ver); skip != "" {
 		_, err := insertAuditTx(ctx, tx, sys, errorSkippedAudit(prev, target, skip))
-		return err
+		return ws, target, err
 	}
 	payload, err := boundInput(errorWorkflowPayload(prev, pinnedNumber, reason, cause))
 	if err != nil {
-		return err
+		return ws, target, err
 	}
 	inputRaw, err := marshalObject(redactObject(payload))
 	if err != nil {
-		return ErrInvalid
+		return ws, target, ErrInvalid
 	}
 	policyRaw, err := marshalObject(errorRunPolicy(*ver))
 	if err != nil {
-		return ErrInvalid
+		return ws, target, ErrInvalid
+	}
+	if cerr := enforceOpenCap(ctx, tx, ws, errorWorkflowOpenCap()); errors.Is(cerr, ErrConcurrency) {
+		_, err := insertAuditTx(ctx, tx, sys, errorSkippedAudit(prev, target, ErrorSkipCapReached))
+		return ws, target, err
+	} else if cerr != nil {
+		return ws, target, cerr
 	}
 	child, err := scanExecution(tx.QueryRow(ctx, `
 		INSERT INTO executions (
@@ -240,20 +285,23 @@ func fireErrorWorkflowTx(ctx context.Context, tx pgx.Tx, prev Execution, next st
 		RETURNING `+executionInsertReturning+`
 	`, ws, target, ver.ID, ver.Digest, inputRaw, policyRaw, prev.CorrelationID, now, prev.ID))
 	if errors.Is(err, ErrNotFound) {
-		return nil // already fired for this parent
+		return ws, target, nil // already fired for this parent
 	}
 	if err != nil {
-		return err
+		return ws, target, err
+	}
+	if err := errorFireFault(); err != nil {
+		return ws, target, err
 	}
 	nodes, edges, err := planGraph(ver.DefinitionYAML, ver.Summary)
 	if err != nil {
-		return err
+		return ws, target, err
 	}
 	if err := insertPlanTx(ctx, tx, sys, child.ID, nodes, edges); err != nil {
-		return err
+		return ws, target, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE executions SET error_fired_at = $2 WHERE id = $1::uuid`, prev.ID, now); err != nil {
-		return mapDBErr(err)
+		return ws, target, mapDBErr(err)
 	}
 	if _, err := insertAuditTx(ctx, tx, sys, AuditWrite{
 		Action:        "execution.start",
@@ -263,10 +311,10 @@ func fireErrorWorkflowTx(ctx context.Context, tx pgx.Tx, prev Execution, next st
 		CorrelationID: child.CorrelationID,
 		Details:       startAuditDetails(target, *ver, child, "created"),
 	}); err != nil {
-		return err
+		return ws, target, err
 	}
 	_, err = insertAuditTx(ctx, tx, sys, errorFiredAudit(prev, child, target, reason, cause))
-	return err
+	return ws, target, err
 }
 
 // gateErrorRunTx runs the policy gate inside a savepoint, so a failed

@@ -140,8 +140,25 @@ func (m *Memory) fireErrorWorkflowLocked(exec *memExecution, prevStatus string, 
 			return // already fired
 		}
 	}
+	if m.errorOpenCap > 0 {
+		open := 0
+		for _, other := range m.executions {
+			if other.workspaceID == exec.workspaceID && other.record.ID != exec.record.ID && !isTerminalExecution(other.record.Status) {
+				open++
+			}
+		}
+		if open >= m.errorOpenCap {
+			m.appendAuditLocked(sys, errorSkippedAudit(exec.record, target, ErrorSkipCapReached), now)
+			return
+		}
+	}
+	// Everything that can fail runs before the first write, so a failure
+	// leaves no partial run (the Postgres savepoint's twin) and is audited
+	// as start_failed; the parent's status is already final.
+	startFailed := func() { m.appendAuditLocked(sys, errorSkippedAudit(exec.record, target, ErrorSkipStartFailed), now) }
 	payload, err := boundInput(errorWorkflowPayload(exec.record, pinned.VersionNumber, reason, cause))
 	if err != nil {
+		startFailed()
 		return
 	}
 	child := Execution{
@@ -161,7 +178,11 @@ func (m *Memory) fireErrorWorkflowLocked(exec *memExecution, prevStatus string, 
 		RetentionUntil:    now.Add(DefaultExecutionRetention),
 	}
 	nodes, edges, err := planGraph(ver.DefinitionYAML, ver.Summary)
+	if err == nil {
+		err = errorFireFault()
+	}
 	if err != nil {
+		startFailed()
 		return
 	}
 	steps, jobs := materializePlan(child.ID, nodes, edges, now)
@@ -186,6 +207,14 @@ func (m *Memory) fireErrorWorkflowLocked(exec *memExecution, prevStatus string, 
 // SetErrorWorkflowGate installs the Memory store's pre-start policy gate
 // (nil skips every fire with policy_unavailable). The gate runs under the
 // store lock and must not call back into this store.
+// SetErrorWorkflowOpenCap sets the open-run cap applied to error runs
+// (n <= 0 unlimited), mirroring SetErrorWorkflowOpenCap for Postgres.
+func (m *Memory) SetErrorWorkflowOpenCap(n int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.errorOpenCap = n
+}
+
 func (m *Memory) SetErrorWorkflowGate(g ErrorWorkflowGate) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

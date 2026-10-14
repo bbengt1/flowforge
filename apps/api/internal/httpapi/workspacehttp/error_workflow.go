@@ -3,7 +3,6 @@ package workspacehttp
 import (
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/core"
@@ -13,12 +12,12 @@ import (
 
 // Workspace error workflow admin routes (#649 S3).
 //
-// GET, PUT and DELETE /api/v1/workspaces/{workspaceId}/error-workflow.
+// GET, PUT and DELETE /api/v1/workspace/error-workflow. The workspace
+// comes from the session (like /workspace/cache); there is no path id.
 // Door order: principal, embed refusal (before any grant is read),
 // workspace.administer on the server-derived workspace, MFA step-up (PUT
 // and DELETE only, the same mechanism and freshness window as the other
-// privileged admin routes), then {workspaceId} must equal the
-// server-derived workspace; any other value is 404. There is no /embed/v1
+// privileged admin routes). There is no /embed/v1
 // surface.
 
 type putErrorWorkflowRequest struct {
@@ -42,10 +41,6 @@ func requireErrorWorkflowAdmin(s *core.Server, w http.ResponseWriter, r *http.Re
 		return isolation.Scope{}, "", nil, false
 	}
 	if stepUp && !s.RequireMFAStepUp(w, r) {
-		return isolation.Scope{}, "", nil, false
-	}
-	if strings.TrimSpace(r.PathValue("workspaceId")) != ws.ID {
-		core.WriteProblem(w, r, http.StatusNotFound, core.CodeNotFound, "Not Found", "The requested resource was not found.")
 		return isolation.Scope{}, "", nil, false
 	}
 	store, ok := s.Workflows.(wfstore.ErrorWorkflowStore)

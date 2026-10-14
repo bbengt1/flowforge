@@ -32,12 +32,13 @@ spec:
           seen: true
 `
 
-var errorPayloadKeys = []string{"actorId", "code", "executionId", "message", "nodeId", "reason", "triggerType", "workflowId", "workflowName", "workflowVersion", "workflowVersionId"}
+var errorPayloadKeys = []string{"code", "executionId", "message", "nodeId", "reason", "triggerType", "workflowId", "workflowName", "workflowVersion", "workflowVersionId"}
 
 type ewHarness struct {
 	routeHarness
 	ew      ErrorWorkflowStore
 	setGate func(ErrorWorkflowGate)
+	setCap  func(int)
 }
 
 // allowGate stands in for approval.ErrorWorkflowGate when policy allows.
@@ -292,6 +293,45 @@ func runErrorWorkflowSuite(t *testing.T, mk func(t *testing.T) ewHarness) {
 		h.assertSkipped(exec.ID, ErrorSkipPolicyDenied)
 	})
 
+	t.Run("faulty target never blocks the parent's final status", func(t *testing.T) {
+		h := mk(t)
+		target := h.setTarget()
+		fault := func() error { return errors.New("injected fire-path fault") }
+		errorFireFaultHook.Store(&fault)
+		t.Cleanup(func() { errorFireFaultHook.Store(nil) })
+		exec := h.startAs(routeYAML(""), "schedule")
+		h.failBoom(exec, "fixture.boom")
+		if got := h.run(exec.ID); got.Status != ExecutionFailed {
+			t.Fatalf("parent = %s, want failed", got.Status)
+		}
+		h.assertSkipped(exec.ID, ErrorSkipStartFailed)
+		runs, err := h.store.ListExecutions(h.ctx, h.scope, ExecutionListFilter{WorkflowID: target.ID})
+		if err != nil || len(runs) != 0 {
+			t.Fatalf("partial error run left behind: %d %v", len(runs), err)
+		}
+	})
+
+	t.Run("open-run cap reached is skipped and audited", func(t *testing.T) {
+		h := mk(t)
+		h.setCap(1)
+		target := h.setTarget()
+		_ = h.startAs(routeYAML(""), "schedule") // stays open
+		exec := h.startAs(routeYAML(""), "schedule")
+		h.failBoom(exec, "fixture.boom")
+		if got := h.run(exec.ID); got.Status != ExecutionFailed {
+			t.Fatalf("parent = %s, want failed", got.Status)
+		}
+		h.assertSkipped(exec.ID, ErrorSkipCapReached)
+		runs, err := h.store.ListExecutions(h.ctx, h.scope, ExecutionListFilter{WorkflowID: target.ID})
+		if err != nil || len(runs) != 0 {
+			t.Fatalf("error run started over the cap: %d %v", len(runs), err)
+		}
+		h.setCap(2)
+		again := h.startAs(routeYAML(""), "schedule")
+		h.failBoom(again, "fixture.boom")
+		h.child(again.ID)
+	})
+
 	t.Run("operator-retried run never fires", func(t *testing.T) {
 		h := mk(t)
 		h.setTarget()
@@ -385,7 +425,7 @@ func TestMemoryErrorWorkflow649(t *testing.T) {
 	runErrorWorkflowSuite(t, func(t *testing.T) ewHarness {
 		m := NewMemory()
 		m.SetErrorWorkflowGate(allowGate)
-		return ewHarness{routeHarness: routeHarness{t: t, ctx: context.Background(), scope: scope, store: m}, ew: m, setGate: m.SetErrorWorkflowGate}
+		return ewHarness{routeHarness: routeHarness{t: t, ctx: context.Background(), scope: scope, store: m}, ew: m, setGate: m.SetErrorWorkflowGate, setCap: m.SetErrorWorkflowOpenCap}
 	})
 }
 
@@ -412,8 +452,8 @@ func TestPostgresErrorWorkflow649(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { SetErrorWorkflowGate(allowGate) })
-		return ewHarness{routeHarness: routeHarness{t: t, ctx: ctx, scope: scope, store: store}, ew: store, setGate: SetErrorWorkflowGate}
+		t.Cleanup(func() { SetErrorWorkflowGate(allowGate); SetErrorWorkflowOpenCap(0) })
+		return ewHarness{routeHarness: routeHarness{t: t, ctx: ctx, scope: scope, store: store}, ew: store, setGate: SetErrorWorkflowGate, setCap: SetErrorWorkflowOpenCap}
 	})
 
 	t.Run("cross-workspace target is refused; RLS hides the other setting", func(t *testing.T) {
@@ -457,5 +497,58 @@ func TestPostgresErrorWorkflow649(t *testing.T) {
 		if err := admin.QueryRow(ctx, `SELECT error_fired_at IS NOT NULL FROM executions WHERE id = $1::uuid`, exec.ID).Scan(&fired); err != nil || !fired {
 			t.Fatalf("error_fired_at = %v %v", fired, err)
 		}
+	})
+
+	t.Run("hard delete and tenant purge clear the setting first", func(t *testing.T) {
+		ws, _, userID := seedWorkflowWorkspaces(t, ctx, admin)
+		scope, _ := isolation.Authorize(ws, userID)
+		h := ewHarness{routeHarness: routeHarness{t: t, ctx: ctx, scope: scope, store: store}, ew: store}
+		target := h.setTarget()
+		var tenant string
+		if err := admin.QueryRow(ctx, `SELECT tenant_id::text FROM workspaces WHERE id = $1::uuid`, ws).Scan(&tenant); err != nil {
+			t.Fatal(err)
+		}
+		// Published versions and audit rows are immutable, so a hard delete
+		// is normally refused before the setting matters. Lift those guards
+		// inside a rolled-back transaction to prove the setting never blocks (and
+		// is cleared by) a workflow hard delete and a tenant purge.
+		purge := func(t *testing.T, arg string, stmts ...string) {
+			t.Helper()
+			tx, err := admin.Begin(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer tx.Rollback(ctx)
+			// Lift every immutability / append-only guard (user triggers that
+			// raise) on tables other than workflows; FK triggers and the
+			// workflows trigger under test stay on.
+			if _, err := tx.Exec(ctx, `
+				DO $$
+				DECLARE r regclass;
+				BEGIN
+				  FOR r IN SELECT DISTINCT t.tgrelid::regclass FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
+				           WHERE NOT t.tgisinternal AND t.tgrelid <> 'workflows'::regclass AND p.prosrc ILIKE '%RAISE EXCEPTION%'
+				  LOOP
+				    EXECUTE format('ALTER TABLE %s DISABLE TRIGGER USER', r);
+				  END LOOP;
+				END $$`); err != nil {
+				t.Skipf("cannot lift the immutability guards as this role: %v", err)
+			}
+			for _, stmt := range stmts {
+				if _, err := tx.Exec(ctx, stmt, arg); err != nil {
+					t.Fatalf("%s blocked: %v", stmt, err)
+				}
+			}
+			var n int
+			if err := tx.QueryRow(ctx, `SELECT count(*) FROM workspaces WHERE id = $1::uuid AND error_workflow_id IS NOT NULL`, ws).Scan(&n); err != nil || n != 0 {
+				t.Fatalf("setting survived %v: %d %v", stmts, n, err)
+			}
+		}
+		t.Run("workflow hard delete", func(t *testing.T) {
+			purge(t, target.ID, `DELETE FROM workflows WHERE id = $1::uuid`)
+		})
+		t.Run("tenant purge", func(t *testing.T) {
+			purge(t, tenant, `DELETE FROM workspaces WHERE tenant_id = $1::uuid`, `DELETE FROM tenants WHERE id = $1::uuid`)
+		})
 	})
 }
