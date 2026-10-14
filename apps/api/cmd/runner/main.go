@@ -124,6 +124,9 @@ func main() {
 			Script: scriptRT,
 		},
 	}
+	// #649 S3: the runner rolls runs up too, so it installs the same
+	// error-workflow policy gate as the API (pins read in the rollup tx).
+	wfstore.SetErrorWorkflowGate(approval.ErrorWorkflowGate(disp.Ops, nil))
 	loop := runner.NewRunner(queue, disp, runner.Config{
 		WorkerID:     workerID,
 		PollInterval: durationEnv("WORKER_POLL_INTERVAL", time.Second),

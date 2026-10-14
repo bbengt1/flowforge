@@ -250,7 +250,9 @@ type Execution struct {
 	RetentionUntil    time.Time              `json:"retentionUntil"`
 	Replayed          bool                   `json:"replayed"`
 	Capabilities      *ExecutionCapabilities `json:"capabilities,omitempty"`
-	fingerprint       string
+	// ErrorParentID is set on an error-workflow run: the run that fired it (#649 S3).
+	ErrorParentID string `json:"errorParentId,omitempty"`
+	fingerprint   string
 }
 
 // ExecutionStep is one node attempt. Outputs are redacted before persist.

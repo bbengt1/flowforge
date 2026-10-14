@@ -169,6 +169,12 @@ export const GENERATED_PROXY_ROUTES: readonly GeneratedProxyRoute[] = [
     params: {id: "uuid"},
   },
   {
+    methods: ["GET", "PUT", "DELETE"],
+    pattern: ["workspaces", "{workspaceId}", "error-workflow"],
+    auth: "authenticated",
+    params: {workspaceId: "uuid"},
+  },
+  {
     methods: ["GET"],
     pattern: ["workspace", "audit-events"],
     auth: "authenticated",

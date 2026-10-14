@@ -10,11 +10,11 @@ import (
 )
 
 // systemTrigger reports the trigger types that may run with no requester:
-// schedule, webhook, and resync. Manual, API, and an unspecified trigger
-// always need one.
+// schedule, webhook, resync, and the engine-started error workflow
+// (#649 S3). Manual, API, and an unspecified trigger always need one.
 func systemTrigger(trigger string) bool {
 	switch strings.TrimSpace(trigger) {
-	case "schedule", "webhook", "resync":
+	case "schedule", "webhook", "resync", TriggerError:
 		return true
 	default:
 		return false

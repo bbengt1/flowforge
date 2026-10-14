@@ -632,6 +632,10 @@ func startWorkflowExecution(s *core.Server, w http.ResponseWriter, r *http.Reque
 		WriteWorkflowStoreError(w, r, err)
 		return
 	}
+	if workflow.IsErrorWorkflow(ver.DefinitionYAML, ver.Summary) {
+		core.WriteProblem(w, r, http.StatusBadRequest, core.CodeInvalidRequest, "Invalid Request", "This workflow has the error trigger. Only the engine starts it, when another run fails.")
+		return
+	}
 	if errs := workflow.ValidateManualStartInput(req.Input, ver.DefinitionYAML); len(errs) > 0 {
 		WriteManualStartInputErrors(w, r, errs)
 		return

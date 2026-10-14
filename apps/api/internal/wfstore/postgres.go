@@ -790,6 +790,9 @@ func (p *Postgres) StartExecution(ctx context.Context, scope isolation.Scope, wo
 	if err != nil {
 		return Execution{}, err
 	}
+	if err := refuseErrorWorkflowStart(ver); err != nil {
+		return Execution{}, err
+	}
 	if prepared.policy["workflowVersionId"] == nil {
 		prepared.policy["workflowVersionId"] = ver.ID
 		prepared.policy["workflowDigest"] = ver.Digest

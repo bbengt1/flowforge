@@ -170,6 +170,14 @@ func validate(doc *Document) ErrorList {
 		errs = append(errs, fieldError("spec.nodes", doc.pos.spec.Line, doc.pos.spec.Column, CodeMissingField, "At least one node is required."))
 	}
 
+	if HasErrorTrigger(doc) && len(doc.Spec.Triggers) > 1 {
+		for i, t := range doc.Spec.Triggers {
+			if t.Type == TriggerTypeError {
+				errs = append(errs, fieldError(fmt.Sprintf("spec.triggers[%d].type", i), t.pos.Line, t.pos.Column, CodeErrorTriggerNotAlone, "A workflow with the error trigger cannot have any other trigger."))
+			}
+		}
+	}
+
 	seenTriggers := map[string]int{}
 	for i, t := range doc.Spec.Triggers {
 		path := fmt.Sprintf("spec.triggers[%d]", i)
@@ -288,6 +296,10 @@ func validateTrigger(t Trigger, path string) ErrorList {
 		errs = append(errs, validateWebhookTrigger(t, path)...)
 	case "schedule":
 		errs = append(errs, validateSchedule(t, path)...)
+	case TriggerTypeError:
+		for k := range t.With {
+			errs = append(errs, fieldError(path+"."+k, t.pos.Line, t.pos.Column, CodeUnknownField, fmt.Sprintf("The error trigger takes no fields; %q is not allowed.", k)))
+		}
 	}
 	errs = append(errs, scanUnsafe(t.With, path)...)
 	return errs

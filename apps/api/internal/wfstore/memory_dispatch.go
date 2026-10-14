@@ -536,6 +536,7 @@ func (m *Memory) RetryStep(ctx context.Context, scope isolation.Scope, now time.
 	}
 	// #660: the accepted retry reopens closed-out steps.
 	m.reopenLocked(scope, &exec, now)
+	exec.operatorRetried = true // #649 S3
 	next := cloneStep(src)
 	next.ID = newID()
 	next.Attempt = src.Attempt + 1
@@ -1159,7 +1160,9 @@ func (m *Memory) rollupLocked(scope isolation.Scope, exec *memExecution, now tim
 			m.endWaitingGatesLocked(scope, exec, now)
 		}
 	}
+	prev := exec.record.Status
 	applyExecutionStatus(&exec.record, next, now)
+	m.fireErrorWorkflowLocked(exec, prev, now)
 }
 
 func (m *Memory) AnnotateRetryCapabilities(_ context.Context, scope isolation.Scope, exec *Execution, steps []ExecutionStep) error {

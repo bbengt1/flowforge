@@ -239,6 +239,7 @@ func newSecWorld(t *testing.T, env *Env, d Driver) *secWorld {
 	d2, res := A.Create(owner, strings.Replace(readFixture(t, "01-linear/workflow.yaml"), "e0-01-linear", "s3-draft-only", 1))
 	mustStatus(t, "draft-only", res, http.StatusCreated)
 	w.vars["A.draftOnly"], w.vars["A.draftRevision"] = d2.WorkflowID, fmt.Sprint(d2.Revision)
+	w.vars["A.workspace"] = A.WS.ID
 	return w
 }
 

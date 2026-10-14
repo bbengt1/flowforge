@@ -967,3 +967,25 @@ func mapDBErr(err error) error {
 	}
 	return err
 }
+
+// TxPins resolves refs inside a caller's workspace-scoped transaction
+// (#649 S3: the error-workflow policy gate runs in the rollup
+// transaction, so it must not take a second pool connection). The scope
+// argument of Resolve is not used: the transaction is already scoped.
+type TxPins struct{ Tx pgx.Tx }
+
+// Resolve implements approval.PinSource over the transaction.
+func (t TxPins) Resolve(ctx context.Context, _ isolation.Scope, refs []Ref) ([]Pin, error) {
+	if t.Tx == nil {
+		return nil, ErrNoScope
+	}
+	var out []Pin
+	for _, ref := range refs {
+		pin, err := resolveOne(ctx, t.Tx, ref)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, pin)
+	}
+	return out, nil
+}

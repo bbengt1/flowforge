@@ -504,6 +504,14 @@ components:
       schema:
         type: string
         format: uuid
+    WorkspaceIDPath:
+      name: workspaceId
+      in: path
+      required: true
+      description: Must be the server-derived workspace for the request. Any other value, including a value that is not a UUID, is 404.
+      schema:
+        type: string
+        format: uuid
     ScimTokenID:
       name: tokenId
       in: path
@@ -3327,6 +3335,10 @@ components:
           type: string
         triggerId:
           type: string
+        errorParentId:
+          type: string
+          format: uuid
+          description: Set only on a workspace error-workflow run (#649), the failed or indeterminate run that started it. A run starts at most one error run.
         status:
           type: string
           description: "succeededWithErrors is terminal: the run finished and every failed step was handled by onError (continue or errorOutput). It counts as finished, is not retryable, and never starts an error workflow."
@@ -4099,6 +4111,27 @@ components:
             Last successful SCIM request with this token. null until first
             use. Updated at most once a minute per token, so it can lag by
             up to 60 seconds.
+    WorkspaceErrorWorkflow:
+      type: object
+      required: [errorWorkflow]
+      properties:
+        errorWorkflow:
+          description: The workspace error workflow (display name and UUID), or null when none is set.
+          nullable: true
+          type: object
+          required: [workflowId, workflowName, workflowSlug]
+          properties:
+            workflowId: {type: string, format: uuid}
+            workflowName: {type: string}
+            workflowSlug: {type: string}
+    PutWorkspaceErrorWorkflowRequest:
+      type: object
+      required: [workflowId]
+      properties:
+        workflowId:
+          type: string
+          format: uuid
+          description: A published workflow in this workspace whose only trigger is error.
     ScimTokenList:
       type: object
       required: [items, maxActive, configured, groupsMode]

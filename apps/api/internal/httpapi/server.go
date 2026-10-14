@@ -338,6 +338,18 @@ func newServer(d Deps) *API {
 			}
 		}
 	}
+	// #649 S3: the error-workflow pre-start policy gate. Unwired, every
+	// fire is skipped with policy_unavailable (fail closed).
+	var gatePins approval.PinSource
+	if opsStore != nil {
+		gatePins = opsStore
+	}
+	errorGate := approval.ErrorWorkflowGate(gatePins, nil)
+	if wfMem, ok := workflows.(*wfstore.Memory); ok {
+		wfMem.SetErrorWorkflowGate(errorGate)
+	} else {
+		wfstore.SetErrorWorkflowGate(errorGate)
+	}
 	alertStore := d.Alerts
 	if alertStore == nil {
 		alertStore = inferAlerts(d.DB)
