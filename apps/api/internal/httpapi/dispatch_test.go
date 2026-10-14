@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -79,7 +80,7 @@ func TestDispatchClaimFenceCancelAndLeaseLoss(t *testing.T) {
 	}
 	providerCalls++
 
-	tampered := claimed.JobToken[:len(claimed.JobToken)-2] + "aa"
+	tampered := tamperJobTokenSignature(t, claimed.JobToken)
 	bad, _ := json.Marshal(map[string]any{"jobToken": tampered, "workerId": "worker-a", "fencingToken": claimed.Job.FencingToken})
 	rec = httptest.NewRecorder()
 	req = workspaceJSON(http.MethodPost, "/api/v1/jobs/"+claimed.Job.ID+"/complete", bad, operator.User, tenant, ws)
@@ -259,4 +260,26 @@ func TestDispatchHostWorkspaceRejected(t *testing.T) {
 	req := workspaceJSON(http.MethodPost, "/api/v1/jobs/claim", []byte(`{"workerId":"w","workspaceId":"`+ws.ID+`"}`), admin, tenant, ws)
 	h.ServeHTTP(rec, req)
 	assertProblem(t, rec, http.StatusBadRequest, CodeInvalidRequest, "")
+}
+
+// tamperJobTokenSignature flips a byte in the middle of the decoded HMAC
+// signature and re-encodes it. Editing trailing base64url characters is
+// unsafe: the last character of an unpadded segment carries spare bits, so a
+// textual change can decode to the same signature (or leave the token as-is).
+func tamperJobTokenSignature(t *testing.T, token string) string {
+	t.Helper()
+	payload, sigB64, ok := strings.Cut(token, ".")
+	if !ok || payload == "" || sigB64 == "" {
+		t.Fatalf("job token shape: %q", token)
+	}
+	sig, err := base64.RawURLEncoding.DecodeString(sigB64)
+	if err != nil || len(sig) == 0 {
+		t.Fatalf("decode job token signature: %v", err)
+	}
+	sig[len(sig)/2] ^= 0xff
+	tampered := payload + "." + base64.RawURLEncoding.EncodeToString(sig)
+	if tampered == token {
+		t.Fatal("tampered job token must differ from the original")
+	}
+	return tampered
 }
