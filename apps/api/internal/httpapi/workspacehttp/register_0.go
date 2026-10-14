@@ -23,6 +23,9 @@ func Routes(s *core.Server) []rt.Route {
 		rt.R(http.MethodGet, "/api/v1/workspace/cache/{key}", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, getCache)),
 		rt.R(http.MethodPut, "/api/v1/workspace/cache/{key}", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, putCache)),
 		rt.R(http.MethodPost, "/api/v1/workspace/realtime/channels/{id}/subscribe", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, subscribeRealtime)),
+		rt.R(http.MethodGet, "/api/v1/workspace/error-workflow", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, getErrorWorkflow)),
+		rt.R(http.MethodPut, "/api/v1/workspace/error-workflow", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, putErrorWorkflow)),
+		rt.R(http.MethodDelete, "/api/v1/workspace/error-workflow", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, deleteErrorWorkflow)),
 		rt.R(http.MethodGet, "/api/v1/workspace/audit-events", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, listAuditEvents)),
 	}
 }

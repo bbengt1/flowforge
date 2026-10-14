@@ -60,8 +60,10 @@ const (
 	CodeInvalidRuntimeProfile = "invalid-runtime-profile"
 	CodeInvalidVerification   = "invalid-verification"
 	// #649 S1 onError publish validation.
-	CodeInvalidOnError          = "invalid-on-error"
-	CodeOnErrorNotAllowed       = "on-error-not-allowed"
+	CodeInvalidOnError    = "invalid-on-error"
+	CodeOnErrorNotAllowed = "on-error-not-allowed"
+	// CodeErrorTriggerNotAlone: the error trigger must be the only trigger (#649 S3).
+	CodeErrorTriggerNotAlone    = "error-trigger-not-alone"
 	CodeErrorEdgeMissing        = "error-edge-missing"
 	CodeErrorEdgeWithoutHandler = "error-edge-without-error-output"
 	// CodeOnErrorContinueNoPrimary refuses onError: continue on a node

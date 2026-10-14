@@ -88,6 +88,57 @@ interval expression, explicit overlap policy, and bounded misfire/catch-up
 behavior. Neither trigger configuration nor inputs can override workspace,
 workflow version, target policy, credentials, approval, or node configuration.
 
+`error` is a system trigger for a workspace error workflow. It takes
+no fields (`with` or any other key is `unknown-field`) and must be the
+workflow's only trigger (`error-trigger-not-alone`), checked at save,
+`/validate` and publish. Only the engine starts it: a manual or API start of
+a version with the `error` trigger is `400`, and the store refuses it from
+every other start path (schedule, webhook) too.
+
+A workspace admin names the error workflow with
+`PUT /api/v1/workspace/error-workflow` `{workflowId}` (and clears it with
+`DELETE`, reads it with `GET`); the workspace is the session's own workspace.
+Set and clear need `workspace.administer` plus MFA step-up, and the target
+must be a
+published, not deleted workflow in the same workspace whose latest version's
+only trigger is `error`; otherwise `400`. Each change writes
+`workspace.error_workflow.set` / `.cleared` with the admin's display name and
+UUID. The reference is never cleared automatically (no `ON DELETE SET NULL`).
+
+When a run in that workspace ends, in the same transaction, the engine starts
+one run of the error workflow (as a system run with no requester, trigger
+type `error`) if:
+
+- the run ended `failed` and the failure that ended it has a code onError
+  could route (the allowlist and `flow.fail` literal dotted codes above), with
+  reason `failed`; or the run ended `indeterminate`, with reason
+  `indeterminate`;
+- the run's trigger is automated (`api`, `schedule`, `webhook` or any other
+  automated trigger), not `manual`, and no operator retried a step of it;
+- the run is not itself an error-workflow run (no chains).
+
+It never fires on `canceled` or `succeededWithErrors`, on a workflow delete,
+or for system, security, authorization or policy codes. A run fires at most
+once (unique `executions.error_parent_id`). When the configured target is
+deleted, a draft, archived or no longer `error`-only at fire time, nothing
+starts and `execution.error_workflow.skipped` records the reason
+(`target_deleted`, `target_unpublished`, `target_disabled`,
+`target_not_error_workflow`, `target_missing`); a failure code that is not
+eligible is skipped with `code_not_eligible`. The error run counts against
+the workspace open-run cap like any other start (`cap_reached` when full),
+passes the same pre-start policy evaluation (`policy_denied`,
+`approval_required`, `policy_unavailable`), and any other start error is
+skipped as `start_failed`. The whole start runs in a savepoint, so a skip or
+failure never changes or blocks the parent run's final status. A start writes
+`execution.error_workflow.fired` on the parent (with the parent's actor id)
+and `execution.start` on the error run.
+
+The error run's input is exactly `{reason, triggerType, executionId,
+workflowId, workflowName, workflowVersionId, workflowVersion, nodeId, code,
+message}` describing the parent run; `code` is capped at 64 bytes and
+`message` at 256 bytes. It never carries the parent's actor, input, trigger
+metadata or secrets. The error run's `errorParentId` links back to the parent.
+
 ## SSH and script node examples
 
 ```yaml

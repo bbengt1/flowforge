@@ -275,6 +275,9 @@ func stubOperation(rt Route) (*yaml.Node, error) {
 	if op, ok := workspaceGroupOps[rt.Method+" "+rt.Pattern]; ok {
 		return workspaceGroupOperation(rt, op)
 	}
+	if op, ok := errorWorkflowOps[rt.Method+" "+rt.Pattern]; ok {
+		return errorWorkflowOperation(rt, op)
+	}
 	if op, ok := scimTokenAdminOps[rt.Method+" "+rt.Pattern]; ok {
 		return scimTokenAdminOperation(rt, op)
 	}

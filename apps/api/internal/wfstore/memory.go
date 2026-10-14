@@ -29,6 +29,8 @@ type memExecution struct {
 	steps       []ExecutionStep
 	jobs        []ExecutionJob
 	edges       []execEdge
+	// operatorRetried marks a run an operator retried (#649 S3).
+	operatorRetried bool
 }
 
 type memAudit struct {
@@ -60,6 +62,9 @@ type Memory struct {
 	approvalUnresolvable func(executionID, nodeID string, now time.Time)
 	approvalRunEnded     func(workspaceID, executionID string, now time.Time) int
 	approvalDecider      ApprovalDecider
+	errorWorkflows       map[string]string // workspace id -> error workflow id (#649 S3)
+	errorGate            ErrorWorkflowGate
+	errorOpenCap         int
 	// ActorDisplayName optionally resolves the actor name for audit rows
 	// (Postgres reads users.display_name in the publish transaction).
 	ActorDisplayName func(userID string) string
@@ -516,6 +521,9 @@ func (m *Memory) startExecution(ctx context.Context, scope isolation.Scope, work
 	}
 	if !found {
 		return Execution{}, ErrNotFound
+	}
+	if err := refuseErrorWorkflowStart(ver); err != nil {
+		return Execution{}, err
 	}
 	if prepared.key != "" {
 		if existing, ok, err := m.peekLocked(scope, workflowID, ver.ID, prepared); err != nil {

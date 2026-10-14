@@ -8,6 +8,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/ssh"
+	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
 type preparedStart struct {
@@ -52,6 +53,10 @@ func prepareStartUnchecked(scope isolation.Scope, workflowID string, in StartInp
 	if !authz.ValidUUID(in.VersionID) {
 		return preparedStart{}, ErrInvalid
 	}
+	// #649 S3: only the engine starts an error-workflow run.
+	if strings.TrimSpace(in.TriggerType) == TriggerError {
+		return preparedStart{}, ErrInvalid
+	}
 	if in.TriggerID != "" && !authz.ValidUUID(in.TriggerID) {
 		return preparedStart{}, ErrInvalid
 	}
@@ -79,6 +84,16 @@ func prepareStartUnchecked(scope isolation.Scope, workflowID string, in StartInp
 		}
 	}
 	return preparedStart{key: key, fingerprint: fp, input: input, policy: policy}, nil
+}
+
+// refuseErrorWorkflowStart is the store backstop: a version whose trigger
+// is `error` never starts through StartExecution (manual, API, schedule,
+// webhook). The engine starts it in the rollup transaction.
+func refuseErrorWorkflowStart(ver Version) error {
+	if workflow.IsErrorWorkflow(ver.DefinitionYAML, ver.Summary) {
+		return ErrInvalid
+	}
+	return nil
 }
 
 func materializePlan(executionID string, nodes []plannedNode, edges []execEdge, now time.Time) ([]ExecutionStep, []ExecutionJob) {

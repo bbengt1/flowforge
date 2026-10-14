@@ -32,7 +32,8 @@ const executionColumns = `
 	e.finished_at,
 	COALESCE(e.updated_at, e.created_at),
 	e.retention_until,
-	COALESCE(e.idempotency_fingerprint, '')
+	COALESCE(e.idempotency_fingerprint, ''),
+	COALESCE(e.error_parent_id::text, '')
 `
 
 const executionInsertReturning = `
@@ -54,7 +55,8 @@ const executionInsertReturning = `
 	finished_at,
 	COALESCE(updated_at, created_at),
 	retention_until,
-	COALESCE(idempotency_fingerprint, '')
+	COALESCE(idempotency_fingerprint, ''),
+	COALESCE(error_parent_id::text, '')
 `
 
 func (p *Postgres) PeekIdempotent(ctx context.Context, scope isolation.Scope, workflowID string, in StartInput) (Execution, error) {
@@ -600,6 +602,7 @@ func scanExecution(row rowScanner) (Execution, error) {
 		&exec.WorkflowVersionID, &exec.WorkflowDigest, &exec.TriggerID, &exec.Status,
 		&exec.IdempotencyKey, &inputRaw, &policyRaw, &exec.CorrelationID, &exec.RequestedBy,
 		&exec.CreatedAt, &started, &finished, &exec.UpdatedAt, &exec.RetentionUntil, &exec.fingerprint,
+		&exec.ErrorParentID,
 	); err != nil {
 		return Execution{}, mapDBErr(err)
 	}

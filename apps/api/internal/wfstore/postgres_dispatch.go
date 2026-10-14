@@ -642,6 +642,10 @@ func (p *Postgres) RetryStep(ctx context.Context, scope isolation.Scope, now tim
 	if err := reopenTx(ctx, tx, scope, executionID, now); err != nil {
 		return RetryResult{}, err
 	}
+	// #649 S3: an operator-retried run never fires the error workflow.
+	if _, err := tx.Exec(ctx, `UPDATE executions SET operator_retried_at = COALESCE(operator_retried_at, $2) WHERE id = $1::uuid`, executionID, now); err != nil {
+		return RetryResult{}, mapDBErr(err)
+	}
 	next := cloneStep(src)
 	next.ID = newID()
 	next.Attempt = src.Attempt + 1
@@ -1848,7 +1852,11 @@ func rollupExecutionTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, ex
 		return err
 	}
 	next := guardCanceledRollup(exec.Status, rollupExecutionStatus(jobs, steps))
-	return applyExecutionStatusTx(ctx, tx, scope, executionID, next, now)
+	if err := applyExecutionStatusTx(ctx, tx, scope, executionID, next, now); err != nil {
+		return err
+	}
+	// #649 S3: start the workspace error workflow in this transaction.
+	return fireErrorWorkflowTx(ctx, tx, exec, next, now)
 }
 
 // applyExecutionStatusTx sets the run status. A terminal status first

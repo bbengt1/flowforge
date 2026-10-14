@@ -26,12 +26,12 @@ checks:
     fixture: 01-linear/workflow.yaml
     editedFixture: 06-error-output/workflow.yaml
     stepsMatch: published
-  - name: future-649-s3-error-workflow-draft   # route path is a placeholder until #649 S3 names it
+  - name: future-649-s3-error-workflow-draft   # #649 S3: a draft-only workflow cannot be the error workflow
     kind: route-absent
     as: owner
     method: PUT
-    path: "/api/v1/workflows/{A.workflow}/error-workflow"
+    path: "/api/v1/workspace/error-workflow"
     body: {workflowId: "{A.draftOnly}"}
     status: 400
-xfail:
-  - {part: future-649-s3-error-workflow-draft, reason: "no error-workflow setting yet", issue: "#649 S3", drivers: [all]}
+    code: invalid-request
+xfail: []

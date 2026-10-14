@@ -163,6 +163,20 @@ func triggerTypes() []TriggerType {
 				Help:                "Cookie session + X-CSRF-Token. Create pins a published workflowVersionId. Timezone is a required IANA name. Safe defaults: overlapPolicy=skip, misfirePolicy=ignore, catchUp=0. Dispatcher starts with E10.1 idempotency/authz/policy and fails closed when the schedule or published version is disabled. Host-supplied id/workspaceId is 400.",
 			},
 		},
+		{
+			Type:        TriggerTypeError,
+			Phase:       PhaseCore,
+			Title:       "Error workflow",
+			Description: "System trigger (#649). Only the engine starts it, when an automated run in the workspace ends failed or indeterminate and this workflow is the workspace error workflow. It must be the workflow's only trigger and takes no fields. Manual and API starts are refused.",
+			Outputs:     event,
+			Bounds:      defaultNeutralBounds(),
+			Redaction: &RedactionPolicy{
+				AuditFields:   []string{"parentExecutionId", "workflowVersionId", "workflowDigest", "reason", "outcome"},
+				RedactInputs:  true,
+				RedactOutputs: true,
+				Strategy:      "mask-classified",
+			},
+		},
 		{Type: "event", Phase: PhaseNext, Outputs: event},
 	}
 }
