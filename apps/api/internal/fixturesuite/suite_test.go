@@ -236,7 +236,11 @@ func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Pa
 		}
 		switch a.Verb {
 		case "start":
-			id, res := w.Start(owner, draft.WorkflowID, versionID, nil)
+			start := w.Start
+			if b.ErrorWorkflow != nil {
+				start = w.errorWorkflowStart(t)
+			}
+			id, res := start(owner, draft.WorkflowID, versionID, nil)
 			want := b.Start
 			if want == nil {
 				want = &HTTPExpect{Status: http.StatusCreated}
@@ -333,6 +337,11 @@ func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Pa
 		if fired != *b.ErrorWorkflowFires {
 			failf("errorWorkflowFires = %v, want %v", fired, *b.ErrorWorkflowFires)
 		}
+		if fired && b.ErrorWorkflow != nil && b.ErrorWorkflow.Reason != "" {
+			if got := w.errorRunReason(t, execID); got != b.ErrorWorkflow.Reason {
+				failf("errorWorkflow.reason = %q, want %q", got, b.ErrorWorkflow.Reason)
+			}
+		}
 	}
 	for _, node := range sortedNodes(run.Steps) {
 		for _, bad := range b.NoStepStatusIn {
@@ -370,7 +379,7 @@ func evaluate(t *testing.T, env *Env, fx Fixture, b Block, file string, patch Pa
 // wantsRun reports whether the block expects anything of a started run.
 func (b Block) wantsRun() bool {
 	return len(b.Actions) > 0 || b.Run != nil || len(b.Steps) > 0 || b.Audit != nil || b.Start != nil || len(b.Jobs) > 0 ||
-		b.AuditDetails != nil || len(b.NoStepStatusIn) > 0 || b.HTTP != nil || b.ErrorWorkflowFires != nil
+		b.AuditDetails != nil || len(b.NoStepStatusIn) > 0 || b.HTTP != nil || b.ErrorWorkflowFires != nil || b.ErrorWorkflow != nil
 }
 
 func checkStatus(failf func(string, ...any), what string, want StringSet, run Run) {

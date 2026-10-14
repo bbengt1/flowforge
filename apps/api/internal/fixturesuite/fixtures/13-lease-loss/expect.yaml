@@ -19,6 +19,10 @@ cases:
       done:  {status: skipped, skipReason: upstream_indeterminate}
     jobs: {seed: {count: 1}}
     noStepStatusIn: [pending, blocked]
+    # #649 S3: with a workspace error workflow configured and an api parent,
+    # the indeterminate run fires it once, reason exactly indeterminate.
+    errorWorkflow: {reason: indeterminate}
+    errorWorkflowFires: true
     audit: {execution.start: 1, job.claim: 1, job.complete: 0, job.recover: 1, execution.steps_closed: 1}
 
   # Gracie's H1 / #667: a lease loss is not a step failure, so onError must
