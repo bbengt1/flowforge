@@ -174,3 +174,43 @@ func TestPublishCheckerPresenceHint650(t *testing.T) {
 		t.Fatal("echoed")
 	}
 }
+
+// L1: trigger and items are refused at publish in core-node expressions
+// with a fixed "not available yet" error that names the node only.
+func TestCoreExprTriggerNotAvailable650(t *testing.T) {
+	res, errs := ParseAndNormalize([]byte(coreExprDoc(`{"a": trigger.zqSecret}`, `true`)))
+	if len(errs) > 0 {
+		t.Fatalf("parse: %v", errs)
+	}
+	_, cerrs := CheckExpressions(res.Document)
+	if len(cerrs) != 1 || cerrs[0].Code != CodeExpressionRefUnknown || cerrs[0].NodeID != "shape" || !strings.Contains(cerrs[0].Message, "not available yet") {
+		t.Fatalf("errs=%v", cerrs)
+	}
+	if strings.Contains(cerrs[0].Message, "zqSecret") {
+		t.Fatal("echoed")
+	}
+}
+
+func TestCoreExprItemsNotAvailable650(t *testing.T) {
+	res, errs := ParseAndNormalize([]byte(coreExprDoc(`{"a": 1}`, `size(items) > 0`)))
+	if len(errs) > 0 {
+		t.Fatalf("parse: %v", errs)
+	}
+	_, cerrs := CheckExpressions(res.Document)
+	if len(cerrs) != 1 || cerrs[0].Code != CodeExpressionRefUnknown || cerrs[0].NodeID != "gate" || !strings.Contains(cerrs[0].Message, "not available yet") {
+		t.Fatalf("errs=%v", cerrs)
+	}
+}
+
+// L3: the reserved-key check is top-level only; a nested __ff_ key is
+// ordinary user data.
+func TestDataMapExprNestedReservedKeyAllowed650(t *testing.T) {
+	with := map[string]any{"expr": map[string]any{"expr": `{"wrap": {"__ff_items": 1}}`}}
+	out := EvaluateStepRun("data.map", with, map[string]any{"input": map[string]any{}}, nil, rc("shape"))
+	if out.Fail {
+		t.Fatalf("%+v", out)
+	}
+	if out.Output["result"].(map[string]any)["wrap"].(map[string]any)["__ff_items"] != int64(1) {
+		t.Fatalf("%+v", out.Output)
+	}
+}

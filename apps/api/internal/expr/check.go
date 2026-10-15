@@ -85,6 +85,10 @@ type Scope struct {
 	Want Kind
 	// SecretRefOK is true only for a field that accepts a credential ref.
 	SecretRefOK bool
+	// CoreNode is set for core-node fields (data.map, flow.condition).
+	// trigger and items are not bound there yet, so they are refused at
+	// publish with errRootNotAvailable instead of failing at runtime.
+	CoreNode bool
 }
 
 // Refs are the references extracted statically from one expression.
@@ -114,6 +118,9 @@ type Error struct {
 func (e *Error) Error() string { return e.Code + ": " + e.Message }
 
 func fail(code, msg string) *Error { return &Error{Code: code, Message: msg} }
+
+// errRootNotAvailable is fixed: it never echoes the expression.
+var errRootNotAvailable = fail(CodeRefUnknown, "trigger and items are not available yet in core-node expressions.")
 
 var (
 	secretRefType = cel.OpaqueType("flowforge.SecretRef")
@@ -431,6 +438,10 @@ func (w *walker) walk(e ast.Expr, depth int, parentFn string) {
 
 func (w *walker) ident(name string) {
 	if w.iter[name] {
+		return
+	}
+	if w.sc.CoreNode && (name == "trigger" || name == "items") {
+		w.setErr(errRootNotAvailable)
 		return
 	}
 	switch name {

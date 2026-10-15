@@ -161,7 +161,7 @@ func CheckExpressions(doc *Document) (ExpressionReport, ErrorList) {
 				want = expr.KindAny
 			}
 			res, cerr := expr.Check(src, expr.Scope{
-				Mode: mode, Declared: declared, Wired: wired, Want: want, SecretRefOK: f.AcceptsSecretRef,
+				Mode: mode, Declared: declared, Wired: wired, Want: want, SecretRefOK: f.AcceptsSecretRef, CoreNode: n.Type != TestExprNodeType, // test.ffx keeps the full E3.2 scope
 			})
 			if cerr != nil {
 				fe.Code, fe.Message = cerr.Code, fmt.Sprintf("Node %q with.%s: %s", n.ID, f.Name, cerr.Message)

@@ -2,7 +2,9 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -24,7 +26,10 @@ type RunContext struct {
 }
 
 // ReservedOutputPrefix marks engine-owned output keys (the E3.1 items
-// summary is __ff_items). An expression result may not write one.
+// summary is __ff_items). An expression result may not write one at the
+// top level. The check is deliberately top-level only: the engine reads
+// reserved keys only at the top of a step output, so a nested __ff_ key
+// is plain user data and is allowed.
 const ReservedOutputPrefix = "__ff_"
 
 func hasExprField(n Node) bool {
@@ -97,12 +102,26 @@ func evalFieldExpr(nodeType, field string, with, inputs map[string]any, item any
 		ctx = context.Background()
 	}
 	v, err := expr.Eval(ctx, src, expr.Scope{
-		Mode: expr.ModePerItem, Declared: declared, Wired: wired, Want: want, SecretRefOK: decl.AcceptsSecretRef,
+		Mode: expr.ModePerItem, Declared: declared, Wired: wired, Want: want, SecretRefOK: decl.AcceptsSecretRef, CoreNode: true,
 	}, env)
 	if err != nil {
+		if err.Code == expr.CodeTimeout {
+			logEvalTimeout(ctx, rc.NodeID)
+		}
 		return nil, exprFieldError(rc, field, err.Code, err.Message)
 	}
 	return v, nil
+}
+
+// logEvalTimeout records that an evaluation hit a time limit so a loaded
+// host is visible. It logs the node id and which limit was hit only, never
+// the expression or any value.
+func logEvalTimeout(ctx context.Context, nodeID string) {
+	limit, d := "evaluation", expr.EvalDeadline
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		limit, d = "step", expr.StepDeadline
+	}
+	slog.Warn("ffx expression timeout", "nodeId", nodeID, "limit", limit, "deadline", d.String())
 }
 
 func inputClass(v any) string {

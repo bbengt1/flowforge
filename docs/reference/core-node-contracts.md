@@ -127,7 +127,7 @@ E3.1 fixtures `mapping: {a: b}` remain valid. With `expr`, the result must be an
 
 FFX is a typed, CEL-based expression language. An expression is written as `{expr: "..."}` in a field the catalog declares with `kind: expr`.
 
-- **Scope:** `item` (the node's primary input when it is an object), `input.<port>` for wired ports, `run.id`, `run.startedAt`, `run.clock`, `workflow.id`, `workflow.versionId`. `run.clock` is a deterministic per-attempt clock: it is set once when the attempt starts, so re-evaluating an attempt gives the same result, and a retry gets a new value. There is no `now()`.
+- **Scope:** `item` (the node's primary input when it is an object), `input.<port>` for wired ports, `run.id`, `run.startedAt`, `run.clock`, `workflow.id`, `workflow.versionId`. `run.clock` is a deterministic per-attempt clock: it is set once when the attempt starts, so re-evaluating an attempt gives the same result, and a retry gets a new value. There is no `now()`. `trigger` and `items` are not available yet in core-node expressions; publish refuses them with `expression-ref-unknown`.
 - **`vars`:** workspace variables are credential references. They can only be passed through whole (`vars.name`) into a field that takes a credential reference; they can never be read, compared or output. Neither `flow.condition.expr` nor `data.map.expr` takes one.
 - **Presence tests:** `has()` is not supported. Use `'k' in m`, for example `'total' in item && item.total > 10`.
 - **Nested ternaries:** bracket them. A nested ternary without brackets, like `true ? true ? 1 : 0 : 0`, gives `expression-parse`; write `true ? (true ? 1 : 0) : 0`.

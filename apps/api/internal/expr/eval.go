@@ -123,26 +123,42 @@ func activation(r Refs, env Env) (map[string]any, *Error) {
 		if !env.HasItem {
 			return nil, fail(CodeRuntime, "item is not an object at runtime.")
 		}
-		act["item"] = normalizeJSON(env.Item, 0)
+		nv, ok := normalizeJSON(env.Item, 0)
+		if !ok {
+			return nil, errInputTooDeep
+		}
+		act["item"] = nv
 	}
 	if r.Items {
 		if !env.HasItems {
 			return nil, fail(CodeRuntime, "items is not available at runtime.")
 		}
-		act["items"] = normalizeJSON(env.Items, 0)
+		nv, ok := normalizeJSON(env.Items, 0)
+		if !ok {
+			return nil, errInputTooDeep
+		}
+		act["items"] = nv
 	}
 	if r.Trigger {
 		if env.Trigger == nil {
 			return nil, fail(CodeRuntime, "trigger is not available at runtime.")
 		}
-		act["trigger"] = normalizeJSON(env.Trigger, 0)
+		nv, ok := normalizeJSON(env.Trigger, 0)
+		if !ok {
+			return nil, errInputTooDeep
+		}
+		act["trigger"] = nv
 	}
 	for _, p := range r.Inputs {
 		v, ok := env.Inputs[p]
 		if !ok {
 			return nil, fail(CodeRuntime, "An input port the expression reads was not delivered.")
 		}
-		act["input."+p] = normalizeJSON(v, 0)
+		nv, ok := normalizeJSON(v, 0)
+		if !ok {
+			return nil, errInputTooDeep
+		}
+		act["input."+p] = nv
 	}
 	for _, f := range r.Run {
 		switch f {
@@ -179,6 +195,8 @@ func activation(r Refs, env Env) (map[string]any, *Error) {
 	}
 	return act, nil
 }
+
+var errInputTooDeep = fail(CodeRuntime, "An input value is nested too deeply.")
 
 var errResultType = fail(CodeType, "Expression result has a type that cannot be stored (only null, bool, number, string, timestamp, list and map are allowed).")
 
@@ -274,43 +292,53 @@ func checkRuntimeWant(v any, sc Scope) *Error {
 // normalizeJSON copies a JSON-decoded value into CEL-friendly Go types.
 // JSON has one number type, so a whole float64 within ±2^53 becomes int64
 // (item.total * 2 works on a stored 5); other numbers stay double. Go int
-// widths become int64 and json.Number is parsed the same way.
-func normalizeJSON(v any, depth int) any {
+// widths become int64 and json.Number is parsed the same way. A value
+// nested deeper than maxResultDepth returns ok=false so the caller fails
+// closed rather than binding an unnormalized value.
+func normalizeJSON(v any, depth int) (any, bool) {
 	if depth > maxResultDepth {
-		return v
+		return nil, false
 	}
 	switch x := v.(type) {
 	case map[string]any:
 		out := make(map[string]any, len(x))
 		for k, e := range x {
-			out[k] = normalizeJSON(e, depth+1)
+			nv, ok := normalizeJSON(e, depth+1)
+			if !ok {
+				return nil, false
+			}
+			out[k] = nv
 		}
-		return out
+		return out, true
 	case []any:
 		out := make([]any, len(x))
 		for i, e := range x {
-			out[i] = normalizeJSON(e, depth+1)
+			nv, ok := normalizeJSON(e, depth+1)
+			if !ok {
+				return nil, false
+			}
+			out[i] = nv
 		}
-		return out
+		return out, true
 	case float64:
 		if x == math.Trunc(x) && math.Abs(x) <= 1<<53 {
-			return int64(x)
+			return int64(x), true
 		}
-		return x
+		return x, true
 	case float32:
 		return normalizeJSON(float64(x), depth)
 	case int:
-		return int64(x)
+		return int64(x), true
 	case int32:
-		return int64(x)
+		return int64(x), true
 	case json.Number:
 		if i, err := x.Int64(); err == nil {
-			return i
+			return i, true
 		}
 		if f, err := x.Float64(); err == nil {
-			return f
+			return f, true
 		}
-		return nil
+		return nil, true
 	}
-	return v
+	return v, true
 }

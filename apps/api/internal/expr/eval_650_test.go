@@ -246,3 +246,55 @@ func TestNestedTernaryNeedsBrackets650(t *testing.T) {
 		t.Fatalf("bracketed: %v", err)
 	}
 }
+
+// L4: an input nested past maxResultDepth fails closed instead of binding
+// the raw value.
+func TestNormalizeJSONDepthFailsClosed650(t *testing.T) {
+	var deep any = map[string]any{"n": 1}
+	for i := 0; i < maxResultDepth+2; i++ {
+		deep = map[string]any{"x": deep}
+	}
+	if _, ok := normalizeJSON(deep, 0); ok {
+		t.Fatal("deep value normalized")
+	}
+	_, err := Eval(context.Background(), `item.x != null`, objScope(KindBoolean), Env{Item: deep.(map[string]any), HasItem: true})
+	if err == nil || err.Code != CodeRuntime {
+		t.Fatalf("got %v", err)
+	}
+	shallow := map[string]any{"x": map[string]any{"n": float64(2)}}
+	if v, ok := normalizeJSON(shallow, 0); !ok || v.(map[string]any)["x"].(map[string]any)["n"] != int64(2) {
+		t.Fatalf("shallow: %v %v", v, ok)
+	}
+}
+
+// L2: only internal/expr may import cel-go, so newProgram (and with it
+// ProgramOptions) is the only way any package in apps/api builds a program.
+func TestOnlyExprImportsCelGo650(t *testing.T) {
+	root := filepath.Join("..", "..")
+	re := regexp.MustCompile(`"cel\.dev/cel-go[/"]`)
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if n := d.Name(); n == "vendor" || n == "node_modules" || strings.HasPrefix(n, ".") && path != root {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if re.Match(raw) && filepath.ToSlash(filepath.Dir(path)) != "../../internal/expr" {
+			t.Errorf("%s imports cel-go; only internal/expr may", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
