@@ -144,6 +144,9 @@ type Block struct {
 	ExecutionsDelta *int                      `yaml:"executionsDelta"`
 	AuditDetails    map[string]map[string]any `yaml:"auditDetails"`
 	NoStepStatusIn  []string                  `yaml:"noStepStatusIn"`
+	// ErrorWorkflow (#649 S3) opts the part in to a configured workspace
+	// error workflow and an api-triggered parent (see errorworkflow_test.go).
+	ErrorWorkflow *ErrorWorkflowExpect `yaml:"errorWorkflow"`
 	// WorkflowYamlPublish is the publish answer for workflow.yaml (an
 	// alias of publish for fixtures whose subject is another file).
 	WorkflowYamlPublish *HTTPExpect `yaml:"workflowYamlPublish"`

@@ -49,6 +49,9 @@ func blackboxSkip(fx Fixture, p Part) string {
 	if why, ok := blackboxClockFixtures[fx.ID]; ok {
 		return "black-box: clock-dependent fixture (" + why + ")"
 	}
+	if p.Block.ErrorWorkflow != nil {
+		return "black-box: errorWorkflow needs the in-process store and policy gate"
+	}
 	for _, a := range p.Block.Actions {
 		switch a.Verb {
 		case "advance-clock", "set-now", "tick-recover", "kill-runner", "new-runner", "claim-and-die":
