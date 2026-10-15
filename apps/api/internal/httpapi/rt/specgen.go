@@ -269,6 +269,9 @@ func stubOperation(rt Route) (*yaml.Node, error) {
 	if rt.Method == "PUT" && rt.Pattern == "/api/v1/workflows/{workflowId}/draft" {
 		return workflowDraftSaveOperation(rt)
 	}
+	if rt.Method+" "+rt.Pattern == typecheckRoute {
+		return typecheckOperation(rt)
+	}
 	if op, ok, err := approvalOperation(rt); ok {
 		return op, err
 	}

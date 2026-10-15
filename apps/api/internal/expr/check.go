@@ -85,6 +85,10 @@ type Scope struct {
 	Want Kind
 	// SecretRefOK is true only for a field that accepts a credential ref.
 	SecretRefOK bool
+	// CoreNode is set for core-node fields (data.map, flow.condition).
+	// trigger and items are not bound there yet, so they are refused at
+	// publish with errRootNotAvailable instead of failing at runtime.
+	CoreNode bool
 }
 
 // Refs are the references extracted statically from one expression.
@@ -114,6 +118,9 @@ type Error struct {
 func (e *Error) Error() string { return e.Code + ": " + e.Message }
 
 func fail(code, msg string) *Error { return &Error{Code: code, Message: msg} }
+
+// errRootNotAvailable is fixed: it never echoes the expression.
+var errRootNotAvailable = fail(CodeRefUnknown, "trigger and items are not available yet in core-node expressions.")
 
 var (
 	secretRefType = cel.OpaqueType("flowforge.SecretRef")
@@ -156,22 +163,29 @@ func ProgramOptions() []cel.ProgramOption {
 // Check parses, extracts refs, type-checks and cost-checks src against sc.
 // It never evaluates anything.
 func Check(src string, sc Scope) (Result, *Error) {
+	r, _, _, err := compile(src, sc)
+	return r, err
+}
+
+// compile is Check plus the checked AST and its environment, so the runtime
+// (eval.go) evaluates exactly what publish accepted.
+func compile(src string, sc Scope) (Result, *cel.Env, *cel.Ast, *Error) {
 	if src == "" || strings.TrimSpace(src) == "" {
-		return Result{}, fail(CodeParse, "Expression is empty.")
+		return Result{}, nil, nil, fail(CodeParse, "Expression is empty.")
 	}
 	if len(src) > MaxSourceBytes {
-		return Result{}, fail(CodeTooComplex, fmt.Sprintf("Expression source is over %d bytes.", MaxSourceBytes))
+		return Result{}, nil, nil, fail(CodeTooComplex, fmt.Sprintf("Expression source is over %d bytes.", MaxSourceBytes))
 	}
 	if !utf8.ValidString(src) {
-		return Result{}, fail(CodeParse, "Expression is not valid UTF-8.")
+		return Result{}, nil, nil, fail(CodeParse, "Expression is not valid UTF-8.")
 	}
 	base, err := cel.NewEnv(baseOptions()...)
 	if err != nil {
-		return Result{}, fail(CodeType, "Expression environment is unavailable.")
+		return Result{}, nil, nil, fail(CodeType, "Expression environment is unavailable.")
 	}
 	parsed, iss := base.Parse(src)
 	if iss != nil && iss.Err() != nil {
-		return Result{}, fail(CodeParse, "Expression does not parse.")
+		return Result{}, nil, nil, fail(CodeParse, "Expression does not parse.")
 	}
 	w := walker{sc: sc, iter: map[string]bool{}}
 	root := parsed.NativeRep().Expr()
@@ -180,47 +194,47 @@ func Check(src string, sc Scope) (Result, *Error) {
 		w.walk(root, 1, "")
 	}
 	if w.err != nil {
-		return Result{}, w.err
+		return Result{}, nil, nil, w.err
 	}
 	if w.nodes > MaxASTNodes {
-		return Result{}, fail(CodeTooComplex, fmt.Sprintf("Expression has more than %d nodes.", MaxASTNodes))
+		return Result{}, nil, nil, fail(CodeTooComplex, fmt.Sprintf("Expression has more than %d nodes.", MaxASTNodes))
 	}
 	if w.maxDepth > MaxDepth {
-		return Result{}, fail(CodeTooComplex, fmt.Sprintf("Expression nesting is deeper than %d.", MaxDepth))
+		return Result{}, nil, nil, fail(CodeTooComplex, fmt.Sprintf("Expression nesting is deeper than %d.", MaxDepth))
 	}
 	// vars.* is a SecretRef: pass-through only. The whole expression must be
 	// exactly vars.<name>, into a field that accepts a credential ref.
 	if len(w.vars) > 0 {
 		if !isVarsSelect(root) {
-			return Result{}, fail(CodeSecretUse, "vars can only be passed through whole (vars.<name>); it cannot be read, compared, combined or output.")
+			return Result{}, nil, nil, fail(CodeSecretUse, "vars can only be passed through whole (vars.<name>); it cannot be read, compared, combined or output.")
 		}
 		if !sc.SecretRefOK {
-			return Result{}, fail(CodeSecretUse, "This field does not accept a credential reference, so vars cannot be used here.")
+			return Result{}, nil, nil, fail(CodeSecretUse, "This field does not accept a credential reference, so vars cannot be used here.")
 		}
 	}
 	for _, p := range w.patterns {
 		if _, err := regexp.Compile(p); err != nil {
-			return Result{}, fail(CodeType, "A matches() pattern is not a valid RE2 regular expression.")
+			return Result{}, nil, nil, fail(CodeType, "A matches() pattern is not a valid RE2 regular expression.")
 		}
 	}
 
 	env, err := base.Extend(w.declarations()...)
 	if err != nil {
-		return Result{}, fail(CodeType, "Expression environment is unavailable.")
+		return Result{}, nil, nil, fail(CodeType, "Expression environment is unavailable.")
 	}
 	checked, iss := env.Check(parsed)
 	if iss != nil && iss.Err() != nil {
-		return Result{}, fail(CodeType, "Expression does not type-check against the port types in scope.")
+		return Result{}, nil, nil, fail(CodeType, "Expression does not type-check against the port types in scope.")
 	}
 	out := checked.OutputType()
 	if e := checkWant(out, sc); e != nil {
-		return Result{}, e
+		return Result{}, nil, nil, e
 	}
 	est, err := env.EstimateCost(checked, sizeEstimator{})
 	if err != nil || est.Max > CostLimit {
-		return Result{}, fail(CodeTooComplex, "Expression's estimated cost is over the budget.")
+		return Result{}, nil, nil, fail(CodeTooComplex, "Expression's estimated cost is over the budget.")
 	}
-	return Result{Type: out.String(), Refs: w.refs(), Cost: est.Max}, nil
+	return Result{Type: out.String(), Refs: w.refs(), Cost: est.Max}, env, checked, nil
 }
 
 func isVarsSelect(e ast.Expr) bool {
@@ -377,6 +391,12 @@ func (w *walker) walk(e ast.Expr, depth int, parentFn string) {
 	case ast.CallKind:
 		c := e.AsCall()
 		fn := c.FunctionName()
+		if fn == "has" && !c.IsMemberFunction() {
+			// has() is not enabled (bounded macros only); say so, with the
+			// supported form, instead of a generic type error.
+			w.setErr(fail(CodeParse, "Presence tests are not supported; use 'k' in m."))
+			return
+		}
 		next := depth + 1
 		if chainableOps[fn] && fn == parentFn && !c.IsMemberFunction() {
 			next = depth
@@ -418,6 +438,10 @@ func (w *walker) walk(e ast.Expr, depth int, parentFn string) {
 
 func (w *walker) ident(name string) {
 	if w.iter[name] {
+		return
+	}
+	if w.sc.CoreNode && (name == "trigger" || name == "items") {
+		w.setErr(errRootNotAvailable)
 		return
 	}
 	switch name {

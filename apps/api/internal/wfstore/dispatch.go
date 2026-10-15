@@ -610,6 +610,10 @@ func cloneStep(step ExecutionStep) ExecutionStep {
 		ts := *step.StartedAt
 		out.StartedAt = &ts
 	}
+	if step.EvalClock != nil {
+		ts := *step.EvalClock
+		out.EvalClock = &ts
+	}
 	if step.FinishedAt != nil {
 		ts := *step.FinishedAt
 		out.FinishedAt = &ts

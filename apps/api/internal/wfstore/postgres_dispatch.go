@@ -200,6 +200,7 @@ func (p *Postgres) ClaimJob(ctx context.Context, scope isolation.Scope, now time
 		    lease_id = $2::uuid,
 		    fencing_token = $3,
 		    started_at = COALESCE(started_at, $1),
+		    eval_clock = COALESCE(eval_clock, $1),
 		    finished_at = NULL,
 		    updated_at = $1
 		WHERE id = $4::uuid
@@ -661,6 +662,7 @@ func (p *Postgres) RetryStep(ctx context.Context, scope isolation.Scope, now tim
 	next.UpdatedAt = now
 	next.StartedAt = nil
 	next.FinishedAt = nil
+	next.EvalClock = nil // #650 E3.3: a retry gets its own clock at claim
 	next.UnresolvedIncoming = unresolved
 	inputRaw, err := marshalObject(next.Input)
 	if err != nil {
