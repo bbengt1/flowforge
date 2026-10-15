@@ -3940,23 +3940,30 @@ paths:
   /workflows/{workflowId}/draft/typecheck:
     post:
       operationId: postWorkflowsWorkflowIdDraftTypecheck
-      summary: POST /workflows/{workflowId}/draft/typecheck
+      summary: Type-check the draft's FFX expressions
       description: |
-        Generated from the route table (POST /api/v1/workflows/{workflowId}/draft/typecheck).
+        Runs the publish-time FFX checker on the stored draft. Never evaluates an expression and takes no body.
+        Requires workflow.edit and CSRF. Rate-limited per user and per workspace. References resolve only within the draft.
+        Returns types, codes and paths only; never expression source or values.
         Auth class: authenticated. Identity proxy: browser.
         Responses never include secrets, credentials, tokens, private keys, or vault material.
-        Vault references are display name and UUID only.
       responses:
         "200":
-          description: Success
+          description: Check result (ok, catalogRevision, draftRevision, expressions, errors).
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "500":
           $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
   /workflows/{workflowId}/publish:
     post:
       operationId: postWorkflowsWorkflowIdPublish
