@@ -283,6 +283,9 @@ func (p *Postgres) ReleaseJob(ctx context.Context, scope isolation.Scope, now ti
 }
 
 func (p *Postgres) CompleteJob(ctx context.Context, scope isolation.Scope, now time.Time, in JobActionInput) (DispatchResult, error) {
+	if err := checkNodeOutput(in.Output); err != nil {
+		return DispatchResult{}, err
+	}
 	return p.mutateJob(ctx, scope, now, in, mutateOpts{
 		action:  "job.complete",
 		outcome: "succeeded",
@@ -891,6 +894,9 @@ func expireParkedGateTx(ctx context.Context, tx pgx.Tx, executionID, nodeID stri
 }
 
 func (p *Postgres) ResumeWait(ctx context.Context, scope isolation.Scope, now time.Time, in ResumeWaitInput) (DispatchResult, error) {
+	if err := checkNodeOutput(in.Output); err != nil {
+		return DispatchResult{}, err
+	}
 	if scope.Zero() {
 		return DispatchResult{}, ErrNoScope
 	}

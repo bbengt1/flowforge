@@ -108,8 +108,10 @@ services:
       # your own with: openssl rand -base64 32
       # Do not copy these defaults into deploy/k8s.
       # "flowforge-local-dev-job-32bytes!" / "flowforge-local-dev-scr-32bytes!"
+      # / "flowforge-local-dev-itm-32bytes!" (items paging cursor, #650).
       JOB_BINDING_SECRET: ${JOB_BINDING_SECRET:-Zmxvd2ZvcmdlLWxvY2FsLWRldi1qb2ItMzJieXRlcyE=}
       SCRIPT_SIGNING_KEY: ${SCRIPT_SIGNING_KEY:-Zmxvd2ZvcmdlLWxvY2FsLWRldi1zY3ItMzJieXRlcyE=}
+      ITEMS_CURSOR_SECRET: ${ITEMS_CURSOR_SECRET:-Zmxvd2ZvcmdlLWxvY2FsLWRldi1pdG0tMzJieXRlcyE=}
       # In-process leader (G.1.3). Ticks schedule dispatch, lease recovery,
       # and retention purge. Only the replica holding advisory lock
       # 881726402 runs them — no CronJob for those three. Set 0 to opt out.

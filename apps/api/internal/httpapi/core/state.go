@@ -1,6 +1,7 @@
 package core
 
 import (
+	"github.com/bbengt1/flowforge/apps/api/internal/itemcursor"
 	"log/slog"
 	"time"
 
@@ -36,21 +37,25 @@ import (
 // behavior-changing rewrite of handler bodies. The composition root
 // in package httpapi is the only constructor.
 type Server struct {
-	DB               postgres.Checker
-	Store            identity.Store
-	Bootstrap        bootstrap.Store
-	Scoped           isolation.Store
-	Cache            *isolation.Cache
-	Sessions         session.Store
-	Workflows        wfstore.Store
-	Vault            vault.Store
-	Hooks            webhook.Store
-	Schedules        schedule.Store
-	Ops              opsconfig.Store
-	Approvals        approval.Store
-	Alerts           opsalert.Store
-	Keys             vault.Keys
-	JobKey           []byte
+	DB          postgres.Checker
+	Store       identity.Store
+	Bootstrap   bootstrap.Store
+	Scoped      isolation.Store
+	Cache       *isolation.Cache
+	Sessions    session.Store
+	Workflows   wfstore.Store
+	Vault       vault.Store
+	Hooks       webhook.Store
+	Schedules   schedule.Store
+	Ops         opsconfig.Store
+	Approvals   approval.Store
+	Alerts      opsalert.Store
+	Keys        vault.Keys
+	JobKey      []byte
+	ItemsCursor *itemcursor.Keyring
+	// ItemsLimiter rate-limits the paged items read per principal and per
+	// workspace. Nil fails closed.
+	ItemsLimiter     *embed.Limiter
 	ScriptKey        []byte
 	Scripts          *scripts.Pipeline
 	Objects          artifact.Objects

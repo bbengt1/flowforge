@@ -1,0 +1,6 @@
+# Exact-fingerprint ignores only. Each entry must be a documented local-only
+# fixture, never a live credential.
+# #650 E3.1: compose/env-template local ITEMS_CURSOR_SECRET default (already
+# allowlisted via env-template.txt), committed as a test literal in 4317ad8
+# and replaced in 56f61e5. History cannot be rewritten (no force-push).
+4317ad8b0e0ee4deefa7abc1606648f73d4052a1:apps/api/internal/itemcursor/itemcursor_test.go:generic-api-key:151

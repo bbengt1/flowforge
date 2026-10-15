@@ -270,6 +270,9 @@ func (m *Memory) releaseJob(ctx context.Context, scope isolation.Scope, now time
 }
 
 func (m *Memory) CompleteJob(_ context.Context, scope isolation.Scope, now time.Time, in JobActionInput) (DispatchResult, error) {
+	if err := checkNodeOutput(in.Output); err != nil {
+		return DispatchResult{}, err
+	}
 	return m.mutateJob(scope, now, in, func(exec *memExecution, job *ExecutionJob, step *ExecutionStep) error {
 		if job.Status == JobSucceeded && matchFence(*job, in) == nil {
 			return nil
@@ -704,6 +707,9 @@ func (m *Memory) WaitJob(ctx context.Context, scope isolation.Scope, now time.Ti
 }
 
 func (m *Memory) ResumeWait(ctx context.Context, scope isolation.Scope, now time.Time, in ResumeWaitInput) (DispatchResult, error) {
+	if err := checkNodeOutput(in.Output); err != nil {
+		return DispatchResult{}, err
+	}
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}

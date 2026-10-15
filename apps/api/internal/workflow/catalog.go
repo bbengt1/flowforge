@@ -319,7 +319,15 @@ func Compatible(from, to Port) bool {
 	if from.Name == "" || to.Name == "" {
 		return false
 	}
+	if !ValidPortKind(from.Kind) || !ValidPortKind(to.Kind) {
+		return false
+	}
 	if to.Kind == PortAny || from.Kind == PortAny {
+		return true
+	}
+	// Back-compat (#650 E3.1): a single object reads as a one-item list,
+	// so object may feed items. A list never narrows to one object.
+	if from.Kind == PortObject && to.Kind == PortItems {
 		return true
 	}
 	return from.Kind == to.Kind

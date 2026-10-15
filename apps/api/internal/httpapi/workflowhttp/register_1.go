@@ -28,6 +28,7 @@ func Routes2(s *core.Server) []rt.Route {
 		rt.R(http.MethodGet, "/api/v1/executions/{executionId}", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, getWorkspaceExecution)),
 		rt.R(http.MethodGet, "/api/v1/executions/{executionId}/steps", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, listExecutionSteps)),
 		rt.R(http.MethodGet, "/api/v1/executions/{executionId}/steps/{stepId}", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, getExecutionStep)),
+		rt.R(http.MethodGet, "/api/v1/executions/{executionId}/steps/{stepId}/items", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, listStepItems)),
 		rt.R(http.MethodGet, "/api/v1/executions/{executionId}/steps/{stepId}/logs", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, getStepLogs)),
 		rt.R(http.MethodPost, "/api/v1/executions/{executionId}/steps/{stepId}/logs", rt.AuthAuthenticated, rt.ProxyNone, core.Bind(s, uploadStepArtifact)),
 		rt.R(http.MethodGet, "/api/v1/executions/{executionId}/artifacts", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, listExecutionArtifacts)),

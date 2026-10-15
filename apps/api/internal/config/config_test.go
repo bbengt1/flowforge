@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/bbengt1/flowforge/apps/api/internal/itemcursor"
 	"net"
 	"os"
 	"path/filepath"
@@ -27,6 +28,26 @@ func requireHMACSecrets(t *testing.T) {
 	}
 	if strings.TrimSpace(os.Getenv(scripts.EnvScriptSigningKey)) == "" {
 		t.Setenv(scripts.EnvScriptSigningKey, strings.Repeat("cd", 32))
+	}
+	if strings.TrimSpace(os.Getenv(itemcursor.EnvSecret)) == "" {
+		t.Setenv(itemcursor.EnvSecret, strings.Repeat("ef", 32))
+	}
+}
+
+// #650 E3.1 L1: config.Load (shared by cmd/api, cmd/migrate and kekrotate)
+// and LoadRunner never need ITEMS_CURSOR_SECRET; only cmd/api loads it.
+func TestLoadDoesNotNeedItemsCursorSecret(t *testing.T) {
+	requireHMACSecrets(t)
+	t.Setenv("EMBED_SIGNING_KEY", testEmbedSigningKey(t))
+	t.Setenv("EMBED_SIGNING_KEY_FILE", "")
+	for _, v := range []string{"", "short"} {
+		t.Setenv(itemcursor.EnvSecret, v)
+		if _, err := Load(); err != nil {
+			t.Fatalf("%q: Load must not need %s: %v", v, itemcursor.EnvSecret, err)
+		}
+		if _, err := LoadRunner(); err != nil && strings.Contains(err.Error(), itemcursor.EnvSecret) {
+			t.Fatalf("%q: runner must not need %s: %v", v, itemcursor.EnvSecret, err)
+		}
 	}
 }
 
@@ -711,6 +732,7 @@ func TestLoadHMACSecretsFailClosed(t *testing.T) {
 	t.Setenv("TRUSTED_DEV_IDENTITY_HEADERS", "")
 	t.Setenv("FLOWFORGE_ENV", "")
 	t.Setenv(scripts.EnvScriptSigningKey, strings.Repeat("cd", 32))
+	t.Setenv(itemcursor.EnvSecret, strings.Repeat("ef", 32))
 
 	for _, env := range []string{"", "production", "development"} {
 		t.Setenv("APP_ENV", env)
