@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-### Expressions in `data.map` and `flow.condition` (#650 E3.3)
+### Expressions in `data.map` and `flow.condition`
 
 - `data.map` accepts `with.expr: {expr: "..."}`, an FFX expression that returns the mapped object, as an alternative to `with.mapping`.
 - `flow.condition` accepts `with.expr: {expr: "..."}`, an FFX boolean expression, as an alternative to `op`/`compare`/`path`.
