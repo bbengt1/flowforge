@@ -10,8 +10,9 @@ import (
 // CatalogRevision is the node-semantics revision inside flowforge/v1
 // (#650 §7). Revision 1 is the first catalog whose publish records FFX
 // expression semantics (E3.2). Versions published before it keep a NULL
-// catalog_revision and their old semantics, pinned by digest.
-const CatalogRevision = 1
+// catalog_revision and their old semantics, pinned by digest. Revision 2
+// (E3.3) adds the expr fields on data.map and flow.condition.
+const CatalogRevision = 2
 
 // ExpressionRef is one checked expression as recorded on a published
 // version: the field, its static type and what it references. It never

@@ -9,7 +9,7 @@ Handoff for the UI / catalog agent. The Go API on `GET /api/v1/workflows/catalog
 - **Triggers stay workflow-level.** `manual`, `webhook`, and `schedule` appear only under `spec.triggers`. They are not `spec.nodes` types. Catalog `rules.triggersAreWorkflowLevel` and `rules.graphNodesExcludeTriggers` are `true`.
 - **Next / provider types stay rejected.** `workflow.call`, `flow.switch`, `data.merge`, provider connectors, etc. remain `phase: next|provider` and fail publish/validate with `unsupported-node` / `unsupported-trigger`.
 - **Unknown `with` keys fail closed** on these seven nodes (`unknown-field`).
-- **No expression language.** Paths are dotted identifiers (`foo.bar`). `{{`, `${`, `{%`, `||`, `&&` are `expression-forbidden` or `template-forbidden`.
+- **Expressions only in declared `expr` fields.** Paths are dotted identifiers (`foo.bar`). `{{`, `${`, `{%`, `||`, `&&` in plain strings are `expression-forbidden` or `template-forbidden`. FFX expressions are allowed only in catalog fields of kind `expr`, written as `{expr: "..."}`: today `flow.condition.with.expr` and `data.map.with.expr` (see [FFX expressions](#ffx-expressions)).
 
 ## Catalog JSON deltas (additive)
 
@@ -59,10 +59,10 @@ Default bounds: 16 KiB input/output/`with`, 32 aggregation items. Delay also cap
 | | |
 | --- | --- |
 | Ports | in `value` (any, required, inherit) → out `true`, `false` (any, inherit) |
-| `requiredWith` | `op` |
-| `allowedWith` | `op` (eq, ne, gt, lt, gte, lte, exists, contains), `compare` (required unless `op=exists`), `path` (optional dotted path) |
-| Behavior | Declarative compare only. Matching branch receives the **inbound value** (not a boolean). `exists` rejects `compare`. |
-| Audit | `op`, `matched`, `classification` (inputs redacted) |
+| `requiredWith` | none in the catalog; exactly one of `op` or `expr` is required |
+| `allowedWith` | `op` (eq, ne, gt, lt, gte, lte, exists, contains), `compare` (required unless `op=exists`), `path` (optional dotted path), **or** `expr` (FFX, boolean) |
+| Behavior | Declarative compare, or an FFX boolean expression with `item` bound to the inbound value when it is an object. `expr` cannot be combined with `op`, `compare` or `path`. Matching branch receives the **inbound value** (not a boolean). `exists` rejects `compare`. |
+| Audit | `op` (`expr` for an expression), `matched`, `classification` (inputs redacted; never the expression or values) |
 
 ### `flow.delay`
 
@@ -89,13 +89,13 @@ Default bounds: 16 KiB input/output/`with`, 32 aggregation items. Delay also cap
 | | |
 | --- | --- |
 | Ports | in `input` (object, required, inherit) → out `result` (object, inherit) |
-| `requiredWith` | `mapping` |
-| `allowedWith` | `mapping`: `dest.path: source.path` **or** `dest.path: {from, convert?}` |
+| `requiredWith` | none in the catalog; exactly one of `mapping` or `expr` is required |
+| `allowedWith` | `mapping`: `dest.path: source.path` **or** `dest.path: {from, convert?}`; **or** `expr` (FFX, returns the mapped object; `item` is the input object) |
 | `convert` | `string` \| `integer` \| `boolean` \| `object` |
 | Behavior | Explicit paths only. Classification preserved per field. Missing source path is `unresolved-reference`. |
 | Limits | 32 mapping entries, path depth 8 |
 
-E3.1 fixtures `mapping: {a: b}` remain valid.
+E3.1 fixtures `mapping: {a: b}` remain valid. With `expr`, the result must be an object of at most 16 KiB and 32 fields, may not use a reserved `__ff_` key, and takes the highest classification of the input.
 
 ### `data.validate`
 
@@ -122,6 +122,18 @@ E3.1 fixtures `mapping: {a: b}` remain valid.
 | `requiredWith` | **`code`** (new vs E3.1 — DNS label or dotted token such as `precheck-failed`) |
 | `allowedWith` | `code`, `message` |
 | Behavior | Operator-facing failure. PEM/tokens and `panic:` / `Traceback` messages are rejected. |
+
+## FFX expressions
+
+FFX is a typed, CEL-based expression language (#650). An expression is written as `{expr: "..."}` in a field the catalog declares with `kind: expr`.
+
+- **Scope:** `item` (the node's primary input when it is an object), `input.<port>` for wired ports, `run.id`, `run.startedAt`, `run.clock`, `workflow.id`, `workflow.versionId`. `run.clock` is a deterministic per-attempt clock: it is set once when the attempt starts, so re-evaluating an attempt gives the same result, and a retry gets a new value. There is no `now()`.
+- **`vars`:** workspace variables are credential references. They can only be passed through whole (`vars.name`) into a field that takes a credential reference; they can never be read, compared or output. Neither `flow.condition.expr` nor `data.map.expr` takes one.
+- **Presence tests:** `has()` is not supported. Use `'k' in m`, for example `'total' in item && item.total > 10`.
+- **Nested ternaries:** bracket them. A nested ternary without brackets, like `true ? true ? 1 : 0 : 0`, gives `expression-parse`; write `true ? (true ? 1 : 0) : 0`.
+- **Limits:** source ≤ 1 KiB, ≤ 256 AST nodes, nesting depth ≤ 8, a static cost budget at publish, and at runtime a cost limit with interrupt checks, a 10 ms deadline per evaluation and 2 s per step. Results are ≤ 16 KiB.
+- **Publish codes:** `expression-parse`, `expression-type`, `expression-ref-unknown`, `expression-ref-not-ancestor`, `expression-secret-use`, `expression-too-complex`. Publish validates every expression and refuses a draft that does not.
+- **Runtime codes:** `expression-cost-exceeded`, `expression-timeout`, `expression-runtime`, and `expression-type` when a value only known at runtime has the wrong type. Errors name the node id and never echo the expression or values.
 
 ## Validation error codes (new)
 

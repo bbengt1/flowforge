@@ -30,6 +30,13 @@ type DelayPlan struct {
 // Evaluate applies a core neutral node contract to with + literal inputs.
 // It is deterministic and has no durable side effects.
 func Evaluate(typ string, with map[string]any, inputs map[string]any) (*EvalResult, ErrorList) {
+	return EvaluateRun(typ, with, inputs, nil)
+}
+
+// EvaluateRun is Evaluate inside a run attempt. rc carries run.clock and
+// the other run fields for FFX expr fields; with a nil rc an expr field
+// fails closed.
+func EvaluateRun(typ string, with map[string]any, inputs map[string]any, rc *RunContext) (*EvalResult, ErrorList) {
 	if with == nil {
 		with = map[string]any{}
 	}
@@ -38,12 +45,18 @@ func Evaluate(typ string, with map[string]any, inputs map[string]any) (*EvalResu
 	}
 	switch typ {
 	case "flow.condition":
+		if _, ok := with["expr"]; ok {
+			return evalConditionExpr(with, inputs, rc)
+		}
 		return evalCondition(with, inputs)
 	case "flow.delay":
 		return evalDelay(with, inputs)
 	case "data.set":
 		return evalDataSet(with)
 	case "data.map":
+		if _, ok := with["expr"]; ok {
+			return evalDataMapExpr(with, inputs, rc)
+		}
 		return evalDataMap(with, inputs)
 	case "data.validate":
 		return evalDataValidate(with, inputs)

@@ -54,17 +54,17 @@ func flowConditionContract() NodeType {
 		Type:        "flow.condition",
 		Phase:       PhaseCore,
 		Title:       "Condition",
-		Description: "Declarative comparison only. Routes the inbound value to true or false. No expression language.",
+		Description: "Declarative comparison (op/compare/path) or an FFX boolean expression (expr). Routes the inbound value to true or false.",
 		Inputs:      []Port{inheritPort("value", PortAny, true, "Value to compare.")},
 		Outputs: []Port{
 			inheritPort("true", PortAny, false, "Inbound value when the comparison is true."),
 			inheritPort("false", PortAny, false, "Inbound value when the comparison is false."),
 		},
-		RequiredWith: []string{"op"},
 		AllowedWith: []WithField{
-			{Name: "op", Kind: "enum", Required: true, Enum: conditionOps, Description: "Declarative comparison operator."},
+			{Name: "op", Kind: "enum", Enum: conditionOps, Description: "Declarative comparison operator. Required unless expr is set."},
 			{Name: "compare", Kind: "any", Description: "Literal compare value. Required except when op is exists."},
 			{Name: "path", Kind: "string", Description: "Optional dotted identifier path into value. No expressions."},
+			{Name: "expr", Kind: WithKindExpr, ExprType: string(PortBoolean), Description: "FFX boolean expression, as {expr: \"...\"}; item is the inbound value when it is an object. Use 'k' in m to test for a key. Not combined with op, compare or path."},
 		},
 		Policy: defaultNeutralPolicy(),
 		Bounds: defaultNeutralBounds(),
@@ -129,15 +129,15 @@ func dataSetContract() NodeType {
 
 func dataMapContract() NodeType {
 	return NodeType{
-		Type:         "data.map",
-		Phase:        PhaseCore,
-		Title:        "Map data",
-		Description:  "Declarative field mapping with optional type conversion. No general expression language.",
-		Inputs:       []Port{inheritPort("input", PortObject, true, "Object to map from.")},
-		Outputs:      []Port{inheritPort("result", PortObject, false, "Mapped object. Classification is preserved per field.")},
-		RequiredWith: []string{"mapping"},
+		Type:        "data.map",
+		Phase:       PhaseCore,
+		Title:       "Map data",
+		Description: "Declarative field mapping with optional type conversion, or an FFX expression (expr) that returns the mapped object.",
+		Inputs:      []Port{inheritPort("input", PortObject, true, "Object to map from.")},
+		Outputs:     []Port{inheritPort("result", PortObject, false, "Mapped object. Classification is preserved per field.")},
 		AllowedWith: []WithField{
-			{Name: "mapping", Kind: "mapping", Required: true, Description: "dest.path -> source.path or {from, convert}."},
+			{Name: "mapping", Kind: "mapping", Description: "dest.path -> source.path or {from, convert}. Required unless expr is set."},
+			{Name: "expr", Kind: WithKindExpr, ExprType: string(PortObject), Description: "FFX expression returning the mapped object, as {expr: \"...\"}; item is the input object. Not combined with mapping."},
 		},
 		Policy: defaultNeutralPolicy(),
 		Bounds: defaultNeutralBounds(),
@@ -322,7 +322,7 @@ func validateCoreNeutralNode(n Node, path string) ErrorList {
 	}
 	withErrs := validateNeutralWith(n, nt, path)
 	errs = append(errs, withErrs...)
-	if len(withErrs) == 0 && canEvaluateAtValidate(n, nt) {
+	if len(withErrs) == 0 && !hasExprField(n) && canEvaluateAtValidate(n, nt) {
 		_, evalErrs := Evaluate(n.Type, n.With, n.Inputs)
 		for _, e := range evalErrs {
 			if e.Path == "" {
@@ -377,7 +377,13 @@ func validateNeutralWith(n Node, nt NodeType, path string) ErrorList {
 }
 
 func validateConditionWith(n Node, path string) ErrorList {
+	if _, ok := n.With["expr"]; ok {
+		return validateExprOnly(n, path, "expr", "op", "compare", "path")
+	}
 	var errs ErrorList
+	if _, ok := n.With["op"]; !ok {
+		errs = append(errs, fieldError(path+".with.op", n.pos.Line, n.pos.Column, CodeMissingField, "flow.condition requires with.op or with.expr."))
+	}
 	op, _ := n.With["op"].(string)
 	if op != "" && !oneOf(op, conditionOps...) {
 		errs = append(errs, fieldError(path+".with.op", n.pos.Line, n.pos.Column, CodeInvalidWith, "op must be a declarative comparison operator."))
@@ -591,10 +597,13 @@ func validateDataSetWith(n Node, path string) ErrorList {
 }
 
 func validateDataMapWith(n Node, path string) ErrorList {
+	if _, ok := n.With["expr"]; ok {
+		return validateExprOnly(n, path, "expr", "mapping")
+	}
 	var errs ErrorList
 	raw, ok := n.With["mapping"]
 	if !ok {
-		return errs
+		return ErrorList{fieldError(path+".with.mapping", n.pos.Line, n.pos.Column, CodeMissingField, "data.map requires with.mapping or with.expr.")}
 	}
 	mapping, ok := raw.(map[string]any)
 	if !ok {
@@ -892,4 +901,20 @@ func ApprovalWaitDuration(expiresIn string) (time.Duration, string) {
 // expression syntax. onError routing trusts only such codes (#667).
 func LiteralFailCode(s string) bool {
 	return validFailCode(s) && !looksLikeExpression(s)
+}
+
+// validateExprOnly checks the shape of an expr field and that none of the
+// declarative fields it replaces is also set. The expression itself is
+// checked by CheckExpressions at publish.
+func validateExprOnly(n Node, path, field string, exclusive ...string) ErrorList {
+	var errs ErrorList
+	if _, ok := ExpressionSource(n.With[field]); !ok {
+		errs = append(errs, fieldError(path+".with."+field, n.pos.Line, n.pos.Column, CodeInvalidWith, fmt.Sprintf("with.%s must be {expr: <string>}.", field)))
+	}
+	for _, k := range exclusive {
+		if _, ok := n.With[k]; ok {
+			errs = append(errs, fieldError(path+".with."+k, n.pos.Line, n.pos.Column, CodeInvalidWith, fmt.Sprintf("with.%s cannot be combined with with.%s.", k, field)))
+		}
+	}
+	return errs
 }
