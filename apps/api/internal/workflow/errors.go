@@ -5,7 +5,10 @@ import "fmt"
 // FieldError is a single actionable validation failure. Messages are safe to
 // return to clients: they never include secret material or raw request bodies.
 type FieldError struct {
-	Path    string `json:"path"`
+	Path string `json:"path"`
+	// NodeID names the node for publish-time expression errors (#650
+	// E3.2), which carry no line or column.
+	NodeID  string `json:"nodeId,omitempty"`
 	Line    int    `json:"line,omitempty"`
 	Column  int    `json:"column,omitempty"`
 	Code    string `json:"code"`
@@ -69,6 +72,13 @@ const (
 	// CodeOnErrorContinueNoPrimary refuses onError: continue on a node
 	// type without a primaryOutput (branching or multi-output).
 	CodeOnErrorContinueNoPrimary = "on-error-continue-without-primary-output"
+	// #650 E3.2 FFX publish-time codes (see internal/expr).
+	CodeExpressionParse          = "expression-parse"
+	CodeExpressionType           = "expression-type"
+	CodeExpressionRefUnknown     = "expression-ref-unknown"
+	CodeExpressionRefNotAncestor = "expression-ref-not-ancestor"
+	CodeExpressionSecretUse      = "expression-secret-use"
+	CodeExpressionTooComplex     = "expression-too-complex"
 )
 
 func fieldError(path string, line, column int, code, message string) FieldError {

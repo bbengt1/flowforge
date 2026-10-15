@@ -55,7 +55,10 @@ type Server struct {
 	ItemsCursor *itemcursor.Keyring
 	// ItemsLimiter rate-limits the paged items read per principal and per
 	// workspace. Nil fails closed.
-	ItemsLimiter     *embed.Limiter
+	ItemsLimiter *embed.Limiter
+	// TypecheckLimiter rate-limits the draft expression type-check route
+	// per user and per workspace (#650 E3.2 §4a).
+	TypecheckLimiter *embed.Limiter
 	ScriptKey        []byte
 	Scripts          *scripts.Pipeline
 	Objects          artifact.Objects

@@ -6,7 +6,8 @@ package workflow
 // with an actionable unsupported-* code. Triggers are workflow-level.
 func CoreCatalog() Catalog {
 	return Catalog{
-		APIVersion: APIVersionV1,
+		APIVersion:      APIVersionV1,
+		CatalogRevision: CatalogRevision,
 		Rules: CatalogRules{
 			TriggersAreWorkflowLevel:  true,
 			GraphNodesExcludeTriggers: true,
@@ -285,7 +286,7 @@ func lookupTrigger(typ string) (TriggerType, bool) {
 }
 
 func lookupNode(typ string) (NodeType, bool) {
-	if tn, ok := testNodes[typ]; ok {
+	if tn, ok := lookupTestNode(typ); ok {
 		return withPrimaryOutput(tn.contract), true
 	}
 	for _, n := range coreNodeTypes() {

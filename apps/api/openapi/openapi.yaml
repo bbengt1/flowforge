@@ -614,6 +614,11 @@ x-flowforge-routes:
     proxy: browser
     pattern: /api/v1/workflows/{workflowId}/draft
   - method: POST
+    path: /workflows/{workflowId}/draft/typecheck
+    auth: authenticated
+    proxy: browser
+    pattern: /api/v1/workflows/{workflowId}/draft/typecheck
+  - method: POST
     path: /workflows/{workflowId}/publish
     auth: authenticated
     proxy: browser
@@ -3928,6 +3933,26 @@ paths:
           description: Unknown or deleted workflow, or another tenant.
         "409":
           description: conflict when revision does not match the current saved revision.
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /workflows/{workflowId}/draft/typecheck:
+    post:
+      operationId: postWorkflowsWorkflowIdDraftTypecheck
+      summary: POST /workflows/{workflowId}/draft/typecheck
+      description: |
+        Generated from the route table (POST /api/v1/workflows/{workflowId}/draft/typecheck).
+        Auth class: authenticated. Identity proxy: browser.
+        Responses never include secrets, credentials, tokens, private keys, or vault material.
+        Vault references are display name and UUID only.
+      responses:
+        "200":
+          description: Success
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
         "500":

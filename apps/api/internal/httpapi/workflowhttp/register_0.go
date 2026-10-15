@@ -27,6 +27,7 @@ func Routes1(s *core.Server) []rt.Route {
 		rt.R(http.MethodPatch, "/api/v1/workflows/{workflowId}/folder", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, patchWorkflowFolder)),
 		rt.R(http.MethodGet, "/api/v1/workflows/{workflowId}/draft", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, getWorkflowDraft)),
 		rt.R(http.MethodPut, "/api/v1/workflows/{workflowId}/draft", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, putWorkflowDraft)),
+		rt.R(http.MethodPost, "/api/v1/workflows/{workflowId}/draft/typecheck", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, typecheckWorkflowDraft)),
 		rt.R(http.MethodPost, "/api/v1/workflows/{workflowId}/publish", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, PublishWorkflow)),
 		rt.R(http.MethodPost, "/api/v1/workflows/{workflowId}/compare", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, compareWorkflow)),
 		rt.R(http.MethodGet, "/api/v1/workflows/{workflowId}/versions", rt.AuthAuthenticated, rt.ProxyBrowser, core.Bind(s, listWorkflowVersions)),

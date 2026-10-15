@@ -345,6 +345,9 @@ func (m *Memory) Publish(_ context.Context, scope isolation.Scope, workflowID st
 	if in.ExpectedRevision > 0 && row.draft.Revision != in.ExpectedRevision {
 		return Workflow{}, Version{}, ErrRevisionConflict
 	}
+	if in.CheckedDigest != "" && row.draft.Digest != in.CheckedDigest {
+		return Workflow{}, Version{}, ErrRevisionConflict
+	}
 	for _, ver := range m.versions[workflowID] {
 		if ver.Digest == row.draft.Digest {
 			return Workflow{}, Version{}, ErrDuplicateVersion
@@ -352,16 +355,20 @@ func (m *Memory) Publish(_ context.Context, scope isolation.Scope, workflowID st
 	}
 	next := len(m.versions[workflowID]) + 1
 	now := time.Now().UTC()
+	summary := row.draft.Summary
+	summary.Expressions = append([]workflow.ExpressionRef(nil), in.Expressions...)
+	catalogRevision := workflow.CatalogRevision
 	ver := Version{
-		ID:             newID(),
-		WorkflowID:     workflowID,
-		VersionNumber:  next,
-		DefinitionYAML: row.draft.DefinitionYAML,
-		Digest:         row.draft.Digest,
-		Summary:        row.draft.Summary,
-		PublishNote:    in.Note,
-		PublishedBy:    scope.ActorID(),
-		PublishedAt:    now,
+		CatalogRevision: &catalogRevision,
+		ID:              newID(),
+		WorkflowID:      workflowID,
+		VersionNumber:   next,
+		DefinitionYAML:  row.draft.DefinitionYAML,
+		Digest:          row.draft.Digest,
+		Summary:         summary,
+		PublishNote:     in.Note,
+		PublishedBy:     scope.ActorID(),
+		PublishedAt:     now,
 	}
 	m.versions[workflowID] = append(m.versions[workflowID], ver)
 	row.record.Status = StatusPublished

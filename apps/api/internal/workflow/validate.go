@@ -452,7 +452,7 @@ func validateNode(n Node, path string) ErrorList {
 			errs = append(errs, fieldError(path+".inputs."+k, n.pos.Line, n.pos.Column, CodeInvalidPort, fmt.Sprintf("Node type %q has no input port %q.", n.Type, k)))
 		}
 	}
-	if tn, ok := testNodes[n.Type]; ok {
+	if tn, ok := lookupTestNode(n.Type); ok {
 		errs = append(errs, tn.validate(n, path)...)
 	} else if isCoreNeutral(n.Type) {
 		errs = append(errs, validateCoreNeutralNode(n, path)...)

@@ -94,6 +94,7 @@ func writeWorkflowErrors(w http.ResponseWriter, r *http.Request, errs workflow.E
 	for _, e := range errs {
 		out = append(out, core.FieldError{
 			Path:    e.Path,
+			NodeID:  e.NodeID,
 			Line:    e.Line,
 			Column:  e.Column,
 			Code:    e.Code,

@@ -103,6 +103,7 @@ const (
 // FieldError is a YAML-path validation failure returned on invalid-workflow.
 type FieldError struct {
 	Path    string `json:"path"`
+	NodeID  string `json:"nodeId,omitempty"`
 	Line    int    `json:"line,omitempty"`
 	Column  int    `json:"column,omitempty"`
 	Code    string `json:"code"`
