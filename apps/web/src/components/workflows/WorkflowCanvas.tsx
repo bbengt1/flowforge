@@ -97,6 +97,8 @@ type WorkflowCanvasProps = {
   onAddAction?: () => void;
   readOnly?: boolean;
   currentNodeId?: string;
+  /** #650 draft typecheck problems keyed by nodeId (codes only). */
+  typecheckIssues?: ReadonlyMap<string, readonly unknown[]>;
   heading?: string;
   help?: string;
   fill?: boolean;
@@ -125,6 +127,7 @@ export function WorkflowCanvas({
   onAddAction,
   readOnly = false,
   currentNodeId,
+  typecheckIssues,
   heading,
   help,
   fill = false,
@@ -667,6 +670,7 @@ export function WorkflowCanvas({
               y={nodePosition(node.id).y}
               selected={isNodeSelected(selection, node.id)}
               current={currentNodeId === node.id}
+              issueCount={typecheckIssues?.get(node.id)?.length ?? 0}
               readOnly={readOnly}
               dragging={Boolean(nodeDrag?.ids.includes(node.id))}
               linkFrom={linkFrom}
@@ -771,6 +775,7 @@ function CanvasNode({
   y,
   selected,
   current,
+  issueCount = 0,
   readOnly,
   dragging,
   linkFrom,
@@ -789,6 +794,7 @@ function CanvasNode({
   y: number;
   selected: boolean;
   current?: boolean;
+  issueCount?: number;
   readOnly?: boolean;
   dragging?: boolean;
   linkFrom: { nodeId: string; port: string } | null;
@@ -818,7 +824,12 @@ function CanvasNode({
       aria-current={current ? "true" : undefined}
       aria-label={`${node.name} ${node.type} ${stateLabel}${
         stateHelp ? `. ${stateHelp}` : ""
-      }${current ? " current node" : ""}${selected ? " selected" : ""}`}
+      }${current ? " current node" : ""}${selected ? " selected" : ""}${
+        issueCount > 0
+          ? ` ${issueCount} expression ${issueCount === 1 ? "problem" : "problems"}`
+          : ""
+      }`}
+      data-typecheck-issues={issueCount > 0 ? issueCount : undefined}
       tabIndex={0}
       {...stateTip.focusProps}
       onPointerDown={(event) => {
@@ -874,6 +885,15 @@ function CanvasNode({
               {familyMark}
             </span>
             <span>{node.name || node.id}</span>
+            {issueCount > 0 ? (
+              <span
+                aria-hidden
+                title="Expression problems"
+                className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-danger px-1 text-[10px] font-semibold text-danger"
+              >
+                {issueCount}
+              </span>
+            ) : null}
           </p>
           <p className={`font-mono text-[11px] ${FF_EDITOR_MUTED_CLASS}`}>{node.type}</p>
         </div>

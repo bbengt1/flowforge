@@ -21,6 +21,11 @@ import { ActionWizard } from "@/components/workflows/ActionWizard";
 import { DraftConflictBanner } from "@/components/workflows/DraftConflictBanner";
 import { EditorChrome } from "@/components/workflows/EditorChrome";
 import { EditorInspector } from "@/components/workflows/EditorInspector";
+import {
+  DraftTypecheckSummary,
+  NodeTypecheckErrors,
+} from "@/components/workflows/DraftTypecheckStatus";
+import { useDraftTypecheck } from "@/components/workflows/useDraftTypecheck";
 import { EditorStartDialog } from "@/components/workflows/EditorStartDialog";
 import { EditorRunsDrawer } from "@/components/workflows/EditorRunsDrawer";
 import { DeleteWorkflowDialog } from "@/components/workflows/DeleteWorkflowDialog";
@@ -904,6 +909,14 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
     headerFallback,
   ) && hasWorkspaceLookup(identity);
   const dirty = Boolean(workflow && yaml !== savedYaml);
+  // #650: check the saved draft after save/load, debounced; never per keystroke.
+  const typecheck = useDraftTypecheck({
+    identity,
+    workflowId: workflow?.id ?? null,
+    revision,
+    dirty,
+    enabled: canCall && Boolean(workflow),
+  });
 
   async function loadLatestPublishedRun(scopedId: string) {
     if (runIoIsOverlay()) {
@@ -2131,6 +2144,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       bannerProblem ||
       (dirty && workflow) ||
       publishedVersion ||
+      typecheck.view.state !== "idle" ||
       wizardFeedback !== "idle",
   );
 
@@ -2327,6 +2341,12 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
                 Publish uses the last saved draft. Save before publishing.
               </p>
             ) : null}
+            <DraftTypecheckSummary
+              view={typecheck.view}
+              byNode={typecheck.byNode}
+              workflowErrors={typecheck.workflowErrors}
+              onSelectNode={(id) => applySelection({ kind: "node", id })}
+            />
             {publishedVersion ? (
               <p className="text-xs text-fg">
                 Published v{publishedVersion.versionNumber}{" "}
@@ -2378,6 +2398,7 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
           selection={selection}
           entries={library}
           currentNodeId={runCurrentNodeId}
+          typecheckIssues={typecheck.byNode}
           heading={overlayActive ? "Canvas · last run" : undefined}
           help={overlayActive ? EDITOR_RUN_OVERLAY_HELP : undefined}
           onSelect={applySelection}
@@ -2437,6 +2458,12 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
       }
       inspector={
         <div className="space-y-4 p-3">
+          {selection.kind === "node" ? (
+            <NodeTypecheckErrors
+              nodeId={selection.id}
+              errors={typecheck.byNode.get(selection.id)}
+            />
+          ) : null}
           <EditorInspector
             yaml={yaml}
             graph={canvasGraph}
