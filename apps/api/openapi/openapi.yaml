@@ -9567,6 +9567,10 @@ components:
           enum: [branch_not_taken, upstream_failed, upstream_indeterminate, run_canceled, workflow_deleted]
         leaseId: {type: string}
         fencingToken: {type: integer}
+        evalClock:
+          type: string
+          format: date-time
+          description: "Deterministic expression clock for this attempt, read as run.clock. Set once when the attempt starts; a retry is a new step with its own value. Absent until the attempt starts."
         idempotencyKey: {type: string}
         policySnapshot: {type: object, additionalProperties: true}
         targetSnapshot: {type: object, additionalProperties: true}
