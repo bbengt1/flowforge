@@ -330,9 +330,19 @@ func add(m *map[string]bool, k string) {
 	(*m)[k] = true
 }
 
+// chainableOps are the only operators whose left-deep chains count as one
+// nesting level (a && b && c, a + b + c). Nested ternaries, ! chains and
+// every other call count each level (#650 E3.2 L2).
+var chainableOps = map[string]bool{
+	"_&&_": true,
+	"_||_": true,
+	"_+_":  true,
+	"_*_":  true,
+}
+
 // walk counts nodes, measures nesting and extracts refs. A chain of the same
-// operator (a + b + c) counts as one nesting level, so depth measures real
-// nesting rather than the parser's left-deep shape.
+// chainable operator (a + b + c) counts as one nesting level, so depth
+// measures real nesting rather than the parser's left-deep shape.
 func (w *walker) walk(e ast.Expr, depth int, parentFn string) {
 	if w.err != nil {
 		return
@@ -350,7 +360,7 @@ func (w *walker) walk(e ast.Expr, depth int, parentFn string) {
 	case ast.SelectKind:
 		s := e.AsSelect()
 		if s.IsTestOnly() {
-			w.setErr(fail(CodeParse, "Presence tests are not supported."))
+			w.setErr(fail(CodeParse, "Presence tests are not supported; use 'k' in m."))
 			return
 		}
 		op := s.Operand()
@@ -368,7 +378,7 @@ func (w *walker) walk(e ast.Expr, depth int, parentFn string) {
 		c := e.AsCall()
 		fn := c.FunctionName()
 		next := depth + 1
-		if fn == parentFn && !c.IsMemberFunction() {
+		if chainableOps[fn] && fn == parentFn && !c.IsMemberFunction() {
 			next = depth
 		}
 		if c.IsMemberFunction() {

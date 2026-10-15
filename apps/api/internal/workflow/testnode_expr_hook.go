@@ -3,6 +3,7 @@ package workflow
 import (
 	"fmt"
 	"sync/atomic"
+	"testing"
 )
 
 // test.ffx is a test-only node with FFX expr fields (#650 E3.2). E3.2 adds
@@ -12,8 +13,10 @@ import (
 //
 // It lives outside the fftest registry (IsTestNode stays false, so the
 // untagged-build guard still holds) and is visible to the parser only after
-// a test calls EnableExpressionTestNode. No production code path calls it.
-// A test.ffx version is never dispatched to a local evaluator.
+// a test calls EnableExpressionTestNode. That helper panics unless
+// testing.Testing() is true, so a production binary that somehow linked it
+// cannot turn the node on. A test.ffx version is never dispatched to a
+// local evaluator.
 const TestExprNodeType = "test.ffx"
 
 var exprTestNode atomic.Pointer[testNode]
@@ -31,7 +34,12 @@ func lookupTestNode(typ string) (testNode, bool) {
 }
 
 // EnableExpressionTestNode makes test.ffx parse. Tests only.
+// It panics outside go test so the hook cannot be turned on in a
+// production binary even though the symbol is linked.
 func EnableExpressionTestNode() {
+	if !testing.Testing() {
+		panic("workflow.EnableExpressionTestNode is for tests only")
+	}
 	if exprTestNode.Load() != nil {
 		return
 	}

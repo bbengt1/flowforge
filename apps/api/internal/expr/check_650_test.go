@@ -231,6 +231,71 @@ func TestFFXLimits650(t *testing.T) {
 	wantOK(t, strings.Join(terms[:20], "+"), perItem())
 }
 
+// L2: same-operator chaining is limited to &&, ||, + and *. Nested
+// ternaries and ! each count a level, so depth 9 is rejected and depth 8
+// still passes. CEL folds !!, so ! nesting uses parenthesized form.
+func TestFFXNestingSameOpLimit650(t *testing.T) {
+	// Right-associative ternary chain: n=7 → nesting 8 (ok), n=8 → 9 (reject).
+	ternary := func(n int) string {
+		return strings.Repeat("true ? 1 : ", n) + "0"
+	}
+	wantOK(t, ternary(7), perItem())
+	wantCode(t, ternary(8), perItem(), CodeTooComplex)
+
+	bangs := func(n int) string {
+		return strings.Repeat("!(", n) + "true" + strings.Repeat(")", n)
+	}
+	wantOK(t, bangs(7), perItem())
+	wantCode(t, bangs(8), perItem(), CodeTooComplex)
+
+	ands := make([]string, 20)
+	for i := range ands {
+		ands[i] = "true"
+	}
+	wantOK(t, strings.Join(ands, "&&"), perItem())
+	wantOK(t, strings.Join(ands, "||"), perItem())
+	muls := make([]string, 20)
+	for i := range muls {
+		muls[i] = "2"
+	}
+	wantOK(t, strings.Join(muls, "*"), perItem())
+}
+
+func TestFFXPresencePointsToIn650(t *testing.T) {
+	// has() is not in the FFX macro set, so Check rejects it without echoing.
+	_, err := Check(`has(item.x)`, perItem())
+	if err == nil {
+		t.Fatal("has() accepted")
+	}
+	if strings.Contains(err.Message, "item.x") || strings.Contains(err.Message, "has(") {
+		t.Fatalf("message echoes user expression: %q", err.Message)
+	}
+	// Exercise the IsTestOnly path with CEL's default HasMacro so the
+	// defense-in-depth message stays pointed at 'k' in m.
+	env, errEnv := cel.NewEnv(cel.Variable("item", objectType))
+	if errEnv != nil {
+		t.Fatal(errEnv)
+	}
+	parsed, iss := env.Parse(`has(item.x)`)
+	if iss.Err() != nil {
+		t.Fatal(iss.Err())
+	}
+	w := walker{sc: perItem(), iter: map[string]bool{}}
+	w.walk(parsed.NativeRep().Expr(), 1, "")
+	if w.err == nil {
+		t.Fatal("presence test accepted")
+	}
+	if w.err.Code != CodeParse {
+		t.Fatalf("code %s, want %s", w.err.Code, CodeParse)
+	}
+	if !strings.Contains(w.err.Message, "'k' in m") {
+		t.Fatalf("message %q should point to 'k' in m", w.err.Message)
+	}
+	if strings.Contains(w.err.Message, "item.x") {
+		t.Fatalf("message echoes user expression: %q", w.err.Message)
+	}
+}
+
 // T3 ffx_cost_bomb: nested comprehensions over capped lists are rejected
 // at publish by the static estimate.
 func TestFFXCostBomb650(t *testing.T) {

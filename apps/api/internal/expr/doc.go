@@ -11,7 +11,8 @@
 // The environment starts on purpose from cel.NewEnv's standard library. No
 // cel-go ext package is enabled (in particular never ext.Encoders, which
 // would let base64 carry values past redaction). Macros are cut down to the
-// bounded all/exists/map/filter set. There are no user-defined functions
-// and no wall-clock function: CEL's standard library has no now(), and
-// run.clock is an injected per-attempt value.
+// bounded all/exists/map/filter set. Presence tests (has) are not enabled;
+// use the in operator instead (for example 'k' in m). There are no
+// user-defined functions and no wall-clock function: CEL's standard library
+// has no now(), and run.clock is an injected per-attempt value.
 package expr
