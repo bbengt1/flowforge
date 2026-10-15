@@ -162,35 +162,53 @@ func TestPostgresCloseApprovalsOnCancelAndDelete(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		approver, err := isolation.Authorize(ws.ID, approverUser.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
+		// Own workspace so ClaimJob can only pick this subtest's gate, never a
+		// job left queued by an earlier subtest.
+		raceScope, approver := desk(t, ctx, ids, tenant.ID, user.ID, approverUser.ID, suffix+7)
 		for i := 0; i < 4; i++ {
-			exec := startApprovalRun(t, ctx, workflows, scope)
-			rec := bindApproval(t, ctx, store, scope, exec)
+			exec := startApprovalRun(t, ctx, workflows, raceScope)
+			// Fresh clock per run: the shared now is fixed at test start, and a
+			// slow (-race) loop can pass it before the gate job becomes claimable.
+			at := time.Now().UTC().Add(time.Second)
+			// Park the gate the way the worker does (#674): claim it, then
+			// WaitJob with the approval seed. Without this the run stays queued
+			// and a decide that wins the lock correctly expires the approval.
+			gate := claimStep(t, ctx, workflows, raceScope, at, "gate")
+			if gate.Job.ExecutionID != exec.ID {
+				t.Fatalf("claimed job of run %s, want %s", gate.Job.ExecutionID, exec.ID)
+			}
+			if _, err := workflows.WaitJob(ctx, raceScope, at, wfstore.WaitJobInput{
+				JobID: gate.Job.ID, AvailableAt: at.Add(time.Hour), Approval: parkedSeed(exec),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			rec := onePending(t, ctx, store, raceScope, exec.ID)
+			if run, err := workflows.GetExecutionByID(ctx, raceScope, exec.ID); err != nil || run.Status == wfstore.ExecutionCanceled {
+				t.Fatalf("parked run = %+v %v", run, err)
+			}
+
 			var decideErr, cancelErr error
 			var decided Record
 			assertNoDeadlock(t, func() error {
 				decided, decideErr = store.Decide(ctx, approver, rec.ID, DecideInput{
-					Decision: DecisionApproved, Now: now, Roles: []string{"approver"},
+					Decision: DecisionApproved, Now: at, Roles: []string{"approver"},
 					Resolve: func(context.Context, isolation.Scope, Record) (policy.Requirement, error) {
 						return StoredRequirement(rec), nil
 					},
 				})
 				return decideErr
 			}, func() error {
-				_, cancelErr = workflows.CancelExecution(ctx, scope, now, exec.ID)
+				_, cancelErr = workflows.CancelExecution(ctx, raceScope, at, exec.ID)
 				return cancelErr
 			})
 			if cancelErr != nil {
 				t.Fatalf("cancel = %v", cancelErr)
 			}
-			got, err := store.Get(ctx, scope, rec.ID)
+			got, err := store.Get(ctx, raceScope, rec.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
-			run, err := workflows.GetExecutionByID(ctx, scope, exec.ID)
+			run, err := workflows.GetExecutionByID(ctx, raceScope, exec.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -199,15 +217,19 @@ func TestPostgresCloseApprovalsOnCancelAndDelete(t *testing.T) {
 			}
 			switch {
 			case decideErr == nil:
-				if decided.Status != DecisionApproved || got.Status != DecisionApproved || got.CloseReason != "" {
+				// Decide first: the decision stands; cancel then ends the run
+				// without rewriting the decided approval.
+				if decided.Status != DecisionApproved || got.Status != DecisionApproved || got.CloseReason != "" || got.DecidedBy != approverUser.ID {
 					t.Fatalf("decision won but approval = %+v decided %+v", got, decided)
 				}
 			case errors.Is(decideErr, ErrClosed):
+				// Cancel first: the parked approval is closed as run_canceled
+				// and nobody is recorded as the decider.
 				if got.Status != StatusCanceled || got.CloseReason != ReasonRunCanceled || got.DecidedBy != "" {
 					t.Fatalf("cancel won but approval = %+v", got)
 				}
 			default:
-				t.Fatalf("decide = %v", decideErr)
+				t.Fatalf("decide = %v (approval %+v)", decideErr, got)
 			}
 		}
 	})
