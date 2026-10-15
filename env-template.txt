@@ -226,6 +226,21 @@ PLATFORM_ADMINS=https://idp.example|admin-1
 # Generate with: openssl rand -base64 32
 # Keep it stable. Changing or losing it makes already-enrolled factors
 # undecryptable. Apply with: docker compose up -d --force-recreate api
+#
+# Testing step-up in compose (#679): there is no separate MFA test
+# switch. Setting this key in your local .env is the switch. It turns on
+# real TOTP enrollment and verification only: no bypass and no fixed
+# code. Off by default because compose ships no value, unlike the
+# JOB_BINDING_SECRET default, since this key protects stored factors.
+# Generate a fresh key per machine and never commit it:
+#   echo "MFA_SECRET_KEY=$(openssl rand -base64 32)" >> .env
+#   docker compose up -d --force-recreate api
+# Then sign in (POST /api/v1/login), POST /api/v1/session/mfa/enroll,
+# add the otpauth URI to an authenticator, and POST
+# /api/v1/session/mfa/verify with the current code. The session is then
+# stepped up for routes such as PUT /api/v1/workspace/error-workflow.
+# Skipping step-up stays MFA_ENFORCEMENT=off, which production-locked
+# processes refuse at boot (#570).
 # MFA_SECRET_KEY=
 
 # --- Embed assertions (E11.1 / ADV-006 / ADV-022) ---
