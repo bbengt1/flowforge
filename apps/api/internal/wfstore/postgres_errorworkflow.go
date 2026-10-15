@@ -14,7 +14,7 @@ import (
 
 const latestVersionSQL = `
 SELECT id::text, workflow_id::text, version_number, normalized_yaml, definition_digest,
-       parsed_definition, publish_note, COALESCE(published_by::text, ''), published_at
+       parsed_definition, publish_note, COALESCE(published_by::text, ''), published_at, catalog_revision
 FROM workflow_versions
 WHERE workspace_id = $1::uuid AND workflow_id = $2::uuid
 ORDER BY version_number DESC

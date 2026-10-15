@@ -488,6 +488,13 @@ func newServer(d Deps) *API {
 		ExchangePrincipal: -1,
 		MintPrincipal:     -1,
 	})
+	// Dedicated type-check limiter (#650 E3.2): per user and per workspace.
+	s.TypecheckLimiter = embed.NewLimiter(embed.Limits{
+		Window:            time.Minute,
+		ExchangeIP:        -1,
+		ExchangePrincipal: -1,
+		MintPrincipal:     -1,
+	})
 	s.SetupIPLimit = d.SetupIPLimit
 	if s.SetupIPLimit == 0 {
 		s.SetupIPLimit = bootstrap.DefaultSetupIPLimit
@@ -529,6 +536,7 @@ func newServer(d Deps) *API {
 		s.MachineLimiter.UseShared(shared)
 		s.SetupLimiter.UseShared(shared)
 		s.ItemsLimiter.UseShared(shared)
+		s.TypecheckLimiter.UseShared(shared)
 	}
 	if s.Quota == nil {
 		s.Quota = quota.NewMemory()

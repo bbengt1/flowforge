@@ -356,6 +356,12 @@ export const GENERATED_PROXY_ROUTES: readonly GeneratedProxyRoute[] = [
   },
   {
     methods: ["POST"],
+    pattern: ["workflows", "{workflowId}", "draft", "typecheck"],
+    auth: "authenticated",
+    params: {workflowId: "uuid"},
+  },
+  {
+    methods: ["POST"],
     pattern: ["workflows", "{workflowId}", "publish"],
     auth: "authenticated",
     params: {workflowId: "uuid"},

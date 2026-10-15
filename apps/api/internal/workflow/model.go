@@ -68,7 +68,16 @@ type WithField struct {
 	Required    bool     `json:"required"`
 	Enum        []string `json:"enum,omitempty"`
 	Description string   `json:"description,omitempty"`
+	// ExprType is the result kind of an expr field (Kind "expr", #650
+	// §4): a PortKind, or "secretRef" for a credential-ref field.
+	ExprType string `json:"exprType,omitempty"`
+	// AcceptsSecretRef lets an expr field take vars.<name> pass-through.
+	AcceptsSecretRef bool `json:"acceptsSecretRef,omitempty"`
 }
+
+// WithKindExpr marks a with field that holds an FFX expression as
+// {expr: "..."}. Expressions are allowed only in fields so declared.
+const WithKindExpr = "expr"
 
 // NodePolicy is the publish-time permission and retry contract.
 type NodePolicy struct {
@@ -223,7 +232,10 @@ type NodeType struct {
 
 // Catalog is the typed graph vocabulary published to the UI.
 type Catalog struct {
-	APIVersion      string          `json:"apiVersion"`
+	APIVersion string `json:"apiVersion"`
+	// CatalogRevision versions node semantics within flowforge/v1 (#650
+	// §7, §9b #6). It is stored on each published version.
+	CatalogRevision int             `json:"catalogRevision"`
 	Rules           CatalogRules    `json:"rules"`
 	IntegrationGate IntegrationGate `json:"integrationGate"`
 	Triggers        []TriggerType   `json:"triggers"`
@@ -349,6 +361,10 @@ type Summary struct {
 	Edges       []EdgeSummary    `json:"edges"`
 	Outputs     []OutputSummary  `json:"outputs"`
 	UI          *UISummary       `json:"ui,omitempty"`
+	// Expressions are the statically extracted FFX refs, recorded on a
+	// published version only (#650 §4). Absent on drafts and legacy
+	// versions.
+	Expressions []ExpressionRef `json:"expressions,omitempty"`
 }
 
 // UISummary is the optional non-authoritative canvas hint projection.

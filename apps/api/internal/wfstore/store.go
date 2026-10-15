@@ -226,6 +226,9 @@ type Version struct {
 	PublishNote    string           `json:"publishNote"`
 	PublishedBy    string           `json:"publishedBy,omitempty"`
 	PublishedAt    time.Time        `json:"publishedAt"`
+	// CatalogRevision is the catalog revision the version was published
+	// against (#650 E3.2). Nil for versions published before it existed.
+	CatalogRevision *int `json:"catalogRevision,omitempty"`
 }
 
 // Execution is a durable run pinned to a published version and digest.
@@ -579,6 +582,14 @@ type SaveInput struct {
 type PublishInput struct {
 	ExpectedRevision int64
 	Note             string
+	// CheckedDigest is the draft digest the caller ran the publish-time
+	// expression check on (#650 E3.2). When set, publish fails with
+	// ErrRevisionConflict if the draft changed since, so an unchecked
+	// draft can never be published under a checked report.
+	CheckedDigest string
+	// Expressions are the statically extracted FFX refs recorded on the
+	// version's parsed definition.
+	Expressions []workflow.ExpressionRef
 }
 
 // RestoreInput copies a published version into the mutable draft.

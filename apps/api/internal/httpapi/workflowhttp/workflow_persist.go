@@ -356,6 +356,18 @@ func PublishWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		writeWorkflowErrors(w, r, errs)
 		return
 	}
+	// #650 E3.2: re-parse the stored draft and run the publish-time FFX
+	// check. Publish is pinned to the digest that was checked.
+	checked, errs := workflow.ParseAndNormalize([]byte(draft.DefinitionYAML))
+	if len(errs) > 0 {
+		writeWorkflowErrors(w, r, errs)
+		return
+	}
+	exprReport, errs := workflow.CheckExpressions(checked.Document)
+	if len(errs) > 0 {
+		writeWorkflowErrors(w, r, errs)
+		return
+	}
 	if refs := opsconfig.ExtractRefs(draft.DefinitionYAML); len(refs) > 0 && s.Ops != nil {
 		if _, err := s.Ops.Resolve(r.Context(), scope, refs); err != nil {
 			WriteOpsError(w, r, err)
@@ -365,6 +377,8 @@ func PublishWorkflow(s *core.Server, w http.ResponseWriter, r *http.Request) {
 	wf, ver, err := s.Workflows.Publish(r.Context(), scope, strings.TrimSpace(r.PathValue("workflowId")), wfstore.PublishInput{
 		ExpectedRevision: req.Revision,
 		Note:             req.Note,
+		CheckedDigest:    draft.Digest,
+		Expressions:      exprReport.Refs,
 	})
 	if err != nil {
 		WriteWorkflowStoreError(w, r, err)

@@ -494,6 +494,9 @@ func (p *Postgres) Publish(ctx context.Context, scope isolation.Scope, workflowI
 	if in.ExpectedRevision > 0 && draft.Revision != in.ExpectedRevision {
 		return Workflow{}, Version{}, ErrRevisionConflict
 	}
+	if in.CheckedDigest != "" && draft.Digest != in.CheckedDigest {
+		return Workflow{}, Version{}, ErrRevisionConflict
+	}
 
 	var next int
 	if err := tx.QueryRow(ctx, `
@@ -503,7 +506,9 @@ func (p *Postgres) Publish(ctx context.Context, scope isolation.Scope, workflowI
 		return Workflow{}, Version{}, mapDBErr(err)
 	}
 
-	parsed, err := json.Marshal(draft.Summary)
+	summary := draft.Summary
+	summary.Expressions = in.Expressions
+	parsed, err := json.Marshal(summary)
 	if err != nil {
 		return Workflow{}, Version{}, ErrInvalid
 	}
@@ -511,11 +516,11 @@ func (p *Postgres) Publish(ctx context.Context, scope isolation.Scope, workflowI
 	ver, err := scanVersion(tx.QueryRow(ctx, `
 		INSERT INTO workflow_versions (
 			workspace_id, workflow_id, version_number, normalized_yaml, definition_digest,
-			parsed_definition, publish_note, published_by
-		) VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::jsonb, $7, $8::uuid)
+			parsed_definition, publish_note, published_by, catalog_revision
+		) VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::jsonb, $7, $8::uuid, $9)
 		RETURNING id::text, workflow_id::text, version_number, normalized_yaml, definition_digest,
-		          parsed_definition, publish_note, COALESCE(published_by::text, ''), published_at
-	`, scope.WorkspaceID(), workflowID, next, draft.DefinitionYAML, draft.Digest, parsed, in.Note, actorArg(scope)))
+		          parsed_definition, publish_note, COALESCE(published_by::text, ''), published_at, catalog_revision
+	`, scope.WorkspaceID(), workflowID, next, draft.DefinitionYAML, draft.Digest, parsed, in.Note, actorArg(scope), workflow.CatalogRevision))
 	if err != nil {
 		return Workflow{}, Version{}, err
 	}
@@ -576,7 +581,7 @@ func (p *Postgres) ListVersionsPage(ctx context.Context, scope isolation.Scope, 
 	args := []any{workflowID}
 	sql := `
 		SELECT id::text, workflow_id::text, version_number, normalized_yaml, definition_digest,
-		       parsed_definition, publish_note, COALESCE(published_by::text, ''), published_at
+		       parsed_definition, publish_note, COALESCE(published_by::text, ''), published_at, catalog_revision
 		FROM workflow_versions
 		WHERE workflow_id = $1::uuid`
 	if pred := page.SearchPredicate(&args, q.Q, "publish_note"); pred != "" {
@@ -1063,7 +1068,7 @@ WHERE workflow_id = $1::uuid
 
 const getVersionSQL = `
 SELECT id::text, workflow_id::text, version_number, normalized_yaml, definition_digest,
-       parsed_definition, publish_note, COALESCE(published_by::text, ''), published_at
+       parsed_definition, publish_note, COALESCE(published_by::text, ''), published_at, catalog_revision
 FROM workflow_versions
 WHERE workflow_id = $1::uuid AND id = $2::uuid
 `
@@ -1120,7 +1125,7 @@ func resolveCompareTx(ctx context.Context, tx pgx.Tx, workflowID string, ref Com
 		}
 		ver, err := scanVersion(tx.QueryRow(ctx, `
 			SELECT id::text, workflow_id::text, version_number, normalized_yaml, definition_digest,
-			       parsed_definition, publish_note, COALESCE(published_by::text, ''), published_at
+			       parsed_definition, publish_note, COALESCE(published_by::text, ''), published_at, catalog_revision
 			FROM workflow_versions
 			WHERE workflow_id = $1::uuid AND version_number = $2
 		`, workflowID, ref.VersionNumber))
@@ -1171,7 +1176,7 @@ func scanVersion(row rowScanner) (Version, error) {
 	var raw []byte
 	if err := row.Scan(
 		&v.ID, &v.WorkflowID, &v.VersionNumber, &v.DefinitionYAML, &v.Digest, &raw,
-		&v.PublishNote, &v.PublishedBy, &v.PublishedAt,
+		&v.PublishNote, &v.PublishedBy, &v.PublishedAt, &v.CatalogRevision,
 	); err != nil {
 		return Version{}, mapDBErr(err)
 	}
