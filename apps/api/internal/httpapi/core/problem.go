@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -235,9 +236,12 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 		case errors.As(err, &typeErr) && typeErr.Field != "" && typeErr.Type != nil:
 			// Valid JSON with a wrong-typed field: name the field and the
 			// expected type, never the value.
-			msg := typeErr.Field + " must be " + jsonTypeName(typeErr.Type) + "."
+			// The path is cut at the first map key, since map keys are
+			// chosen by the client and must not be echoed.
+			field, typ := fieldPathBeforeMapKey(reflect.TypeOf(dst), typeErr.Field, typeErr.Type)
+			msg := field + " must be " + jsonTypeName(typ) + "."
 			WriteProblemErrors(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", msg,
-				[]FieldError{{Path: typeErr.Field, Code: CodeInvalidType, Message: msg}})
+				[]FieldError{{Path: field, Code: CodeInvalidType, Message: msg}})
 		case errors.As(err, &maxBytes):
 			WriteProblem(w, r, http.StatusRequestEntityTooLarge, CodeRequestTooLarge, "Request Too Large", "The request body exceeds the 1048576 byte limit.")
 		case errors.Is(err, io.EOF):
@@ -252,6 +256,71 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 		return false
 	}
 	return true
+}
+
+// fieldPathBeforeMapKey walks the dotted json field path through t and
+// stops at the first map, so a client-chosen map key is never reported.
+// When it stops early the reported type is the map itself ("an object").
+func fieldPathBeforeMapKey(t reflect.Type, path string, leaf reflect.Type) (string, reflect.Type) {
+	segs := strings.Split(path, ".")
+	for i, seg := range segs {
+		for t != nil && (t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice || t.Kind() == reflect.Array) {
+			t = t.Elem()
+		}
+		if t == nil {
+			return path, leaf
+		}
+		if t.Kind() == reflect.Map {
+			if i == 0 {
+				return "body", t
+			}
+			return strings.Join(segs[:i], "."), t
+		}
+		if t.Kind() != reflect.Struct {
+			return path, leaf
+		}
+		next, ok := jsonFieldType(t, seg)
+		if !ok {
+			return path, leaf
+		}
+		t = next
+	}
+	return path, leaf
+}
+
+// jsonFieldType finds the struct field that decodes from json name, using
+// the same case-insensitive match as encoding/json, through embedded structs.
+func jsonFieldType(t reflect.Type, name string) (reflect.Type, bool) {
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		tag := f.Tag.Get("json")
+		if tag == "-" {
+			continue
+		}
+		tagName, _, _ := strings.Cut(tag, ",")
+		if f.Anonymous && tagName == "" {
+			et := f.Type
+			if et.Kind() == reflect.Pointer {
+				et = et.Elem()
+			}
+			if et.Kind() == reflect.Struct {
+				if ft, ok := jsonFieldType(et, name); ok {
+					return ft, true
+				}
+			}
+			continue
+		}
+		if !f.IsExported() {
+			continue
+		}
+		if tagName == "" {
+			tagName = f.Name
+		}
+		if strings.EqualFold(tagName, name) {
+			return f.Type, true
+		}
+	}
+	return nil, false
 }
 
 // CodeInvalidType is the field error code for a value of the wrong JSON type.
