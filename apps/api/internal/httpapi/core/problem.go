@@ -285,6 +285,14 @@ func fieldPathBeforeMapKey(t reflect.Type, path string, leaf reflect.Type) (stri
 		}
 		t = next
 	}
+	// Some Go versions stop the path at the map field itself; report the
+	// map the same way.
+	for t != nil && t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t != nil && t.Kind() == reflect.Map {
+		return path, t
+	}
 	return path, leaf
 }
 

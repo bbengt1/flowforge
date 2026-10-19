@@ -45,6 +45,21 @@ func decodeProblem(t *testing.T, body string, dst any) (string, string) {
 	return p.Errors[0].Path, p.Detail
 }
 
+// A top-level map never echoes the key, whichever error form the Go
+// version produces.
+func TestDecodeJSONTopLevelMapKeyNotEchoed(t *testing.T) {
+	const secretKey = "client-chosen-key-xyz"
+	r := httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(`{"`+secretKey+`":"a"}`))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	if DecodeJSON(w, r, &map[string]int{}) {
+		t.Fatal("decode succeeded")
+	}
+	if w.Code != http.StatusBadRequest || strings.Contains(w.Body.String(), secretKey) {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+}
+
 func TestDecodeJSONFieldPathStopsAtMapKey(t *testing.T) {
 	const secretKey = "client-chosen-key-xyz"
 	cases := []struct {
@@ -54,7 +69,6 @@ func TestDecodeJSONFieldPathStopsAtMapKey(t *testing.T) {
 		{"struct field", `{"inner":{"count":"a"}}`, "inner.count", "inner.count must be an integer.", &fieldPathReq{}},
 		{"map value", `{"labels":{"` + secretKey + `":"a"}}`, "labels", "labels must be an object.", &fieldPathReq{}},
 		{"map struct value", `{"nested":{"` + secretKey + `":{"count":"a"}}}`, "nested", "nested must be an object.", &fieldPathReq{}},
-		{"top-level map", `{"` + secretKey + `":"a"}`, "body", "body must be an object.", &map[string]int{}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
