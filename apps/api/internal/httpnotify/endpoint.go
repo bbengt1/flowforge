@@ -1,11 +1,14 @@
 package httpnotify
 
 import (
+	"encoding/json"
 	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 )
 
 // EndpointPolicy is the pinned connection endpointPolicy snapshot.
@@ -317,6 +320,12 @@ func asInt(raw any) (int, error) {
 			return 0, ErrInvalid
 		}
 		return int(v), nil
+	case json.Number:
+		// Exact when it fits int; a larger value is invalid, never rounded.
+		if n, ok := jsonnum.Int(v); ok {
+			return n, nil
+		}
+		return 0, ErrInvalid
 	default:
 		return 0, ErrInvalid
 	}

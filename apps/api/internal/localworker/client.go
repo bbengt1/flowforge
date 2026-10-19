@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/identity"
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"go.opentelemetry.io/otel/trace"
@@ -146,7 +147,7 @@ func (h *HTTP) Claim(ctx context.Context, tenantSlug, workbenchKey string) (*Cla
 		Job           wfstore.ExecutionJob   `json:"job"`
 		Step          wfstore.ExecutionStep  `json:"step"`
 		Execution     wfstore.Execution      `json:"execution"`
-		Inputs        map[string]any         `json:"inputs"`
+		Inputs        jsonnum.Object         `json:"inputs"`
 		SkippedInputs []wfstore.SkippedInput `json:"skippedInputs"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
@@ -154,6 +155,23 @@ func (h *HTTP) Claim(ctx context.Context, tenantSlug, workbenchKey string) (*Cla
 	}
 	if !payload.Claimed {
 		return nil, nil
+	}
+	// The step's with values and output are decoded again without
+	// rounding, so a whole number outside ±2^53 reaches the node exactly.
+	var exact struct {
+		Step struct {
+			Input  jsonnum.Object `json:"input"`
+			Output jsonnum.Object `json:"output"`
+		} `json:"step"`
+	}
+	if err := json.Unmarshal(raw, &exact); err != nil {
+		return nil, err
+	}
+	if exact.Step.Input != nil {
+		payload.Step.Input = exact.Step.Input
+	}
+	if exact.Step.Output != nil {
+		payload.Step.Output = exact.Step.Output
 	}
 	parent := strings.TrimSpace(hdr.Get(observability.TraceParentHeader))
 	state := strings.TrimSpace(hdr.Get(observability.TraceStateHeader))

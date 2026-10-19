@@ -12,6 +12,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/approvalhttp"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/core"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
@@ -36,7 +37,7 @@ type jobActionRequest struct {
 	WorkerID       string         `json:"workerId"`
 	FencingToken   int64          `json:"fencingToken"`
 	LeaseSeconds   int            `json:"leaseSeconds"`
-	Output         map[string]any `json:"output"`
+	Output         jsonnum.Object `json:"output"`
 	Error          map[string]any `json:"error"`
 }
 

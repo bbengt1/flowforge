@@ -1,8 +1,11 @@
 package workflow
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 )
 
 var schemaTypes = map[string]bool{
@@ -178,18 +181,24 @@ func validateAgainstSchema(value any, schema map[string]any, path string, bounds
 			}
 		}
 	}
-	if raw, ok := schema["minimum"]; ok {
-		if n, ok := asFloat64(value); ok {
-			if min, ok := asFloat64(raw); ok && n < min {
-				errs = append(errs, fieldError(path, 0, 0, CodeInvalidWith, "Value is below schema.minimum."))
-			}
+	// minimum/maximum compare exactly (a whole number the store kept as a
+	// json.Number is never rounded). A value too large to compare exactly
+	// is refused with a fixed message that names the field only.
+	for _, bound := range []struct {
+		key, msg string
+		bad      int
+	}{{"minimum", "Value is below schema.minimum.", -1}, {"maximum", "Value is above schema.maximum.", 1}} {
+		raw, ok := schema[bound.key]
+		if !ok || !jsonnum.IsNumber(value) || !jsonnum.IsNumber(raw) {
+			continue
 		}
-	}
-	if raw, ok := schema["maximum"]; ok {
-		if n, ok := asFloat64(value); ok {
-			if max, ok := asFloat64(raw); ok && n > max {
-				errs = append(errs, fieldError(path, 0, 0, CodeInvalidWith, "Value is above schema.maximum."))
-			}
+		c, err := jsonnum.Compare(value, raw)
+		if err != nil {
+			errs = append(errs, fieldError(path, 0, 0, CodeInvalidWith, "Value is too large to compare exactly with schema."+bound.key+"."))
+			continue
+		}
+		if c == bound.bad {
+			errs = append(errs, fieldError(path, 0, 0, CodeInvalidWith, bound.msg))
 		}
 	}
 
@@ -273,11 +282,16 @@ func valueMatchesType(v any, typ string) bool {
 		_, ok := v.(string)
 		return ok
 	case "integer":
+		if n, isNum := v.(json.Number); isNum {
+			// Exact: a whole number the store kept as a json.Number is an
+			// integer even outside int64; it is never rounded.
+			ok, _ := jsonnum.IsInteger(n)
+			return ok
+		}
 		_, ok := asInt64(v)
 		return ok
 	case "number":
-		_, ok := asFloat64(v)
-		return ok
+		return jsonnum.IsNumber(v)
 	case "boolean":
 		_, ok := v.(bool)
 		return ok

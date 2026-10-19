@@ -254,7 +254,7 @@ func TestNormalizeJSONDepthFailsClosed650(t *testing.T) {
 	for i := 0; i < maxResultDepth+2; i++ {
 		deep = map[string]any{"x": deep}
 	}
-	if _, ok := normalizeJSON(deep, 0); ok {
+	if _, err := normalizeJSON(deep, 0); err == nil {
 		t.Fatal("deep value normalized")
 	}
 	_, err := Eval(context.Background(), `item.x != null`, objScope(KindBoolean), Env{Item: deep.(map[string]any), HasItem: true})
@@ -262,8 +262,8 @@ func TestNormalizeJSONDepthFailsClosed650(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 	shallow := map[string]any{"x": map[string]any{"n": float64(2)}}
-	if v, ok := normalizeJSON(shallow, 0); !ok || v.(map[string]any)["x"].(map[string]any)["n"] != int64(2) {
-		t.Fatalf("shallow: %v %v", v, ok)
+	if v, err := normalizeJSON(shallow, 0); err != nil || v.(map[string]any)["x"].(map[string]any)["n"] != int64(2) {
+		t.Fatalf("shallow: %v %v", v, err)
 	}
 }
 

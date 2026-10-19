@@ -12,6 +12,8 @@ import (
 	"cel.dev/cel-go/common/types"
 	"cel.dev/cel-go/common/types/ref"
 	"cel.dev/cel-go/common/types/traits"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 )
 
 // Runtime limits (#650 §4). EvalDeadline bounds one evaluation;
@@ -123,9 +125,9 @@ func activation(r Refs, env Env) (map[string]any, *Error) {
 		if !env.HasItem {
 			return nil, fail(CodeRuntime, "item is not an object at runtime.")
 		}
-		nv, ok := normalizeJSON(env.Item, 0)
-		if !ok {
-			return nil, errInputTooDeep
+		nv, nerr := normalizeJSON(env.Item, 0)
+		if nerr != nil {
+			return nil, nerr
 		}
 		act["item"] = nv
 	}
@@ -133,9 +135,9 @@ func activation(r Refs, env Env) (map[string]any, *Error) {
 		if !env.HasItems {
 			return nil, fail(CodeRuntime, "items is not available at runtime.")
 		}
-		nv, ok := normalizeJSON(env.Items, 0)
-		if !ok {
-			return nil, errInputTooDeep
+		nv, nerr := normalizeJSON(env.Items, 0)
+		if nerr != nil {
+			return nil, nerr
 		}
 		act["items"] = nv
 	}
@@ -143,9 +145,9 @@ func activation(r Refs, env Env) (map[string]any, *Error) {
 		if env.Trigger == nil {
 			return nil, fail(CodeRuntime, "trigger is not available at runtime.")
 		}
-		nv, ok := normalizeJSON(env.Trigger, 0)
-		if !ok {
-			return nil, errInputTooDeep
+		nv, nerr := normalizeJSON(env.Trigger, 0)
+		if nerr != nil {
+			return nil, nerr
 		}
 		act["trigger"] = nv
 	}
@@ -154,9 +156,9 @@ func activation(r Refs, env Env) (map[string]any, *Error) {
 		if !ok {
 			return nil, fail(CodeRuntime, "An input port the expression reads was not delivered.")
 		}
-		nv, ok := normalizeJSON(v, 0)
-		if !ok {
-			return nil, errInputTooDeep
+		nv, nerr := normalizeJSON(v, 0)
+		if nerr != nil {
+			return nil, nerr
 		}
 		act["input."+p] = nv
 	}
@@ -198,6 +200,20 @@ func activation(r Refs, env Env) (map[string]any, *Error) {
 
 var errInputTooDeep = fail(CodeRuntime, "An input value is nested too deeply.")
 
+// errInputInexact refuses an input whole number that cannot be read
+// exactly (outside the int64 range).
+var errInputInexact = fail(CodeRuntime, "An input whole number is outside the range an expression can read exactly.")
+
+// errResultInexact refuses a result whole number outside ±2^53. Storage
+// and API clients read JSON numbers as float64, which would silently round
+// it, so the step fails closed instead. Like every runtime error it never
+// echoes the value.
+var errResultInexact = fail(CodeRuntime, "Expression result has a whole number outside ±2^53, which cannot be stored exactly; convert it with string() to keep every digit.")
+
+// MaxExactInt is 2^53, the largest whole number magnitude a result may
+// carry (every integer up to it is exact as a float64).
+const MaxExactInt = 1 << 53
+
 var errResultType = fail(CodeType, "Expression result has a type that cannot be stored (only null, bool, number, string, timestamp, list and map are allowed).")
 
 // toNative converts a CEL value to a JSON-shaped Go value. Bytes,
@@ -213,10 +229,13 @@ func toNative(v ref.Val, depth int) (any, *Error) {
 	case types.Bool:
 		return bool(x), nil
 	case types.Int:
+		if int64(x) > MaxExactInt || int64(x) < -MaxExactInt {
+			return nil, errResultInexact
+		}
 		return int64(x), nil
 	case types.Uint:
-		if uint64(x) > math.MaxInt64 {
-			return nil, errResultType
+		if uint64(x) > MaxExactInt {
+			return nil, errResultInexact
 		}
 		return int64(x), nil
 	case types.Double:
@@ -292,53 +311,64 @@ func checkRuntimeWant(v any, sc Scope) *Error {
 // normalizeJSON copies a JSON-decoded value into CEL-friendly Go types.
 // JSON has one number type, so a whole float64 within ±2^53 becomes int64
 // (item.total * 2 works on a stored 5); other numbers stay double. Go int
-// widths become int64 and json.Number is parsed the same way. A value
-// nested deeper than maxResultDepth returns ok=false so the caller fails
-// closed rather than binding an unnormalized value.
-func normalizeJSON(v any, depth int) (any, bool) {
+// widths become int64. A json.Number written as a whole number (the store
+// keeps one outside ±2^53 exact) becomes an exact int64, or fails closed
+// when it is outside the int64 range; any other json.Number is a double.
+// A value nested deeper than maxResultDepth fails closed rather than
+// binding an unnormalized value.
+func normalizeJSON(v any, depth int) (any, *Error) {
 	if depth > maxResultDepth {
-		return nil, false
+		return nil, errInputTooDeep
 	}
 	switch x := v.(type) {
 	case map[string]any:
 		out := make(map[string]any, len(x))
 		for k, e := range x {
-			nv, ok := normalizeJSON(e, depth+1)
-			if !ok {
-				return nil, false
+			nv, err := normalizeJSON(e, depth+1)
+			if err != nil {
+				return nil, err
 			}
 			out[k] = nv
 		}
-		return out, true
+		return out, nil
 	case []any:
 		out := make([]any, len(x))
 		for i, e := range x {
-			nv, ok := normalizeJSON(e, depth+1)
-			if !ok {
-				return nil, false
+			nv, err := normalizeJSON(e, depth+1)
+			if err != nil {
+				return nil, err
 			}
 			out[i] = nv
 		}
-		return out, true
+		return out, nil
 	case float64:
-		if x == math.Trunc(x) && math.Abs(x) <= 1<<53 {
-			return int64(x), true
+		if x == math.Trunc(x) && math.Abs(x) <= MaxExactInt {
+			return int64(x), nil
 		}
-		return x, true
+		return x, nil
 	case float32:
 		return normalizeJSON(float64(x), depth)
 	case int:
-		return int64(x), true
+		return int64(x), nil
 	case int32:
-		return int64(x), true
+		return int64(x), nil
+	case uint64:
+		if x > math.MaxInt64 {
+			return nil, errInputInexact
+		}
+		return int64(x), nil
 	case json.Number:
-		if i, err := x.Int64(); err == nil {
-			return i, true
+		if jsonnum.IsWholeLiteral(x) {
+			i, ok := jsonnum.Int64(x)
+			if !ok {
+				return nil, errInputInexact
+			}
+			return i, nil
 		}
 		if f, err := x.Float64(); err == nil {
-			return f, true
+			return f, nil
 		}
-		return nil, true
+		return nil, errInputInexact
 	}
-	return v, true
+	return v, nil
 }

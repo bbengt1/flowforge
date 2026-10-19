@@ -3,6 +3,8 @@ package workflow
 import (
 	"fmt"
 	"strings"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 )
 
 // EvalResult is the contract evaluation outcome for a core neutral node.
@@ -155,18 +157,24 @@ func compareDeclarative(op string, subject, compare any) (bool, ErrorList) {
 			return false, ErrorList{fieldError("inputs.value", 0, 0, CodeInvalidType, "contains applies to strings or arrays.")}
 		}
 	case "gt", "lt", "gte", "lte":
-		left, lok := asFloat64(subject)
-		right, rok := asFloat64(compare)
-		if lok && rok {
+		// Numbers compare exactly: a whole number outside ±2^53 (kept as
+		// a json.Number) is never rounded through float64. One too large
+		// to compare exactly fails closed with a fixed message that never
+		// echoes the value.
+		if jsonnum.IsNumber(subject) && jsonnum.IsNumber(compare) {
+			c, err := jsonnum.Compare(subject, compare)
+			if err != nil {
+				return false, ErrorList{fieldError("inputs.value", 0, 0, CodeInvalidType, "Value is too large to compare exactly.")}
+			}
 			switch op {
 			case "gt":
-				return left > right, nil
+				return c > 0, nil
 			case "lt":
-				return left < right, nil
+				return c < 0, nil
 			case "gte":
-				return left >= right, nil
+				return c >= 0, nil
 			case "lte":
-				return left <= right, nil
+				return c <= 0, nil
 			}
 		}
 		ls, lok := subject.(string)

@@ -2,6 +2,7 @@ package workflowhttp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/approvalhttp"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/core"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsalert"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/policy"
@@ -640,6 +642,10 @@ func applyScheduleYAMLDefaults(in *schedule.CreateInput, yamlDoc string) {
 		case float64:
 			v := int(n)
 			in.CatchUp = &v
+		case json.Number:
+			if v, ok := jsonnum.Int(n); ok {
+				in.CatchUp = &v
+			}
 		}
 	}
 }
