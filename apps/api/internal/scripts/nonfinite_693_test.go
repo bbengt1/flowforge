@@ -21,3 +21,11 @@ func TestSchemaBoundsRefuseNonFinite(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSchemaTypeMessageArticle(t *testing.T) {
+	err := validateValueAgainstSchema("x", map[string]any{"type": "integer"}, "input.n")
+	var ee *EngineError
+	if !errors.As(err, &ee) || ee.Message != "Value is not an integer." {
+		t.Fatalf("err = %v", err)
+	}
+}

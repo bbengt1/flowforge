@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"regexp"
@@ -738,13 +739,35 @@ func decodeScalar(n *yaml.Node) any {
 		if err == nil {
 			return v
 		}
+		if big, ok := bigDecimalInt(n.Value); ok {
+			return big
+		}
 	case "!!float":
+		// YAML resolves a decimal integer beyond int64 as a float; keep
+		// its digits exact instead of rounding.
+		if big, ok := bigDecimalInt(n.Value); ok {
+			return big
+		}
 		v, err := strconv.ParseFloat(n.Value, 64)
 		if err == nil {
 			return v
 		}
 	}
 	return n.Value
+}
+
+var bigDecimalIntRE = regexp.MustCompile(`^[-+]?(0|[1-9][0-9]*)$`)
+
+// bigDecimalInt returns a plain decimal integer literal outside the int64
+// range as an exact json.Number.
+func bigDecimalInt(s string) (json.Number, bool) {
+	if !bigDecimalIntRE.MatchString(s) {
+		return "", false
+	}
+	if _, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return "", false
+	}
+	return json.Number(strings.TrimPrefix(s, "+")), true
 }
 
 func decodeSequence[T any](n *yaml.Node, path string, fn func(*yaml.Node, string) (T, ErrorList)) ([]T, ErrorList) {

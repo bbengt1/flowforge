@@ -2,6 +2,7 @@ package workflowhttp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math"
 	"net/http"
@@ -171,7 +172,9 @@ func createSchedule(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		CatchUp:           req.CatchUp,
 	}
 	if err := applyScheduleYAMLDefaults(&in, ver.DefinitionYAML); err != nil {
-		core.WriteProblem(w, r, http.StatusBadRequest, core.CodeInvalidRequest, "Invalid Request", "The schedule trigger catchUp must be a whole number within range.")
+		msg := "catchUp must be an integer."
+		core.WriteProblemErrors(w, r, http.StatusBadRequest, core.CodeInvalidRequest, "Invalid Request", msg,
+			[]core.FieldError{{Path: "catchUp", Code: core.CodeInvalidType, Message: msg}})
 		return
 	}
 	rec, err := s.Schedules.Create(r.Context(), scope, s.Clock().UTC(), in)
@@ -650,26 +653,34 @@ func applyScheduleYAMLDefaults(in *schedule.CreateInput, yamlDoc string) error {
 }
 
 // errScheduleCatchUp is the fixed error for a catchUp the trigger declares
-// that is not a whole number fitting an int.
-var errScheduleCatchUp = errors.New("schedule catchUp must be a whole number within range")
+// that is not an integer fitting an int. It matches publish validation,
+// which refuses 1.0 and 1e2 with invalid-type.
+var errScheduleCatchUp = errors.New("catchUp must be an integer")
 
-// scheduleCatchUpInt reads a declared catchUp exactly. Whole values written
-// with a decimal point or exponent (1.0, 1e2) are accepted; a fraction,
-// a non-number, or a value that does not fit an int is refused.
+// scheduleCatchUpInt reads a declared catchUp exactly. Only integers are
+// accepted, as publish validation and the API field require: a value
+// written with a decimal point or exponent (1.0, 1e2), a fraction, a
+// non-number, or a value that does not fit an int is refused, never
+// dropped or truncated. Stored documents that skipped validation are the
+// only way such a value reaches here.
 func scheduleCatchUpInt(raw any) (int, error) {
-	r, err := jsonnum.Rat(raw)
-	if err != nil || !r.IsInt() {
-		return 0, errScheduleCatchUp
+	switch n := raw.(type) {
+	case int:
+		return n, nil
+	case int64:
+		if n < math.MinInt || n > math.MaxInt {
+			return 0, errScheduleCatchUp
+		}
+		return int(n), nil
+	case json.Number:
+		if !jsonnum.IsWholeLiteral(n) {
+			return 0, errScheduleCatchUp
+		}
+		if v, ok := jsonnum.Int(n); ok {
+			return v, nil
+		}
 	}
-	n := r.Num()
-	if !n.IsInt64() {
-		return 0, errScheduleCatchUp
-	}
-	v := n.Int64()
-	if v < math.MinInt || v > math.MaxInt {
-		return 0, errScheduleCatchUp
-	}
-	return int(v), nil
+	return 0, errScheduleCatchUp
 }
 
 func writeScheduleAudit(s *core.Server, ctx context.Context, scope isolation.Scope, rec schedule.Record, outcome string, extra map[string]any) {

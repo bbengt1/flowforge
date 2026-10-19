@@ -143,7 +143,7 @@ func validateValueAgainstSchema(value any, schema map[string]any, path string) e
 		return engineError(CodeSizeLimit, fmt.Sprintf("%s exceeds the byte limit.", path), http.StatusBadRequest)
 	}
 	if typ, ok := schema["type"].(string); ok && !valueMatchesType(value, typ) {
-		return &EngineError{Code: CodeInvalidSchema, Message: fmt.Sprintf("Value is not a %s.", typ), Status: http.StatusBadRequest, Path: path}
+		return &EngineError{Code: CodeInvalidSchema, Message: fmt.Sprintf("Value is not %s.", withArticle(typ)), Status: http.StatusBadRequest, Path: path}
 	}
 	if raw, ok := schema["enum"].([]any); ok {
 		found := false
@@ -296,4 +296,12 @@ func isNonFinite(v any) bool {
 		return math.IsNaN(float64(f)) || math.IsInf(float64(f), 0)
 	}
 	return false
+}
+
+// withArticle prefixes a schema type name with "a" or "an".
+func withArticle(typ string) string {
+	if typ != "" && strings.ContainsRune("aeiouAEIOU", rune(typ[0])) {
+		return "an " + typ
+	}
+	return "a " + typ
 }

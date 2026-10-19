@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"reflect"
 	"strconv"
 	"time"
 )
@@ -229,7 +230,14 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 	dec := json.NewDecoder(r.Body)
 	if err := dec.Decode(dst); err != nil {
 		var maxBytes *http.MaxBytesError
+		var typeErr *json.UnmarshalTypeError
 		switch {
+		case errors.As(err, &typeErr) && typeErr.Field != "" && typeErr.Type != nil:
+			// Valid JSON with a wrong-typed field: name the field and the
+			// expected type, never the value.
+			msg := typeErr.Field + " must be " + jsonTypeName(typeErr.Type) + "."
+			WriteProblemErrors(w, r, http.StatusBadRequest, CodeInvalidRequest, "Invalid Request", msg,
+				[]FieldError{{Path: typeErr.Field, Code: CodeInvalidType, Message: msg}})
 		case errors.As(err, &maxBytes):
 			WriteProblem(w, r, http.StatusRequestEntityTooLarge, CodeRequestTooLarge, "Request Too Large", "The request body exceeds the 1048576 byte limit.")
 		case errors.Is(err, io.EOF):
@@ -244,4 +252,30 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 		return false
 	}
 	return true
+}
+
+// CodeInvalidType is the field error code for a value of the wrong JSON type.
+const CodeInvalidType = "invalid-type"
+
+// jsonTypeName names the JSON type a Go type decodes from, with its article.
+func jsonTypeName(t reflect.Type) string {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	switch t.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return "an integer"
+	case reflect.Float32, reflect.Float64:
+		return "a number"
+	case reflect.String:
+		return "a string"
+	case reflect.Bool:
+		return "a boolean"
+	case reflect.Slice, reflect.Array:
+		return "an array"
+	case reflect.Map, reflect.Struct:
+		return "an object"
+	}
+	return "a valid value"
 }
