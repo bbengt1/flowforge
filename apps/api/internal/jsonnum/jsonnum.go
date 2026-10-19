@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
@@ -24,11 +25,6 @@ const MaxExact = 1 << 53
 // or exponent).
 func IsWholeLiteral(n json.Number) bool {
 	return !strings.ContainsAny(string(n), ".eE")
-}
-
-// InExactRange reports whether i is within ±2^53.
-func InExactRange(i int64) bool {
-	return i >= -MaxExact && i <= MaxExact
 }
 
 // Decode unmarshals raw into an any using UseNumber and Normalize. It
@@ -73,8 +69,11 @@ func Normalize(v any) any {
 		return x
 	case json.Number:
 		if IsWholeLiteral(x) {
-			if i, err := strconv.ParseInt(string(x), 10, 64); err == nil && InExactRange(i) {
-				return float64(i)
+			// Exact as a float64 only if it formats back to the same
+			// digits and is within ±2^53.
+			f, err := strconv.ParseFloat(string(x), 64)
+			if err == nil && math.Abs(f) <= MaxExact && strconv.FormatFloat(f, 'f', -1, 64) == string(x) {
+				return f
 			}
 			return x
 		}

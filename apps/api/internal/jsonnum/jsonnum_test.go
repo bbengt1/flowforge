@@ -49,3 +49,19 @@ func TestObjectUnmarshal(t *testing.T) {
 		t.Fatal("non-object accepted")
 	}
 }
+
+func TestNormalizeWholeLiteralEdges(t *testing.T) {
+	for lit, want := range map[string]any{
+		"9007199254740992":  float64(1 << 53),
+		"-9007199254740992": float64(-(1 << 53)),
+		"9007199254740991":  float64(1<<53 - 1),
+		"9007199254740993":  json.Number("9007199254740993"),
+		"-9007199254740993": json.Number("-9007199254740993"),
+		"9007199254740994":  json.Number("9007199254740994"), // exact as float64, but outside ±2^53
+		"0":                 float64(0),
+	} {
+		if got := Normalize(json.Number(lit)); got != want {
+			t.Fatalf("%s: %#v want %#v", lit, got, want)
+		}
+	}
+}
