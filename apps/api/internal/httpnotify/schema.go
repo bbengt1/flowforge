@@ -223,23 +223,6 @@ func asInt64(v any) (int64, bool) {
 	}
 }
 
-func asFloat64(v any) (float64, bool) {
-	switch n := v.(type) {
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	case uint64:
-		return float64(n), true
-	case float64:
-		return n, true
-	case json.Number:
-		return jsonnum.Float64(n)
-	default:
-		return 0, false
-	}
-}
-
 func valuesEqual(a, b any) bool {
 	if jsonnum.IsNumber(a) && jsonnum.IsNumber(b) {
 		c, err := jsonnum.Compare(a, b)

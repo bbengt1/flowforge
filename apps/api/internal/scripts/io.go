@@ -278,20 +278,3 @@ func valuesEqual(a, b any) bool {
 	}
 	return string(left) == string(right)
 }
-
-func asFloat64(v any) (float64, bool) {
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case float32:
-		return float64(n), true
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	case json.Number:
-		// Only when the float64 is exact; comparisons use jsonnum.Compare.
-		return jsonnum.Float64(n)
-	}
-	return 0, false
-}
