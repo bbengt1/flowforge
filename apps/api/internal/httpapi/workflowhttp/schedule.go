@@ -2,8 +2,8 @@ package workflowhttp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -170,7 +170,10 @@ func createSchedule(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		MisfirePolicy:     strings.TrimSpace(req.MisfirePolicy),
 		CatchUp:           req.CatchUp,
 	}
-	applyScheduleYAMLDefaults(&in, ver.DefinitionYAML)
+	if err := applyScheduleYAMLDefaults(&in, ver.DefinitionYAML); err != nil {
+		core.WriteProblem(w, r, http.StatusBadRequest, core.CodeInvalidRequest, "Invalid Request", "The schedule trigger catchUp must be a whole number within range.")
+		return
+	}
 	rec, err := s.Schedules.Create(r.Context(), scope, s.Clock().UTC(), in)
 	if err != nil {
 		writeScheduleStoreError(w, r, err)
@@ -596,10 +599,10 @@ func omitTombstonedSchedules(ctx context.Context, s *core.Server, scope isolatio
 	return out, nil
 }
 
-func applyScheduleYAMLDefaults(in *schedule.CreateInput, yamlDoc string) {
+func applyScheduleYAMLDefaults(in *schedule.CreateInput, yamlDoc string) error {
 	res, errs := workflow.ParseAndNormalize([]byte(yamlDoc))
 	if len(errs) > 0 || res == nil || res.Document == nil {
-		return
+		return nil
 	}
 	var trig *workflow.Trigger
 	for i := range res.Document.Spec.Triggers {
@@ -614,7 +617,7 @@ func applyScheduleYAMLDefaults(in *schedule.CreateInput, yamlDoc string) {
 		break
 	}
 	if trig == nil {
-		return
+		return nil
 	}
 	if in.TriggerID == "" {
 		in.TriggerID = trig.ID
@@ -633,21 +636,40 @@ func applyScheduleYAMLDefaults(in *schedule.CreateInput, yamlDoc string) {
 		in.MisfirePolicy, _ = trig.With["misfirePolicy"].(string)
 	}
 	if in.CatchUp == nil {
-		switch n := trig.With["catchUp"].(type) {
-		case int:
-			in.CatchUp = &n
-		case int64:
-			v := int(n)
-			in.CatchUp = &v
-		case float64:
-			v := int(n)
-			in.CatchUp = &v
-		case json.Number:
-			if v, ok := jsonnum.Int(n); ok {
-				in.CatchUp = &v
+		raw, ok := trig.With["catchUp"]
+		if _, isBool := raw.(bool); ok && raw != nil && !isBool {
+			// catchUp: false keeps the store default, as before.
+			v, err := scheduleCatchUpInt(raw)
+			if err != nil {
+				return err
 			}
+			in.CatchUp = &v
 		}
 	}
+	return nil
+}
+
+// errScheduleCatchUp is the fixed error for a catchUp the trigger declares
+// that is not a whole number fitting an int.
+var errScheduleCatchUp = errors.New("schedule catchUp must be a whole number within range")
+
+// scheduleCatchUpInt reads a declared catchUp exactly. Whole values written
+// with a decimal point or exponent (1.0, 1e2) are accepted; a fraction,
+// a non-number, or a value that does not fit an int is refused.
+func scheduleCatchUpInt(raw any) (int, error) {
+	r, err := jsonnum.Rat(raw)
+	if err != nil || !r.IsInt() {
+		return 0, errScheduleCatchUp
+	}
+	n := r.Num()
+	if !n.IsInt64() {
+		return 0, errScheduleCatchUp
+	}
+	v := n.Int64()
+	if v < math.MinInt || v > math.MaxInt {
+		return 0, errScheduleCatchUp
+	}
+	return int(v), nil
 }
 
 func writeScheduleAudit(s *core.Server, ctx context.Context, scope isolation.Scope, rec schedule.Record, outcome string, extra map[string]any) {
