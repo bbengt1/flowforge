@@ -3,6 +3,8 @@ package httpnotify
 import (
 	"encoding/json"
 	"strings"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 )
 
 const maxSchemaDepth = 16
@@ -60,18 +62,18 @@ func schemaAllowsValue(schema map[string]any, value any, depth int) bool {
 			}
 		}
 	}
-	if raw, ok := schema["minimum"]; ok {
-		if n, ok := asFloat64(value); ok {
-			if min, ok := asFloat64(raw); ok && n < min {
-				return false
-			}
+	// minimum/maximum compare exactly; a value too large to compare
+	// exactly does not match.
+	for _, bound := range []struct {
+		key string
+		bad int
+	}{{"minimum", -1}, {"maximum", 1}} {
+		raw, ok := schema[bound.key]
+		if !ok || !jsonnum.IsNumber(value) || !jsonnum.IsNumber(raw) {
+			continue
 		}
-	}
-	if raw, ok := schema["maximum"]; ok {
-		if n, ok := asFloat64(value); ok {
-			if max, ok := asFloat64(raw); ok && n > max {
-				return false
-			}
+		if c, err := jsonnum.Compare(value, raw); err != nil || c == bound.bad {
+			return false
 		}
 	}
 
@@ -132,11 +134,14 @@ func valueMatchesSchemaType(v any, typ string) bool {
 		_, ok := v.(string)
 		return ok
 	case "integer":
+		if n, isNum := v.(json.Number); isNum {
+			ok, _ := jsonnum.IsInteger(n)
+			return ok
+		}
 		_, ok := asInt64(v)
 		return ok
 	case "number":
-		_, ok := asFloat64(v)
-		return ok
+		return jsonnum.IsNumber(v)
 	case "boolean":
 		_, ok := v.(bool)
 		return ok
@@ -211,6 +216,8 @@ func asInt64(v any) (int64, bool) {
 			return int64(n), true
 		}
 		return 0, false
+	case json.Number:
+		return jsonnum.Int64(n)
 	default:
 		return 0, false
 	}
@@ -226,12 +233,18 @@ func asFloat64(v any) (float64, bool) {
 		return float64(n), true
 	case float64:
 		return n, true
+	case json.Number:
+		return jsonnum.Float64(n)
 	default:
 		return 0, false
 	}
 }
 
 func valuesEqual(a, b any) bool {
+	if jsonnum.IsNumber(a) && jsonnum.IsNumber(b) {
+		c, err := jsonnum.Compare(a, b)
+		return err == nil && c == 0
+	}
 	ab, err := json.Marshal(a)
 	if err != nil {
 		return false

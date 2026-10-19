@@ -1,8 +1,11 @@
 package kubernetes
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 )
 
 var clusterScopedKinds = map[string]bool{
@@ -510,6 +513,9 @@ func intField(m map[string]any, key string) (int64, bool) {
 		return n, true
 	case float64:
 		return int64(n), true
+	case json.Number:
+		// Exact when it fits int64; a larger value is not an int.
+		return jsonnum.Int64(n)
 	default:
 		return 0, false
 	}

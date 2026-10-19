@@ -132,6 +132,7 @@ FFX is a typed, CEL-based expression language. An expression is written as `{exp
 - **Presence tests:** `has()` is not supported. Use `'k' in m`, for example `'total' in item && item.total > 10`.
 - **Nested ternaries:** bracket them. A nested ternary without brackets, like `true ? true ? 1 : 0 : 0`, gives `expression-parse`; write `true ? (true ? 1 : 0) : 0`.
 - **Limits:** source ≤ 1 KiB, ≤ 256 AST nodes, nesting depth ≤ 8, a static cost budget at publish, and at runtime a cost limit with interrupt checks, a 10 ms deadline per evaluation and 2 s per step. Results are ≤ 16 KiB.
+- **Whole numbers:** a whole number outside ±2^53 in step data is kept exact and compared exactly. An expression result that contains one fails with `expression-runtime` (use `string()` to keep the digits). Doubles are not range-checked: a whole double such as `1e20` stays a double.
 - **Publish codes:** `expression-parse`, `expression-type`, `expression-ref-unknown`, `expression-ref-not-ancestor`, `expression-secret-use`, `expression-too-complex`. Publish validates every expression and refuses a draft that does not.
 - **Runtime codes:** `expression-cost-exceeded`, `expression-timeout`, `expression-runtime`, and `expression-type` when a value only known at runtime has the wrong type. Errors name the node id and never echo the expression or values.
 

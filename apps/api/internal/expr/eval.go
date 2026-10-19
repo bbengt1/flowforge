@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
-	"strconv"
 	"strings"
 	"time"
 
@@ -13,6 +12,8 @@ import (
 	"cel.dev/cel-go/common/types"
 	"cel.dev/cel-go/common/types/ref"
 	"cel.dev/cel-go/common/types/traits"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 )
 
 // Runtime limits (#650 §4). EvalDeadline bounds one evaluation;
@@ -357,9 +358,9 @@ func normalizeJSON(v any, depth int) (any, *Error) {
 		}
 		return int64(x), nil
 	case json.Number:
-		if !strings.ContainsAny(string(x), ".eE") {
-			i, err := strconv.ParseInt(string(x), 10, 64)
-			if err != nil {
+		if jsonnum.IsWholeLiteral(x) {
+			i, ok := jsonnum.Int64(x)
+			if !ok {
 				return nil, errInputInexact
 			}
 			return i, nil

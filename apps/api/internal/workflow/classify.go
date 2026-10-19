@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 )
 
 const redactedPlaceholder = "[redacted]"
@@ -239,12 +241,20 @@ func convertScalar(v any, kind string) (any, bool) {
 			return jsonNumberString(t), true
 		case float64:
 			return jsonNumberString(t), true
+		case json.Number:
+			// Exact digits; never rounded through float64.
+			return string(t), true
 		default:
 			return nil, false
 		}
 	case "integer":
 		if n, ok := asInt64(v); ok {
 			return n, true
+		}
+		if _, ok := v.(json.Number); ok {
+			// A whole number outside int64 (or not whole) is refused by
+			// the caller's fixed conversion error; it is never rounded.
+			return nil, false
 		}
 		if s, ok := v.(string); ok {
 			n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
@@ -298,11 +308,17 @@ func asInt64(v any) (int64, bool) {
 			return int64(n), true
 		}
 		return 0, false
+	case json.Number:
+		// Exact int64 when it fits; otherwise not an int64.
+		return jsonnum.Int64(n)
 	default:
 		return 0, false
 	}
 }
 
+// asFloat64 is only for callers that tolerate float64 precision. A
+// json.Number (a whole number the store kept exact) converts only when
+// the float64 is exact; numeric comparisons use jsonnum.Compare instead.
 func asFloat64(v any) (float64, bool) {
 	switch n := v.(type) {
 	case int:
@@ -313,12 +329,20 @@ func asFloat64(v any) (float64, bool) {
 		return float64(n), true
 	case float64:
 		return n, true
+	case json.Number:
+		return jsonnum.Float64(n)
 	default:
 		return 0, false
 	}
 }
 
 func valuesEqual(a, b any) bool {
+	// Two numbers compare exactly, whatever their Go type (an int64, a
+	// float64 and an exact json.Number of the same value are equal).
+	if jsonnum.IsNumber(a) && jsonnum.IsNumber(b) {
+		c, err := jsonnum.Compare(a, b)
+		return err == nil && c == 0
+	}
 	ab, err := json.Marshal(a)
 	if err != nil {
 		return false
