@@ -1,6 +1,8 @@
 package localworker
 
 import (
+	"context"
+
 	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
@@ -20,6 +22,12 @@ type Decision struct {
 // durable delay fail closed so the run leaves queued with a reason.
 // inputs and skipped come from the claim response.
 func Decide(step wfstore.ExecutionStep, job wfstore.ExecutionJob, inputs map[string]any, skipped []wfstore.SkippedInput) Decision {
+	return DecideRun(context.Background(), wfstore.Execution{}, step, job, inputs, skipped)
+}
+
+// DecideRun is Decide with the claimed execution, so FFX expressions get
+// run.clock (the attempt's eval_clock) and the run and workflow fields.
+func DecideRun(ctx context.Context, exec wfstore.Execution, step wfstore.ExecutionStep, job wfstore.ExecutionJob, inputs map[string]any, skipped []wfstore.SkippedInput) Decision {
 	if job.Status == wfstore.JobWaiting || step.NodeType == "flow.approval" {
 		return Decision{Skip: true, Reason: "waiting"}
 	}
@@ -33,7 +41,7 @@ func Decide(step wfstore.ExecutionStep, job wfstore.ExecutionJob, inputs map[str
 	if step.NodeType == "flow.delay" {
 		return unsupported("Compose local worker does not schedule durable flow.delay waits.")
 	}
-	return decisionFromOutcome(workflow.EvaluateStep(step.NodeType, step.Input, inputs, skippedPorts(skipped)))
+	return decisionFromOutcome(workflow.EvaluateStepRun(step.NodeType, step.Input, inputs, skippedPorts(skipped), wfstore.RunContextFor(ctx, exec, step)))
 }
 
 func skippedPorts(in []wfstore.SkippedInput) []workflow.SkippedPort {

@@ -159,6 +159,11 @@ func (m *Memory) ClaimJob(ctx context.Context, scope isolation.Scope, now time.T
 	step.LeaseID = job.ID
 	step.FencingToken = job.FencingToken
 	applyStepStatus(&step, ExecutionRunning, now)
+	if step.EvalClock == nil {
+		// #650 E3.3: set once per attempt, at its first claim.
+		clk := now
+		step.EvalClock = &clk
+	}
 	chosen.steps[stepIdx] = step
 	var snaps map[string]succeededSnap
 	if ids := upstreamNodeIDs(step.NodeID, chosen.edges); len(ids) > 0 {
@@ -552,6 +557,7 @@ func (m *Memory) RetryStep(ctx context.Context, scope isolation.Scope, now time.
 	next.UpdatedAt = now
 	next.StartedAt = nil
 	next.FinishedAt = nil
+	next.EvalClock = nil // #650 E3.3: a retry gets its own clock at claim
 	next.UnresolvedIncoming = unresolved
 	job := ExecutionJob{
 		ID:              newID(),

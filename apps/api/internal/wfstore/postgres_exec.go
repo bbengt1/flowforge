@@ -578,7 +578,7 @@ const stepColumns = `
 	COALESCE(lease_id::text, ''), fencing_token, COALESCE(idempotency_key, ''),
 	policy_snapshot, target_snapshot, input_redacted, output_redacted, error_redacted,
 	created_at, started_at, finished_at, updated_at, unresolved_incoming,
-	COALESCE(skip_reason, '')
+	COALESCE(skip_reason, ''), eval_clock
 `
 
 const jobColumns = `
@@ -622,7 +622,7 @@ func scanStep(row rowScanner) (ExecutionStep, error) {
 		&step.LeaseID, &step.FencingToken, &step.IdempotencyKey,
 		&policyRaw, &targetRaw, &inputRaw, &outputRaw, &errorRaw,
 		&step.CreatedAt, &started, &finished, &step.UpdatedAt, &step.UnresolvedIncoming,
-		&step.SkipReason,
+		&step.SkipReason, &step.EvalClock,
 	); err != nil {
 		return ExecutionStep{}, mapDBErr(err)
 	}
