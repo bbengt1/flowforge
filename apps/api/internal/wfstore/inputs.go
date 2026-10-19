@@ -1,10 +1,10 @@
 package wfstore
 
 import (
-	"encoding/json"
 	"sort"
 	"strings"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
@@ -158,12 +158,8 @@ func passthroughFailure(nodeID string, err workflow.FieldError) *inputFailure {
 }
 
 func cloneInputValue(v any) (any, bool) {
-	raw, err := json.Marshal(v)
-	if err != nil {
-		return nil, false
-	}
-	var out any
-	if err := json.Unmarshal(raw, &out); err != nil || out == nil {
+	out, err := jsonnum.Clone(v)
+	if err != nil || out == nil {
 		return nil, false
 	}
 	return out, true
