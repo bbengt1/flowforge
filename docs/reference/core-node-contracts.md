@@ -7,9 +7,9 @@ Handoff for the UI / catalog agent. The Go API on `GET /api/v1/workflows/catalog
 ## Non-negotiable rules
 
 - **Triggers stay workflow-level.** `manual`, `webhook`, and `schedule` appear only under `spec.triggers`. They are not `spec.nodes` types. Catalog `rules.triggersAreWorkflowLevel` and `rules.graphNodesExcludeTriggers` are `true`.
-- **Next / provider types stay rejected.** `workflow.call`, `flow.switch`, `data.merge`, provider connectors, etc. remain `phase: next|provider` and fail publish/validate with `unsupported-node` / `unsupported-trigger`.
-- **Unknown `with` keys fail closed** on these seven nodes (`unknown-field`).
-- **Expressions only in declared `expr` fields.** Paths are dotted identifiers (`foo.bar`). `{{`, `${`, `{%`, `||`, `&&` in plain strings are `expression-forbidden` or `template-forbidden`. FFX expressions are allowed only in catalog fields of kind `expr`, written as `{expr: "..."}`: today `flow.condition.with.expr` and `data.map.with.expr` (see [FFX expressions](#ffx-expressions)).
+- **Next / provider types stay rejected.** `workflow.call`, `flow.forEach`, provider connectors, etc. remain `phase: next|provider` and fail publish/validate with `unsupported-node` / `unsupported-trigger`.
+- **Unknown `with` keys fail closed** on the core neutral nodes (`unknown-field`).
+- **Expressions only in declared `expr` fields.** Paths are dotted identifiers (`foo.bar`). `{{`, `${`, `{%`, `||`, `&&` in plain strings are `expression-forbidden` or `template-forbidden`. FFX expressions are allowed only in catalog fields of kind `expr`, written as `{expr: "..."}`: today `flow.condition.with.expr`, `data.map.with.expr` and `data.filter.with.expr` (see [FFX expressions](#ffx-expressions)).
 
 ## Catalog JSON deltas (additive)
 

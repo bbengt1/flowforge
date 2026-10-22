@@ -68,6 +68,14 @@ func EvaluateRun(typ string, with map[string]any, inputs map[string]any, rc *Run
 		return evalFail(with)
 	case "flow.approval":
 		return evalApproval(with, inputs)
+	case "flow.switch":
+		return evalSwitch(with, inputs)
+	case "data.filter":
+		return evalFilter(with, inputs, rc)
+	case "data.sort":
+		return evalSort(with, inputs)
+	case "data.merge":
+		return evalMerge(with, inputs)
 	default:
 		return nil, ErrorList{fieldError("type", 0, 0, CodeUnknownNodeType, fmt.Sprintf("No evaluation contract for %q.", typ))}
 	}

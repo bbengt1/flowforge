@@ -270,6 +270,10 @@ func coreNeutralTypes() map[string]NodeType {
 		"flow.stop":      flowStopContract(),
 		"flow.fail":      flowFailContract(),
 		"flow.approval":  flowApprovalContract(),
+		"flow.switch":    flowSwitchContract(),
+		"data.filter":    dataFilterContract(),
+		"data.sort":      dataSortContract(),
+		"data.merge":     dataMergeContract(),
 	}
 }
 
@@ -370,6 +374,14 @@ func validateNeutralWith(n Node, nt NodeType, path string) ErrorList {
 		return validateFailWith(n, path)
 	case "flow.approval":
 		return validateApprovalWith(n, path)
+	case "flow.switch":
+		return validateSwitchWith(n, path)
+	case "data.filter":
+		return validateFilterWith(n, path)
+	case "data.sort":
+		return validateSortWith(n, path)
+	case "data.merge":
+		return validateMergeWith(n, path)
 	default:
 		_ = nt
 		return nil

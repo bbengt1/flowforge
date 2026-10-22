@@ -1,17 +1,32 @@
 id: 03-switch4
 drivers: [compose, runner]
-today:
-  publish: {status: 400, code: invalid-workflow, errors: [{path: "spec.nodes[1].type", code: unsupported-node}]}
-target:                      # asserted once the xfail flips
-  publish: {status: 201}
-  cases:
-    - {name: gold, patch: {}, expect: {out-gold: succeeded, out-bronze: skipped, out-silver: skipped, out-other: skipped}}
-    - {name: bronze, patch: {"spec.nodes[0].with.value.tier": bronze}, expect: {out-bronze: succeeded}}
-    - {name: silver, patch: {"spec.nodes[0].with.value.tier": silver}, expect: {out-silver: succeeded}}
-    - {name: default, patch: {"spec.nodes[0].with.value.tier": tin}, expect: {out-other: succeeded}}
-  run: {status: [succeeded]}
-xfail:
-  - part: all
-    reason: "flow.switch is registry-disabled (PhaseNext)"
-    issue: "#650 E3.4"
-    drivers: [all]
+publish: {status: 201}
+cases:
+  - name: gold                 # as written (tier: gold)
+    run: {status: [succeeded]}
+    steps:
+      route:      {status: succeeded}
+      out-gold:   {status: succeeded, output: {result: {status: success, message: gold}}}
+      out-bronze: {status: skipped, skipReason: branch_not_taken}
+      out-silver: {status: skipped, skipReason: branch_not_taken}
+      out-other:  {status: skipped, skipReason: branch_not_taken}
+  - name: bronze
+    patch: {"spec.nodes[0].with.value.tier": bronze}
+    run: {status: [succeeded]}
+    steps:
+      out-bronze: {status: succeeded, output: {result: {status: success, message: bronze}}}
+      out-gold:   {status: skipped, skipReason: branch_not_taken}
+  - name: silver
+    patch: {"spec.nodes[0].with.value.tier": silver}
+    run: {status: [succeeded]}
+    steps:
+      out-silver: {status: succeeded, output: {result: {status: success, message: silver}}}
+      out-gold:   {status: skipped, skipReason: branch_not_taken}
+  - name: default
+    patch: {"spec.nodes[0].with.value.tier": tin}
+    run: {status: [succeeded]}
+    steps:
+      out-other:  {status: succeeded, output: {result: {status: success, message: other}}}
+      out-gold:   {status: skipped, skipReason: branch_not_taken}
+audit: {execution.start: 1, job.claim: 3, job.complete: 3, job.fail: 0}  # skipped branches: no claim
+xfail: []

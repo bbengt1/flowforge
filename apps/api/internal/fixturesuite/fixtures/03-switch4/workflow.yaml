@@ -1,7 +1,6 @@
 apiVersion: flowforge/v1
 kind: Workflow
-# FUTURE SHAPE. flow.switch is PhaseNext today, so publish returns 400 unsupported-node.
-# The with-schema below is a proposal for E3.4 and is not validated yet.
+# flow.switch: ordered cases, exactly one output port fires, default is required.
 metadata:
   name: e0-03-switch4
 spec:

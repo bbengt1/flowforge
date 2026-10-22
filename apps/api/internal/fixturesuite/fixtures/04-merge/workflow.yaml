@@ -1,8 +1,7 @@
 apiVersion: flowforge/v1
 kind: Workflow
 # Guard (green today): two edges into ONE input port are refused at save with duplicate-edge.
-# A join needs separate input ports, and no enabled core node has two input ports today
-# (data.merge is PhaseNext), so the real two-input merge lives in future.workflow.yaml.
+# A join needs separate input ports: the real two-input data.merge lives in future.workflow.yaml.
 metadata:
   name: e0-04-merge-dup-edge
 spec:
