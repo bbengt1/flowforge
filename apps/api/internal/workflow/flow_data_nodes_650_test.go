@@ -273,7 +273,7 @@ func TestE34NodesUseEvalFieldExpr(t *testing.T) {
 	if strings.Contains(s, "cel-go") || strings.Contains(s, ".Program(") || strings.Contains(s, "expr.Eval(") {
 		t.Fatal("E3.4 nodes must evaluate FFX only through evalFieldExpr")
 	}
-	if !strings.Contains(s, `evalFieldExpr("data.filter", "expr"`) {
+	if !strings.Contains(s, `prepareFieldExpr("data.filter", "expr"`) {
 		t.Fatal("data.filter expr does not go through evalFieldExpr")
 	}
 }
@@ -501,5 +501,50 @@ func TestE34CatalogCore(t *testing.T) {
 		if !ok || nt.Phase != PhaseCore || !IsCoreNeutral(typ) || nt.Policy == nil || nt.Bounds == nil || nt.Redaction == nil {
 			t.Fatalf("%s: %+v", typ, nt)
 		}
+	}
+}
+
+// An unknown case field is reported at the case index with a fixed
+// message; the client-chosen key is never echoed.
+func TestSwitchUnknownCaseFieldNotEchoed650E34(t *testing.T) {
+	doc := strings.Replace(switchDoc(true), "{name: gold, op: eq, compare: gold}", "{name: gold, op: eq, compare: gold, zzSecretKey: 1}", 1)
+	_, errs := ParseAndNormalize([]byte(doc))
+	if !hasCodeAt(errs, CodeUnknownField, "with.cases[1]") {
+		t.Fatalf("unknown case field accepted: %v", errs)
+	}
+	for _, e := range errs {
+		if strings.Contains(e.Path, "zzSecretKey") || strings.Contains(e.Message, "zzSecretKey") {
+			t.Fatalf("client key echoed: %+v", e)
+		}
+		if e.Code == CodeUnknownField && strings.Contains(e.Path, "cases[1].") {
+			t.Fatalf("path is not index-only: %q", e.Path)
+		}
+	}
+}
+
+// data.filter builds its expression once per step, not once per item.
+func TestFilterExprCompiledOncePerStep650E34(t *testing.T) {
+	n := 0
+	prepareFieldExprHook = func() { n++ }
+	defer func() { prepareFieldExprHook = nil }()
+	var its []map[string]any
+	for i := 0; i < 50; i++ {
+		its = append(its, map[string]any{"id": i, "n": int64(i)})
+	}
+	with := map[string]any{"expr": map[string]any{"expr": `item.n >= 25`}}
+	out := EvaluateStepRun("data.filter", with, map[string]any{"input": items(its...)}, nil, rc("f"))
+	if out.Fail {
+		t.Fatalf("%+v", out)
+	}
+	if n != 1 {
+		t.Fatalf("expression prepared %d times for 50 items, want 1", n)
+	}
+	var kept []any
+	b, _ := json.Marshal(out.Output["kept"])
+	var kv map[string]any
+	_ = json.Unmarshal(b, &kv)
+	kept, _ = kv["items"].([]any)
+	if len(kept) != 25 {
+		t.Fatalf("kept %d, want 25", len(kept))
 	}
 }

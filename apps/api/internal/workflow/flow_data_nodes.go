@@ -223,7 +223,8 @@ func validateSwitchWith(n Node, path string) ErrorList {
 			}
 			for k := range m {
 				if k != "name" && k != "op" && k != "compare" {
-					at(cp+"."+k, CodeUnknownField, fmt.Sprintf("Unknown case field %q.", k))
+					// Fixed message, index-only path: never echo a client-chosen key.
+					at(cp, CodeUnknownField, "Case has an unknown field; allowed fields are name, op and compare.")
 				}
 			}
 			name, _ := m["name"].(string)
@@ -480,12 +481,21 @@ func evalFilter(with, inputs map[string]any, rc *RunContext) (*EvalResult, Error
 			return nil, ErrorList{fieldError("with.path", 0, 0, CodeInvalidWith, "path must be a dotted identifier path.")}
 		}
 	}
+	// The expression is checked and built once per step, then evaluated
+	// per item.
+	var fe *fieldExpr
+	if useExpr {
+		var errs ErrorList
+		if fe, errs = prepareFieldExpr("data.filter", "expr", with, inputs, rc); len(errs) > 0 {
+			return nil, errs
+		}
+	}
 	kept := make([]map[string]any, 0, len(items))
 	dropped := make([]map[string]any, 0)
 	for i, it := range items {
 		var match bool
 		if useExpr {
-			got, errs := evalFieldExpr("data.filter", "expr", with, inputs, it, rc)
+			got, errs := fe.eval(it)
 			if len(errs) > 0 {
 				return nil, errs
 			}
