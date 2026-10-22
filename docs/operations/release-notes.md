@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Exact whole numbers in run and webhook input
+
+- A whole number outside ±2^53 sent in run-start input or a webhook body is now stored and returned with its exact digits (in `executions.input_redacted`, the run-start response and `GET /api/v1/executions/{id}`). Webhook signatures are still verified on the raw body bytes first.
+- Big numeric IDs sent before this fix were stored rounded. The original digits were not kept, so those rows cannot be repaired and there is no backfill. Sending IDs as strings avoids the problem with any version.
+- A retry that reuses an idempotency key from before this release, with a whole number outside ±2^53 in its input, now gets `409 Conflict` (idempotency key reused with a different request fingerprint), because the stored fingerprint was taken over the rounded value. Retry with a new idempotency key.
+- An integer literal beyond the 64-bit range in workflow YAML (for example a `data.set` value of `99999999999999999999`) keeps its exact digits through save, publish and export instead of being rounded. In a run, `flow.condition` `op: gt`/`op: eq` compares it exactly, and a `with.expr` that reads it fails closed with `expression-runtime`.
+- Schedule `catchUp` must be an integer everywhere. `1.0`, `1e2`, a fraction or an out-of-range value is refused with an `invalid-type` field error naming `catchUp`, both in `POST /api/v1/schedules` and for a stored trigger value, instead of a generic invalid-JSON error or a silent drop.
+- A JSON request field of the wrong type now returns an `invalid-type` field error naming the field and its expected type, without echoing the value. When the field sits inside an object keyed by the client, the error names the object, never the key.
+- Schema type errors read "Value is not an integer." (fixed article).
+- Script and HTTP notification schemas with `minimum`/`maximum` refuse non-finite numbers (NaN, ±Infinity) even when no `type` is declared.
+
 ### Expressions in `data.map` and `flow.condition`
 
 - `data.map` accepts `with.expr: {expr: "..."}`, an FFX expression that returns the mapped object, as an alternative to `with.mapping`.

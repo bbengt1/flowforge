@@ -3,6 +3,7 @@ package scripts
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 
@@ -142,7 +143,7 @@ func validateValueAgainstSchema(value any, schema map[string]any, path string) e
 		return engineError(CodeSizeLimit, fmt.Sprintf("%s exceeds the byte limit.", path), http.StatusBadRequest)
 	}
 	if typ, ok := schema["type"].(string); ok && !valueMatchesType(value, typ) {
-		return &EngineError{Code: CodeInvalidSchema, Message: fmt.Sprintf("Value is not a %s.", typ), Status: http.StatusBadRequest, Path: path}
+		return &EngineError{Code: CodeInvalidSchema, Message: fmt.Sprintf("Value is not %s.", withArticle(typ)), Status: http.StatusBadRequest, Path: path}
 	}
 	if raw, ok := schema["enum"].([]any); ok {
 		found := false
@@ -170,7 +171,13 @@ func validateValueAgainstSchema(value any, schema map[string]any, path string) e
 		bad      int
 	}{{"minimum", "Value is below schema.minimum.", -1}, {"maximum", "Value is above schema.maximum.", 1}} {
 		raw, ok := schema[bound.key]
-		if !ok || !jsonnum.IsNumber(value) || !jsonnum.IsNumber(raw) {
+		if !ok {
+			continue
+		}
+		if isNonFinite(value) {
+			return &EngineError{Code: CodeInvalidSchema, Message: "Value is not a finite number for schema." + bound.key + ".", Status: http.StatusBadRequest, Path: path}
+		}
+		if !jsonnum.IsNumber(value) || !jsonnum.IsNumber(raw) {
 			continue
 		}
 		c, err := jsonnum.Compare(value, raw)
@@ -277,4 +284,24 @@ func valuesEqual(a, b any) bool {
 		return false
 	}
 	return string(left) == string(right)
+}
+
+// isNonFinite reports whether v is a float NaN or ±Inf. JSON cannot carry
+// them, but Go-side values can.
+func isNonFinite(v any) bool {
+	switch f := v.(type) {
+	case float64:
+		return math.IsNaN(f) || math.IsInf(f, 0)
+	case float32:
+		return math.IsNaN(float64(f)) || math.IsInf(float64(f), 0)
+	}
+	return false
+}
+
+// withArticle prefixes a schema type name with "a" or "an".
+func withArticle(typ string) string {
+	if typ != "" && strings.ContainsRune("aeiouAEIOU", rune(typ[0])) {
+		return "an " + typ
+	}
+	return "a " + typ
 }

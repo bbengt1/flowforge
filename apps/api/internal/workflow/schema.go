@@ -158,7 +158,7 @@ func validateAgainstSchema(value any, schema map[string]any, path string, bounds
 
 	if raw, ok := schema["type"].(string); ok {
 		if !valueMatchesType(value, raw) {
-			errs = append(errs, fieldError(path, 0, 0, CodeInvalidType, fmt.Sprintf("Value is not a %s.", raw)))
+			errs = append(errs, fieldError(path, 0, 0, CodeInvalidType, fmt.Sprintf("Value is not %s.", withArticle(raw))))
 			return class, errs
 		}
 	}
@@ -313,4 +313,12 @@ func asSchemaMap(v any, path string) (map[string]any, ErrorList) {
 		return nil, ErrorList{fieldError(path, 0, 0, CodeInvalidType, "schema must be a mapping.")}
 	}
 	return m, nil
+}
+
+// withArticle prefixes a schema type name with "a" or "an".
+func withArticle(typ string) string {
+	if typ != "" && strings.ContainsRune("aeiouAEIOU", rune(typ[0])) {
+		return "an " + typ
+	}
+	return "a " + typ
 }

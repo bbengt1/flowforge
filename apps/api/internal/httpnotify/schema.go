@@ -2,6 +2,7 @@ package httpnotify
 
 import (
 	"encoding/json"
+	"math"
 	"strings"
 
 	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
@@ -69,7 +70,14 @@ func schemaAllowsValue(schema map[string]any, value any, depth int) bool {
 		bad int
 	}{{"minimum", -1}, {"maximum", 1}} {
 		raw, ok := schema[bound.key]
-		if !ok || !jsonnum.IsNumber(value) || !jsonnum.IsNumber(raw) {
+		if !ok {
+			continue
+		}
+		if isNonFinite(value) {
+			// NaN and ±Inf cannot be compared with a bound.
+			return false
+		}
+		if !jsonnum.IsNumber(value) || !jsonnum.IsNumber(raw) {
 			continue
 		}
 		if c, err := jsonnum.Compare(value, raw); err != nil || c == bound.bad {
@@ -237,4 +245,16 @@ func valuesEqual(a, b any) bool {
 		return false
 	}
 	return string(ab) == string(bb)
+}
+
+// isNonFinite reports whether v is a float NaN or ±Inf. JSON cannot carry
+// them, but Go-side values can.
+func isNonFinite(v any) bool {
+	switch f := v.(type) {
+	case float64:
+		return math.IsNaN(f) || math.IsInf(f, 0)
+	case float32:
+		return math.IsNaN(float64(f)) || math.IsInf(float64(f), 0)
+	}
+	return false
 }
