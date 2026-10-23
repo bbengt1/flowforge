@@ -211,6 +211,32 @@ describe("config serialization", () => {
     });
   });
 
+  it("rejects flow.switch when default equals a case name", () => {
+    const ok = serializeCoreWith({
+      type: "flow.switch",
+      path: "status",
+      cases: [{ name: "ready", op: "eq", compare: "ready" }],
+      defaultPort: "default",
+    });
+    assert.equal(ok.errors.length, 0);
+    assert.deepEqual(ok.with, {
+      path: "status",
+      cases: [{ name: "ready", op: "eq", compare: "ready" }],
+      default: "default",
+    });
+
+    const clash = serializeCoreWith({
+      type: "flow.switch",
+      path: "status",
+      cases: [{ name: "ready", op: "eq", compare: "ready" }],
+      defaultPort: "ready",
+    });
+    assert.ok(
+      clash.errors.some((error) => error === "default must differ from every case name."),
+    );
+    assert.equal(clash.with.default, "ready");
+  });
+
   it("updates an existing node block from the inspector config", () => {
     const inserted = insertCoreNode(STARTER_WORKFLOW_YAML, "flow.condition");
     const applied = applyCoreNodeConfig(inserted.yaml, inserted.node.id, "Check ready", {

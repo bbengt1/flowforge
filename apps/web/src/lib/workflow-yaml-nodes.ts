@@ -450,6 +450,8 @@ export function serializeCoreWith(config: CoreNodeWith): {
       const defaultPort = config.defaultPort.trim();
       if (!isValidSwitchPortName(defaultPort)) {
         errors.push("default must be a valid output port name.");
+      } else if (seen.has(defaultPort)) {
+        errors.push("default must differ from every case name.");
       }
       const withValue: Record<string, unknown> = {
         cases: casesOut,
