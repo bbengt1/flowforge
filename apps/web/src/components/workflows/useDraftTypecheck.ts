@@ -69,18 +69,26 @@ export function useDraftTypecheck(input: {
   });
 
   const pendingDebounce = enabled && revision !== null && checkRevision !== revision;
+  const outcome = active ? (query.data ?? null) : null;
   const view = typecheckView({
-    outcome: active ? (query.data ?? null) : null,
+    outcome,
     pending: pendingDebounce || (active && query.isFetching),
     savedRevision: revision,
     dirty,
   });
-  const grouped = useMemo(
-    () =>
-      view.state === "failed"
-        ? typecheckErrorsByNode(view.errors)
-        : { byNode: new Map<string, TypecheckError[]>(), workflow: [] },
-    [view],
-  );
+  // Key on query data + revision (and dirty) so a new view object each render
+  // does not defeat the memo, and dirty mutes node badges (L2/L3).
+  const grouped = useMemo(() => {
+    if (
+      !outcome ||
+      outcome.kind !== "failed" ||
+      revision === null ||
+      outcome.draftRevision !== revision ||
+      dirty
+    ) {
+      return { byNode: new Map<string, TypecheckError[]>(), workflow: [] as TypecheckError[] };
+    }
+    return typecheckErrorsByNode(outcome.errors);
+  }, [outcome, revision, dirty]);
   return { view, byNode: grouped.byNode, workflowErrors: grouped.workflow };
 }

@@ -23,7 +23,7 @@ import type { DevIdentity } from "./identity-headers.ts";
 export const TYPECHECK_DEBOUNCE_MS = 1_500;
 
 export function workflowDraftTypecheckPath(workflowId: string): string {
-  return `/workflows/${workflowId}/draft/typecheck`;
+  return `/workflows/${encodeURIComponent(workflowId)}/draft/typecheck`;
 }
 
 export type TypecheckError = {
@@ -153,8 +153,12 @@ export function typecheckView(input: {
   if (savedRevision === null || outcome.draftRevision !== savedRevision) {
     return { state: "stale", reason: "revision" };
   }
+  if (dirty) {
+    // Saved result while the buffer has edits: mute badges / summary as out of date.
+    return { state: "stale", reason: "unsaved" };
+  }
   if (outcome.kind === "passed") {
-    return dirty ? { state: "stale", reason: "unsaved" } : { state: "passed" };
+    return { state: "passed" };
   }
   return { state: "failed", errors: outcome.errors };
 }

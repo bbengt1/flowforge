@@ -221,7 +221,7 @@ import {
   isManualStartAuthFailure,
   manualStartAuthFailureMessage,
 } from "@/lib/manual-start-contract";
-import { canExecuteWorkflows } from "@/lib/workspace-nav";
+import { canCreateWorkflows, canExecuteWorkflows } from "@/lib/workspace-nav";
 import {
   compareWorkflow,
   exportWorkflowVersion,
@@ -910,12 +910,14 @@ function WorkflowOperatorSession({ workflowId }: WorkflowOperatorProps) {
   ) && hasWorkspaceLookup(identity);
   const dirty = Boolean(workflow && yaml !== savedYaml);
   // #650: check the saved draft after save/load, debounced; never per keystroke.
+  // Typecheck needs workflow.edit; skip for viewers (no endpoint call).
+  const canTypecheck = canCall && canCreateWorkflows(permissions) && Boolean(workflow);
   const typecheck = useDraftTypecheck({
     identity,
     workflowId: workflow?.id ?? null,
     revision,
     dirty,
-    enabled: canCall && Boolean(workflow),
+    enabled: canTypecheck,
   });
 
   async function loadLatestPublishedRun(scopedId: string) {

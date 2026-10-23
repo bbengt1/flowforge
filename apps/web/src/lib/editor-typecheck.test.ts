@@ -178,6 +178,13 @@ describe("typecheck stale results", () => {
     assert.equal(typecheckSummary(v), TYPECHECK_COPY.staleUnsaved);
   });
 
+  it("a fail while the buffer has unsaved changes is stale (mutes node badges)", () => {
+    const failed = typecheckOutcome(ok(errorBody));
+    const v = typecheckView({ outcome: failed, pending: false, savedRevision: 4, dirty: true });
+    assert.deepEqual(v, { state: "stale", reason: "unsaved" });
+    assert.equal(typecheckSummary(v), TYPECHECK_COPY.staleUnsaved);
+  });
+
   it("a late response for an older revision is stale, pass or fail", () => {
     assert.deepEqual(
       typecheckView({ outcome: passed, pending: false, savedRevision: 5, dirty: false }),
@@ -214,5 +221,33 @@ describe("typecheck per-node mapping", () => {
       errors: [{ ...errorBody.errors[0], source: "input.secret", value: "x" }],
     });
     assert.deepEqual(Object.keys(parsed!.errors[0]).sort(), ["code", "message", "nodeId", "path"]);
+  });
+});
+
+describe("typecheck path encoding", () => {
+  it("encodeURIComponent-encodes workflowId in the typecheck URL", () => {
+    assert.equal(
+      workflowDraftTypecheckPath("wf-1"),
+      "/workflows/wf-1/draft/typecheck",
+    );
+    assert.equal(
+      workflowDraftTypecheckPath("wf/with spaces"),
+      "/workflows/wf%2Fwith%20spaces/draft/typecheck",
+    );
+    assert.equal(
+      workflowDraftTypecheckPath("a+b?c=d#e"),
+      "/workflows/a%2Bb%3Fc%3Dd%23e/draft/typecheck",
+    );
+  });
+
+  it("POSTs the encoded path through the proxy", async () => {
+    const calls: unknown[][] = [];
+    const id = "team/wf 1";
+    await typecheckWorkflowDraft({} as DevIdentity, id, (async (...args: unknown[]) => {
+      calls.push(args);
+      return ok({ ok: true, catalogRevision: 1, draftRevision: 2, expressions: [], errors: [] });
+    }) as never);
+    assert.equal(calls[0][0], workflowDraftTypecheckPath(id));
+    assert.equal(calls[0][0], "/workflows/team%2Fwf%201/draft/typecheck");
   });
 });
