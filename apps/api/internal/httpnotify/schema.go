@@ -2,7 +2,10 @@ package httpnotify
 
 import (
 	"encoding/json"
+	"math"
 	"strings"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 )
 
 const maxSchemaDepth = 16
@@ -60,18 +63,25 @@ func schemaAllowsValue(schema map[string]any, value any, depth int) bool {
 			}
 		}
 	}
-	if raw, ok := schema["minimum"]; ok {
-		if n, ok := asFloat64(value); ok {
-			if min, ok := asFloat64(raw); ok && n < min {
-				return false
-			}
+	// minimum/maximum compare exactly; a value too large to compare
+	// exactly does not match.
+	for _, bound := range []struct {
+		key string
+		bad int
+	}{{"minimum", -1}, {"maximum", 1}} {
+		raw, ok := schema[bound.key]
+		if !ok {
+			continue
 		}
-	}
-	if raw, ok := schema["maximum"]; ok {
-		if n, ok := asFloat64(value); ok {
-			if max, ok := asFloat64(raw); ok && n > max {
-				return false
-			}
+		if isNonFinite(value) {
+			// NaN and ±Inf cannot be compared with a bound.
+			return false
+		}
+		if !jsonnum.IsNumber(value) || !jsonnum.IsNumber(raw) {
+			continue
+		}
+		if c, err := jsonnum.Compare(value, raw); err != nil || c == bound.bad {
+			return false
 		}
 	}
 
@@ -132,11 +142,14 @@ func valueMatchesSchemaType(v any, typ string) bool {
 		_, ok := v.(string)
 		return ok
 	case "integer":
+		if n, isNum := v.(json.Number); isNum {
+			ok, _ := jsonnum.IsInteger(n)
+			return ok
+		}
 		_, ok := asInt64(v)
 		return ok
 	case "number":
-		_, ok := asFloat64(v)
-		return ok
+		return jsonnum.IsNumber(v)
 	case "boolean":
 		_, ok := v.(bool)
 		return ok
@@ -211,27 +224,18 @@ func asInt64(v any) (int64, bool) {
 			return int64(n), true
 		}
 		return 0, false
-	default:
-		return 0, false
-	}
-}
-
-func asFloat64(v any) (float64, bool) {
-	switch n := v.(type) {
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	case uint64:
-		return float64(n), true
-	case float64:
-		return n, true
+	case json.Number:
+		return jsonnum.Int64(n)
 	default:
 		return 0, false
 	}
 }
 
 func valuesEqual(a, b any) bool {
+	if jsonnum.IsNumber(a) && jsonnum.IsNumber(b) {
+		c, err := jsonnum.Compare(a, b)
+		return err == nil && c == 0
+	}
 	ab, err := json.Marshal(a)
 	if err != nil {
 		return false
@@ -241,4 +245,16 @@ func valuesEqual(a, b any) bool {
 		return false
 	}
 	return string(ab) == string(bb)
+}
+
+// isNonFinite reports whether v is a float NaN or ±Inf. JSON cannot carry
+// them, but Go-side values can.
+func isNonFinite(v any) bool {
+	switch f := v.(type) {
+	case float64:
+		return math.IsNaN(f) || math.IsInf(f, 0)
+	case float32:
+		return math.IsNaN(float64(f)) || math.IsInf(float64(f), 0)
+	}
+	return false
 }

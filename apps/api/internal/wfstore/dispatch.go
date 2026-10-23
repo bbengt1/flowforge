@@ -11,6 +11,7 @@ import (
 
 	"github.com/bbengt1/flowforge/apps/api/internal/authz"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
 	"github.com/bbengt1/flowforge/apps/api/internal/ssh"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
@@ -273,6 +274,9 @@ func asIntAny(v any) (int, bool) {
 		if n == float64(int(n)) {
 			return int(n), true
 		}
+	case json.Number:
+		// Exact when it fits int; a larger value is not an int.
+		return jsonnum.Int(n)
 	}
 	return 0, false
 }
@@ -609,6 +613,10 @@ func cloneStep(step ExecutionStep) ExecutionStep {
 	if step.StartedAt != nil {
 		ts := *step.StartedAt
 		out.StartedAt = &ts
+	}
+	if step.EvalClock != nil {
+		ts := *step.EvalClock
+		out.EvalClock = &ts
 	}
 	if step.FinishedAt != nil {
 		ts := *step.FinishedAt

@@ -1,8 +1,11 @@
 package scripts
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 )
 
 // ValidatePublishInput is the fail-closed publish gate: source, entrypoint,
@@ -192,6 +195,9 @@ func asInt(v any) (int, bool) {
 		if n == float64(int(n)) {
 			return int(n), true
 		}
+	case json.Number:
+		// Exact when it fits int; a larger value is not an int.
+		return jsonnum.Int(n)
 	}
 	return 0, false
 }

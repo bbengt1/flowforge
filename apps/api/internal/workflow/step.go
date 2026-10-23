@@ -1,7 +1,10 @@
 package workflow
 
 import (
+	"context"
+
 	"fmt"
+	"github.com/bbengt1/flowforge/apps/api/internal/expr"
 	"strings"
 )
 
@@ -28,6 +31,12 @@ type StepOutcome struct {
 // join: any step is not reported as a merely missing required-input. The
 // per-port size cap stays inside Evaluate.
 func EvaluateStep(nodeType string, with, inputs map[string]any, skipped []SkippedPort) StepOutcome {
+	return EvaluateStepRun(nodeType, with, inputs, skipped, nil)
+}
+
+// EvaluateStepRun is EvaluateStep with the attempt's RunContext, which FFX
+// expr fields need (#650 E3.3). Workers call this.
+func EvaluateStepRun(nodeType string, with, inputs map[string]any, skipped []SkippedPort, rc *RunContext) StepOutcome {
 	// A join: any step fails on any skipped entry that has a code, even when
 	// another branch delivered a value. That is deliberate: fail closed.
 	for _, s := range skipped {
@@ -57,7 +66,19 @@ func EvaluateStep(nodeType string, with, inputs map[string]any, skipped []Skippe
 			}
 		}
 	}
-	res, errs := Evaluate(nodeType, with, inputs)
+	var deadline context.CancelFunc
+	if rc != nil {
+		base := rc.Ctx
+		if base == nil {
+			base = context.Background()
+		}
+		// 2 s per step on top of the 10 ms per evaluation (#650 §4).
+		rcCopy := *rc
+		rcCopy.Ctx, deadline = context.WithTimeout(base, expr.StepDeadline)
+		defer deadline()
+		rc = &rcCopy
+	}
+	res, errs := EvaluateRun(nodeType, with, inputs, rc)
 	if len(errs) > 0 {
 		code := errs[0].Code
 		if code == "" {

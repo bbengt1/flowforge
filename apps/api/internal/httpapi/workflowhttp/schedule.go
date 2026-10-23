@@ -2,7 +2,9 @@ package workflowhttp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/approvalhttp"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/core"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsalert"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
 	"github.com/bbengt1/flowforge/apps/api/internal/policy"
@@ -168,7 +171,12 @@ func createSchedule(s *core.Server, w http.ResponseWriter, r *http.Request) {
 		MisfirePolicy:     strings.TrimSpace(req.MisfirePolicy),
 		CatchUp:           req.CatchUp,
 	}
-	applyScheduleYAMLDefaults(&in, ver.DefinitionYAML)
+	if err := applyScheduleYAMLDefaults(&in, ver.DefinitionYAML); err != nil {
+		msg := "catchUp must be an integer."
+		core.WriteProblemErrors(w, r, http.StatusBadRequest, core.CodeInvalidRequest, "Invalid Request", msg,
+			[]core.FieldError{{Path: "catchUp", Code: core.CodeInvalidType, Message: msg}})
+		return
+	}
 	rec, err := s.Schedules.Create(r.Context(), scope, s.Clock().UTC(), in)
 	if err != nil {
 		writeScheduleStoreError(w, r, err)
@@ -594,10 +602,10 @@ func omitTombstonedSchedules(ctx context.Context, s *core.Server, scope isolatio
 	return out, nil
 }
 
-func applyScheduleYAMLDefaults(in *schedule.CreateInput, yamlDoc string) {
+func applyScheduleYAMLDefaults(in *schedule.CreateInput, yamlDoc string) error {
 	res, errs := workflow.ParseAndNormalize([]byte(yamlDoc))
 	if len(errs) > 0 || res == nil || res.Document == nil {
-		return
+		return nil
 	}
 	var trig *workflow.Trigger
 	for i := range res.Document.Spec.Triggers {
@@ -612,7 +620,7 @@ func applyScheduleYAMLDefaults(in *schedule.CreateInput, yamlDoc string) {
 		break
 	}
 	if trig == nil {
-		return
+		return nil
 	}
 	if in.TriggerID == "" {
 		in.TriggerID = trig.ID
@@ -631,17 +639,48 @@ func applyScheduleYAMLDefaults(in *schedule.CreateInput, yamlDoc string) {
 		in.MisfirePolicy, _ = trig.With["misfirePolicy"].(string)
 	}
 	if in.CatchUp == nil {
-		switch n := trig.With["catchUp"].(type) {
-		case int:
-			in.CatchUp = &n
-		case int64:
-			v := int(n)
-			in.CatchUp = &v
-		case float64:
-			v := int(n)
+		raw, ok := trig.With["catchUp"]
+		if _, isBool := raw.(bool); ok && raw != nil && !isBool {
+			// catchUp: false keeps the store default, as before.
+			v, err := scheduleCatchUpInt(raw)
+			if err != nil {
+				return err
+			}
 			in.CatchUp = &v
 		}
 	}
+	return nil
+}
+
+// errScheduleCatchUp is the fixed error for a catchUp the trigger declares
+// that is not an integer fitting an int. It matches publish validation,
+// which refuses 1.0 and 1e2 with invalid-type.
+var errScheduleCatchUp = errors.New("catchUp must be an integer")
+
+// scheduleCatchUpInt reads a declared catchUp exactly. Only integers are
+// accepted, as publish validation and the API field require: a value
+// written with a decimal point or exponent (1.0, 1e2), a fraction, a
+// non-number, or a value that does not fit an int is refused, never
+// dropped or truncated. Stored documents that skipped validation are the
+// only way such a value reaches here.
+func scheduleCatchUpInt(raw any) (int, error) {
+	switch n := raw.(type) {
+	case int:
+		return n, nil
+	case int64:
+		if n < math.MinInt || n > math.MaxInt {
+			return 0, errScheduleCatchUp
+		}
+		return int(n), nil
+	case json.Number:
+		if !jsonnum.IsWholeLiteral(n) {
+			return 0, errScheduleCatchUp
+		}
+		if v, ok := jsonnum.Int(n); ok {
+			return v, nil
+		}
+	}
+	return 0, errScheduleCatchUp
 }
 
 func writeScheduleAudit(s *core.Server, ctx context.Context, scope isolation.Scope, rec schedule.Record, outcome string, extra map[string]any) {

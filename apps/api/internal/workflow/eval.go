@@ -3,6 +3,8 @@ package workflow
 import (
 	"fmt"
 	"strings"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 )
 
 // EvalResult is the contract evaluation outcome for a core neutral node.
@@ -30,6 +32,13 @@ type DelayPlan struct {
 // Evaluate applies a core neutral node contract to with + literal inputs.
 // It is deterministic and has no durable side effects.
 func Evaluate(typ string, with map[string]any, inputs map[string]any) (*EvalResult, ErrorList) {
+	return EvaluateRun(typ, with, inputs, nil)
+}
+
+// EvaluateRun is Evaluate inside a run attempt. rc carries run.clock and
+// the other run fields for FFX expr fields; with a nil rc an expr field
+// fails closed.
+func EvaluateRun(typ string, with map[string]any, inputs map[string]any, rc *RunContext) (*EvalResult, ErrorList) {
 	if with == nil {
 		with = map[string]any{}
 	}
@@ -38,12 +47,18 @@ func Evaluate(typ string, with map[string]any, inputs map[string]any) (*EvalResu
 	}
 	switch typ {
 	case "flow.condition":
+		if _, ok := with["expr"]; ok {
+			return evalConditionExpr(with, inputs, rc)
+		}
 		return evalCondition(with, inputs)
 	case "flow.delay":
 		return evalDelay(with, inputs)
 	case "data.set":
 		return evalDataSet(with)
 	case "data.map":
+		if _, ok := with["expr"]; ok {
+			return evalDataMapExpr(with, inputs, rc)
+		}
 		return evalDataMap(with, inputs)
 	case "data.validate":
 		return evalDataValidate(with, inputs)
@@ -53,6 +68,14 @@ func Evaluate(typ string, with map[string]any, inputs map[string]any) (*EvalResu
 		return evalFail(with)
 	case "flow.approval":
 		return evalApproval(with, inputs)
+	case "flow.switch":
+		return evalSwitch(with, inputs)
+	case "data.filter":
+		return evalFilter(with, inputs, rc)
+	case "data.sort":
+		return evalSort(with, inputs)
+	case "data.merge":
+		return evalMerge(with, inputs)
 	default:
 		return nil, ErrorList{fieldError("type", 0, 0, CodeUnknownNodeType, fmt.Sprintf("No evaluation contract for %q.", typ))}
 	}
@@ -142,18 +165,24 @@ func compareDeclarative(op string, subject, compare any) (bool, ErrorList) {
 			return false, ErrorList{fieldError("inputs.value", 0, 0, CodeInvalidType, "contains applies to strings or arrays.")}
 		}
 	case "gt", "lt", "gte", "lte":
-		left, lok := asFloat64(subject)
-		right, rok := asFloat64(compare)
-		if lok && rok {
+		// Numbers compare exactly: a whole number outside ±2^53 (kept as
+		// a json.Number) is never rounded through float64. One too large
+		// to compare exactly fails closed with a fixed message that never
+		// echoes the value.
+		if jsonnum.IsNumber(subject) && jsonnum.IsNumber(compare) {
+			c, err := jsonnum.Compare(subject, compare)
+			if err != nil {
+				return false, ErrorList{fieldError("inputs.value", 0, 0, CodeInvalidType, "Value is too large to compare exactly.")}
+			}
 			switch op {
 			case "gt":
-				return left > right, nil
+				return c > 0, nil
 			case "lt":
-				return left < right, nil
+				return c < 0, nil
 			case "gte":
-				return left >= right, nil
+				return c >= 0, nil
 			case "lte":
-				return left <= right, nil
+				return c <= 0, nil
 			}
 		}
 		ls, lok := subject.(string)

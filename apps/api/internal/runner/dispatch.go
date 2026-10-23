@@ -73,7 +73,7 @@ func (d *Dispatcher) Execute(ctx context.Context, scope isolation.Scope, perms [
 		return decisionFromOutcome(workflow.EvaluateTestStep(job.Step.NodeType, job.Step.Input, job.Step.Attempt))
 	}
 	if workflow.IsCoreNeutral(job.Step.NodeType) {
-		return decideCore(job.Step, job.Inputs, job.SkippedInputs)
+		return decideCoreRun(ctx, job.Execution, job.Step, job.Inputs, job.SkippedInputs)
 	}
 	switch job.Step.NodeType {
 	case "kubernetes.apply", "kubernetes.get", "kubernetes.list", "kubernetes.rolloutStatus":
@@ -96,12 +96,18 @@ func (d *Dispatcher) Execute(ctx context.Context, scope isolation.Scope, perms [
 }
 
 func decideCore(step wfstore.ExecutionStep, inputs map[string]any, skipped []wfstore.SkippedInput) Decision {
+	return decideCoreRun(context.Background(), wfstore.Execution{}, step, inputs, skipped)
+}
+
+// decideCoreRun carries the claimed execution so FFX expressions get
+// run.clock (the attempt's eval_clock) and the run and workflow fields.
+func decideCoreRun(ctx context.Context, exec wfstore.Execution, step wfstore.ExecutionStep, inputs map[string]any, skipped []wfstore.SkippedInput) Decision {
 	if step.NodeType == "flow.delay" {
 		// The claim loop parks flow.delay before Execute. A direct call
 		// still fails closed so a delay is never an in-process sleep.
 		return fail(CodeUnsupported, "Production runner does not schedule durable flow.delay waits.")
 	}
-	return decisionFromOutcome(workflow.EvaluateStep(step.NodeType, step.Input, inputs, skippedPorts(skipped)))
+	return decisionFromOutcome(workflow.EvaluateStepRun(step.NodeType, step.Input, inputs, skippedPorts(skipped), wfstore.RunContextFor(ctx, exec, step)))
 }
 
 func skippedPorts(in []wfstore.SkippedInput) []workflow.SkippedPort {

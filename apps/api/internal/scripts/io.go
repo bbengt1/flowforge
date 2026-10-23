@@ -3,8 +3,11 @@ package scripts
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 )
 
 var secretInputKeys = map[string]bool{
@@ -140,7 +143,7 @@ func validateValueAgainstSchema(value any, schema map[string]any, path string) e
 		return engineError(CodeSizeLimit, fmt.Sprintf("%s exceeds the byte limit.", path), http.StatusBadRequest)
 	}
 	if typ, ok := schema["type"].(string); ok && !valueMatchesType(value, typ) {
-		return &EngineError{Code: CodeInvalidSchema, Message: fmt.Sprintf("Value is not a %s.", typ), Status: http.StatusBadRequest, Path: path}
+		return &EngineError{Code: CodeInvalidSchema, Message: fmt.Sprintf("Value is not %s.", withArticle(typ)), Status: http.StatusBadRequest, Path: path}
 	}
 	if raw, ok := schema["enum"].([]any); ok {
 		found := false
@@ -161,18 +164,28 @@ func validateValueAgainstSchema(value any, schema map[string]any, path string) e
 			}
 		}
 	}
-	if raw, ok := schema["minimum"]; ok {
-		if n, ok := asFloat64(value); ok {
-			if min, ok := asFloat64(raw); ok && n < min {
-				return &EngineError{Code: CodeInvalidSchema, Message: "Value is below schema.minimum.", Status: http.StatusBadRequest, Path: path}
-			}
+	// minimum/maximum compare exactly; a value too large to compare
+	// exactly is refused with a fixed message naming the field only.
+	for _, bound := range []struct {
+		key, msg string
+		bad      int
+	}{{"minimum", "Value is below schema.minimum.", -1}, {"maximum", "Value is above schema.maximum.", 1}} {
+		raw, ok := schema[bound.key]
+		if !ok {
+			continue
 		}
-	}
-	if raw, ok := schema["maximum"]; ok {
-		if n, ok := asFloat64(value); ok {
-			if max, ok := asFloat64(raw); ok && n > max {
-				return &EngineError{Code: CodeInvalidSchema, Message: "Value is above schema.maximum.", Status: http.StatusBadRequest, Path: path}
-			}
+		if isNonFinite(value) {
+			return &EngineError{Code: CodeInvalidSchema, Message: "Value is not a finite number for schema." + bound.key + ".", Status: http.StatusBadRequest, Path: path}
+		}
+		if !jsonnum.IsNumber(value) || !jsonnum.IsNumber(raw) {
+			continue
+		}
+		c, err := jsonnum.Compare(value, raw)
+		if err != nil {
+			return &EngineError{Code: CodeInvalidSchema, Message: "Value is too large to compare exactly with schema." + bound.key + ".", Status: http.StatusBadRequest, Path: path}
+		}
+		if c == bound.bad {
+			return &EngineError{Code: CodeInvalidSchema, Message: bound.msg, Status: http.StatusBadRequest, Path: path}
 		}
 	}
 	if m, ok := value.(map[string]any); ok {
@@ -241,11 +254,14 @@ func valueMatchesType(v any, typ string) bool {
 		_, ok := v.(string)
 		return ok
 	case "integer":
+		if n, isNum := v.(json.Number); isNum {
+			ok, _ := jsonnum.IsInteger(n)
+			return ok
+		}
 		_, ok := asInt(v)
 		return ok
 	case "number":
-		_, ok := asFloat64(v)
-		return ok
+		return jsonnum.IsNumber(v)
 	case "boolean":
 		_, ok := v.(bool)
 		return ok
@@ -258,6 +274,10 @@ func valueMatchesType(v any, typ string) bool {
 }
 
 func valuesEqual(a, b any) bool {
+	if jsonnum.IsNumber(a) && jsonnum.IsNumber(b) {
+		c, err := jsonnum.Compare(a, b)
+		return err == nil && c == 0
+	}
 	left, err1 := json.Marshal(a)
 	right, err2 := json.Marshal(b)
 	if err1 != nil || err2 != nil {
@@ -266,19 +286,22 @@ func valuesEqual(a, b any) bool {
 	return string(left) == string(right)
 }
 
-func asFloat64(v any) (float64, bool) {
-	switch n := v.(type) {
+// isNonFinite reports whether v is a float NaN or ±Inf. JSON cannot carry
+// them, but Go-side values can.
+func isNonFinite(v any) bool {
+	switch f := v.(type) {
 	case float64:
-		return n, true
+		return math.IsNaN(f) || math.IsInf(f, 0)
 	case float32:
-		return float64(n), true
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	case json.Number:
-		f, err := n.Float64()
-		return f, err == nil
+		return math.IsNaN(float64(f)) || math.IsInf(float64(f), 0)
 	}
-	return 0, false
+	return false
+}
+
+// withArticle prefixes a schema type name with "a" or "an".
+func withArticle(typ string) string {
+	if typ != "" && strings.ContainsRune("aeiouAEIOU", rune(typ[0])) {
+		return "an " + typ
+	}
+	return "a " + typ
 }

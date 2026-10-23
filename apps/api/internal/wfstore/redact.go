@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
@@ -99,12 +100,9 @@ func cloneObject(v map[string]any) map[string]any {
 	if v == nil {
 		return map[string]any{}
 	}
-	raw, err := json.Marshal(v)
-	if err != nil {
-		return map[string]any{}
-	}
-	var out map[string]any
-	if err := json.Unmarshal(raw, &out); err != nil || out == nil {
+	c, err := jsonnum.Clone(v)
+	out, _ := c.(map[string]any)
+	if err != nil || out == nil {
 		return map[string]any{}
 	}
 	return out
@@ -202,8 +200,9 @@ func unmarshalObject(raw []byte) map[string]any {
 	if len(raw) == 0 {
 		return map[string]any{}
 	}
-	var out map[string]any
-	if err := json.Unmarshal(raw, &out); err != nil || out == nil {
+	v, err := jsonnum.Decode(raw)
+	out, _ := v.(map[string]any)
+	if err != nil || out == nil {
 		return map[string]any{}
 	}
 	return out

@@ -1,11 +1,13 @@
 package webhook
 
 import (
+	"bytes"
 	"encoding/json"
 	"mime"
 	"regexp"
 	"strings"
 
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
@@ -131,30 +133,28 @@ func cloneObject(in map[string]any) map[string]any {
 	if in == nil {
 		return map[string]any{}
 	}
-	raw, err := json.Marshal(in)
-	if err != nil {
-		return map[string]any{}
-	}
-	var out map[string]any
-	if err := json.Unmarshal(raw, &out); err != nil || out == nil {
+	c, err := jsonnum.Clone(in)
+	out, _ := c.(map[string]any)
+	if err != nil || out == nil {
 		return map[string]any{}
 	}
 	return out
 }
 
-// ParseJSONObject decodes a JSON object after signature verification.
+// ParseJSONObject decodes a JSON object after signature verification. It
+// decodes through jsonnum, so a whole number outside ±2^53 stays exact.
 func ParseJSONObject(raw []byte) (map[string]any, error) {
-	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	var v any
 	if err := dec.Decode(&v); err != nil {
 		return nil, ErrInvalid
 	}
-	obj, ok := v.(map[string]any)
-	if !ok || obj == nil {
+	if dec.More() {
 		return nil, ErrInvalid
 	}
-	if dec.More() {
+	obj, ok := jsonnum.Normalize(v).(map[string]any)
+	if !ok || obj == nil {
 		return nil, ErrInvalid
 	}
 	return obj, nil

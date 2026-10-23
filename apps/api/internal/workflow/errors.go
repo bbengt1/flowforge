@@ -79,6 +79,11 @@ const (
 	CodeExpressionRefNotAncestor = "expression-ref-not-ancestor"
 	CodeExpressionSecretUse      = "expression-secret-use"
 	CodeExpressionTooComplex     = "expression-too-complex"
+
+	// Runtime FFX codes (#650 E3.3).
+	CodeExpressionCostExceeded = "expression-cost-exceeded"
+	CodeExpressionTimeout      = "expression-timeout"
+	CodeExpressionRuntime      = "expression-runtime"
 )
 
 func fieldError(path string, line, column int, code, message string) FieldError {

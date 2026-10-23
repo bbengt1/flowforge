@@ -279,6 +279,9 @@ type ExecutionStep struct {
 	StartedAt       *time.Time     `json:"startedAt,omitempty"`
 	FinishedAt      *time.Time     `json:"finishedAt,omitempty"`
 	UpdatedAt       time.Time      `json:"updatedAt"`
+	// EvalClock is the attempt's deterministic FFX clock (#650 E3.3):
+	// set once when the attempt starts, read as run.clock.
+	EvalClock *time.Time `json:"evalClock,omitempty"`
 	// SkipReason is set exactly when Status is skipped (#660): one of
 	// SkipReasons.
 	// ErrorHandling is continue or errorOutput when the final attempt

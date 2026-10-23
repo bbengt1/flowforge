@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"regexp"
@@ -102,7 +103,7 @@ func Parse(src []byte) (*Document, ErrorList) {
 	}
 
 	var errs ErrorList
-	if err := walkSafe(&root, "", 0, &nodeCount{}, &errs); err != nil {
+	if err := walkSafe(&root, "", 0, &nodeCount{exempt: expressionScalars(&root)}, &errs); err != nil {
 		errs = append(errs, *err)
 	}
 	if len(errs) > 0 {
@@ -147,6 +148,66 @@ func ParseAndNormalize(src []byte) (*Result, ErrorList) {
 
 type nodeCount struct {
 	n int
+	// exempt holds the scalars that are FFX expression source (see
+	// expressionScalars). The template check skips them; every other
+	// check still applies.
+	exempt map[*yaml.Node]bool
+}
+
+// expressionScalars finds the source scalars of catalog-declared FFX
+// expression fields: spec.nodes[i].with.<field>.expr where the node type
+// declares <field> as an expression and the field value is exactly
+// {expr: <string>}. FFX is not YAML templating, so a nested map literal
+// ({"a": {"b": 1}}) or a "}}" inside a string literal is ordinary source.
+// Only those scalars are exempt from the template check; every other
+// field, key and scalar keeps it. It walks fixed paths only and never
+// follows aliases (walkSafe refuses them anyway).
+func expressionScalars(root *yaml.Node) map[*yaml.Node]bool {
+	out := map[*yaml.Node]bool{}
+	doc := documentMapping(root)
+	if doc == nil {
+		return out
+	}
+	spec, ok := mappingValue(doc, "spec")
+	if !ok || spec.Kind != yaml.MappingNode {
+		return out
+	}
+	nodes, ok := mappingValue(spec, "nodes")
+	if !ok || nodes.Kind != yaml.SequenceNode {
+		return out
+	}
+	for _, node := range nodes.Content {
+		if node.Kind != yaml.MappingNode {
+			continue
+		}
+		typ, ok := mappingValue(node, "type")
+		if !ok || typ.Kind != yaml.ScalarNode {
+			continue
+		}
+		fields := ExpressionFields(typ.Value)
+		if len(fields) == 0 {
+			continue
+		}
+		with, ok := mappingValue(node, "with")
+		if !ok || with.Kind != yaml.MappingNode {
+			continue
+		}
+		for _, f := range fields {
+			fv, ok := mappingValue(with, f.Name)
+			if !ok || fv.Kind != yaml.MappingNode || len(fv.Content) != 2 {
+				continue
+			}
+			k, v := fv.Content[0], fv.Content[1]
+			if k.Kind != yaml.ScalarNode || k.Value != "expr" || v.Kind != yaml.ScalarNode {
+				continue
+			}
+			if v.Tag != "" && v.Tag != "!!str" && v.Tag != "!" {
+				continue
+			}
+			out[v] = true
+		}
+	}
+	return out
 }
 
 func walkSafe(n *yaml.Node, path string, depth int, count *nodeCount, errs *ErrorList) *FieldError {
@@ -176,7 +237,7 @@ func walkSafe(n *yaml.Node, path string, depth int, count *nodeCount, errs *Erro
 		if len(n.Value) > MaxScalarBytes {
 			return &FieldError{Path: path, Line: n.Line, Column: n.Column, Code: CodeScalarTooLarge, Message: fmt.Sprintf("Scalar exceeds the %d byte limit.", MaxScalarBytes)}
 		}
-		if templateRE.MatchString(n.Value) {
+		if !count.exempt[n] && templateRE.MatchString(n.Value) {
 			return &FieldError{Path: path, Line: n.Line, Column: n.Column, Code: CodeTemplateForbidden, Message: "YAML templating and expressions are not allowed."}
 		}
 		return nil
@@ -678,13 +739,35 @@ func decodeScalar(n *yaml.Node) any {
 		if err == nil {
 			return v
 		}
+		if big, ok := bigDecimalInt(n.Value); ok {
+			return big
+		}
 	case "!!float":
+		// YAML resolves a decimal integer beyond int64 as a float; keep
+		// its digits exact instead of rounding.
+		if big, ok := bigDecimalInt(n.Value); ok {
+			return big
+		}
 		v, err := strconv.ParseFloat(n.Value, 64)
 		if err == nil {
 			return v
 		}
 	}
 	return n.Value
+}
+
+var bigDecimalIntRE = regexp.MustCompile(`^[-+]?(0|[1-9][0-9]*)$`)
+
+// bigDecimalInt returns a plain decimal integer literal outside the int64
+// range as an exact json.Number.
+func bigDecimalInt(s string) (json.Number, bool) {
+	if !bigDecimalIntRE.MatchString(s) {
+		return "", false
+	}
+	if _, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return "", false
+	}
+	return json.Number(strings.TrimPrefix(s, "+")), true
 }
 
 func decodeSequence[T any](n *yaml.Node, path string, fn func(*yaml.Node, string) (T, ErrorList)) ([]T, ErrorList) {

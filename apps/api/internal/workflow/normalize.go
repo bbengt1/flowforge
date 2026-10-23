@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 )
 
 // Normalize emits deterministic YAML for a validated document and its SHA-256
@@ -155,6 +158,18 @@ func encodeValue(v any) *yaml.Node {
 		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: fmt.Sprintf("%d", t)}
 	case float64:
 		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!float", Value: strconvFormatFloat(t)}
+	case json.Number:
+		// Exact digits; a whole literal stays an integer.
+		if jsonnum.IsWholeLiteral(t) {
+			if _, ok := jsonnum.Int64(t); !ok {
+				// Beyond int64, YAML resolves the plain literal as a
+				// float; leave the tag implicit so it is written plain.
+				// Parse reads it back as this exact json.Number.
+				return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!float", Value: string(t)}
+			}
+			return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: string(t)}
+		}
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!float", Value: string(t)}
 	case []any:
 		n := sequenceNode()
 		for _, item := range t {

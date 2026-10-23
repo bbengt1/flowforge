@@ -122,12 +122,26 @@ func TestCatalogRevision650(t *testing.T) {
 	if c.CatalogRevision != CatalogRevision || CatalogRevision < 1 || c.APIVersion != APIVersionV1 {
 		t.Fatalf("catalog revision %d api %s", c.CatalogRevision, c.APIVersion)
 	}
-	// No production node declares an expr field before E3.3.
+	// E3.3: data.map.expr (object) and flow.condition.expr (boolean);
+	// E3.4 adds data.filter.expr (boolean). None accepts a secret ref.
+	want := map[string]string{"data.map.expr": string(PortObject), "flow.condition.expr": string(PortBoolean), "data.filter.expr": string(PortBoolean)}
+	got := map[string]string{}
 	for _, n := range c.Nodes {
 		for _, f := range n.AllowedWith {
 			if f.Kind == WithKindExpr {
-				t.Fatalf("%s.%s is an expr field before E3.3", n.Type, f.Name)
+				if f.AcceptsSecretRef {
+					t.Fatalf("%s.%s accepts a secret ref", n.Type, f.Name)
+				}
+				got[n.Type+"."+f.Name] = f.ExprType
 			}
+		}
+	}
+	if len(got) != len(want) {
+		t.Fatalf("expr fields = %v", got)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Fatalf("expr fields = %v", got)
 		}
 	}
 }

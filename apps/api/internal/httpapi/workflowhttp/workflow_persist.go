@@ -15,6 +15,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/approvalhttp"
 	"github.com/bbengt1/flowforge/apps/api/internal/httpapi/core"
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 	k8sengine "github.com/bbengt1/flowforge/apps/api/internal/kubernetes"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsalert"
 	"github.com/bbengt1/flowforge/apps/api/internal/opsconfig"
@@ -75,7 +76,7 @@ type startExecutionRequest struct {
 	Source            string         `json:"source"`
 	WorkflowDraftID   string         `json:"workflowDraftId"`
 	IdempotencyKey    string         `json:"idempotencyKey"`
-	Input             map[string]any `json:"input"`
+	Input             jsonnum.Object `json:"input"`
 	CorrelationID     string         `json:"correlationId"`
 	TriggerID         string         `json:"triggerId"`
 }
@@ -636,7 +637,7 @@ func startWorkflowExecution(s *core.Server, w http.ResponseWriter, r *http.Reque
 	start := wfstore.StartInput{
 		VersionID:      req.WorkflowVersionID,
 		IdempotencyKey: core.FirstNonEmpty(strings.TrimSpace(req.IdempotencyKey), strings.TrimSpace(r.Header.Get("Idempotency-Key"))),
-		Input:          req.Input,
+		Input:          map[string]any(req.Input),
 		CorrelationID:  core.FirstNonEmpty(strings.TrimSpace(req.CorrelationID), core.RequestIDFromContext(r.Context())),
 		TriggerID:      strings.TrimSpace(req.TriggerID),
 		HostContext:    map[string]any{"requestId": core.RequestIDFromContext(r.Context())},
@@ -650,7 +651,7 @@ func startWorkflowExecution(s *core.Server, w http.ResponseWriter, r *http.Reque
 		core.WriteProblem(w, r, http.StatusBadRequest, core.CodeInvalidRequest, "Invalid Request", "This workflow has the error trigger. Only the engine starts it, when another run fails.")
 		return
 	}
-	if errs := workflow.ValidateManualStartInput(req.Input, ver.DefinitionYAML); len(errs) > 0 {
+	if errs := workflow.ValidateManualStartInput(map[string]any(req.Input), ver.DefinitionYAML); len(errs) > 0 {
 		WriteManualStartInputErrors(w, r, errs)
 		return
 	}

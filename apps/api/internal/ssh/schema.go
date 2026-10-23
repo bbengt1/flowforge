@@ -1,11 +1,14 @@
 package ssh
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/bbengt1/flowforge/apps/api/internal/jsonnum"
 )
 
 const (
@@ -427,6 +430,12 @@ func asInt(raw any) (int, error) {
 			return 0, ErrInvalid
 		}
 		return int(v), nil
+	case json.Number:
+		// Exact when it fits int; a larger value is invalid, never rounded.
+		if n, ok := jsonnum.Int(v); ok {
+			return n, nil
+		}
+		return 0, ErrInvalid
 	case string:
 		return strconv.Atoi(v)
 	default:
