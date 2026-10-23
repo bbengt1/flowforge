@@ -1,12 +1,20 @@
 import {
   MAP_CONVERT_KINDS,
   MAX_DELAY_SECONDS,
+  MAX_SWITCH_CASES,
+  MERGE_MODES,
+  SORT_KEY_TYPES,
+  SORT_ORDERS,
   defaultNodeName,
   isConditionOp,
   isCoreNeutralNodeType,
   isStopStatus,
+  isValidSwitchPortName,
   type ConditionOp,
   type CoreNeutralNodeType,
+  type MergeMode,
+  type SortKeyType,
+  type SortOrder,
   type StopStatus,
 } from "./workflow-core-nodes.ts";
 
@@ -32,11 +40,34 @@ export type MapPath = {
   convert?: string;
 };
 
+export type SwitchCaseConfig = {
+  name: string;
+  op: ConditionOp;
+  compare: string;
+};
+
 export type CoreNodeWith =
   | { type: "flow.condition"; op: ConditionOp; path: string; compare: string }
+  | {
+      type: "flow.switch";
+      path: string;
+      cases: SwitchCaseConfig[];
+      /** with.default — output port when no case matches. */
+      defaultPort: string;
+    }
   | { type: "flow.delay"; duration: string }
   | { type: "data.set"; fields: SetField[]; classification?: string }
   | { type: "data.map"; mapping: MapPath[] }
+  | {
+      type: "data.filter";
+      path: string;
+      op: ConditionOp;
+      compare: string;
+      /** FFX source when set; mutually exclusive with path/op/compare. */
+      expr: string;
+    }
+  | { type: "data.sort"; key: string; keyType: SortKeyType | ""; order: SortOrder }
+  | { type: "data.merge"; mode: MergeMode; key: string }
   | { type: "data.validate"; schemaType: string; additionalProperties: boolean }
   | { type: "flow.stop"; status: StopStatus; message: string }
   | { type: "flow.fail"; code: string; message: string };
@@ -46,6 +77,8 @@ export type YamlWorkflowNode = {
   type: string;
   name: string;
   join?: "all" | "any";
+  /** Present when the YAML sets onError (stop | continue | errorOutput). */
+  onError?: string;
   with: Record<string, unknown>;
   startLine: number;
   endLine: number;
@@ -90,12 +123,23 @@ export function defaultCoreWith(type: CoreNeutralNodeType): Record<string, unkno
   switch (type) {
     case "flow.condition":
       return { op: "eq", compare: "ready" };
+    case "flow.switch":
+      return {
+        cases: [{ name: "matched", op: "eq", compare: "ready" }],
+        default: "default",
+      };
     case "flow.delay":
       return { duration: "PT5M" };
     case "data.set":
       return { value: { status: "ready" } };
     case "data.map":
       return { mapping: { "result.state": "input.status" } };
+    case "data.filter":
+      return { path: "status", op: "eq", compare: "ready" };
+    case "data.sort":
+      return { key: "name", order: "asc" };
+    case "data.merge":
+      return { mode: "append" };
     case "data.validate":
       return { schema: { type: "object", additionalProperties: true } };
     case "flow.stop":
@@ -282,7 +326,14 @@ export function updateYamlNode(
     return null;
   }
   const block = serializeNodeBlock(
-    { id: next.id, type: next.type, name: next.name, join: existing.join, with: next.with },
+    {
+      id: next.id,
+      type: next.type,
+      name: next.name,
+      join: existing.join,
+      onError: existing.onError,
+      with: next.with,
+    },
     4,
   );
   const lines = yaml.split("\n");
@@ -348,6 +399,66 @@ export function serializeCoreWith(config: CoreNodeWith): {
       }
       if (config.compare.trim() && config.op !== "exists") {
         withValue.compare = config.compare.trim();
+      }
+      return { with: withValue, errors };
+    }
+    case "flow.switch": {
+      if (config.path && looksLikeExpression(config.path)) {
+        errors.push("path must be a field path, not an expression.");
+      }
+      const casesOut: Record<string, unknown>[] = [];
+      const seen = new Set<string>();
+      for (const c of config.cases) {
+        const name = c.name.trim();
+        if (!name && !c.compare.trim()) {
+          continue;
+        }
+        if (!isValidSwitchPortName(name)) {
+          errors.push(
+            "Case name must be a port name: a letter, then letters, digits, _ or -, at most 64 characters, and not port, error or __ff_*.",
+          );
+          continue;
+        }
+        if (seen.has(name)) {
+          errors.push(`Case name ${name} is duplicated.`);
+          continue;
+        }
+        seen.add(name);
+        if (!isConditionOp(c.op)) {
+          errors.push(`Case ${name}: op must be a declarative comparison operator.`);
+        }
+        if (c.op !== "exists" && !c.compare.trim()) {
+          errors.push(`Case ${name}: needs compare unless op is exists.`);
+        }
+        if (c.op === "exists" && c.compare.trim()) {
+          errors.push(`Case ${name}: exists must not include compare.`);
+        }
+        if (c.compare && looksLikeExpression(c.compare)) {
+          errors.push(`Case ${name}: compare must be a literal, not an expression.`);
+        }
+        const row: Record<string, unknown> = { name, op: c.op };
+        if (c.compare.trim() && c.op !== "exists") {
+          row.compare = c.compare.trim();
+        }
+        casesOut.push(row);
+      }
+      if (casesOut.length === 0) {
+        errors.push("flow.switch requires at least one case.");
+      } else if (casesOut.length > MAX_SWITCH_CASES) {
+        errors.push(`flow.switch allows at most ${MAX_SWITCH_CASES} cases.`);
+      }
+      const defaultPort = config.defaultPort.trim();
+      if (!isValidSwitchPortName(defaultPort)) {
+        errors.push("default must be a valid output port name.");
+      } else if (seen.has(defaultPort)) {
+        errors.push("default must differ from every case name.");
+      }
+      const withValue: Record<string, unknown> = {
+        cases: casesOut,
+        default: defaultPort,
+      };
+      if (config.path.trim()) {
+        withValue.path = config.path.trim();
       }
       return { with: withValue, errors };
     }
@@ -428,6 +539,78 @@ export function serializeCoreWith(config: CoreNodeWith): {
       }
       return { with: { mapping }, errors };
     }
+    case "data.filter": {
+      const expr = config.expr.trim();
+      const path = config.path.trim();
+      const compare = config.compare.trim();
+      if (expr) {
+        if (path || compare) {
+          errors.push("data.filter expr cannot be combined with path, op or compare.");
+        }
+        return { with: { expr: { expr } }, errors };
+      }
+      if (!isConditionOp(config.op)) {
+        errors.push("op must be a declarative comparison operator.");
+      }
+      if (path && looksLikeExpression(path)) {
+        errors.push("path must be a field path, not an expression.");
+      }
+      if (compare && looksLikeExpression(compare)) {
+        errors.push("compare must be a literal, not an expression.");
+      }
+      if (config.op !== "exists" && !compare) {
+        errors.push("Filter needs compare unless op is exists, or set expr.");
+      }
+      if (config.op === "exists" && compare) {
+        errors.push("exists must not include compare.");
+      }
+      const withValue: Record<string, unknown> = { op: config.op };
+      if (path) {
+        withValue.path = path;
+      }
+      if (compare && config.op !== "exists") {
+        withValue.compare = compare;
+      }
+      return { with: withValue, errors };
+    }
+    case "data.sort": {
+      const key = config.key.trim();
+      if (!key) {
+        errors.push("data.sort requires with.key.");
+      } else if (looksLikeExpression(key)) {
+        errors.push("key must be a field path, not an expression.");
+      }
+      const withValue: Record<string, unknown> = { key };
+      if (config.keyType && (SORT_KEY_TYPES as readonly string[]).includes(config.keyType)) {
+        withValue.type = config.keyType;
+      }
+      const order = config.order || "asc";
+      if (!(SORT_ORDERS as readonly string[]).includes(order)) {
+        errors.push("order must be asc or desc.");
+      } else {
+        withValue.order = order;
+      }
+      return { with: withValue, errors };
+    }
+    case "data.merge": {
+      if (!(MERGE_MODES as readonly string[]).includes(config.mode)) {
+        errors.push("mode must be append, zip or byKey.");
+      }
+      const withValue: Record<string, unknown> = { mode: config.mode };
+      const key = config.key.trim();
+      if (config.mode === "byKey") {
+        if (!key) {
+          errors.push("byKey requires with.key.");
+        } else if (looksLikeExpression(key)) {
+          errors.push("key must be a field path, not an expression.");
+        } else {
+          withValue.key = key;
+        }
+      } else if (key) {
+        errors.push("key is only used with mode byKey.");
+      }
+      return { with: withValue, errors };
+    }
     case "data.validate": {
       const schemaType = config.schemaType.trim() || "object";
       if (looksLikeSecretValue(schemaType) || isForbiddenYamlKey(schemaType)) {
@@ -490,6 +673,32 @@ export function configFromNode(node: YamlWorkflowNode): CoreNodeWith | null {
         compare: stringField(withValue.compare),
       };
     }
+    case "flow.switch": {
+      const casesRaw = Array.isArray(withValue.cases) ? withValue.cases : [];
+      const cases = casesRaw
+        .map((raw) => {
+          if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+            return null;
+          }
+          const row = raw as Record<string, unknown>;
+          const opRaw = typeof row.op === "string" ? row.op : "eq";
+          return {
+            name: stringField(row.name),
+            op: (isConditionOp(opRaw) ? opRaw : "eq") as ConditionOp,
+            compare: stringField(row.compare),
+          };
+        })
+        .filter((row): row is SwitchCaseConfig => row !== null);
+      return {
+        type: "flow.switch",
+        path: stringField(withValue.path),
+        cases:
+          cases.length > 0
+            ? cases
+            : [{ name: "matched", op: "eq" as ConditionOp, compare: "ready" }],
+        defaultPort: stringField(withValue.default) || "default",
+      };
+    }
     case "flow.delay":
       return {
         type: "flow.delay",
@@ -508,6 +717,47 @@ export function configFromNode(node: YamlWorkflowNode): CoreNodeWith | null {
         type: "data.map",
         mapping: toMapPaths(withValue.mapping),
       };
+    case "data.filter": {
+      const exprRaw = withValue.expr;
+      let expr = "";
+      if (typeof exprRaw === "string") {
+        expr = exprRaw;
+      } else if (exprRaw && typeof exprRaw === "object" && !Array.isArray(exprRaw)) {
+        expr = stringField((exprRaw as Record<string, unknown>).expr);
+      }
+      const opRaw = typeof withValue.op === "string" ? withValue.op : "eq";
+      return {
+        type: "data.filter",
+        path: stringField(withValue.path),
+        op: isConditionOp(opRaw) ? opRaw : "eq",
+        compare: stringField(withValue.compare),
+        expr,
+      };
+    }
+    case "data.sort": {
+      const typeRaw = stringField(withValue.type);
+      const orderRaw = stringField(withValue.order) || "asc";
+      return {
+        type: "data.sort",
+        key: stringField(withValue.key) || "name",
+        keyType: (SORT_KEY_TYPES as readonly string[]).includes(typeRaw)
+          ? (typeRaw as SortKeyType)
+          : "",
+        order: (SORT_ORDERS as readonly string[]).includes(orderRaw)
+          ? (orderRaw as SortOrder)
+          : "asc",
+      };
+    }
+    case "data.merge": {
+      const modeRaw = stringField(withValue.mode) || "append";
+      return {
+        type: "data.merge",
+        mode: (MERGE_MODES as readonly string[]).includes(modeRaw)
+          ? (modeRaw as MergeMode)
+          : "append",
+        key: stringField(withValue.key),
+      };
+    }
     case "data.validate": {
       const schema =
         withValue.schema && typeof withValue.schema === "object" && !Array.isArray(withValue.schema)
@@ -537,7 +787,14 @@ export function configFromNode(node: YamlWorkflowNode): CoreNodeWith | null {
 }
 
 export function serializeNodeBlock(
-  node: { id: string; type: string; name: string; join?: "all" | "any"; with: Record<string, unknown> },
+  node: {
+    id: string;
+    type: string;
+    name: string;
+    join?: "all" | "any";
+    onError?: string;
+    with: Record<string, unknown>;
+  },
   indent = 4,
 ): string {
   const pad = " ".repeat(indent);
@@ -549,6 +806,13 @@ export function serializeNodeBlock(
   ];
   if (node.join === "all" || node.join === "any") {
     lines.push(`${field}join: ${node.join}`);
+  }
+  if (
+    node.onError === "stop" ||
+    node.onError === "continue" ||
+    node.onError === "errorOutput"
+  ) {
+    lines.push(`${field}onError: ${node.onError}`);
   }
   if (Object.keys(node.with).length > 0) {
     lines.push(`${field}with:`);
@@ -899,11 +1163,17 @@ function parseNodeItem(yaml: string, item: ListItemRange): YamlWorkflowNode {
       : {};
   const joinRaw = stringField(mapping.join);
   const join = joinRaw === "all" || joinRaw === "any" ? joinRaw : undefined;
+  const onErrorRaw = stringField(mapping.onError);
+  const onError =
+    onErrorRaw === "stop" || onErrorRaw === "continue" || onErrorRaw === "errorOutput"
+      ? onErrorRaw
+      : undefined;
   return {
     id: stringField(mapping.id),
     type: stringField(mapping.type),
     name: stringField(mapping.name),
     ...(join ? { join } : {}),
+    ...(onError ? { onError } : {}),
     with: withValue,
     startLine: item.startLine,
     endLine: item.endLine,

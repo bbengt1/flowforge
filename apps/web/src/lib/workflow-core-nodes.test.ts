@@ -11,6 +11,8 @@ import {
   formatPolicy,
   formatPort,
   isCoreNeutralNodeType,
+  switchOutputPortNames,
+  switchOutputPorts,
 } from "./workflow-core-nodes.ts";
 import type { WorkflowCatalog } from "./workflow-types.ts";
 
@@ -62,6 +64,61 @@ const catalog: WorkflowCatalog = {
     { type: "data.set", phase: "core", requiredWith: ["value"] },
     { type: "data.map", phase: "core", requiredWith: ["mapping"] },
     { type: "data.validate", phase: "core", requiredWith: ["schema"] },
+    {
+      type: "flow.switch",
+      phase: "core",
+      title: "Switch",
+      requiredWith: ["cases", "default"],
+      allowedWith: [
+        { name: "cases", kind: "array", required: true },
+        { name: "default", kind: "string", required: true },
+      ],
+      outputs: [],
+    },
+    {
+      type: "data.filter",
+      phase: "core",
+      title: "Filter items",
+      inputs: [{ name: "input", kind: "items", required: true }],
+      outputs: [
+        { name: "kept", kind: "items" },
+        { name: "dropped", kind: "items" },
+      ],
+      allowedWith: [
+        { name: "path", kind: "string" },
+        { name: "op", kind: "enum", enum: ["eq"] },
+        { name: "compare", kind: "any" },
+        { name: "expr", kind: "expr" },
+      ],
+    },
+    {
+      type: "data.sort",
+      phase: "core",
+      title: "Sort items",
+      requiredWith: ["key"],
+      inputs: [{ name: "input", kind: "items", required: true }],
+      outputs: [{ name: "result", kind: "items" }],
+      allowedWith: [
+        { name: "key", kind: "string", required: true },
+        { name: "type", kind: "enum", enum: ["string", "number", "timestamp"] },
+        { name: "order", kind: "enum", enum: ["asc", "desc"] },
+      ],
+    },
+    {
+      type: "data.merge",
+      phase: "core",
+      title: "Merge items",
+      requiredWith: ["mode"],
+      inputs: [
+        { name: "left", kind: "items", required: true },
+        { name: "right", kind: "items", required: true },
+      ],
+      outputs: [{ name: "result", kind: "items" }],
+      allowedWith: [
+        { name: "mode", kind: "enum", required: true, enum: ["append", "zip", "byKey"] },
+        { name: "key", kind: "string" },
+      ],
+    },
     { type: "flow.stop", phase: "core" },
     { type: "flow.fail", phase: "core" },
     { type: "kubernetes.apply", phase: "core", requiredWith: ["clusterTargetId"] },
@@ -73,16 +130,19 @@ const catalog: WorkflowCatalog = {
 };
 
 describe("filterCoreNeutralNodes", () => {
-  it("keeps the seven E3.3 types and fail-closes next/provider/other core", () => {
+  it("keeps the E3.3+E3.4 neutral types and fail-closes next/provider/other core", () => {
     const filtered = filterCoreNeutralNodes(catalog.nodes);
     assert.deepEqual(
-      filtered.map((item) => item.type),
-      [...CORE_NEUTRAL_NODE_TYPES],
+      filtered.map((item) => item.type).sort(),
+      [...CORE_NEUTRAL_NODE_TYPES].sort(),
     );
     assert.equal(filtered.some((item) => item.type === "kubernetes.apply"), false);
     assert.equal(filtered.some((item) => item.type === "workflow.call"), false);
     assert.equal(isCoreNeutralNodeType("manual"), false);
-    assert.equal(isCoreNeutralNodeType("flow.switch"), false);
+    assert.equal(isCoreNeutralNodeType("flow.switch"), true);
+    assert.equal(isCoreNeutralNodeType("data.filter"), true);
+    assert.equal(isCoreNeutralNodeType("data.sort"), true);
+    assert.equal(isCoreNeutralNodeType("data.merge"), true);
     assert.equal(catalogHasNonNeutralCore(catalog), true);
     assert.equal(catalogExcludesTriggerNodes(catalog), true);
   });
@@ -154,13 +214,53 @@ describe("adaptCoreNeutralPalette", () => {
     assert.ok(filterPaletteEntries(palette, "compare").length >= 1);
   });
 
-  it("stays usable from the #32 contract when GET catalog is empty", () => {
+  it("stays usable from the #32/#698 contract when GET catalog is empty", () => {
     const palette = adaptCoreNeutralPalette(null);
-    assert.equal(palette.length, 7);
+    assert.equal(palette.length, CORE_NEUTRAL_NODE_TYPES.length);
     assert.equal(palette.every((item) => item.source === "contract-fallback"), true);
     assert.equal(
       palette.find((item) => item.type === "flow.fail")?.requiredWith.includes("code"),
       true,
     );
+  });
+});
+
+
+describe("flow.switch instance ports", () => {
+  it("builds outputs from cases + default in order", () => {
+    assert.deepEqual(
+      switchOutputPortNames({
+        cases: [
+          { name: "matched", op: "eq", compare: "ready" },
+          { name: "other", op: "ne", compare: "x" },
+        ],
+        default: "fallback",
+      }),
+      ["matched", "other", "fallback"],
+    );
+    assert.deepEqual(
+      switchOutputPorts({
+        cases: [{ name: "matched", op: "eq", compare: "ready" }],
+        default: "default",
+      }).map((p) => p.name),
+      ["matched", "default"],
+    );
+  });
+
+  it("exposes kept/dropped and merge/sort ports from the palette contract", () => {
+    const palette = adaptCoreNeutralPalette(catalog);
+    assert.deepEqual(
+      palette.find((item) => item.type === "data.filter")?.outputs.map((p) => p.name),
+      ["kept", "dropped"],
+    );
+    assert.deepEqual(
+      palette.find((item) => item.type === "data.sort")?.outputs.map((p) => p.name),
+      ["result"],
+    );
+    assert.deepEqual(
+      palette.find((item) => item.type === "data.merge")?.inputs.map((p) => p.name),
+      ["left", "right"],
+    );
+    assert.equal(palette.find((item) => item.type === "flow.switch")?.outputs.length, 0);
   });
 });

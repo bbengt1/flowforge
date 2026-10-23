@@ -19,7 +19,9 @@ import {
 } from "./execution-types.ts";
 import {
   catalogExcludesTriggerNodes,
+  errorOutputPort,
   isCoreNeutralNodeType,
+  switchOutputPorts,
 } from "./workflow-core-nodes.ts";
 import { canShowSummary } from "./workflow.ts";
 import type {
@@ -42,7 +44,7 @@ import {
   type YamlWorkflowNode,
 } from "./workflow-yaml-nodes.ts";
 
-export const PORT_REF_RE = /^([a-z][a-z0-9-]*)\.([A-Za-z][A-Za-z0-9_]*)$/;
+export const PORT_REF_RE = /^([a-z][a-z0-9-]*)\.([A-Za-z][A-Za-z0-9_-]*)$/;
 
 export type PortRef = {
   nodeId: string;
@@ -212,6 +214,29 @@ export function portsForType(
   };
 }
 
+/**
+ * Instance ports for the canvas. flow.switch outputs come from with.cases
+ * + with.default (catalog lists outputs: []). When onError is errorOutput,
+ * the synthetic error port is appended.
+ */
+export function portsForNodeInstance(input: {
+  type: string;
+  with?: Record<string, unknown> | null;
+  onError?: string | null;
+  catalog?: WorkflowCatalog | null;
+  palette?: PalettePorts[];
+}): { inputs: CatalogPort[]; outputs: CatalogPort[] } {
+  const base = portsForType(input.catalog, input.type, input.palette);
+  const outputs =
+    input.type === "flow.switch"
+      ? switchOutputPorts(input.with ?? {})
+      : [...base.outputs];
+  if (input.onError === "errorOutput" && !outputs.some((p) => p.name === "error")) {
+    outputs.push(errorOutputPort());
+  }
+  return { inputs: base.inputs, outputs };
+}
+
 export function canConnectPorts(
   catalog: WorkflowCatalog | null | undefined,
   fromType: string,
@@ -219,9 +244,23 @@ export function canConnectPorts(
   toType: string,
   toPort: string,
   palette?: PalettePorts[],
+  fromInstance?: { with?: Record<string, unknown> | null; onError?: string | null },
+  toInstance?: { with?: Record<string, unknown> | null; onError?: string | null },
 ): PortConnectResult {
-  const fromPorts = portsForType(catalog, fromType, palette);
-  const toPorts = portsForType(catalog, toType, palette);
+  const fromPorts = portsForNodeInstance({
+    type: fromType,
+    catalog,
+    palette,
+    with: fromInstance?.with,
+    onError: fromInstance?.onError,
+  });
+  const toPorts = portsForNodeInstance({
+    type: toType,
+    catalog,
+    palette,
+    with: toInstance?.with,
+    onError: toInstance?.onError,
+  });
   const output = fromPorts.outputs.find((port) => port.name === fromPort);
   const input = toPorts.inputs.find((port) => port.name === toPort);
   if (!output) {
@@ -372,7 +411,13 @@ export function graphFromValidatedYaml(
   const byId = new Map(yamlNodes.map((node) => [node.id, node]));
   const nodes: GraphNode[] = summary.nodes.map((item) => {
     const yamlNode = byId.get(item.id);
-    const ports = portsForType(options.catalog, item.type, options.palette);
+    const ports = portsForNodeInstance({
+      type: item.type,
+      with: yamlNode?.with ?? {},
+      onError: yamlNode?.onError,
+      catalog: options.catalog,
+      palette: options.palette,
+    });
     return {
       id: item.id,
       type: item.type,
@@ -390,6 +435,8 @@ export function graphFromValidatedYaml(
     const yamlEdge = yamlEdges.find((edge) => edge.from === item.from && edge.to === item.to);
     const fromNode = nodes.find((node) => node.id === fromRef?.nodeId);
     const toNode = nodes.find((node) => node.id === toRef?.nodeId);
+    const fromYaml = fromRef ? byId.get(fromRef.nodeId) : undefined;
+    const toYaml = toRef ? byId.get(toRef.nodeId) : undefined;
     const connect =
       fromRef && toRef && fromNode && toNode
         ? canConnectPorts(
@@ -399,6 +446,8 @@ export function graphFromValidatedYaml(
             toNode.type,
             toRef.port,
             options.palette,
+            { with: fromYaml?.with, onError: fromYaml?.onError },
+            { with: toYaml?.with, onError: toYaml?.onError },
           )
         : { ok: false, reason: "Edge ports are not resolvable." };
     return {

@@ -23,6 +23,10 @@ import type { SshNodeCatalog } from "@/lib/ssh-node-contract";
 import {
   CONDITION_OPS,
   MAP_CONVERT_KINDS,
+  MAX_SWITCH_CASES,
+  MERGE_MODES,
+  SORT_KEY_TYPES,
+  SORT_ORDERS,
   STOP_STATUSES,
   formatBounds,
   formatPolicy,
@@ -38,6 +42,7 @@ import {
   type MapPath,
   type SetField,
   type SetFieldKind,
+  type SwitchCaseConfig,
   type YamlWorkflowNode,
 } from "@/lib/workflow-yaml-nodes";
 
@@ -419,6 +424,27 @@ function ConfigFields({
           )}
         </>
       );
+    case "flow.switch":
+      return (
+        <>
+          <TextField
+            label="path"
+            value={config.path}
+            hint="Optional dotted path applied to every case. No expressions."
+            onChange={(path) => onChange({ ...config, path })}
+          />
+          <SwitchCasesEditor
+            cases={config.cases}
+            onChange={(cases) => onChange({ ...config, cases })}
+          />
+          <TextField
+            label="default"
+            value={config.defaultPort}
+            hint="Output port when no case matches. Required. Ports are case names + this default (+ error when onError is errorOutput)."
+            onChange={(defaultPort) => onChange({ ...config, defaultPort })}
+          />
+        </>
+      );
     case "flow.delay":
       return (
         <TextField
@@ -449,6 +475,107 @@ function ConfigFields({
           mapping={config.mapping}
           onChange={(mapping) => onChange({ ...config, mapping })}
         />
+      );
+    case "data.filter":
+      return (
+        <>
+          <TextField
+            label="expr"
+            value={config.expr}
+            hint='Optional FFX boolean written as an expr object. When set, path, op, and compare are not used.'
+            onChange={(expr) => onChange({ ...config, expr })}
+          />
+          {!config.expr.trim() ? (
+            <>
+              <SelectField
+                label="op"
+                value={config.op}
+                options={CONDITION_OPS}
+                onChange={(op) =>
+                  onChange({
+                    ...config,
+                    op: op as typeof config.op,
+                    compare: op === "exists" ? "" : config.compare,
+                  })
+                }
+              />
+              <TextField
+                label="path"
+                value={config.path}
+                hint="Dotted identifier path into each item."
+                onChange={(path) => onChange({ ...config, path })}
+              />
+              {config.op !== "exists" ? (
+                <TextField
+                  label="compare"
+                  value={config.compare}
+                  hint="Literal compare value."
+                  onChange={(compare) => onChange({ ...config, compare })}
+                />
+              ) : (
+                <p className="text-xs text-fg">exists must not include compare.</p>
+              )}
+            </>
+          ) : null}
+          <p className="text-xs text-fg">
+            Catalog ports: kept and dropped (both fire).
+          </p>
+        </>
+      );
+    case "data.sort":
+      return (
+        <>
+          <TextField
+            label="key"
+            value={config.key}
+            hint="Required dotted path to the sort key on each item."
+            onChange={(key) => onChange({ ...config, key })}
+          />
+          <SelectField
+            label="type"
+            value={config.keyType}
+            options={["", ...SORT_KEY_TYPES]}
+            onChange={(keyType) =>
+              onChange({
+                ...config,
+                keyType: keyType as typeof config.keyType,
+              })
+            }
+          />
+          <SelectField
+            label="order"
+            value={config.order}
+            options={SORT_ORDERS}
+            onChange={(order) =>
+              onChange({ ...config, order: order as typeof config.order })
+            }
+          />
+        </>
+      );
+    case "data.merge":
+      return (
+        <>
+          <SelectField
+            label="mode"
+            value={config.mode}
+            options={MERGE_MODES}
+            onChange={(mode) =>
+              onChange({
+                ...config,
+                mode: mode as typeof config.mode,
+                key: mode === "byKey" ? config.key : "",
+              })
+            }
+          />
+          {config.mode === "byKey" ? (
+            <TextField
+              label="key"
+              value={config.key}
+              hint="Required for byKey. Dotted path to the join key."
+              onChange={(key) => onChange({ ...config, key })}
+            />
+          ) : null}
+        </>
       );
     case "data.validate":
       return (
@@ -514,6 +641,84 @@ function ConfigFields({
         </>
       );
   }
+}
+
+
+function SwitchCasesEditor({
+  cases,
+  onChange,
+}: {
+  cases: SwitchCaseConfig[];
+  onChange: (cases: SwitchCaseConfig[]) => void;
+}) {
+  return (
+    <fieldset className="space-y-2" data-ndv-field="cases">
+      <legend className="text-sm text-fg">
+        cases (max {MAX_SWITCH_CASES}; each name is an output port)
+      </legend>
+      {cases.map((row, index) => (
+        <div key={`${row.name}-${index}`} className="space-y-1 rounded-lg border border-border p-2">
+          <input
+            aria-label={`Case ${index + 1} name`}
+            value={row.name}
+            placeholder="port name"
+            onChange={(event) =>
+              onChange(replaceAt(cases, index, { ...row, name: event.target.value }))
+            }
+            className="w-full rounded-lg border border-border px-2 py-1.5 font-mono text-xs"
+          />
+          <select
+            aria-label={`Case ${index + 1} op`}
+            value={row.op}
+            onChange={(event) =>
+              onChange(
+                replaceAt(cases, index, {
+                  ...row,
+                  op: event.target.value as SwitchCaseConfig["op"],
+                  compare: event.target.value === "exists" ? "" : row.compare,
+                }),
+              )
+            }
+            className="w-full rounded-lg border border-border px-2 py-1.5 text-xs"
+          >
+            {CONDITION_OPS.map((op) => (
+              <option key={op} value={op}>
+                {op}
+              </option>
+            ))}
+          </select>
+          {row.op !== "exists" ? (
+            <input
+              aria-label={`Case ${index + 1} compare`}
+              value={row.compare}
+              placeholder="compare"
+              onChange={(event) =>
+                onChange(replaceAt(cases, index, { ...row, compare: event.target.value }))
+              }
+              className="w-full rounded-lg border border-border px-2 py-1.5 font-mono text-xs"
+            />
+          ) : null}
+          <button
+            type="button"
+            onClick={() => onChange(cases.filter((_, item) => item !== index))}
+            className="text-xs text-fg underline"
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        disabled={cases.length >= MAX_SWITCH_CASES}
+        onClick={() =>
+          onChange([...cases, { name: "", op: "eq", compare: "" }])
+        }
+        className="text-sm text-fg underline decoration-teal-200 underline-offset-2 disabled:opacity-50"
+      >
+        Add case
+      </button>
+    </fieldset>
+  );
 }
 
 function SetFieldsEditor({

@@ -15,6 +15,7 @@ import {
   groupValidationErrors,
   groupedValidationBuckets,
   parsePortRef,
+  portsForNodeInstance,
   parseYamlGraph,
   portsCompatible,
   projectCanvasGraph,
@@ -72,8 +73,41 @@ const catalog: WorkflowCatalog = {
     { type: "kubernetes.apply", phase: "core", requiredWith: ["clusterTargetId"] },
     { type: "workflow.call", phase: "next" },
     { type: "servicenow.ticket", phase: "provider" },
-    { type: "data.merge", phase: "next", enabled: false },
-    { type: "flow.switch", phase: "next", enabled: true },
+    {
+      type: "data.merge",
+      phase: "core",
+      title: "Merge items",
+      inputs: [
+        { name: "left", kind: "items" },
+        { name: "right", kind: "items" },
+      ],
+      outputs: [{ name: "result", kind: "items" }],
+      requiredWith: ["mode"],
+    },
+    {
+      type: "flow.switch",
+      phase: "core",
+      title: "Switch",
+      inputs: [{ name: "value", kind: "any" }],
+      outputs: [],
+      requiredWith: ["cases", "default"],
+    },
+    {
+      type: "data.filter",
+      phase: "core",
+      inputs: [{ name: "input", kind: "items" }],
+      outputs: [
+        { name: "kept", kind: "items" },
+        { name: "dropped", kind: "items" },
+      ],
+    },
+    {
+      type: "data.sort",
+      phase: "core",
+      inputs: [{ name: "input", kind: "items" }],
+      outputs: [{ name: "result", kind: "items" }],
+      requiredWith: ["key"],
+    },
   ],
 };
 
@@ -129,8 +163,10 @@ describe("action library catalog filter", () => {
     assert.equal(nodes.some((item) => item.type === "manual"), false);
     assert.equal(nodes.some((item) => item.type === "workflow.call"), false);
     assert.equal(nodes.some((item) => item.type === "servicenow.ticket"), false);
-    assert.equal(nodes.some((item) => item.type === "data.merge"), false);
+    assert.equal(nodes.some((item) => item.type === "data.merge"), true);
     assert.equal(nodes.some((item) => item.type === "flow.switch"), true);
+    assert.equal(nodes.some((item) => item.type === "data.filter"), true);
+    assert.equal(nodes.some((item) => item.type === "data.sort"), true);
     assert.equal(nodes.some((item) => item.type === "kubernetes.apply"), true);
 
     const library = adaptActionLibrary(catalog);
@@ -298,5 +334,31 @@ describe("canvas port chrome", () => {
       assert.equal(replay.title.includes("unavailable"), false);
       assert.equal(replay.title.includes(kind), false);
     }
+  });
+});
+
+describe("flow.switch canvas ports", () => {
+  it("draws outputs from cases + default and error when onError is errorOutput", () => {
+    const ports = portsForNodeInstance({
+      type: "flow.switch",
+      with: {
+        cases: [
+          { name: "matched", op: "eq", compare: "ready" },
+          { name: "other", op: "ne", compare: "x" },
+        ],
+        default: "fallback",
+      },
+      onError: "errorOutput",
+      catalog,
+    });
+    assert.deepEqual(
+      ports.outputs.map((p) => p.name),
+      ["matched", "other", "fallback", "error"],
+    );
+    assert.equal(ports.inputs[0]?.name, "value");
+  });
+
+  it("parses hyphenated switch port refs", () => {
+    assert.deepEqual(parsePortRef("sw.case-a"), { nodeId: "sw", port: "case-a" });
   });
 });
