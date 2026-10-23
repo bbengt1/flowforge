@@ -197,4 +197,4 @@ Existing codes still apply: `unknown-field`, `invalid-with`, `secret-forbidden`,
 
 ## Per-item onError
 
-Pure core list nodes (`data.sort`, `data.filter`, `data.merge`) evaluate in-process over `{items: [...]}`. Allowlisted per-item failures may route under `onError`; the step ends `succeededWithErrors` when any item routes. `flow.switch` refuses `continue`. `data.filter` allows only `errorOutput` or none. Provider nodes stay run-once. See the workflow YAML schema.
+Pure core list nodes (`data.sort`, `data.filter`) evaluate in-process over `{items: [...]}`. `data.merge` is not wired for per-item onError yet. Allowlisted per-item failures may route under `onError`; the step ends `succeededWithErrors` when any item routes. `flow.switch` refuses `continue`. `data.filter` allows only `errorOutput` or none. Provider nodes stay run-once. See the workflow YAML schema.

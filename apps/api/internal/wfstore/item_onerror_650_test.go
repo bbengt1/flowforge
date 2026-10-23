@@ -111,3 +111,67 @@ func TestItemErrorRoutedAuditHasCountNotContents650(t *testing.T) {
 		}
 	}
 }
+
+func TestMemoryItemRoutingIgnoresMismatchedMode650(t *testing.T) {
+	scope, err := isolation.Authorize("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := NewMemory()
+	h := routeHarness{t: t, ctx: context.Background(), store: store, scope: scope}
+	// Pinned onError is continue; client claims errorOutput (mismatch).
+	src := `apiVersion: flowforge/v1
+kind: Workflow
+metadata:
+  name: item-route-mismatch
+spec:
+  triggers:
+    - id: manual
+      type: manual
+  nodes:
+    - id: seed
+      type: data.set
+      name: Seed
+      with:
+        value:
+          items:
+            - {k: a}
+    - id: sort
+      type: data.sort
+      name: Sort
+      onError: continue
+      with:
+        key: k
+        type: string
+    - id: done
+      type: flow.stop
+      name: Done
+      with:
+        status: success
+  edges:
+    - from: seed.result
+      to: sort.input
+    - from: sort.result
+      to: done.input
+`
+	exec, _ := h.start(src)
+	h.complete(h.claim("seed"), map[string]any{"result": map[string]any{"items": []any{map[string]any{"k": "a"}}}})
+	claim := h.claim("sort")
+	res, err := store.CompleteJob(h.ctx, h.scope, h.now(), JobActionInput{
+		JobID: claim.Job.ID, WorkerID: "route-worker", FencingToken: claim.Job.FencingToken,
+		Output:      map[string]any{"result": map[string]any{"items": []any{map[string]any{"k": "a"}}}},
+		ItemRouting: &ItemRouting{Mode: ErrorHandlingOutput, Count: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Step.Status != ExecutionSucceeded {
+		t.Fatalf("mismatched mode must not mark SWE; status=%s", res.Step.Status)
+	}
+	if res.Step.ErrorHandling != "" {
+		t.Fatalf("errorHandling=%q", res.Step.ErrorHandling)
+	}
+	if n := h.audits(exec.ID, ActionStepErrorRouted); n != 0 {
+		t.Fatalf("step.error_routed = %d", n)
+	}
+}

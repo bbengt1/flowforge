@@ -204,6 +204,9 @@ func (q *StoreQueue) Complete(ctx context.Context, ws Workspace, job Job, output
 	}
 	in := action(q, job)
 	in.Output = output
+	if len(routing) > 0 {
+		in.ItemRouting = routing[0]
+	}
 	_, err = q.Workflows.CompleteJob(ctx, scope, q.now(), in)
 	return err
 }

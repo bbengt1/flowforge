@@ -1238,6 +1238,13 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 		step = routed
 	}
 	if opts.itemRouting != nil && nextStatus == JobSucceeded {
+		yamlDoc, err := pinnedVersionYAMLTx(ctx, tx, scope, exec.WorkflowVersionID)
+		if err != nil {
+			return DispatchResult{}, err
+		}
+		opts.itemRouting = acceptItemRouting(yamlDoc, step.NodeID, opts.itemRouting)
+	}
+	if opts.itemRouting != nil && nextStatus == JobSucceeded {
 		routed, err := applyItemRoutingTx(ctx, tx, scope, exec, step, *opts.itemRouting, now)
 		if err != nil {
 			return DispatchResult{}, err

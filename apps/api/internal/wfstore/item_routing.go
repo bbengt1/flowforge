@@ -28,6 +28,27 @@ func attachStepOnError(yamlDoc string, step *ExecutionStep) {
 	step.OnError = mode
 }
 
+// acceptItemRouting returns route only when Mode matches the pinned node's
+// onError (continue or errorOutput). A stop/empty pin or a mismatched Mode
+// is ignored so a job-ticket holder cannot open error edges or mark
+// succeededWithErrors (#649 parity: pinned YAML is authoritative).
+func acceptItemRouting(yamlDoc, nodeID string, route *ItemRouting) *ItemRouting {
+	if route == nil {
+		return nil
+	}
+	mode, _ := nodeOnError(yamlDoc, nodeID)
+	if mode != ErrorHandlingContinue && mode != ErrorHandlingOutput {
+		return nil
+	}
+	if route.Mode != mode {
+		return nil
+	}
+	if route.Count < 1 {
+		return nil
+	}
+	return &ItemRouting{Mode: mode, Count: route.Count}
+}
+
 // applyItemRoutingLocked marks a just-completed step as succeededWithErrors
 // after per-item onError routed some items. Job stays succeeded. Writes one
 // step.error_routed audit with counts only.

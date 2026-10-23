@@ -306,13 +306,20 @@ func (m *Memory) CompleteJob(_ context.Context, scope isolation.Scope, now time.
 			step.Output = map[string]any{}
 		}
 		applyStepStatus(step, ExecutionSucceeded, now)
+		var yamlDoc string
+		for _, v := range m.versions[exec.record.WorkflowID] {
+			if v.ID == exec.record.WorkflowVersionID {
+				yamlDoc = v.DefinitionYAML
+			}
+		}
+		route := acceptItemRouting(yamlDoc, step.NodeID, in.ItemRouting)
 		ports := emittedPorts(step.NodeType, step.Output)
-		if in.ItemRouting != nil && in.ItemRouting.Mode == ErrorHandlingOutput {
+		if route != nil && route.Mode == ErrorHandlingOutput {
 			ports[workflow.ErrorPortName] = struct{}{}
 		}
 		releaseFrom(exec.steps, exec.jobs, exec.edges, step.NodeID, ports, now)
-		if in.ItemRouting != nil {
-			m.applyItemRoutingLocked(scope, exec, step, *in.ItemRouting, now)
+		if route != nil {
+			m.applyItemRoutingLocked(scope, exec, step, *route, now)
 		}
 		return nil
 	}, "job.complete", "succeeded")
