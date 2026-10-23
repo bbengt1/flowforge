@@ -65,25 +65,10 @@ func nodeOnError(yamlDoc, nodeID string) (string, string) {
 	return "", ""
 }
 
-// routableCodes is the allowlist (H1, fail closed) of system failure codes
-// onError may route: ordinary node and runtime failures where the step ran
-// and its target reported an error. Everything else is never routed and
-// fails the run as before: policy, authz, isolation, egress, artifact and
-// emergency-stop codes, engine-internal codes, and any code not listed
-// here (including codes added later until someone lists them on purpose).
-// Shared by both stores.
-var routableCodes = map[string]struct{}{
-	"timeout":             {}, // ssh, http, kubernetes
-	"connect-failed":      {}, // ssh.run
-	"command-failed":      {}, // ssh.run
-	"delivery-failed":     {}, // http / notify
-	"dry-run-failed":      {}, // kubernetes.*
-	"apply-failed":        {}, // kubernetes.*
-	"read-failed":         {}, // kubernetes.*
-	"rollout-failed":      {}, // kubernetes.*
-	"cluster-unreachable": {}, // kubernetes.*
-	"script-failed":       {}, // script.run, generic non-zero exit
-}
+// routableCodes is the S2 allowlist (H1, fail closed). The canonical set
+// lives in workflow.RoutableSystemCodes so per-item and whole-step
+// routing share one list. Alias kept for call sites in this package.
+var routableCodes = workflow.RoutableSystemCodes
 
 // errorPortCodeMax caps the code on the error port payload (L2).
 const errorPortCodeMax = 64
@@ -150,7 +135,7 @@ func stepErrorHandling(step ExecutionStep) string {
 	if step.ErrorHandling != "" {
 		return step.ErrorHandling
 	}
-	if step.Status != ExecutionFailed || step.Error == nil {
+	if (step.Status != ExecutionFailed && step.Status != ExecutionSucceededWithErrors) || step.Error == nil {
 		return ""
 	}
 	mode, _ := step.Error[errorHandlingKey].(string)

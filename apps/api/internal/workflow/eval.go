@@ -15,6 +15,10 @@ type EvalResult struct {
 	Terminal       *TerminalResult `json:"terminal,omitempty"`
 	Delay          *DelayPlan      `json:"delay,omitempty"`
 	Audit          map[string]any  `json:"audit"`
+	// Routed is set when per-item onError routed at least one item (E3.5).
+	Routed      bool   `json:"-"`
+	RouteMode   string `json:"-"`
+	RoutedCount int    `json:"-"`
 }
 
 // TerminalResult ends the current execution path only.
@@ -39,6 +43,12 @@ func Evaluate(typ string, with map[string]any, inputs map[string]any) (*EvalResu
 // the other run fields for FFX expr fields; with a nil rc an expr field
 // fails closed.
 func EvaluateRun(typ string, with map[string]any, inputs map[string]any, rc *RunContext) (*EvalResult, ErrorList) {
+	return EvaluateRunOnError(typ, with, inputs, rc, "")
+}
+
+// EvaluateRunOnError is EvaluateRun with the pinned onError mode so
+// list-processing core nodes can route per-item failures (E3.5).
+func EvaluateRunOnError(typ string, with map[string]any, inputs map[string]any, rc *RunContext, onError string) (*EvalResult, ErrorList) {
 	if with == nil {
 		with = map[string]any{}
 	}
@@ -71,9 +81,9 @@ func EvaluateRun(typ string, with map[string]any, inputs map[string]any, rc *Run
 	case "flow.switch":
 		return evalSwitch(with, inputs)
 	case "data.filter":
-		return evalFilter(with, inputs, rc)
+		return evalFilter(with, inputs, rc, onError)
 	case "data.sort":
-		return evalSort(with, inputs)
+		return evalSort(with, inputs, onError)
 	case "data.merge":
 		return evalMerge(with, inputs)
 	default:

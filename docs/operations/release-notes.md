@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Per-item onError for list nodes
+
+- Pure core list nodes (`data.sort`, `data.filter`) can route allowlisted per-item failures with `onError: continue` or `errorOutput`. The step ends `succeededWithErrors` when any item routes; the run rollup is unchanged. `data.merge` is not wired for per-item onError yet.
+- `continue` drops failed items from items ports (`[{}]` when every item fails). `errorOutput` writes `{code, message, idx, lineage}` on `error` with no item contents.
+- Lease loss marks in-flight unknown items `indeterminate` (never auto-retried). Provider nodes stay run-once; per-item idempotency is not enabled yet.
+
 ### Switch, filter, sort and merge nodes
 
 - `flow.switch`, `data.filter`, `data.sort` and `data.merge` are now core nodes: they publish and run on both workers. The catalog revision is 3, so versions published before this keep their pinned semantics.

@@ -107,7 +107,7 @@ func decideCoreRun(ctx context.Context, exec wfstore.Execution, step wfstore.Exe
 		// still fails closed so a delay is never an in-process sleep.
 		return fail(CodeUnsupported, "Production runner does not schedule durable flow.delay waits.")
 	}
-	return decisionFromOutcome(workflow.EvaluateStepRun(step.NodeType, step.Input, inputs, skippedPorts(skipped), wfstore.RunContextFor(ctx, exec, step)))
+	return decisionFromOutcome(workflow.EvaluateStepRun(step.NodeType, step.Input, inputs, skippedPorts(skipped), wfstore.RunContextFor(ctx, exec, step), step.OnError))
 }
 
 func skippedPorts(in []wfstore.SkippedInput) []workflow.SkippedPort {
@@ -123,7 +123,11 @@ func skippedPorts(in []wfstore.SkippedInput) []workflow.SkippedPort {
 
 func decisionFromOutcome(o workflow.StepOutcome) Decision {
 	if !o.Fail {
-		return Decision{Output: o.Output}
+		d := Decision{Output: o.Output}
+		if o.Routed {
+			d.ItemRouting = &wfstore.ItemRouting{Mode: o.RouteMode, Count: o.RoutedCount}
+		}
+		return d
 	}
 	err := map[string]any{"code": o.Code, "message": o.Message}
 	if o.Output == nil {

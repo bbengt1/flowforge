@@ -24,6 +24,12 @@ type StepOutcome struct {
 	Output  map[string]any
 	Code    string
 	Message string
+	// Routed is true when at least one item was routed by onError
+	// (continue or errorOutput). The step should end succeededWithErrors.
+	Routed    bool
+	RouteMode string
+	// RoutedCount is the number of items that routed (audit only).
+	RoutedCount int
 }
 
 // EvaluateStep applies wired inputs to a core node. A skipped port that the
@@ -31,12 +37,14 @@ type StepOutcome struct {
 // join: any step is not reported as a merely missing required-input. The
 // per-port size cap stays inside Evaluate.
 func EvaluateStep(nodeType string, with, inputs map[string]any, skipped []SkippedPort) StepOutcome {
-	return EvaluateStepRun(nodeType, with, inputs, skipped, nil)
+	return EvaluateStepRun(nodeType, with, inputs, skipped, nil, "")
 }
 
 // EvaluateStepRun is EvaluateStep with the attempt's RunContext, which FFX
-// expr fields need (#650 E3.3). Workers call this.
-func EvaluateStepRun(nodeType string, with, inputs map[string]any, skipped []SkippedPort, rc *RunContext) StepOutcome {
+// expr fields need (#650 E3.3). onError is the pinned node's mode ("" /
+// stop / continue / errorOutput); per-item routing for pure core list
+// nodes uses it (E3.5). Workers call this.
+func EvaluateStepRun(nodeType string, with, inputs map[string]any, skipped []SkippedPort, rc *RunContext, onError string) StepOutcome {
 	// A join: any step fails on any skipped entry that has a code, even when
 	// another branch delivered a value. That is deliberate: fail closed.
 	for _, s := range skipped {
@@ -78,7 +86,7 @@ func EvaluateStepRun(nodeType string, with, inputs map[string]any, skipped []Ski
 		defer deadline()
 		rc = &rcCopy
 	}
-	res, errs := EvaluateRun(nodeType, with, inputs, rc)
+	res, errs := EvaluateRunOnError(nodeType, with, inputs, rc, onError)
 	if len(errs) > 0 {
 		code := errs[0].Code
 		if code == "" {
@@ -100,5 +108,11 @@ func EvaluateStepRun(nodeType string, with, inputs map[string]any, skipped []Ski
 			return StepOutcome{Fail: true, Output: out, Code: code, Message: res.Terminal.Message}
 		}
 	}
-	return StepOutcome{Output: out}
+	o := StepOutcome{Output: out}
+	if res != nil && res.Routed {
+		o.Routed = true
+		o.RouteMode = res.RouteMode
+		o.RoutedCount = res.RoutedCount
+	}
+	return o
 }

@@ -15,6 +15,8 @@ type Decision struct {
 	Output  map[string]any
 	Error   map[string]any
 	Message string
+	// ItemRouting is set when per-item onError routed some items (E3.5).
+	ItemRouting *wfstore.ItemRouting
 }
 
 // Decide evaluates a claimed step without calling a provider. Approval
@@ -41,7 +43,7 @@ func DecideRun(ctx context.Context, exec wfstore.Execution, step wfstore.Executi
 	if step.NodeType == "flow.delay" {
 		return unsupported("Compose local worker does not schedule durable flow.delay waits.")
 	}
-	return decisionFromOutcome(workflow.EvaluateStepRun(step.NodeType, step.Input, inputs, skippedPorts(skipped), wfstore.RunContextFor(ctx, exec, step)))
+	return decisionFromOutcome(workflow.EvaluateStepRun(step.NodeType, step.Input, inputs, skippedPorts(skipped), wfstore.RunContextFor(ctx, exec, step), step.OnError))
 }
 
 func skippedPorts(in []wfstore.SkippedInput) []workflow.SkippedPort {
@@ -57,7 +59,11 @@ func skippedPorts(in []wfstore.SkippedInput) []workflow.SkippedPort {
 
 func decisionFromOutcome(o workflow.StepOutcome) Decision {
 	if !o.Fail {
-		return Decision{Output: o.Output}
+		d := Decision{Output: o.Output}
+		if o.Routed {
+			d.ItemRouting = &wfstore.ItemRouting{Mode: o.RouteMode, Count: o.RoutedCount}
+		}
+		return d
 	}
 	return Decision{
 		Fail:    true,

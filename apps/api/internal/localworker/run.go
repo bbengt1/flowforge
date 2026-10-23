@@ -174,7 +174,7 @@ func (r *Runner) claimOne(ctx context.Context, tenantSlug, workbenchKey, workspa
 		)
 		return true, nil
 	}
-	if err := r.api.Complete(ctx, tenantSlug, workbenchKey, *claim, decision.Output); err != nil {
+	if err := r.api.Complete(ctx, tenantSlug, workbenchKey, *claim, decision.Output, decision.ItemRouting); err != nil {
 		return true, err
 	}
 	r.log.Info("local worker completed job",
