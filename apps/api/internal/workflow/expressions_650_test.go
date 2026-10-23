@@ -122,9 +122,9 @@ func TestCatalogRevision650(t *testing.T) {
 	if c.CatalogRevision != CatalogRevision || CatalogRevision < 1 || c.APIVersion != APIVersionV1 {
 		t.Fatalf("catalog revision %d api %s", c.CatalogRevision, c.APIVersion)
 	}
-	// E3.3: exactly data.map.expr (object) and flow.condition.expr
-	// (boolean) are production expr fields; neither accepts a secret ref.
-	want := map[string]string{"data.map.expr": string(PortObject), "flow.condition.expr": string(PortBoolean)}
+	// E3.3: data.map.expr (object) and flow.condition.expr (boolean);
+	// E3.4 adds data.filter.expr (boolean). None accepts a secret ref.
+	want := map[string]string{"data.map.expr": string(PortObject), "flow.condition.expr": string(PortBoolean), "data.filter.expr": string(PortBoolean)}
 	got := map[string]string{}
 	for _, n := range c.Nodes {
 		for _, f := range n.AllowedWith {

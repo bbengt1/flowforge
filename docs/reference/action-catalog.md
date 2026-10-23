@@ -30,7 +30,7 @@ There is no generic `start` action inside a workflow: a trigger starts it. A tri
 | Node | Phase | Inputs → outputs | Policy and behavior |
 | --- | --- | --- | --- |
 | `flow.condition` | Core | `value` → `true`, `false` | Declarative `op` (`eq`/`ne`/`gt`/`lt`/`gte`/`lte`/`exists`/`contains`) plus literal `compare` (except `exists`) and optional dotted `path`. No expression language. Matching branch receives the inbound value. |
-| `flow.switch` | Next | `value` → named cases/default | Ordered declarative cases with exactly one selected route. |
+| `flow.switch` | Core | `value` → one port per case name, plus `default` | Ordered declarative `cases` (`{name, op, compare}`, max 16) and optional `path`. First match wins; exactly one port fires. `default` is required at publish; no match without a default fails closed (`switch-no-match`). |
 | `flow.parallel` / `flow.join` | Next | `input` → branch/join result | Explicit concurrency limit, join mode, and failure handling. |
 | `flow.forEach` | Next | `items` → item results | Maximum item count/concurrency and bounded aggregation. |
 | `flow.delay` | Core | `input` → `result` | ISO-8601 `duration` (weeks/days/time only, max `P7D`). Durable wake-up time; no worker sleeps or in-memory timers. |
@@ -44,8 +44,9 @@ There is no generic `start` action inside a workflow: a trigger starts it. A tri
 | `data.set` | Core | Create a typed literal object. | Required `value` object; optional JSON-schema subset and `classification` (`public`/`internal` only). Secret keys/values rejected. |
 | `data.map` | Core | Declaratively map selected fields between schemas. | `mapping` of `dest: source` or `dest: {from, convert}`. Explicit dotted paths; no general expression language. Classification preserved. |
 | `data.validate` | Core | Validate a value against a declared schema. | Required `schema` (JSON-schema subset). Safe errors identify fields, not secret content. |
-| `data.merge` | Next | Combine explicitly selected typed objects. | Deterministic precedence required. |
-| `data.filter` / `data.sort` | Next | Bound collections for downstream work. | Max item/output size and stable ordering. |
+| `data.merge` | Core | Combine `left` and `right` items. | `mode` `append`, `zip` (same length) or `byKey` (unique string/number `key`; left order, then unmatched right). Right wins on field conflicts. `zip` and `byKey` merge shallowly: a nested object on the right replaces the left one instead of being merged into it. |
+| `data.filter` | Core | Split items into `kept` and `dropped`. | `path`/`op`/`compare` or a per-item FFX boolean `expr`. Every `op` except `exists` drops an item whose `path` is missing, so `op: ne` also drops it. `contains` on an array is capped at 32 items: a longer array fails the step with `aggregation-limit`. Order kept; 16 KiB port limit. |
+| `data.sort` | Core | Stable sort of items by one `key`. | `type` `string`/`number`/`timestamp`, `order` `asc`/`desc`. Missing or mixed key types fail the step. |
 | `artifact.write` | Next | Persist an allowed generated file/payload. | Redaction/scan before upload, content classification, size limit, digest, retention, and encryption; reject content that cannot be safely retained. |
 | `artifact.read` | Next | Read a permitted referenced artifact. | Per-request workspace/retention/access check and declared output schema; never arbitrary object-store paths, bucket credentials, or durable download URLs. |
 

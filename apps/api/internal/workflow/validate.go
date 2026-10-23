@@ -266,7 +266,7 @@ func validate(doc *Document) ErrorList {
 		if !ok {
 			continue
 		}
-		if _, ok := nt.outputPort(ref.Port); !ok {
+		if _, ok := nodeOutputPort(doc.Spec.Nodes[ni], nt, ref.Port); !ok {
 			errs = append(errs, fieldError(path+".from", o.pos.Line, o.pos.Column, CodeInvalidPort, fmt.Sprintf("Node %q has no output port %q.", ref.NodeID, ref.Port)))
 		}
 	}
@@ -755,7 +755,7 @@ func validateEdgePorts(doc *Document, e Edge, from, to PortRef, path string) Err
 			return errs
 		}
 		out = errorPort()
-	} else if p, ok := fromType.outputPort(from.Port); ok {
+	} else if p, ok := nodeOutputPort(fromNode, fromType, from.Port); ok {
 		out = p
 	} else {
 		errs = append(errs, fieldError(path+".from", e.pos.Line, e.pos.Column, CodeInvalidPort, fmt.Sprintf("Node type %q has no output port %q.", fromType.Type, from.Port)))

@@ -52,6 +52,26 @@ type Env struct {
 // type check against sc.Want. Errors are fixed strings: they never echo the
 // expression or any value.
 func Eval(ctx context.Context, src string, sc Scope, env Env) (any, *Error) {
+	p, err := Prepare(src, sc)
+	if err != nil {
+		return nil, err
+	}
+	return p.Eval(ctx, env)
+}
+
+// Prepared is a checked FFX program built once (through newProgram, so it
+// carries ProgramOptions) and evaluated many times, for example once per
+// item in a step. It holds no binding: each Eval gets its own activation
+// and its own 10 ms deadline.
+type Prepared struct {
+	res Result
+	sc  Scope
+	prg cel.Program
+}
+
+// Prepare checks src against sc exactly as publish does and builds its
+// program. Errors are fixed strings.
+func Prepare(src string, sc Scope) (*Prepared, *Error) {
 	res, celEnv, checked, cerr := compile(src, sc)
 	if cerr != nil {
 		return nil, cerr
@@ -60,13 +80,19 @@ func Eval(ctx context.Context, src string, sc Scope, env Env) (any, *Error) {
 		// No core field resolves a credential ref in-process.
 		return nil, fail(CodeSecretUse, "vars cannot be read during evaluation.")
 	}
-	act, aerr := activation(res.Refs, env)
-	if aerr != nil {
-		return nil, aerr
-	}
 	prg, err := newProgram(celEnv, checked)
 	if err != nil {
 		return nil, fail(CodeRuntime, "Expression could not be prepared.")
+	}
+	return &Prepared{res: res, sc: sc, prg: prg}, nil
+}
+
+// Eval evaluates a prepared program against one binding, under the 10 ms
+// deadline, with the same runtime checks as the package-level Eval.
+func (p *Prepared) Eval(ctx context.Context, env Env) (any, *Error) {
+	act, aerr := activation(p.res.Refs, env)
+	if aerr != nil {
+		return nil, aerr
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -76,7 +102,7 @@ func Eval(ctx context.Context, src string, sc Scope, env Env) (any, *Error) {
 	if ectx.Err() != nil {
 		return nil, classifyEvalError(ectx, ectx.Err())
 	}
-	out, _, err := prg.ContextEval(ectx, act)
+	out, _, err := p.prg.ContextEval(ectx, act)
 	if err == nil && ectx.Err() != nil {
 		// Finished, but past the deadline: fail closed.
 		err = ectx.Err()
@@ -88,7 +114,7 @@ func Eval(ctx context.Context, src string, sc Scope, env Env) (any, *Error) {
 	if verr != nil {
 		return nil, verr
 	}
-	if e := checkRuntimeWant(v, sc); e != nil {
+	if e := checkRuntimeWant(v, p.sc); e != nil {
 		return nil, e
 	}
 	raw, err := json.Marshal(v)

@@ -11,8 +11,10 @@ import (
 // (#650 §7). Revision 1 is the first catalog whose publish records FFX
 // expression semantics (E3.2). Versions published before it keep a NULL
 // catalog_revision and their old semantics, pinned by digest. Revision 2
-// (E3.3) adds the expr fields on data.map and flow.condition.
-const CatalogRevision = 2
+// (E3.3) adds the expr fields on data.map and flow.condition. Revision 3
+// (E3.4) enables flow.switch, data.filter (with its expr field), data.sort
+// and data.merge.
+const CatalogRevision = 3
 
 // ExpressionRef is one checked expression as recorded on a published
 // version: the field, its static type and what it references. It never
@@ -99,9 +101,9 @@ func CheckExpressions(doc *Document) (ExpressionReport, ErrorList) {
 	if doc == nil {
 		return report, ErrorList{{Path: "spec", Code: CodeExpressionParse, Message: "No document to check."}}
 	}
-	nodeTypes := map[string]string{}
+	nodesByID := map[string]Node{}
 	for _, n := range doc.Spec.Nodes {
-		nodeTypes[n.ID] = n.Type
+		nodesByID[n.ID] = n
 	}
 	for _, n := range doc.Spec.Nodes {
 		fields := ExpressionFields(n.Type)
@@ -130,8 +132,8 @@ func CheckExpressions(doc *Document) (ExpressionReport, ErrorList) {
 				continue
 			}
 			kind := declared[to.Port]
-			if ut, ok := lookupNode(nodeTypes[src.NodeID]); ok {
-				if op, ok := ut.outputPort(src.Port); ok {
+			if ut, ok := lookupNode(nodesByID[src.NodeID].Type); ok {
+				if op, ok := nodeOutputPort(nodesByID[src.NodeID], ut, src.Port); ok {
 					kind = expr.Kind(op.Kind)
 				} else if src.Port == ErrorPortName {
 					kind = expr.KindObject

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Switch, filter, sort and merge nodes
+
+- `flow.switch`, `data.filter`, `data.sort` and `data.merge` are now core nodes: they publish and run on both workers. The catalog revision is 3, so versions published before this keep their pinned semantics.
+- `flow.switch` takes ordered `cases` (`{name, op, compare}`, up to 16) and an optional `path`. The first matching case routes the inbound value to the output port named by that case, otherwise to the `default` port. Exactly one port fires. Publish requires `default`; at run time a switch with no match and no default fails closed with `switch-no-match`. A case whose comparison cannot apply to the value fails the step, as in `flow.condition`.
+- Item lists travel inside the port value as `{items: [...]}`, under the 16 KiB port limit. An object reads as one item.
+- `data.filter` splits items into `kept` and `dropped` by `path`/`op`/`compare` or by a per-item FFX boolean `with.expr`. Both ports fire and input order is kept.
+- `data.sort` sorts by one `key` (`type` `string`, `number` or `timestamp`; `order` `asc` or `desc`). The sort is stable in both directions. A missing key fails with `sort-key-missing`; mixed or wrong key types fail with `sort-mixed-types`. Numbers compare exactly.
+- `data.merge` combines `left` and `right` items with `mode` `append`, `zip` (same length, else `merge-length-mismatch`) or `byKey` (left order, then unmatched right items; keys must be unique strings or numbers, else `merge-duplicate-key` or `merge-key-missing`). On a field conflict the right value wins.
+
 ### Exact whole numbers in run and webhook input
 
 - A whole number outside ±2^53 sent in run-start input or a webhook body is now stored and returned with its exact digits (in `executions.input_redacted`, the run-start response and `GET /api/v1/executions/{id}`). Webhook signatures are still verified on the raw body bytes first.

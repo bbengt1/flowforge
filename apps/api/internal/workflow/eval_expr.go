@@ -59,6 +59,30 @@ func exprFieldError(rc *RunContext, field, code, msg string) ErrorList {
 // it is never wider than what publish checked. item is bound to the
 // primary input when that value is an object.
 func evalFieldExpr(nodeType, field string, with, inputs map[string]any, item any, rc *RunContext) (any, ErrorList) {
+	fe, errs := prepareFieldExpr(nodeType, field, with, inputs, rc)
+	if len(errs) > 0 {
+		return nil, errs
+	}
+	return fe.eval(item)
+}
+
+// fieldExpr is one with-field expression checked and built once, then
+// evaluated per item (data.filter evaluates up to MaxItems times a step).
+type fieldExpr struct {
+	field  string
+	prg    *expr.Prepared
+	inputs map[string]any
+	rc     *RunContext
+}
+
+// prepareFieldExprHook, when set by a test, runs on every prepareFieldExpr
+// call so a test can count how often an expression is built.
+var prepareFieldExprHook func()
+
+func prepareFieldExpr(nodeType, field string, with, inputs map[string]any, rc *RunContext) (*fieldExpr, ErrorList) {
+	if prepareFieldExprHook != nil {
+		prepareFieldExprHook()
+	}
 	var decl *WithField
 	for _, f := range ExpressionFields(nodeType) {
 		if f.Name == field {
@@ -90,8 +114,19 @@ func evalFieldExpr(nodeType, field string, with, inputs map[string]any, item any
 	if want == "" {
 		want = expr.KindAny
 	}
+	prg, err := expr.Prepare(src, expr.Scope{
+		Mode: expr.ModePerItem, Declared: declared, Wired: wired, Want: want, SecretRefOK: decl.AcceptsSecretRef, CoreNode: true,
+	})
+	if err != nil {
+		return nil, exprFieldError(rc, field, err.Code, err.Message)
+	}
+	return &fieldExpr{field: field, prg: prg, inputs: inputs, rc: rc}, nil
+}
+
+func (fe *fieldExpr) eval(item any) (any, ErrorList) {
+	rc := fe.rc
 	env := expr.Env{
-		Inputs: inputs, RunID: rc.RunID, StartedAt: rc.StartedAt, Clock: rc.Clock,
+		Inputs: fe.inputs, RunID: rc.RunID, StartedAt: rc.StartedAt, Clock: rc.Clock,
 		WorkflowID: rc.WorkflowID, VersionID: rc.VersionID,
 	}
 	if m, ok := item.(map[string]any); ok {
@@ -101,14 +136,12 @@ func evalFieldExpr(nodeType, field string, with, inputs map[string]any, item any
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	v, err := expr.Eval(ctx, src, expr.Scope{
-		Mode: expr.ModePerItem, Declared: declared, Wired: wired, Want: want, SecretRefOK: decl.AcceptsSecretRef, CoreNode: true,
-	}, env)
+	v, err := fe.prg.Eval(ctx, env)
 	if err != nil {
 		if err.Code == expr.CodeTimeout {
 			logEvalTimeout(ctx, rc.NodeID)
 		}
-		return nil, exprFieldError(rc, field, err.Code, err.Message)
+		return nil, exprFieldError(rc, fe.field, err.Code, err.Message)
 	}
 	return v, nil
 }
