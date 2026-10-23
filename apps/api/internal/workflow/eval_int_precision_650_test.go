@@ -15,7 +15,7 @@ func TestExprResultIntPrecision650(t *testing.T) {
 	in := map[string]any{"input": map[string]any{"big": big}}
 	run := func(src string) StepOutcome {
 		with := map[string]any{"expr": map[string]any{"expr": src}}
-		return EvaluateStepRun("data.map", with, in, nil, rc("shape"))
+		return EvaluateStepRun("data.map", with, in, nil, rc("shape"), "")
 	}
 	refused := []string{
 		`{"v": item.big + 2, "s": string(item.big + 2)}`, // Terry's arithmetic case
@@ -74,23 +74,23 @@ func TestExprResultIntPrecision650(t *testing.T) {
 func TestExprExactBigInput650(t *testing.T) {
 	exact := json.Number("9007199254740993")
 	with := map[string]any{"expr": map[string]any{"expr": `{"s": string(item.big)}`}}
-	out := EvaluateStepRun("data.map", with, map[string]any{"input": map[string]any{"big": exact}}, nil, rc("shape"))
+	out := EvaluateStepRun("data.map", with, map[string]any{"input": map[string]any{"big": exact}}, nil, rc("shape"), "")
 	if out.Fail || out.Output["result"].(map[string]any)["s"] != "9007199254740993" {
 		t.Fatalf("%+v", out)
 	}
 	// Passed straight through as a number it is refused, not rounded.
 	with = map[string]any{"expr": map[string]any{"expr": `{"v": item.big}`}}
-	out = EvaluateStepRun("data.map", with, map[string]any{"input": map[string]any{"big": exact}}, nil, rc("shape"))
+	out = EvaluateStepRun("data.map", with, map[string]any{"input": map[string]any{"big": exact}}, nil, rc("shape"), "")
 	if !out.Fail || out.Code != CodeExpressionRuntime || strings.Contains(out.Message, string(exact)) {
 		t.Fatalf("%+v", out)
 	}
 	cond := map[string]any{"expr": map[string]any{"expr": `item.big == 9007199254740993`}}
-	out = EvaluateStepRun("flow.condition", cond, map[string]any{"value": map[string]any{"big": exact}}, nil, rc("gate"))
+	out = EvaluateStepRun("flow.condition", cond, map[string]any{"value": map[string]any{"big": exact}}, nil, rc("gate"), "")
 	if out.Fail || out.Output["port"] != "true" {
 		t.Fatalf("%+v", out)
 	}
 	huge := json.Number("123456789012345678901234567890")
-	out = EvaluateStepRun("flow.condition", cond, map[string]any{"value": map[string]any{"big": huge}}, nil, rc("gate"))
+	out = EvaluateStepRun("flow.condition", cond, map[string]any{"value": map[string]any{"big": huge}}, nil, rc("gate"), "")
 	if !out.Fail || out.Code != CodeExpressionRuntime || !strings.Contains(out.Message, `"gate"`) || strings.Contains(out.Message, string(huge)) {
 		t.Fatalf("%+v", out)
 	}

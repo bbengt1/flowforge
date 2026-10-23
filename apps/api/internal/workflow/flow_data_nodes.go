@@ -461,7 +461,7 @@ func evalSwitch(with, inputs map[string]any) (*EvalResult, ErrorList) {
 	}, nil
 }
 
-func evalFilter(with, inputs map[string]any, rc *RunContext) (*EvalResult, ErrorList) {
+func evalFilter(with, inputs map[string]any, rc *RunContext, onError string) (*EvalResult, ErrorList) {
 	raw, ok := inputs["input"]
 	if !ok {
 		return nil, ErrorList{fieldError("inputs.input", 0, 0, CodeRequiredInput, "data.filter requires input input.")}
@@ -490,17 +490,32 @@ func evalFilter(with, inputs map[string]any, rc *RunContext) (*EvalResult, Error
 			return nil, errs
 		}
 	}
+	route := onError == OnErrorOutput // continue is refused at publish for filter
 	kept := make([]map[string]any, 0, len(items))
 	dropped := make([]map[string]any, 0)
+	var routed []ItemFailure
 	for i, it := range items {
 		var match bool
 		if useExpr {
 			got, errs := fe.eval(it)
 			if len(errs) > 0 {
+				f := ItemFailure{Idx: i, Code: errs[0].Code, Message: errs[0].Message}
+				if f.Code == "" {
+					f.Code = CodeExpressionRuntime
+				}
+				if route && RoutableSystemCode(f.Code) {
+					routed = append(routed, f)
+					continue
+				}
 				return nil, errs
 			}
 			b, ok := got.(bool)
 			if !ok {
+				f := ItemFailure{Idx: i, Code: CodeExpressionType, Message: "Expression result at runtime is not a boolean."}
+				if route && RoutableSystemCode(f.Code) {
+					routed = append(routed, f)
+					continue
+				}
 				return nil, exprFieldError(rc, "expr", CodeExpressionType, "Expression result at runtime is not a boolean.")
 			}
 			match = b
@@ -533,11 +548,19 @@ func evalFilter(with, inputs map[string]any, rc *RunContext) (*EvalResult, Error
 		return nil, errs
 	}
 	class := inputClass(raw)
-	return &EvalResult{
-		Outputs:        map[string]any{"kept": kv, "dropped": dv},
+	out := map[string]any{"kept": kv, "dropped": dv}
+	out, didRoute := ApplyItemOnError(onError, out, routed, []string{"kept", "dropped"})
+	res := &EvalResult{
+		Outputs:        out,
 		Classification: class,
-		Audit:          map[string]any{"inCount": len(items), "outCount": len(kept), "classification": class},
-	}, nil
+		Audit:          map[string]any{"inCount": len(items), "outCount": len(kept), "classification": class, "routed": len(routed)},
+	}
+	if didRoute {
+		res.Routed = true
+		res.RouteMode = onError
+		res.RoutedCount = len(routed)
+	}
+	return res, nil
 }
 
 type sortKey struct {
@@ -546,7 +569,7 @@ type sortKey struct {
 	t time.Time
 }
 
-func evalSort(with, inputs map[string]any) (*EvalResult, ErrorList) {
+func evalSort(with, inputs map[string]any, onError string) (*EvalResult, ErrorList) {
 	raw, ok := inputs["input"]
 	if !ok {
 		return nil, ErrorList{fieldError("inputs.input", 0, 0, CodeRequiredInput, "data.sort requires input input.")}
@@ -570,12 +593,31 @@ func evalSort(with, inputs map[string]any) (*EvalResult, ErrorList) {
 	if !oneOf(order, sortOrders...) {
 		return nil, ErrorList{fieldError("with.order", 0, 0, CodeInvalidWith, "order must be asc or desc.")}
 	}
-	keys := make([]sortKey, len(items))
+	route := onError == OnErrorContinue || onError == OnErrorOutput
+	type keyed struct {
+		item map[string]any
+		key  sortKey
+		idx  int
+	}
+	var okItems []keyed
+	var routed []ItemFailure
+	inferred := typ
 	for i, it := range items {
 		at := fmt.Sprintf("inputs.input.items[%d]", i)
+		fail := func(code, msg string) (*EvalResult, ErrorList) {
+			f := ItemFailure{Idx: i, Code: code, Message: msg}
+			if route && RoutableSystemCode(code) {
+				routed = append(routed, f)
+				return nil, nil
+			}
+			return nil, ErrorList{fieldError(at, 0, 0, code, msg)}
+		}
 		v, found := lookupPath(any(it), key)
 		if !found || v == nil {
-			return nil, ErrorList{fieldError(at, 0, 0, CodeSortKeyMissing, "An item has no value at the sort key.")}
+			if _, errs := fail(CodeSortKeyMissing, "An item has no value at the sort key."); errs != nil {
+				return nil, errs
+			}
+			continue
 		}
 		kind := ""
 		switch {
@@ -586,20 +628,27 @@ func evalSort(with, inputs map[string]any) (*EvalResult, ErrorList) {
 				kind = sortTypeString
 			}
 		}
-		if typ == "" {
+		if inferred == "" {
 			if kind == "" {
-				return nil, ErrorList{fieldError(at, 0, 0, CodeSortMixedTypes, "Sort keys must be strings, numbers or timestamps.")}
+				if _, errs := fail(CodeSortMixedTypes, "Sort keys must be strings, numbers or timestamps."); errs != nil {
+					return nil, errs
+				}
+				continue
 			}
-			typ = kind
+			inferred = kind
 		}
-		want := typ
+		want := inferred
 		if want == sortTypeTimestamp {
 			want = sortTypeString
 		}
 		if kind != want {
-			return nil, ErrorList{fieldError(at, 0, 0, CodeSortMixedTypes, fmt.Sprintf("Sort keys have mixed types; every key must be a %s.", typ))}
+			if _, errs := fail(CodeSortMixedTypes, fmt.Sprintf("Sort keys have mixed types; every key must be a %s.", inferred)); errs != nil {
+				return nil, errs
+			}
+			continue
 		}
-		switch typ {
+		var sk sortKey
+		switch inferred {
 		case sortTypeNumber:
 			r, err := jsonnum.Rat(v)
 			if err != nil {
@@ -607,20 +656,26 @@ func evalSort(with, inputs map[string]any) (*EvalResult, ErrorList) {
 				if errors.Is(err, jsonnum.ErrTooLarge) {
 					msg = "Value is too large to compare exactly."
 				}
+				// invalid-type is not on the allowlist: fail the step.
 				return nil, ErrorList{fieldError(at, 0, 0, CodeInvalidType, msg)}
 			}
-			keys[i].n = r
+			sk.n = r
 		case sortTypeTimestamp:
 			t, err := time.Parse(time.RFC3339Nano, v.(string))
 			if err != nil {
-				return nil, ErrorList{fieldError(at, 0, 0, CodeSortMixedTypes, "Sort key is not an RFC 3339 timestamp.")}
+				if _, errs := fail(CodeSortMixedTypes, "Sort key is not an RFC 3339 timestamp."); errs != nil {
+					return nil, errs
+				}
+				continue
 			}
-			keys[i].t = t
+			sk.t = t
 		default:
-			keys[i].s = v.(string)
+			sk.s = v.(string)
 		}
+		okItems = append(okItems, keyed{item: it, key: sk, idx: i})
 	}
-	idx := make([]int, len(items))
+	typ = inferred
+	idx := make([]int, len(okItems))
 	for i := range idx {
 		idx[i] = i
 	}
@@ -637,26 +692,34 @@ func evalSort(with, inputs map[string]any) (*EvalResult, ErrorList) {
 	// Stable in both directions: desc flips the comparison, not the
 	// result, so equal keys keep input order.
 	sort.SliceStable(idx, func(i, j int) bool {
-		c := cmp(keys[idx[i]], keys[idx[j]])
+		c := cmp(okItems[idx[i]].key, okItems[idx[j]].key)
 		if order == "desc" {
 			return c > 0
 		}
 		return c < 0
 	})
-	sorted := make([]map[string]any, len(items))
+	sorted := make([]map[string]any, len(okItems))
 	for i, k := range idx {
-		sorted[i] = items[k]
+		sorted[i] = okItems[k].item
 	}
-	out := itemsValue(sorted)
-	if errs := checkPortSize("result", out); len(errs) > 0 {
+	outVal := itemsValue(sorted)
+	if errs := checkPortSize("result", outVal); len(errs) > 0 {
 		return nil, errs
 	}
 	class := inputClass(raw)
-	return &EvalResult{
-		Outputs:        map[string]any{"result": out},
+	out := map[string]any{"result": outVal}
+	out, didRoute := ApplyItemOnError(onError, out, routed, []string{"result"})
+	res := &EvalResult{
+		Outputs:        out,
 		Classification: class,
-		Audit:          map[string]any{"inCount": len(items), "outCount": len(sorted), "classification": class},
-	}, nil
+		Audit:          map[string]any{"inCount": len(items), "outCount": len(sorted), "classification": class, "routed": len(routed)},
+	}
+	if didRoute {
+		res.Routed = true
+		res.RouteMode = onError
+		res.RoutedCount = len(routed)
+	}
+	return res, nil
 }
 
 // mergeKey is an exact, type-tagged identity for a byKey join value. A

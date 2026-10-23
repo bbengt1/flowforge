@@ -72,7 +72,7 @@ func runFlowDataSuite(t *testing.T, ctx context.Context, store Store, scope isol
 		if err != nil {
 			t.Fatal(err)
 		}
-		o := workflow.EvaluateStepRun(c.Step.NodeType, c.Step.Input, c.Inputs, nil, RunContextFor(ctx, c.Execution, c.Step))
+		o := workflow.EvaluateStepRun(c.Step.NodeType, c.Step.Input, c.Inputs, nil, RunContextFor(ctx, c.Execution, c.Step), "")
 		if o.Fail {
 			t.Fatalf("%s failed: %+v", c.Step.NodeID, o)
 		}

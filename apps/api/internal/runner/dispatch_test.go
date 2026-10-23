@@ -701,7 +701,7 @@ func (q *scriptedQueue) Heartbeat(context.Context, Workspace, Job) error {
 	q.heartbeats++
 	return nil
 }
-func (q *scriptedQueue) Complete(context.Context, Workspace, Job, map[string]any) error { return nil }
+func (q *scriptedQueue) Complete(context.Context, Workspace, Job, map[string]any, ...*wfstore.ItemRouting) error { return nil }
 func (q *scriptedQueue) Fail(_ context.Context, _ Workspace, _ Job, failure map[string]any) error {
 	q.fail(failure)
 	return nil

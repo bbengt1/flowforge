@@ -30,15 +30,16 @@ type claimJobRequest struct {
 }
 
 type jobActionRequest struct {
-	ID             string         `json:"id"`
-	WorkspaceID    string         `json:"workspace_id"`
-	WorkspaceIDAlt string         `json:"workspaceId"`
-	JobToken       string         `json:"jobToken"`
-	WorkerID       string         `json:"workerId"`
-	FencingToken   int64          `json:"fencingToken"`
-	LeaseSeconds   int            `json:"leaseSeconds"`
-	Output         jsonnum.Object `json:"output"`
-	Error          map[string]any `json:"error"`
+	ID             string               `json:"id"`
+	WorkspaceID    string               `json:"workspace_id"`
+	WorkspaceIDAlt string               `json:"workspaceId"`
+	JobToken       string               `json:"jobToken"`
+	WorkerID       string               `json:"workerId"`
+	FencingToken   int64                `json:"fencingToken"`
+	LeaseSeconds   int                  `json:"leaseSeconds"`
+	Output         jsonnum.Object       `json:"output"`
+	Error          map[string]any       `json:"error"`
+	ItemRouting    *wfstore.ItemRouting `json:"itemRouting"`
 }
 
 type retryStepRequest struct {
@@ -267,6 +268,7 @@ func workerJobAction(s *core.Server, w http.ResponseWriter, r *http.Request, fn 
 		Lease:        secondsDuration(req.LeaseSeconds),
 		Output:       req.Output,
 		Error:        req.Error,
+		ItemRouting:  req.ItemRouting,
 	})
 	if err != nil {
 		var ee *scripts.EngineError

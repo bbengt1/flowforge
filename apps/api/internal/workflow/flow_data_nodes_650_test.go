@@ -232,7 +232,7 @@ func TestFilterDeclarative650E34(t *testing.T) {
 func TestFilterExpr650E34(t *testing.T) {
 	with := map[string]any{"expr": map[string]any{"expr": `item.n > 2`}}
 	in := map[string]any{"input": items(map[string]any{"id": 1, "n": int64(5)}, map[string]any{"id": 2, "n": float64(1)})}
-	out := EvaluateStepRun("data.filter", with, in, nil, rc("f"))
+	out := EvaluateStepRun("data.filter", with, in, nil, rc("f"), "")
 	if out.Fail || !eqIDs(ids(t, out.Output["kept"]), 1) || !eqIDs(ids(t, out.Output["dropped"]), 2) {
 		t.Fatalf("%+v", out)
 	}
@@ -242,20 +242,20 @@ func TestFilterExpr650E34(t *testing.T) {
 	}
 	// 2^53+1 binds as an exact int64 and compares exactly.
 	exact := EvaluateStepRun("data.filter", map[string]any{"expr": map[string]any{"expr": `item.n == 9007199254740993`}},
-		map[string]any{"input": items(map[string]any{"id": 1, "n": json.Number("9007199254740993")}, map[string]any{"id": 2, "n": json.Number("9007199254740992")})}, nil, rc("f"))
+		map[string]any{"input": items(map[string]any{"id": 1, "n": json.Number("9007199254740993")}, map[string]any{"id": 2, "n": json.Number("9007199254740992")})}, nil, rc("f"), "")
 	if exact.Fail || !eqIDs(ids(t, exact.Output["kept"]), 1) {
 		t.Fatalf("%+v", exact)
 	}
 	// A whole number CEL cannot hold exactly fails closed, never rounded.
 	big := map[string]any{"input": items(map[string]any{"id": 1, "n": json.Number("99999999999999999999")})}
-	if o := EvaluateStepRun("data.filter", with, big, nil, rc("f")); !o.Fail || o.Code != CodeExpressionRuntime {
+	if o := EvaluateStepRun("data.filter", with, big, nil, rc("f"), ""); !o.Fail || o.Code != CodeExpressionRuntime {
 		t.Fatalf("%+v", o)
 	} else if strings.Contains(o.Message, "99999999999999999999") {
 		t.Fatalf("message echoes the value: %q", o.Message)
 	}
 	// A non-boolean result fails closed.
 	nb := map[string]any{"expr": map[string]any{"expr": `item.n`}}
-	if o := EvaluateStepRun("data.filter", nb, in, nil, rc("f")); !o.Fail {
+	if o := EvaluateStepRun("data.filter", nb, in, nil, rc("f"), ""); !o.Fail {
 		t.Fatalf("%+v", o)
 	}
 }
@@ -532,7 +532,7 @@ func TestFilterExprCompiledOncePerStep650E34(t *testing.T) {
 		its = append(its, map[string]any{"id": i, "n": int64(i)})
 	}
 	with := map[string]any{"expr": map[string]any{"expr": `item.n >= 25`}}
-	out := EvaluateStepRun("data.filter", with, map[string]any{"input": items(its...)}, nil, rc("f"))
+	out := EvaluateStepRun("data.filter", with, map[string]any{"input": items(its...)}, nil, rc("f"), "")
 	if out.Fail {
 		t.Fatalf("%+v", out)
 	}

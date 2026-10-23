@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"context"
 	"log/slog"
 	"sync/atomic"
@@ -117,7 +118,7 @@ func (q *blockQueue) Claim(ctx context.Context, _ Workspace) (*Job, error) {
 }
 
 func (q *blockQueue) Heartbeat(context.Context, Workspace, Job) error { return nil }
-func (q *blockQueue) Complete(context.Context, Workspace, Job, map[string]any) error {
+func (q *blockQueue) Complete(context.Context, Workspace, Job, map[string]any, ...*wfstore.ItemRouting) error {
 	return nil
 }
 func (q *blockQueue) Fail(context.Context, Workspace, Job, map[string]any) error { return nil }

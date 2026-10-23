@@ -10,6 +10,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/isolation"
 	"github.com/bbengt1/flowforge/apps/api/internal/observability"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
+	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 )
 
 func (m *Memory) GetJob(_ context.Context, scope isolation.Scope, jobID string) (ExecutionJob, error) {
@@ -183,6 +184,13 @@ func (m *Memory) ClaimJob(ctx context.Context, scope isolation.Scope, now time.T
 	}, now)
 
 	wf := m.workflows[chosen.record.WorkflowID]
+	var yamlDoc string
+	for _, v := range m.versions[chosen.record.WorkflowID] {
+		if v.ID == chosen.record.WorkflowVersionID {
+			yamlDoc = v.DefinitionYAML
+		}
+	}
+	attachStepOnError(yamlDoc, &step)
 	binding := buildBinding(scope, chosen.record, step, job, now.Add(ttl), leaseExp)
 	observability.NoteLeaseClaim(ctx, "claimed", now.Sub(job.AvailableAt))
 	observability.NoteQueueLeft(ctx, 1)
@@ -298,7 +306,14 @@ func (m *Memory) CompleteJob(_ context.Context, scope isolation.Scope, now time.
 			step.Output = map[string]any{}
 		}
 		applyStepStatus(step, ExecutionSucceeded, now)
-		releaseFrom(exec.steps, exec.jobs, exec.edges, step.NodeID, emittedPorts(step.NodeType, step.Output), now)
+		ports := emittedPorts(step.NodeType, step.Output)
+		if in.ItemRouting != nil && in.ItemRouting.Mode == ErrorHandlingOutput {
+			ports[workflow.ErrorPortName] = struct{}{}
+		}
+		releaseFrom(exec.steps, exec.jobs, exec.edges, step.NodeID, ports, now)
+		if in.ItemRouting != nil {
+			m.applyItemRoutingLocked(scope, exec, step, *in.ItemRouting, now)
+		}
 		return nil
 	}, "job.complete", "succeeded")
 }
@@ -964,6 +979,7 @@ func (m *Memory) recoverExpiredLocked(ctx context.Context, scope isolation.Scope
 			exec.jobs[i] = job
 			if stepIdx >= 0 {
 				applyStepStatus(&exec.steps[stepIdx], ExecutionIndeterminate, now)
+				markMemoryItemsIndeterminate(&exec, exec.steps[stepIdx].ID)
 			}
 			changed = true
 			n++

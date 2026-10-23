@@ -13,6 +13,7 @@ import (
 	"github.com/bbengt1/flowforge/apps/api/internal/parkedapproval"
 	"github.com/bbengt1/flowforge/apps/api/internal/postgres"
 	"github.com/bbengt1/flowforge/apps/api/internal/scripts"
+	"github.com/bbengt1/flowforge/apps/api/internal/workflow"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -228,6 +229,11 @@ func (p *Postgres) ClaimJob(ctx context.Context, scope isolation.Scope, now time
 	if err != nil {
 		return DispatchResult{}, err
 	}
+	if yamlDoc, err := pinnedVersionYAMLTx(ctx, tx, scope, exec.WorkflowVersionID); err != nil {
+		return DispatchResult{}, err
+	} else {
+		attachStepOnError(yamlDoc, &step)
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return DispatchResult{}, mapDBErr(err)
 	}
@@ -304,6 +310,7 @@ func (p *Postgres) CompleteJob(ctx context.Context, scope isolation.Scope, now t
 		},
 		writeOutput:      true,
 		releaseOnSuccess: true,
+		itemRouting:      in.ItemRouting,
 	})
 }
 
@@ -1052,6 +1059,8 @@ type mutateOpts struct {
 	releaseOnSuccess bool
 	// routeOnError applies the pinned node's onError on a fresh failure.
 	routeOnError bool
+	// itemRouting applies per-item onError on CompleteJob (E3.5).
+	itemRouting *ItemRouting
 }
 
 func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now time.Time, in JobActionInput, opts mutateOpts) (DispatchResult, error) {
@@ -1195,7 +1204,7 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 		    lease_id = NULLIF($3, '')::uuid,
 		    fencing_token = $4,
 		    started_at = CASE WHEN $2 = 'running' THEN COALESCE(started_at, $1) ELSE started_at END,
-		    finished_at = CASE WHEN $2 IN ('succeeded', 'failed', 'canceled', 'indeterminate') THEN COALESCE(finished_at, $1)
+		    finished_at = CASE WHEN $2 IN ('succeeded', 'succeededWithErrors', 'failed', 'canceled', 'indeterminate') THEN COALESCE(finished_at, $1)
 		                       WHEN $2 IN ('queued', 'running', 'waiting') THEN NULL
 		                       ELSE finished_at END,
 		    updated_at = $1`
@@ -1228,8 +1237,19 @@ func (p *Postgres) mutateJob(ctx context.Context, scope isolation.Scope, now tim
 		}
 		step = routed
 	}
+	if opts.itemRouting != nil && nextStatus == JobSucceeded {
+		routed, err := applyItemRoutingTx(ctx, tx, scope, exec, step, *opts.itemRouting, now)
+		if err != nil {
+			return DispatchResult{}, err
+		}
+		step = routed
+	}
 	if opts.releaseOnSuccess && nextStatus == JobSucceeded && prevStatus != JobSucceeded {
-		if err := resolveOutgoingTx(ctx, tx, job.ExecutionID, step.NodeID, emittedPorts(step.NodeType, step.Output), now); err != nil {
+		ports := emittedPorts(step.NodeType, step.Output)
+		if opts.itemRouting != nil && opts.itemRouting.Mode == ErrorHandlingOutput {
+			ports[workflow.ErrorPortName] = struct{}{}
+		}
+		if err := resolveOutgoingTx(ctx, tx, job.ExecutionID, step.NodeID, ports, now); err != nil {
 			return DispatchResult{}, err
 		}
 	}
@@ -1344,6 +1364,11 @@ func recoverExpiredTx(ctx context.Context, tx pgx.Tx, scope isolation.Scope, now
 			WHERE id = $2::uuid
 		`, now, p.step); err != nil {
 			return 0, mapDBErr(err)
+		}
+		// E3.5: in-flight unknown items become indeterminate and are never
+		// auto-retried. Succeeded item rows stay succeeded.
+		if _, err := markStepItemsIndeterminateTx(ctx, tx, scope, p.step); err != nil {
+			return 0, err
 		}
 		n++
 	}

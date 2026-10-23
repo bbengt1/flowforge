@@ -42,7 +42,7 @@ type Queue interface {
 	Workspaces(ctx context.Context) ([]Workspace, error)
 	Claim(ctx context.Context, ws Workspace) (*Job, error)
 	Heartbeat(ctx context.Context, ws Workspace, job Job) error
-	Complete(ctx context.Context, ws Workspace, job Job, output map[string]any) error
+	Complete(ctx context.Context, ws Workspace, job Job, output map[string]any, routing ...*wfstore.ItemRouting) error
 	Fail(ctx context.Context, ws Workspace, job Job, failure map[string]any) error
 	Park(ctx context.Context, ws Workspace, job Job, until time.Time) error
 }
@@ -197,7 +197,7 @@ func (q *StoreQueue) Heartbeat(ctx context.Context, ws Workspace, job Job) error
 	return err
 }
 
-func (q *StoreQueue) Complete(ctx context.Context, ws Workspace, job Job, output map[string]any) error {
+func (q *StoreQueue) Complete(ctx context.Context, ws Workspace, job Job, output map[string]any, routing ...*wfstore.ItemRouting) error {
 	scope, err := scopeForJob(ws, job.Execution)
 	if err != nil {
 		return err

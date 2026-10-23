@@ -84,7 +84,7 @@ func rc(node string) *RunContext {
 
 func TestDataMapExprRuntime650(t *testing.T) {
 	with := map[string]any{"expr": map[string]any{"expr": `{"double": item.total * 2, "at": run.clock}`}}
-	out := EvaluateStepRun("data.map", with, map[string]any{"input": map[string]any{"total": int64(5)}}, nil, rc("shape"))
+	out := EvaluateStepRun("data.map", with, map[string]any{"input": map[string]any{"total": int64(5)}}, nil, rc("shape"), "")
 	if out.Fail {
 		t.Fatalf("%+v", out)
 	}
@@ -93,12 +93,12 @@ func TestDataMapExprRuntime650(t *testing.T) {
 		t.Fatalf("%v", got)
 	}
 	// JSON-decoded numbers (float64) behave like integers.
-	js := EvaluateStepRun("data.map", with, map[string]any{"input": map[string]any{"total": float64(5)}}, nil, rc("shape"))
+	js := EvaluateStepRun("data.map", with, map[string]any{"input": map[string]any{"total": float64(5)}}, nil, rc("shape"), "")
 	if js.Fail || js.Output["result"].(map[string]any)["double"] != int64(10) {
 		t.Fatalf("%+v", js)
 	}
 	// Same attempt clock, same result.
-	again := EvaluateStepRun("data.map", with, map[string]any{"input": map[string]any{"total": int64(5)}}, nil, rc("shape"))
+	again := EvaluateStepRun("data.map", with, map[string]any{"input": map[string]any{"total": int64(5)}}, nil, rc("shape"), "")
 	if again.Output["result"].(map[string]any)["at"] != got["at"] {
 		t.Fatal("run.clock not deterministic")
 	}
@@ -118,7 +118,7 @@ func TestCoreExprRuntimeTypeFailsClosed650(t *testing.T) {
 		{"gate", "flow.condition", `item.v == 1`, map[string]any{"value": secret}},
 	} {
 		with := map[string]any{"expr": map[string]any{"expr": tc.src}}
-		out := EvaluateStepRun(tc.typ, with, tc.in, nil, rc(tc.node))
+		out := EvaluateStepRun(tc.typ, with, tc.in, nil, rc(tc.node), "")
 		if !out.Fail || !strings.HasPrefix(out.Code, "expression-") {
 			t.Fatalf("%s %q: %+v", tc.typ, tc.src, out)
 		}
@@ -141,7 +141,7 @@ func TestCoreExprFailsClosedWithoutRunContext650(t *testing.T) {
 
 func TestDataMapExprReservedKey650(t *testing.T) {
 	with := map[string]any{"expr": map[string]any{"expr": `{"__ff_items": 1}`}}
-	out := EvaluateStepRun("data.map", with, map[string]any{"input": map[string]any{}}, nil, rc("shape"))
+	out := EvaluateStepRun("data.map", with, map[string]any{"input": map[string]any{}}, nil, rc("shape"), "")
 	if !out.Fail || out.Code != CodeExpressionRuntime {
 		t.Fatalf("%+v", out)
 	}
@@ -149,11 +149,11 @@ func TestDataMapExprReservedKey650(t *testing.T) {
 
 func TestConditionExprRoutes650(t *testing.T) {
 	with := map[string]any{"expr": map[string]any{"expr": `'k' in item && item.k > 2`}}
-	out := EvaluateStepRun("flow.condition", with, map[string]any{"value": map[string]any{"k": int64(3)}}, nil, rc("gate"))
+	out := EvaluateStepRun("flow.condition", with, map[string]any{"value": map[string]any{"k": int64(3)}}, nil, rc("gate"), "")
 	if out.Fail || out.Output["port"] != "true" {
 		t.Fatalf("%+v", out)
 	}
-	out = EvaluateStepRun("flow.condition", with, map[string]any{"value": map[string]any{}}, nil, rc("gate"))
+	out = EvaluateStepRun("flow.condition", with, map[string]any{"value": map[string]any{}}, nil, rc("gate"), "")
 	if out.Fail || out.Output["port"] != "false" {
 		t.Fatalf("%+v", out)
 	}
@@ -206,7 +206,7 @@ func TestCoreExprItemsNotAvailable650(t *testing.T) {
 // ordinary user data.
 func TestDataMapExprNestedReservedKeyAllowed650(t *testing.T) {
 	with := map[string]any{"expr": map[string]any{"expr": `{"wrap": {"__ff_items": 1}}`}}
-	out := EvaluateStepRun("data.map", with, map[string]any{"input": map[string]any{}}, nil, rc("shape"))
+	out := EvaluateStepRun("data.map", with, map[string]any{"input": map[string]any{}}, nil, rc("shape"), "")
 	if out.Fail {
 		t.Fatalf("%+v", out)
 	}

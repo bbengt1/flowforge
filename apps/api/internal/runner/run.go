@@ -336,7 +336,7 @@ func (r *Runner) claimOne(ctx context.Context, ws Workspace) (bool, error) {
 		r.log.Info("production runner failed job", "job_id", job.Job.ID, "node_type", job.Step.NodeType, "code", decision.Error["code"])
 		return true, nil
 	}
-	if err := r.queue.Complete(ctx, ws, *job, decision.Output); err != nil {
+	if err := r.queue.Complete(ctx, ws, *job, decision.Output, decision.ItemRouting); err != nil {
 		return true, err
 	}
 	r.log.Info("production runner completed job", "job_id", job.Job.ID, "node_type", job.Step.NodeType)
