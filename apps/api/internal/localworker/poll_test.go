@@ -1,9 +1,9 @@
 package localworker
 
 import (
-	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"context"
 	"errors"
+	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"io"
 	"log/slog"
 	"net/http"

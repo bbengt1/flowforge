@@ -125,15 +125,9 @@ func TestSortNonRoutableStillFailsStep650(t *testing.T) {
 
 func TestFilterErrorOutputRoutesExprFailure650(t *testing.T) {
 	rc := &RunContext{NodeID: "f", RunID: "r", WorkflowID: "w", VersionID: "v"}
-	with := map[string]any{"expr": map[string]any{"expr": `item.missing.nested == 1`}}
+	// Prefer an expr that type-fails only for non-bool: item.flag when flag is not a bool.
+	with := map[string]any{"expr": map[string]any{"expr": `item.flag`}}
 	in := map[string]any{"input": itemsValue([]map[string]any{
-		{"ok": true, "id": 1},
-		{"id": 2},
-	})}
-	// item.missing.nested on both may fail; use a type error on one item via compare path instead.
-	// Prefer an expr that type-fails only for non-bool: `item.n` when n is a number.
-	with = map[string]any{"expr": map[string]any{"expr": `item.flag`}}
-	in = map[string]any{"input": itemsValue([]map[string]any{
 		{"flag": true, "id": 1},
 		{"flag": "nope", "id": 2},
 	})}

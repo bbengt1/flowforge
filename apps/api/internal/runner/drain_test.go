@@ -1,8 +1,8 @@
 package runner
 
 import (
-	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"context"
+	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"log/slog"
 	"sync/atomic"
 	"testing"
