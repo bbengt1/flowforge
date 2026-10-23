@@ -51,7 +51,7 @@ type API interface {
 	ListMemberships(ctx context.Context) ([]identity.Membership, error)
 	Claim(ctx context.Context, tenantSlug, workbenchKey string) (*Claim, error)
 	Heartbeat(ctx context.Context, tenantSlug, workbenchKey string, claim Claim) error
-	Complete(ctx context.Context, tenantSlug, workbenchKey string, claim Claim, output map[string]any) error
+	Complete(ctx context.Context, tenantSlug, workbenchKey string, claim Claim, output map[string]any, routing ...*wfstore.ItemRouting) error
 	Fail(ctx context.Context, tenantSlug, workbenchKey string, claim Claim, errObj map[string]any) error
 }
 
@@ -201,10 +201,13 @@ func (h *HTTP) Heartbeat(ctx context.Context, tenantSlug, workbenchKey string, c
 	})
 }
 
-func (h *HTTP) Complete(ctx context.Context, tenantSlug, workbenchKey string, claim Claim, output map[string]any) error {
+func (h *HTTP) Complete(ctx context.Context, tenantSlug, workbenchKey string, claim Claim, output map[string]any, routing ...*wfstore.ItemRouting) error {
 	body := map[string]any{}
 	if output != nil {
 		body["output"] = output
+	}
+	if len(routing) > 0 && routing[0] != nil && routing[0].Count > 0 {
+		body["itemRouting"] = map[string]any{"mode": routing[0].Mode, "count": routing[0].Count}
 	}
 	return h.jobAction(ctx, tenantSlug, workbenchKey, claim, "/complete", body)
 }

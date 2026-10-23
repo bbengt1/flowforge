@@ -79,7 +79,7 @@ func runIntPrecisionSuite(t *testing.T, ctx context.Context, store Store, scope 
 		return got
 	}
 	evaluate := func(c DispatchResult) workflow.StepOutcome {
-		return workflow.EvaluateStepRun(c.Step.NodeType, c.Step.Input, c.Inputs, nil, RunContextFor(ctx, c.Execution, c.Step))
+		return workflow.EvaluateStepRun(c.Step.NodeType, c.Step.Input, c.Inputs, nil, RunContextFor(ctx, c.Execution, c.Step), "")
 	}
 	seed := claim()
 	if seed.Step.NodeID != "seed" {

@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"log/slog"
 	"sync"
 	"testing"
@@ -98,7 +99,7 @@ func (q *bindingQueue) BindingView() (BindingView, bool) {
 
 func (q *bindingQueue) Claim(context.Context, Workspace) (*Job, error)  { return nil, nil }
 func (q *bindingQueue) Heartbeat(context.Context, Workspace, Job) error { return nil }
-func (q *bindingQueue) Complete(context.Context, Workspace, Job, map[string]any) error {
+func (q *bindingQueue) Complete(context.Context, Workspace, Job, map[string]any, ...*wfstore.ItemRouting) error {
 	return nil
 }
 func (q *bindingQueue) Fail(context.Context, Workspace, Job, map[string]any) error { return nil }

@@ -118,3 +118,20 @@ func (m *Memory) ListStepItems(_ context.Context, scope isolation.Scope, q StepI
 	}
 	return page, nil
 }
+
+// markMemoryItemsIndeterminate flips in-flight unknown items to
+// indeterminate on lease loss. Succeeded rows stay succeeded.
+func markMemoryItemsIndeterminate(exec *memExecution, stepID string) {
+	if exec == nil || exec.items == nil {
+		return
+	}
+	ports := exec.items[stepID]
+	for port, list := range ports {
+		for i := range list {
+			if list[i].Status == ItemStatusUnknown {
+				list[i].Status = ItemStatusIndeterminate
+			}
+		}
+		ports[port] = list
+	}
+}

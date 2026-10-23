@@ -400,7 +400,7 @@ func rollupExecutionStatus(jobs []ExecutionJob, steps []ExecutionStep) string {
 	}
 	handled := map[string]bool{}
 	for _, step := range steps {
-		if stepErrorHandling(step) != "" {
+		if stepErrorHandling(step) != "" || step.Status == ExecutionSucceededWithErrors {
 			handled[step.ID] = true
 		}
 	}
@@ -424,7 +424,11 @@ func rollupExecutionStatus(jobs []ExecutionJob, steps []ExecutionStep) string {
 		case JobQueued:
 			sawQueued = true
 		case JobSucceeded:
-			sawSuccess = true
+			if handled[job.ExecutionStepID] {
+				sawHandled = true
+			} else {
+				sawSuccess = true
+			}
 		case JobSkipped:
 			sawSkipped = true
 		case JobBlocked:

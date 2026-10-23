@@ -3,6 +3,7 @@ package localworker
 import (
 	"context"
 	"errors"
+	"github.com/bbengt1/flowforge/apps/api/internal/wfstore"
 	"io"
 	"log/slog"
 	"net/http"
@@ -110,7 +111,7 @@ func (a *seqAPI) Claim(_ context.Context, slug, workbenchKey string) (*Claim, er
 }
 
 func (a *seqAPI) Heartbeat(context.Context, string, string, Claim) error { return nil }
-func (a *seqAPI) Complete(context.Context, string, string, Claim, map[string]any) error {
+func (a *seqAPI) Complete(context.Context, string, string, Claim, map[string]any, ...*wfstore.ItemRouting) error {
 	return nil
 }
 func (a *seqAPI) Fail(context.Context, string, string, Claim, map[string]any) error { return nil }

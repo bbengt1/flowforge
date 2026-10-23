@@ -193,3 +193,8 @@ Existing codes still apply: `unknown-field`, `invalid-with`, `secret-forbidden`,
 - Credentials (E4). These nodes never accept credential or connection IDs.
 - `flow.approval` is a full E10.3 contract: required `approverRole` + `expiresIn` (max `P7D`), optional `policyId`, optional `approvers` `{users, groups}` (UUID lists, at least one entry and at most 25 combined, no duplicates; `approverRole` must then be a known workspace role), typed ports `request` → `approved`/`rejected`/`expired`, unknown `with` keys rejected. Durable wait/resume is decide; it is not a worker sleep.
 - Canvas persistence / rewrite of `apps/web`.
+
+
+## Per-item onError
+
+Pure core list nodes (`data.sort`, `data.filter`) evaluate in-process over `{items: [...]}`. `data.merge` is not wired for per-item onError yet. Allowlisted per-item failures may route under `onError`; the step ends `succeededWithErrors` when any item routes. `flow.switch` refuses `continue`. `data.filter` allows only `errorOutput` or none. Provider nodes stay run-once. See the workflow YAML schema.

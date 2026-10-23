@@ -285,9 +285,13 @@ type ExecutionStep struct {
 	// SkipReason is set exactly when Status is skipped (#660): one of
 	// SkipReasons.
 	// ErrorHandling is continue or errorOutput when the final attempt
-	// failed and onError (from the pinned version) routed the failure.
+	// failed and onError (from the pinned version) routed the failure,
+	// or when per-item onError ended the step succeededWithErrors (E3.5).
 	ErrorHandling string `json:"errorHandling,omitempty"`
-	SkipReason    string `json:"skipReason,omitempty"`
+	// OnError is the pinned node's onError mode, filled on claim for
+	// workers (E3.5). Not persisted on the step row.
+	OnError    string `json:"onError,omitempty"`
+	SkipReason string `json:"skipReason,omitempty"`
 	// UnresolvedIncoming is the number of incoming edges that have not
 	// resolved yet. It is a claim backstop, not an API field.
 	UnresolvedIncoming int                    `json:"-"`
@@ -634,11 +638,21 @@ type JobActionInput struct {
 	Lease        time.Duration
 	Output       map[string]any
 	Error        map[string]any
+	// ItemRouting, when set on CompleteJob, ends the step as
+	// succeededWithErrors: some items routed under onError (E3.5). The
+	// worker already applied drop/error-port shaping in Output.
+	ItemRouting *ItemRouting `json:"-"`
 	// ApprovalTransientRetry delays a release that returns the job to
 	// queued by a flat 30s plus up to 5s. Leave it false for every other
 	// release, including worker releases and other job types. An
 	// indeterminate release ignores it. The delay does not change attempt.
 	ApprovalTransientRetry bool `json:"-"`
+}
+
+// ItemRouting is the CompleteJob marker for per-item onError (E3.5).
+type ItemRouting struct {
+	Mode  string // continue | errorOutput
+	Count int    // routed item count (audit only)
 }
 
 // JobBinding is the authenticated workspace/version/policy/expiry envelope

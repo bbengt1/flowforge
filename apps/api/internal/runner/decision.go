@@ -25,6 +25,8 @@ type Decision struct {
 	Output  map[string]any
 	Error   map[string]any
 	Message string
+	// ItemRouting is set when per-item onError routed some items (E3.5).
+	ItemRouting *wfstore.ItemRouting
 }
 
 func fail(code, message string) Decision {

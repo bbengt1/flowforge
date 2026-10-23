@@ -104,6 +104,9 @@ type StepItem struct {
 	Idx     int            `json:"idx"`
 	Item    map[string]any `json:"item"`
 	Lineage map[string]any `json:"lineage"`
+	// Status is succeeded (default), failed, indeterminate, or unknown
+	// (in-flight). Lease loss flips unknown → indeterminate (E3.5).
+	Status string `json:"status,omitempty"`
 }
 
 // StepItemsQuery is a page request. AfterIdx is -1 for the first page.
