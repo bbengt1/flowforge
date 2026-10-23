@@ -24,6 +24,7 @@ import {
   formatPortRef,
   parsePortRef,
   portsCompatible,
+  portsForNodeInstance,
   type PalettePorts,
 } from "./workflow-graph.ts";
 import { MAP_CONVERT_KINDS } from "./workflow-core-nodes.ts";
@@ -527,7 +528,7 @@ export function ndvPortWiresForNode(input: {
   entries?: readonly ActionLibraryEntry[];
   nodeIndex?: number;
 }): NdvPortWire[] {
-  const ports = portsForNode(input.node.type, input.catalog, input.entries);
+  const ports = portsForNode(input.node, input.catalog, input.entries);
   const typing = ndvPortTypingIncomplete(
     entryForType(input.node.type, input.entries, input.catalog),
     input.node.type,
@@ -543,7 +544,7 @@ export function ndvPortWiresForNode(input: {
       ? input.nodes.find((node) => node.id === fromRef.nodeId)
       : undefined;
     const fromPorts = fromNode
-      ? portsForNode(fromNode.type, input.catalog, input.entries)
+      ? portsForNode(fromNode, input.catalog, input.entries)
       : { inputs: [], outputs: [] };
     const fromPort = fromRef
       ? fromPorts.outputs.find((item) => item.name === fromRef.port) ?? null
@@ -557,6 +558,8 @@ export function ndvPortWiresForNode(input: {
             input.node.type,
             port.name,
             paletteFromEntries(input.entries),
+            { with: fromNode.with, onError: fromNode.onError },
+            { with: input.node.with, onError: input.node.onError },
           )
         : edge
           ? { ok: false, reason: "Upstream port could not be resolved." }
@@ -603,7 +606,7 @@ export function compatibleUpstreamPortOptions(
     if (node.id === dest.id) {
       continue;
     }
-    const ports = portsForNode(node.type, catalog, entries);
+    const ports = portsForNode(node, catalog, entries);
     for (const port of ports.outputs) {
       if (portsCompatible(port, inputPort)) {
         out.push({
@@ -737,15 +740,28 @@ function entryForType(
 }
 
 function portsForNode(
-  type: string,
+  node: Pick<YamlWorkflowNode, "type" | "with" | "onError"> | string,
   catalog?: WorkflowCatalog | null,
   entries: readonly ActionLibraryEntry[] = [],
 ): { inputs: CatalogPort[]; outputs: CatalogPort[] } {
+  const type = typeof node === "string" ? node : node.type;
   const entry = entryForType(type, entries, catalog);
-  return {
-    inputs: entry?.inputs ?? [],
-    outputs: entry?.outputs ?? [],
-  };
+  const palette = paletteFromEntries(entries);
+  return portsForNodeInstance({
+    type,
+    with: typeof node === "string" ? undefined : node.with,
+    onError: typeof node === "string" ? undefined : node.onError,
+    catalog,
+    palette: palette ?? (entry
+      ? [
+          {
+            type: entry.type,
+            inputs: entry.inputs ?? [],
+            outputs: entry.outputs ?? [],
+          },
+        ]
+      : undefined),
+  });
 }
 
 function paletteFromEntries(
